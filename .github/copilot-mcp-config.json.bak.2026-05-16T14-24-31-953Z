@@ -1,0 +1,40 @@
+{
+  "externalMcpPolicy": {
+    "allowlistedServers": {
+      "context7": {
+        "approvalArtifact": ".github/external-mcp-approvals.md#context7"
+      }
+    }
+  },
+  "mcpServers": {
+    "nucleus": {
+      "type": "stdio",
+      "command": "python3",
+      "args": [
+        "-m",
+        "nucleus.adapters.mcp.server"
+      ],
+      "tools": [
+        "remember",
+        "retrieve",
+        "bootcard"
+      ],
+      "envFile": ".env",
+      "env": {
+        "PYTHONPATH": "src",
+        "NUCLEUS_ENV_FILE": ".env",
+        "NUCLEUS_DATA_DIR": "${NUCLEUS_DATA_DIR}",
+        "NUCLEUS_HTTP_BASE_URL": "${NUCLEUS_HTTP_BASE_URL}",
+        "NUCLEUS_MCP_BASE_URL": "${NUCLEUS_MCP_BASE_URL}"
+      }
+    },
+    "context7": {
+      "type": "sse",
+      "tools": [
+        "*"
+      ],
+      "url": "https://mcp.context7.com/mcp",
+      "approvalArtifact": ".github/external-mcp-approvals.md#context7"
+    }
+  }
+}
