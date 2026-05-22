@@ -1,14 +1,24 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
-use sqlx::{PgPool, Row};
+use serde_json::Value;
+use sqlx::{PgPool, Postgres, Row, Transaction};
 use thiserror::Error;
 use uuid::Uuid;
 
-use crate::streaming::redis::EventEnvelope;
+#[derive(Debug, Clone, PartialEq)]
+pub struct OutboxEvent {
+    pub event_id: Uuid,
+    pub event_type: String,
+    pub correlation_id: Uuid,
+    pub idempotency_key: String,
+    pub schema_version: u32,
+    pub timestamp: DateTime<Utc>,
+    pub payload: Value,
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct OutboxRecord {
-    pub envelope: EventEnvelope,
+    pub event: OutboxEvent,
     pub attempts: i32,
     pub stream_id: Option<String>,
     pub last_error: Option<String>,
@@ -38,7 +48,14 @@ pub enum OutboxError {
 
 #[async_trait]
 pub trait GraphWriteCoordinator: Send + Sync {
-    async fn append_outbox_event(&self, envelope: &EventEnvelope) -> Result<(), OutboxError>;
+    async fn begin_outbox_transaction(&self)
+    -> Result<Transaction<'static, Postgres>, OutboxError>;
+    async fn append_outbox_event(&self, event: &OutboxEvent) -> Result<(), OutboxError>;
+    async fn append_outbox_event_in_tx(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        event: &OutboxEvent,
+    ) -> Result<(), OutboxError>;
     async fn claim_pending_outbox(&self, limit: i64) -> Result<Vec<OutboxRecord>, OutboxError>;
     async fn mark_outbox_published(
         &self,
@@ -90,61 +107,89 @@ impl PostgresGraphWriteCoordinator {
     }
 }
 
+fn validate_outbox_event(event: &OutboxEvent) -> Result<i32, OutboxError> {
+    if event.event_type.trim().is_empty() || event.idempotency_key.trim().is_empty() {
+        return Err(OutboxError::InvalidContract(
+            "event_type and idempotency_key must not be blank".to_owned(),
+        ));
+    }
+
+    i32::try_from(event.schema_version).map_err(|_| {
+        OutboxError::InvalidContract("schema_version exceeds i32 storage limit".to_owned())
+    })
+}
+
+async fn insert_outbox_event(
+    executor: impl sqlx::Executor<'_, Database = Postgres>,
+    event: &OutboxEvent,
+    schema_version: i32,
+) -> Result<(), OutboxError> {
+    let insert_result = sqlx::query(
+        r#"
+        INSERT INTO outbox_events (
+            event_id,
+            event_type,
+            correlation_id,
+            idempotency_key,
+            schema_version,
+            payload,
+            occurred_at,
+            available_at,
+            status
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), 'pending')
+        "#,
+    )
+    .bind(event.event_id)
+    .bind(&event.event_type)
+    .bind(event.correlation_id)
+    .bind(&event.idempotency_key)
+    .bind(schema_version)
+    .bind(&event.payload)
+    .bind(event.timestamp)
+    .execute(executor)
+    .await;
+
+    match insert_result {
+        Ok(_) => Ok(()),
+        Err(sqlx::Error::Database(error)) if error.is_unique_violation() => {
+            let constraint = error.constraint();
+            if constraint == Some("outbox_events_idempotency_key_key") {
+                return Err(OutboxError::IdempotencyConflict {
+                    idempotency_key: event.idempotency_key.clone(),
+                });
+            }
+
+            Err(OutboxError::InvalidContract(format!(
+                "outbox event already exists for event_id {}",
+                event.event_id
+            )))
+        }
+        Err(error) => Err(OutboxError::Persistence(error)),
+    }
+}
+
 #[async_trait]
 impl GraphWriteCoordinator for PostgresGraphWriteCoordinator {
-    async fn append_outbox_event(&self, envelope: &EventEnvelope) -> Result<(), OutboxError> {
-        if envelope.event_type.trim().is_empty() || envelope.idempotency_key.trim().is_empty() {
-            return Err(OutboxError::InvalidContract(
-                "event_type and idempotency_key must not be blank".to_owned(),
-            ));
-        }
+    async fn begin_outbox_transaction(
+        &self,
+    ) -> Result<Transaction<'static, Postgres>, OutboxError> {
+        Ok(self.pool.begin().await?)
+    }
 
-        let schema_version = i32::try_from(envelope.schema_version).map_err(|_| {
-            OutboxError::InvalidContract("schema_version exceeds i32 storage limit".to_owned())
-        })?;
+    async fn append_outbox_event(&self, event: &OutboxEvent) -> Result<(), OutboxError> {
+        let mut tx = self.begin_outbox_transaction().await?;
+        self.append_outbox_event_in_tx(&mut tx, event).await?;
+        tx.commit().await?;
+        Ok(())
+    }
 
-        let insert_result = sqlx::query(
-            r#"
-            INSERT INTO outbox_events (
-                event_id,
-                event_type,
-                correlation_id,
-                idempotency_key,
-                schema_version,
-                payload,
-                occurred_at,
-                available_at,
-                status
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), 'pending')
-            "#,
-        )
-        .bind(envelope.event_id)
-        .bind(&envelope.event_type)
-        .bind(envelope.correlation_id)
-        .bind(&envelope.idempotency_key)
-        .bind(schema_version)
-        .bind(&envelope.payload)
-        .bind(envelope.timestamp)
-        .execute(&self.pool)
-        .await;
-
-        match insert_result {
-            Ok(_) => Ok(()),
-            Err(sqlx::Error::Database(error)) if error.is_unique_violation() => {
-                let constraint = error.constraint();
-                if constraint == Some("outbox_events_idempotency_key_key") {
-                    return Err(OutboxError::IdempotencyConflict {
-                        idempotency_key: envelope.idempotency_key.clone(),
-                    });
-                }
-
-                Err(OutboxError::InvalidContract(format!(
-                    "outbox event already exists for event_id {}",
-                    envelope.event_id
-                )))
-            }
-            Err(error) => Err(OutboxError::Persistence(error)),
-        }
+    async fn append_outbox_event_in_tx(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        event: &OutboxEvent,
+    ) -> Result<(), OutboxError> {
+        let schema_version = validate_outbox_event(event)?;
+        insert_outbox_event(&mut **tx, event, schema_version).await
     }
 
     async fn claim_pending_outbox(&self, limit: i64) -> Result<Vec<OutboxRecord>, OutboxError> {
@@ -162,7 +207,7 @@ impl GraphWriteCoordinator for PostgresGraphWriteCoordinator {
                 SELECT event_id
                 FROM outbox_events
                 WHERE status = 'pending' AND available_at <= NOW()
-                ORDER BY occurred_at ASC
+                ORDER BY available_at ASC, occurred_at ASC
                 LIMIT $1
                 FOR UPDATE SKIP LOCKED
             )
@@ -187,7 +232,7 @@ impl GraphWriteCoordinator for PostgresGraphWriteCoordinator {
         let mut records = Vec::with_capacity(rows.len());
         for row in rows {
             records.push(OutboxRecord {
-                envelope: EventEnvelope {
+                event: OutboxEvent {
                     event_id: row.try_get("event_id")?,
                     event_type: row.try_get("event_type")?,
                     correlation_id: row.try_get("correlation_id")?,

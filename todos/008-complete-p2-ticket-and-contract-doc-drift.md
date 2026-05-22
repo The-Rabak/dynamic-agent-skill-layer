@@ -1,5 +1,5 @@
 ---
-status: pending
+status: complete
 priority: p2
 issue_id: "008"
 tags: [code-review, documentation, ticket-flow, drift-risk]
@@ -39,13 +39,13 @@ Several ticket and execution artifacts are out of sync with implementation and t
 
 ## Recommended Action
 
-To be filled during triage.
+Implemented Option 1 for active T02 artifacts and coupled contracts: normalized T02 ticket/session references, canonical event naming, and stale contract field names in active tickets/scripts.
 
 ## Acceptance Criteria
 
-- [ ] T02 ticket/session artifacts match actual implementation and test commands.
-- [ ] Canonical event naming and schema references are consistent across active docs.
-- [ ] No stale contract fields remain in relevant execution tickets.
+- [x] T02 ticket/session artifacts match actual implementation and test commands.
+- [x] Canonical event naming and schema references are consistent across active docs.
+- [x] No stale contract fields remain in relevant execution tickets.
 
 ## Work Log
 
@@ -59,3 +59,15 @@ To be filled during triage.
 **Learnings:**
 - Artifact drift is currently non-blocking for runtime but high-impact for future ticket execution quality.
 
+### 2026-05-22 - Execution
+
+**By:** Copilot CLI
+
+**Actions:**
+- Added `scripts/run-t02-infrastructure-tests.sh` to T02 ticket `files:` for traceability.
+- Updated T02 execution STATE required E2E command to the hardened script.
+- Updated script fixture events from `graph.updated` to canonical `graph.rebuilt`.
+- Corrected stale field naming in T07 (`retry_count` -> `attempts`).
+
+**Learnings:**
+- Documentation drift tends to accumulate at ticket/session boundaries, so execution artifacts should track test-entrypoint changes immediately.

@@ -126,20 +126,35 @@ docker exec "${POSTGRES_CONTAINER}" psql -v ON_ERROR_STOP=1 -U "${POSTGRES_USER}
   -c "DELETE FROM outbox_events WHERE idempotency_key = 'e2e-dup-key';" >/dev/null
 
 docker exec "${POSTGRES_CONTAINER}" psql -v ON_ERROR_STOP=1 -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" \
-  -c "INSERT INTO outbox_events (event_id, event_type, correlation_id, idempotency_key, schema_version, payload, status, occurred_at, available_at) VALUES ('00000000-0000-0000-0000-000000000001', 'graph.updated', '00000000-0000-0000-0000-000000000111', 'e2e-dup-key', 1, '{\"ok\":true}'::jsonb, 'pending', NOW(), NOW());" >/dev/null
+  -c "INSERT INTO outbox_events (event_id, event_type, correlation_id, idempotency_key, schema_version, payload, status, occurred_at, available_at) VALUES ('00000000-0000-0000-0000-000000000001', 'graph.rebuilt', '00000000-0000-0000-0000-000000000111', 'e2e-dup-key', 1, '{\"ok\":true}'::jsonb, 'pending', NOW(), NOW());" >/dev/null
 
 if docker exec "${POSTGRES_CONTAINER}" psql -v ON_ERROR_STOP=1 -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" \
-  -c "INSERT INTO outbox_events (event_id, event_type, correlation_id, idempotency_key, schema_version, payload, status, occurred_at, available_at) VALUES ('00000000-0000-0000-0000-000000000002', 'graph.updated', '00000000-0000-0000-0000-000000000222', 'e2e-dup-key', 1, '{\"ok\":true}'::jsonb, 'pending', NOW(), NOW());" >/dev/null 2>&1; then
+  -c "INSERT INTO outbox_events (event_id, event_type, correlation_id, idempotency_key, schema_version, payload, status, occurred_at, available_at) VALUES ('00000000-0000-0000-0000-000000000002', 'graph.rebuilt', '00000000-0000-0000-0000-000000000222', 'e2e-dup-key', 1, '{\"ok\":true}'::jsonb, 'pending', NOW(), NOW());" >/dev/null 2>&1; then
   echo "Expected duplicate outbox idempotency_key insert to fail, but it succeeded"
   exit 1
 fi
+
+echo "==> Running transactional boundary hard assertions"
+docker exec "${POSTGRES_CONTAINER}" psql -v ON_ERROR_STOP=1 -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" \
+  -c "DELETE FROM skills WHERE id = '00000000-0000-0000-0000-000000000901'; DELETE FROM outbox_events WHERE idempotency_key = 'e2e-atomicity-key';" >/dev/null
+
+if docker exec "${POSTGRES_CONTAINER}" psql -v ON_ERROR_STOP=1 -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" \
+  -c "BEGIN; INSERT INTO skills (id, name, description, scope, status, lifecycle, tags) VALUES ('00000000-0000-0000-0000-000000000901', 'atomicity-probe', 'verifies rollback when outbox insert fails', 'project', 'draft', 'proposed', '{}'::text[]); INSERT INTO outbox_events (event_id, event_type, correlation_id, idempotency_key, schema_version, payload, status, occurred_at, available_at) VALUES ('00000000-0000-0000-0000-000000000903', 'graph.rebuilt', '00000000-0000-0000-0000-000000000913', 'e2e-atomicity-key', 1, '{\"ok\":true}'::jsonb, 'pending', NOW(), NOW()); INSERT INTO outbox_events (event_id, event_type, correlation_id, idempotency_key, schema_version, payload, status, occurred_at, available_at) VALUES ('00000000-0000-0000-0000-000000000904', 'graph.rebuilt', '00000000-0000-0000-0000-000000000914', 'e2e-atomicity-key', 1, '{\"ok\":true}'::jsonb, 'pending', NOW(), NOW()); COMMIT;" >/dev/null 2>&1; then
+  echo "Expected transactional insert with duplicate idempotency key to fail, but it succeeded"
+  exit 1
+fi
+
+assert_sql_true "skills row should roll back when outbox write fails inside the same transaction" \
+  "SELECT NOT EXISTS (SELECT 1 FROM skills WHERE id = '00000000-0000-0000-0000-000000000901');"
+assert_sql_true "outbox rows should roll back when transaction aborts" \
+  "SELECT NOT EXISTS (SELECT 1 FROM outbox_events WHERE idempotency_key = 'e2e-atomicity-key');"
 
 echo "==> Running outbox state-machine hard assertions"
 docker exec "${POSTGRES_CONTAINER}" psql -v ON_ERROR_STOP=1 -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" \
   -c "DELETE FROM outbox_events WHERE idempotency_key = 'e2e-state-machine-key';" >/dev/null
 
 docker exec "${POSTGRES_CONTAINER}" psql -v ON_ERROR_STOP=1 -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" \
-  -c "INSERT INTO outbox_events (event_id, event_type, correlation_id, idempotency_key, schema_version, payload, status, attempts, occurred_at, available_at) VALUES ('00000000-0000-0000-0000-000000000010', 'graph.updated', '00000000-0000-0000-0000-000000000110', 'e2e-state-machine-key', 1, '{\"ok\":true}'::jsonb, 'pending', 0, NOW(), NOW());" >/dev/null
+  -c "INSERT INTO outbox_events (event_id, event_type, correlation_id, idempotency_key, schema_version, payload, status, attempts, occurred_at, available_at) VALUES ('00000000-0000-0000-0000-000000000010', 'graph.rebuilt', '00000000-0000-0000-0000-000000000110', 'e2e-state-machine-key', 1, '{\"ok\":true}'::jsonb, 'pending', 0, NOW(), NOW());" >/dev/null
 
 published_without_processing="$(sql_value "WITH updated AS (UPDATE outbox_events SET status = 'published', stream_id = 'stream-1', published_at = NOW(), updated_at = NOW() WHERE event_id = '00000000-0000-0000-0000-000000000010' AND status = 'processing' RETURNING 1) SELECT COUNT(*) FROM updated;")"
 if [[ "${published_without_processing}" != "0" ]]; then

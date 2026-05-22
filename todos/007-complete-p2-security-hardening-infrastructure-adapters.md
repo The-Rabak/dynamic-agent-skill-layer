@@ -1,5 +1,5 @@
 ---
-status: pending
+status: complete
 priority: p2
 issue_id: "007"
 tags: [code-review, security, infrastructure, quality]
@@ -39,14 +39,14 @@ Adapter defaults and boundary handling leave avoidable security risk in credenti
 
 ## Recommended Action
 
-To be filled during triage.
+Implemented Option 1 (fail-closed defaults and boundary checks) across PostgreSQL config, transcript extraction limits, health diagnostics, and scope path validation.
 
 ## Acceptance Criteria
 
-- [ ] Runtime credentials are not silently defaulted to weak values.
-- [ ] Extraction requests enforce explicit payload limits.
-- [ ] Health endpoints expose sanitized diagnostics.
-- [ ] Scope resolver rejects out-of-bound paths.
+- [x] Runtime credentials are not silently defaulted to weak values.
+- [x] Extraction requests enforce explicit payload limits.
+- [x] Health endpoints expose sanitized diagnostics.
+- [x] Scope resolver rejects out-of-bound paths.
 
 ## Work Log
 
@@ -60,3 +60,15 @@ To be filled during triage.
 **Learnings:**
 - Most items are defensive hardening, not immediate exploit blockers, but should be addressed before wider rollout.
 
+### 2026-05-22 - Execution
+
+**By:** Copilot CLI
+
+**Actions:**
+- Changed `PostgresConfig::default()` to fail-closed (`database_url` empty) so runtime credentials are explicit.
+- Added transcript payload bounds (`max_entries`, `max_entry_chars`, `max_total_chars`) and shared validation in extraction adapters.
+- Sanitized health-check failure details to avoid raw backend error leakage.
+- Added allowed-root enforcement for env-based global scope paths and tests that reject out-of-bound paths.
+
+**Learnings:**
+- Security hardening in adapters benefits from explicit boundary contracts more than warning-level logging.

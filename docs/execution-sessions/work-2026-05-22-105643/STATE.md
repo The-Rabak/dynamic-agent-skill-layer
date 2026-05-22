@@ -33,7 +33,7 @@ T02 owns the `infrastructure` feature home: concrete adapters for Ollama, Claude
 ### TDD Contract
 - Effective mode: Ralph-driven TDD
 - Effective loop: Failing tests first -> minimal implementation -> refactor -> post-refactor rerun
-- Required evidence: Unit command/result (`cargo test --workspace`), E2E command/result (`docker compose -f docker-compose.test.yml up --abort-on-container-exit`)
+- Required evidence: Unit command/result (`cargo test --workspace`), E2E command/result (`./scripts/run-t02-infrastructure-tests.sh`)
 - Exceptions: None
 
 ### Constitution Context

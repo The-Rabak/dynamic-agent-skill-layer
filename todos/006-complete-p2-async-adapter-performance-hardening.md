@@ -1,5 +1,5 @@
 ---
-status: pending
+status: complete
 priority: p2
 issue_id: "006"
 tags: [code-review, performance, async, infrastructure]
@@ -39,13 +39,13 @@ Several adapter paths are functionally correct but likely to degrade under scale
 
 ## Recommended Action
 
-To be filled during triage.
+Implemented Option 1 with bounded async batching and full timeout envelopes, plus query/index alignment for outbox claim scans.
 
 ## Acceptance Criteria
 
-- [ ] Blocking calls are removed from async hot paths.
-- [ ] Timeout contracts cover full request+decode operations.
-- [ ] Performance-sensitive query/index alignment is validated.
+- [x] Blocking calls are removed from async hot paths.
+- [x] Timeout contracts cover full request+decode operations.
+- [x] Performance-sensitive query/index alignment is validated.
 
 ## Work Log
 
@@ -59,3 +59,15 @@ To be filled during triage.
 **Learnings:**
 - This work is mostly quality/resilience hardening, not scope expansion.
 
+### 2026-05-22 - Execution
+
+**By:** Copilot CLI
+
+**Actions:**
+- Replaced blocking `std::process::Command` usage with `tokio::process::Command` in `crates/infrastructure/src/scope.rs`.
+- Refactored embedding and extraction adapters so request timeout covers full request + decode pipeline.
+- Parallelized embedding batch execution with bounded concurrency in `crates/infrastructure/src/embeddings/ollama.rs`.
+- Added outbox claim index (`idx_outbox_claim_pending`) and aligned claim ordering (`available_at`, `occurred_at`) across SQL and query.
+
+**Learnings:**
+- Throughput and timeout correctness both improve when async fan-out and timeout envelopes are treated as one contract instead of separate concerns.

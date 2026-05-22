@@ -4,6 +4,7 @@ pub mod embeddings {
 
 pub mod extraction {
     pub mod claude;
+    pub(crate) mod limits;
     pub mod ollama;
 }
 
@@ -27,7 +28,9 @@ pub use embeddings::ollama::{OllamaEmbeddingConfig, OllamaEmbeddingService};
 pub use extraction::claude::{ClaudeExtractionConfig, ClaudeExtractor};
 pub use extraction::ollama::{OllamaExtractionConfig, OllamaExtractor};
 pub use health::{HealthComponent, HealthReport, InfrastructureHealthChecker};
-pub use persistence::outbox::{GraphWriteCoordinator, OutboxRecord, PostgresGraphWriteCoordinator};
+pub use persistence::outbox::{
+    GraphWriteCoordinator, OutboxEvent, OutboxRecord, PostgresGraphWriteCoordinator,
+};
 pub use persistence::postgres::{PostgresAdapter, PostgresConfig, PostgresError};
 pub use persistence::rebuild::{PostgresRebuildCoordinator, RebuildCoordinator, RebuildError};
 pub use resilience::{CircuitBreaker, CircuitState, RetryPolicy, retry_with_backoff};

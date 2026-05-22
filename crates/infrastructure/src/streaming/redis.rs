@@ -5,6 +5,8 @@ use serde_json::Value;
 use thiserror::Error;
 use uuid::Uuid;
 
+use crate::persistence::outbox::OutboxEvent;
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct EventEnvelope {
     pub event_id: Uuid,
@@ -30,6 +32,34 @@ impl EventEnvelope {
             schema_version: 1,
             timestamp: Utc::now(),
             payload,
+        }
+    }
+}
+
+impl From<OutboxEvent> for EventEnvelope {
+    fn from(value: OutboxEvent) -> Self {
+        Self {
+            event_id: value.event_id,
+            event_type: value.event_type,
+            correlation_id: value.correlation_id,
+            idempotency_key: value.idempotency_key,
+            schema_version: value.schema_version,
+            timestamp: value.timestamp,
+            payload: value.payload,
+        }
+    }
+}
+
+impl From<EventEnvelope> for OutboxEvent {
+    fn from(value: EventEnvelope) -> Self {
+        Self {
+            event_id: value.event_id,
+            event_type: value.event_type,
+            correlation_id: value.correlation_id,
+            idempotency_key: value.idempotency_key,
+            schema_version: value.schema_version,
+            timestamp: value.timestamp,
+            payload: value.payload,
         }
     }
 }

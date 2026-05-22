@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use domain::{EmbeddingError, EmbeddingService};
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
-use tokio::{sync::Semaphore, time::timeout};
+use tokio::{sync::Semaphore, task::JoinSet, time::timeout};
 
 #[derive(Debug, Clone)]
 pub struct OllamaEmbeddingConfig {
@@ -108,35 +108,38 @@ impl OllamaEmbeddingService {
             prompt: text.to_owned(),
         };
 
-        let response = timeout(
-            Duration::from_millis(timeout_ms),
-            self.client.post(endpoint).json(&request).send(),
-        )
+        timeout(Duration::from_millis(timeout_ms), async {
+            let response = self
+                .client
+                .post(endpoint)
+                .json(&request)
+                .send()
+                .await
+                .map_err(|error| EmbeddingError::ProviderUnavailable(error.to_string()))?;
+
+            if response.status() != StatusCode::OK {
+                return Err(EmbeddingError::ProviderUnavailable(format!(
+                    "ollama embedding endpoint returned {}",
+                    response.status()
+                )));
+            }
+
+            let body: EmbeddingsResponse = response
+                .json()
+                .await
+                .map_err(|error| EmbeddingError::Unexpected(error.to_string()))?;
+
+            if body.embedding.is_empty() {
+                return Err(EmbeddingError::Unexpected(
+                    "ollama embedding response returned an empty vector".to_owned(),
+                ));
+            }
+
+            Ok(body.embedding)
+        })
         .await
         .map_err(|_| EmbeddingError::Timeout { timeout_ms })
-        .and_then(|result| {
-            result.map_err(|error| EmbeddingError::ProviderUnavailable(error.to_string()))
-        })?;
-
-        if response.status() != StatusCode::OK {
-            return Err(EmbeddingError::ProviderUnavailable(format!(
-                "ollama embedding endpoint returned {}",
-                response.status()
-            )));
-        }
-
-        let body: EmbeddingsResponse = response
-            .json()
-            .await
-            .map_err(|error| EmbeddingError::Unexpected(error.to_string()))?;
-
-        if body.embedding.is_empty() {
-            return Err(EmbeddingError::Unexpected(
-                "ollama embedding response returned an empty vector".to_owned(),
-            ));
-        }
-
-        Ok(body.embedding)
+        .and_then(|result| result)
     }
 }
 
@@ -164,22 +167,57 @@ impl EmbeddingService for OllamaEmbeddingService {
             ));
         }
 
-        let response = timeout(Duration::from_millis(self.config.batch_timeout_ms), async {
-            let mut vectors = Vec::with_capacity(texts.len());
-            for text in texts {
-                vectors.push(
-                    self.embed_with_timeout(text, self.config.timeout_ms)
-                        .await?,
-                );
+        timeout(Duration::from_millis(self.config.batch_timeout_ms), async {
+            let mut jobs = JoinSet::new();
+            for (index, text) in texts.iter().enumerate() {
+                let service = self.clone();
+                let text = (*text).to_owned();
+                jobs.spawn(async move {
+                    let vector = service
+                        .embed_with_timeout(&text, service.config.timeout_ms)
+                        .await;
+                    (index, vector)
+                });
             }
-            Ok::<Vec<Vec<f32>>, EmbeddingError>(vectors)
+
+            let mut ordered: Vec<Option<Vec<f32>>> = vec![None; texts.len()];
+            while let Some(join_result) = jobs.join_next().await {
+                let (index, vector_result) = match join_result {
+                    Ok(result) => result,
+                    Err(error) => {
+                        jobs.abort_all();
+                        return Err(EmbeddingError::Unexpected(format!(
+                            "embedding batch task failed: {error}"
+                        )));
+                    }
+                };
+
+                let vector = match vector_result {
+                    Ok(vector) => vector,
+                    Err(error) => {
+                        jobs.abort_all();
+                        return Err(error);
+                    }
+                };
+                ordered[index] = Some(vector);
+            }
+
+            ordered
+                .into_iter()
+                .map(|item| {
+                    item.ok_or_else(|| {
+                        EmbeddingError::Unexpected(
+                            "embedding batch result was missing an entry".to_owned(),
+                        )
+                    })
+                })
+                .collect::<Result<Vec<Vec<f32>>, EmbeddingError>>()
         })
         .await
         .map_err(|_| EmbeddingError::Timeout {
             timeout_ms: self.config.batch_timeout_ms,
-        })?;
-
-        response
+        })
+        .and_then(|result| result)
     }
 }
 

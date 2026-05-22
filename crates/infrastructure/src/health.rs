@@ -60,10 +60,10 @@ impl InfrastructureHealthChecker {
                     healthy: true,
                     detail: "reachable".to_owned(),
                 },
-                Err(error) => HealthComponent {
+                Err(_) => HealthComponent {
                     name: "postgres".to_owned(),
                     healthy: false,
-                    detail: error.to_string(),
+                    detail: "unreachable (postgres_query_failed)".to_owned(),
                 },
             };
             components.push(postgres_health);
@@ -79,17 +79,17 @@ impl InfrastructureHealthChecker {
                             healthy: true,
                             detail: "reachable".to_owned(),
                         },
-                        Err(error) => HealthComponent {
+                        Err(_) => HealthComponent {
                             name: "redis".to_owned(),
                             healthy: false,
-                            detail: error.to_string(),
+                            detail: "unreachable (redis_ping_failed)".to_owned(),
                         },
                     }
                 }
-                Err(error) => HealthComponent {
+                Err(_) => HealthComponent {
                     name: "redis".to_owned(),
                     healthy: false,
-                    detail: error.to_string(),
+                    detail: "unreachable (redis_connect_failed)".to_owned(),
                 },
             };
             components.push(redis_health);
@@ -108,10 +108,10 @@ impl InfrastructureHealthChecker {
                     healthy: false,
                     detail: format!("status {}", response.status()),
                 },
-                Err(error) => HealthComponent {
+                Err(_) => HealthComponent {
                     name: "ollama".to_owned(),
                     healthy: false,
-                    detail: error.to_string(),
+                    detail: "unreachable (ollama_request_failed)".to_owned(),
                 },
             };
             components.push(ollama_health);

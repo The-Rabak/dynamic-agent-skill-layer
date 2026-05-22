@@ -137,6 +137,8 @@ CREATE INDEX IF NOT EXISTS idx_audit_log_entity_happened
     ON audit_log (entity_type, entity_id, happened_at DESC);
 CREATE INDEX IF NOT EXISTS idx_outbox_status_available
     ON outbox_events (status, available_at);
+CREATE INDEX IF NOT EXISTS idx_outbox_claim_pending
+    ON outbox_events (status, available_at, occurred_at, event_id);
 CREATE INDEX IF NOT EXISTS idx_outbox_event_type_occurred
     ON outbox_events (event_type, occurred_at DESC);
 CREATE INDEX IF NOT EXISTS idx_rebuild_locks_expires_at

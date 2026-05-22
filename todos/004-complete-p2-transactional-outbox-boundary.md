@@ -1,5 +1,5 @@
 ---
-status: pending
+status: complete
 priority: p2
 issue_id: "004"
 tags: [code-review, architecture, outbox, quality]
@@ -37,12 +37,12 @@ Current outbox API does not enforce an atomic boundary with domain mutations, le
 
 ## Recommended Action
 
-To be filled during triage.
+Implemented Option 1. The outbox coordinator now exposes an explicit transaction-aware contract (`begin_outbox_transaction` + `append_outbox_event_in_tx`) so domain writes and outbox writes can share one DB transaction boundary.
 
 ## Acceptance Criteria
 
-- [ ] Outbox/domain write atomicity is explicit in code contract.
-- [ ] Failure injection tests prove no split-brain write scenarios.
+- [x] Outbox/domain write atomicity is explicit in code contract.
+- [x] Failure injection tests prove no split-brain write scenarios.
 
 ## Work Log
 
@@ -56,3 +56,14 @@ To be filled during triage.
 **Learnings:**
 - This item is coupled to state-machine hardening but can be sequenced after P1 outbox fixes.
 
+### 2026-05-22 - Execution
+
+**By:** Copilot CLI
+
+**Actions:**
+- Added explicit transactional outbox API surfaces in `crates/infrastructure/src/persistence/outbox.rs`.
+- Kept single-call append semantics by internally opening + committing a transaction when no transaction is passed.
+- Added transactional failure-injection assertions in `scripts/run-t02-infrastructure-tests.sh` to prove rollback of both domain row and outbox writes on idempotency conflict.
+
+**Learnings:**
+- Making transaction boundaries explicit at the persistence seam prevents future callers from accidentally splitting domain and outbox durability.

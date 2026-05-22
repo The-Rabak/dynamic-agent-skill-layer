@@ -90,7 +90,7 @@ WHY link: the skill graph cannot be trusted if filesystem-triggered rebuilds lea
 Focus on the outbox worker and reconciliation surfaces only. Important constraints:
 
 - Use content-hash-based idempotency for Qdrant point IDs.
-- Keep failure data explicit (`retry_count`, `status`, `last_error`) so maintenance and operations have something real to inspect.
+- Keep failure data explicit (`attempts`, `status`, `last_error`) so maintenance and operations have something real to inspect.
 - Design the worker to cooperate with graph-builder rebuild boundaries instead of becoming a hidden side channel.
 
 Unknowns: none beyond worker polling/backoff tuning within the existing outbox contract.

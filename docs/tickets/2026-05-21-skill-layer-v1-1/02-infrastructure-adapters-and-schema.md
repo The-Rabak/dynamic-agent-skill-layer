@@ -31,6 +31,7 @@ files:
   - crates/infrastructure/src/health.rs
   - crates/infrastructure/src/logging.rs
   - crates/infrastructure/migrations/001_initial_schema.sql
+  - scripts/run-t02-infrastructure-tests.sh
   - docs/runbooks/schema-migration-verification-and-rollback.md
 test_command: ./scripts/run-t02-infrastructure-tests.sh
 tdd_mode: inherit

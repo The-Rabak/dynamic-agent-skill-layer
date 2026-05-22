@@ -17,8 +17,7 @@ pub struct PostgresConfig {
 impl Default for PostgresConfig {
     fn default() -> Self {
         Self {
-            database_url: "postgres://skill_layer:skill_layer@127.0.0.1:5432/skill_layer"
-                .to_owned(),
+            database_url: String::new(),
             max_connections: 20,
             min_connections: 1,
             connect_timeout_secs: 5,

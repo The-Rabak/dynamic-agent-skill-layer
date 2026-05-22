@@ -1,5 +1,5 @@
 ---
-status: pending
+status: complete
 priority: p2
 issue_id: "009"
 tags: [code-review, architecture, persistence, quality]
@@ -37,12 +37,12 @@ Persistence coordinator APIs currently depend on a Redis transport envelope type
 
 ## Recommended Action
 
-To be filled during triage.
+Implemented Option 1. Persistence contracts now use a transport-neutral `OutboxEvent`, and Redis envelope mapping is isolated to the streaming adapter boundary.
 
 ## Acceptance Criteria
 
-- [ ] Persistence trait signatures no longer depend on streaming-specific types.
-- [ ] Event serialization boundary is isolated to streaming adapter.
+- [x] Persistence trait signatures no longer depend on streaming-specific types.
+- [x] Event serialization boundary is isolated to streaming adapter.
 
 ## Work Log
 
@@ -56,3 +56,14 @@ To be filled during triage.
 **Learnings:**
 - This is a design-quality improvement, not an immediate correctness blocker.
 
+### 2026-05-22 - Execution
+
+**By:** Copilot CLI
+
+**Actions:**
+- Introduced `OutboxEvent` in `crates/infrastructure/src/persistence/outbox.rs`.
+- Updated `GraphWriteCoordinator` and `OutboxRecord` signatures to use `OutboxEvent` instead of `EventEnvelope`.
+- Moved conversion boundary (`OutboxEvent` <-> `EventEnvelope`) into `crates/infrastructure/src/streaming/redis.rs`.
+
+**Learnings:**
+- Keeping transport models at the stream adapter seam keeps persistence contracts stable as transport implementations evolve.

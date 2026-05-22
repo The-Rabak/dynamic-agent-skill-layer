@@ -8,11 +8,16 @@ use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use tokio::time::timeout;
 
+use crate::extraction::limits::validate_transcript_limits;
+
 #[derive(Debug, Clone)]
 pub struct ClaudeExtractionConfig {
     pub endpoint: String,
     pub model: String,
     pub timeout_ms: u64,
+    pub max_entries: usize,
+    pub max_entry_chars: usize,
+    pub max_total_chars: usize,
 }
 
 impl Default for ClaudeExtractionConfig {
@@ -21,6 +26,9 @@ impl Default for ClaudeExtractionConfig {
             endpoint: "http://127.0.0.1:8080/extract".to_owned(),
             model: "claude-sonnet".to_owned(),
             timeout_ms: 1_500,
+            max_entries: 2_000,
+            max_entry_chars: 8_192,
+            max_total_chars: 1_000_000,
         }
     }
 }
@@ -45,6 +53,12 @@ impl ClaudeExtractor {
         if config.timeout_ms == 0 {
             return Err(ExtractionError::InvalidTranscript(
                 "extraction timeout must be greater than zero".to_owned(),
+            ));
+        }
+
+        if config.max_entries == 0 || config.max_entry_chars == 0 || config.max_total_chars == 0 {
+            return Err(ExtractionError::InvalidTranscript(
+                "transcript limits must be greater than zero".to_owned(),
             ));
         }
 
@@ -84,6 +98,12 @@ impl TranscriptSkillExtractionService for ClaudeExtractor {
                 "transcript must include at least one entry".to_owned(),
             ));
         }
+        validate_transcript_limits(
+            transcript,
+            self.config.max_entries,
+            self.config.max_entry_chars,
+            self.config.max_total_chars,
+        )?;
 
         let request = ExtractionRequest {
             model: self.config.model.clone(),
@@ -98,32 +118,32 @@ impl TranscriptSkillExtractionService for ClaudeExtractor {
                 .collect(),
         };
 
-        let response = timeout(
-            Duration::from_millis(self.config.timeout_ms),
-            self.client
+        let parsed = timeout(Duration::from_millis(self.config.timeout_ms), async {
+            let response = self
+                .client
                 .post(&self.config.endpoint)
                 .json(&request)
-                .send(),
-        )
+                .send()
+                .await
+                .map_err(|error| ExtractionError::ProviderUnavailable(error.to_string()))?;
+
+            if response.status() != StatusCode::OK {
+                return Err(ExtractionError::ProviderUnavailable(format!(
+                    "claude extraction endpoint returned {}",
+                    response.status()
+                )));
+            }
+
+            response
+                .json::<ExtractionResponse>()
+                .await
+                .map_err(|error| ExtractionError::Unexpected(error.to_string()))
+        })
         .await
         .map_err(|_| ExtractionError::Timeout {
             timeout_ms: self.config.timeout_ms,
         })
-        .and_then(|result| {
-            result.map_err(|error| ExtractionError::ProviderUnavailable(error.to_string()))
-        })?;
-
-        if response.status() != StatusCode::OK {
-            return Err(ExtractionError::ProviderUnavailable(format!(
-                "claude extraction endpoint returned {}",
-                response.status()
-            )));
-        }
-
-        let parsed: ExtractionResponse = response
-            .json()
-            .await
-            .map_err(|error| ExtractionError::Unexpected(error.to_string()))?;
+        .and_then(|result| result)?;
 
         Ok(ExtractionResult {
             source_session_id: transcript.session_id.clone(),
@@ -178,5 +198,34 @@ mod tests {
             .expect_err("unreachable provider should fail");
 
         assert!(matches!(error, ExtractionError::ProviderUnavailable(_)));
+    }
+
+    #[tokio::test]
+    async fn extract_rejects_transcript_exceeding_limit() {
+        let mut config = ClaudeExtractionConfig::default();
+        config.max_entries = 1;
+        let extractor =
+            ClaudeExtractor::new(reqwest::Client::new(), config).expect("config should be valid");
+
+        let transcript = SessionTranscript {
+            session_id: DomainId::new_unchecked("session-003"),
+            entries: vec![
+                TranscriptEntry {
+                    speaker: "user".to_owned(),
+                    content: "first".to_owned(),
+                },
+                TranscriptEntry {
+                    speaker: "assistant".to_owned(),
+                    content: "second".to_owned(),
+                },
+            ],
+        };
+
+        let error = extractor
+            .extract(&transcript)
+            .await
+            .expect_err("limit overflow should fail");
+
+        assert!(matches!(error, ExtractionError::InvalidTranscript(_)));
     }
 }
