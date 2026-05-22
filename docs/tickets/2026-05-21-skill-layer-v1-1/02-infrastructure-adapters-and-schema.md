@@ -2,7 +2,7 @@
 ticket_id: T02
 title: Infrastructure adapters and schema
 kind: tracer-bullet
-status: ready
+status: completed
 plan_ref: docs/plans/2026-05-21-feat-skill-layer-v1-1-plan.md
 tickets_ref: docs/tickets/2026-05-21-skill-layer-v1-1/index.md
 architecture_ref: docs/architecture/2026-05-21-skill-layer-v1-1-architecture.md
@@ -25,12 +25,14 @@ files:
   - crates/infrastructure/src/persistence/outbox.rs
   - crates/infrastructure/src/persistence/rebuild.rs
   - crates/infrastructure/src/streaming/redis.rs
+  - crates/infrastructure/src/vector/qdrant.rs
   - crates/infrastructure/src/scope.rs
   - crates/infrastructure/src/resilience.rs
   - crates/infrastructure/src/health.rs
   - crates/infrastructure/src/logging.rs
   - crates/infrastructure/migrations/001_initial_schema.sql
-test_command: cargo test --workspace && docker compose -f docker-compose.test.yml up --abort-on-container-exit
+  - docs/runbooks/schema-migration-verification-and-rollback.md
+test_command: ./scripts/run-t02-infrastructure-tests.sh
 tdd_mode: inherit
 ---
 
@@ -59,6 +61,41 @@ Implement the shared `infrastructure` crate and the initial PostgreSQL schema. T
 - `GraphWriteCoordinator` and `RebuildCoordinator` exist as shared persistence contracts for later graph-builder work.
 - Scope resolvers, resilience helpers, health checks, and structured logging bootstraps are available for downstream crates.
 - Workspace build, test, format, and lint expectations are satisfiable from this shared layer.
+
+## Migration Verification SQL (Executable)
+
+Pre-deploy checks:
+
+```sql
+SELECT current_database() AS database_name;
+SELECT current_user AS migration_actor;
+SELECT to_regclass('public.skills') AS skills_table_before;
+SELECT to_regclass('public.outbox_events') AS outbox_table_before;
+```
+
+Post-deploy checks:
+
+```sql
+SELECT to_regclass('public.outbox_events') IS NOT NULL AS outbox_exists;
+SELECT to_regclass('public.rebuild_locks') IS NOT NULL AS rebuild_locks_exists;
+SELECT EXISTS (SELECT 1 FROM graph_state WHERE singleton = TRUE) AS graph_state_seeded;
+SELECT EXISTS (
+  SELECT 1
+  FROM pg_trigger
+  WHERE tgname = 'trg_outbox_events_set_updated_at' AND NOT tgisinternal
+) AS outbox_trigger_exists;
+SELECT EXISTS (
+  SELECT 1
+  FROM pg_constraint c
+  JOIN pg_class t ON c.conrelid = t.oid
+  WHERE t.relname = 'outbox_events'
+    AND c.contype = 'u'
+    AND pg_get_constraintdef(c.oid) ILIKE '%idempotency_key%'
+) AS outbox_idempotency_unique;
+```
+
+Rollback/restore procedure and approval evidence requirements are defined in:
+- `docs/runbooks/schema-migration-verification-and-rollback.md`
 
 ## Shared / Global Notes
 
