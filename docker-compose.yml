@@ -1,0 +1,94 @@
+services:
+  postgres:
+    image: postgres:18.4-alpine
+    container_name: ${COMPOSE_PROJECT_NAME:-skill-layer}-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-skill_layer}
+      POSTGRES_USER: ${POSTGRES_USER:-skill_layer}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-skill_layer}
+    ports:
+      - "${POSTGRES_PORT:-15432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  redis:
+    image: redis:8.6.3-alpine
+    container_name: ${COMPOSE_PROJECT_NAME:-skill-layer}-redis
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "${REDIS_PORT:-16379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  qdrant:
+    image: qdrant/qdrant:v1.18.0
+    container_name: ${COMPOSE_PROJECT_NAME:-skill-layer}-qdrant
+    ports:
+      - "${QDRANT_HTTP_PORT:-16333}:6333"
+      - "${QDRANT_GRPC_PORT:-16334}:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+
+  ollama:
+    image: ollama/ollama:0.24.0
+    container_name: ${COMPOSE_PROJECT_NAME:-skill-layer}-ollama
+    ports:
+      - "${OLLAMA_PORT:-11444}:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+
+  mcp-server:
+    image: alpine:3.23.4
+    container_name: ${COMPOSE_PROJECT_NAME:-skill-layer}-mcp-server
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+      ollama:
+        condition: service_started
+    command: ["sh", "-c", "echo mcp-server placeholder ready && tail -f /dev/null"]
+
+  graph-builder:
+    image: alpine:3.23.4
+    container_name: ${COMPOSE_PROJECT_NAME:-skill-layer}-graph-builder
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+      ollama:
+        condition: service_started
+    command: ["sh", "-c", "echo graph-builder placeholder ready && tail -f /dev/null"]
+
+  maintenance-worker:
+    image: alpine:3.23.4
+    container_name: ${COMPOSE_PROJECT_NAME:-skill-layer}-maintenance-worker
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: ["sh", "-c", "echo maintenance placeholder ready && tail -f /dev/null"]
+
+volumes:
+  postgres_data:
+  redis_data:
+  qdrant_data:
+  ollama_data:
