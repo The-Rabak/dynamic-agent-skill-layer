@@ -1,0 +1,47 @@
+services:
+  postgres:
+    image: postgres:18.4-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-skill_layer_test}
+      POSTGRES_USER: ${POSTGRES_USER:-skill_layer}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-skill_layer}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:8.6.3-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  qdrant:
+    image: qdrant/qdrant:v1.18.0
+
+  ollama:
+    image: ollama/ollama:0.24.0
+
+  topology-check:
+    image: alpine:3.23.4
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+      ollama:
+        condition: service_started
+    command:
+      - sh
+      - -c
+      - |
+        nc -z postgres 5432
+        nc -z redis 6379
+        nc -z qdrant 6333
+        nc -z ollama 11434
+        echo "test topology reachable"

@@ -1,0 +1,11 @@
+[package]
+name = "domain"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Pure domain contracts for the dynamic agent skill layer"
+
+[dependencies]
+async-trait = "0.1.89"
+serde = { version = "1.0.228", features = ["derive"] }
+thiserror = "2.0.18"

@@ -2,7 +2,7 @@
 ticket_id: T01
 title: Compose and domain foundation
 kind: tracer-bullet
-status: ready
+status: completed
 plan_ref: docs/plans/2026-05-21-feat-skill-layer-v1-1-plan.md
 tickets_ref: docs/tickets/2026-05-21-skill-layer-v1-1/index.md
 architecture_ref: docs/architecture/2026-05-21-skill-layer-v1-1-architecture.md
@@ -18,13 +18,14 @@ files:
   - docker-compose.test.yml
   - docker-compose.override.yml
   - .env.example
+  - scripts/run-t01-foundation-tests.sh
   - crates/domain/Cargo.toml
   - crates/domain/src/lib.rs
   - crates/domain/src/types.rs
   - crates/domain/src/traits.rs
   - crates/domain/src/errors.rs
   - crates/domain/src/config.rs
-test_command: cargo test --workspace && docker compose -f docker-compose.test.yml up --abort-on-container-exit
+test_command: ./scripts/run-t01-foundation-tests.sh
 tdd_mode: inherit
 ---
 
@@ -52,6 +53,7 @@ Stand up the local Docker Compose topology and the pure `domain` crate that ever
 - Domain types cover the plan vocabulary: skills, subunits, communities, scopes, lifecycle/status, extraction results, scored skills, and scope descriptors.
 - Domain traits cover the architecture seams: embedding, transcript extraction, scope resolution, and context compilation.
 - Typed config structs and shared domain errors exist without environment parsing or infrastructure coupling.
+- Repeatable validation flow exists as `scripts/run-t01-foundation-tests.sh`.
 
 ## Shared / Global Notes
 
@@ -67,6 +69,7 @@ Work against the root Compose files plus `crates/domain/`. Keep the crate limite
 
 - `EmbeddingService`, `TranscriptSkillExtractionService`, `ScopeResolver`, and `ContextCompiler` live in `domain`.
 - `docker-compose.yml` is the local-first deployment surface for Ollama, Qdrant, PostgreSQL, Redis, and service placeholders.
+- Use `./scripts/run-t01-foundation-tests.sh` for repeatable ticket validation.
 - If UUIDv7 support needs a decision early, prefer a contract-friendly placeholder that T02 can finalize without breaking the domain API.
 
 ## Parent Refs

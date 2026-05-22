@@ -1,0 +1,21 @@
+services:
+  ollama:
+    environment:
+      OLLAMA_NUM_PARALLEL: ${OLLAMA_NUM_PARALLEL:-2}
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-5m}
+
+  mcp-server:
+    environment:
+      RUST_LOG: ${RUST_LOG:-info}
+      POSTGRES_URL: postgres://${POSTGRES_USER:-skill_layer}:${POSTGRES_PASSWORD:-skill_layer}@postgres:5432/${POSTGRES_DB:-skill_layer}
+      REDIS_URL: redis://redis:6379
+      QDRANT_URL: http://qdrant:6333
+      OLLAMA_URL: http://ollama:11434
+
+  graph-builder:
+    environment:
+      RUST_LOG: ${RUST_LOG:-info}
+      POSTGRES_URL: postgres://${POSTGRES_USER:-skill_layer}:${POSTGRES_PASSWORD:-skill_layer}@postgres:5432/${POSTGRES_DB:-skill_layer}
+      REDIS_URL: redis://redis:6379
+      QDRANT_URL: http://qdrant:6333
+      OLLAMA_URL: http://ollama:11434
