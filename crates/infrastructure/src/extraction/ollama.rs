@@ -1,14 +1,13 @@
-use std::time::Duration;
-
 use async_trait::async_trait;
 use domain::{
     ExtractionError, ExtractionResult, SessionTranscript, TranscriptSkillExtractionService,
 };
-use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
-use tokio::time::timeout;
 
-use crate::extraction::limits::validate_transcript_limits;
+use crate::extraction::{
+    http::post_json_with_timeout,
+    limits::{validate_extraction_config, validate_transcript_limits},
+};
 
 #[derive(Debug, Clone)]
 pub struct OllamaExtractionConfig {
@@ -50,17 +49,12 @@ impl OllamaExtractor {
             ));
         }
 
-        if config.timeout_ms == 0 {
-            return Err(ExtractionError::InvalidTranscript(
-                "extraction timeout must be greater than zero".to_owned(),
-            ));
-        }
-
-        if config.max_entries == 0 || config.max_entry_chars == 0 || config.max_total_chars == 0 {
-            return Err(ExtractionError::InvalidTranscript(
-                "transcript limits must be greater than zero".to_owned(),
-            ));
-        }
+        validate_extraction_config(
+            config.timeout_ms,
+            config.max_entries,
+            config.max_entry_chars,
+            config.max_total_chars,
+        )?;
 
         Ok(Self { client, config })
     }
@@ -91,11 +85,6 @@ impl TranscriptSkillExtractionService for OllamaExtractor {
         &self,
         transcript: &SessionTranscript,
     ) -> Result<ExtractionResult, ExtractionError> {
-        if transcript.entries.is_empty() {
-            return Err(ExtractionError::InvalidTranscript(
-                "transcript must include at least one entry".to_owned(),
-            ));
-        }
         validate_transcript_limits(
             transcript,
             self.config.max_entries,
@@ -117,35 +106,16 @@ impl TranscriptSkillExtractionService for OllamaExtractor {
             prompt,
         };
 
-        let parsed = timeout(Duration::from_millis(self.config.timeout_ms), async {
-            let response = self
-                .client
-                .post(&self.config.endpoint)
-                .json(&request)
-                .send()
-                .await
-                .map_err(|error| ExtractionError::ProviderUnavailable(error.to_string()))?;
-
-            if response.status() != StatusCode::OK {
-                return Err(ExtractionError::ProviderUnavailable(format!(
-                    "ollama extraction endpoint returned {}",
-                    response.status()
-                )));
-            }
-
-            let raw = response
-                .json::<OllamaExtractionResponse>()
-                .await
-                .map_err(|error| ExtractionError::Unexpected(error.to_string()))?;
-
-            serde_json::from_str::<StructuredExtraction>(&raw.response)
-                .map_err(|error| ExtractionError::Unexpected(error.to_string()))
-        })
-        .await
-        .map_err(|_| ExtractionError::Timeout {
-            timeout_ms: self.config.timeout_ms,
-        })
-        .and_then(|result| result)?;
+        let raw: OllamaExtractionResponse = post_json_with_timeout(
+            &self.client,
+            &self.config.endpoint,
+            &request,
+            self.config.timeout_ms,
+            "ollama",
+        )
+        .await?;
+        let parsed: StructuredExtraction = serde_json::from_str(&raw.response)
+            .map_err(|error| ExtractionError::Unexpected(error.to_string()))?;
 
         Ok(ExtractionResult {
             source_session_id: transcript.session_id.clone(),

@@ -51,6 +51,12 @@ assert_sql_true() {
   fi
 }
 
+psql_exec() {
+  local query="$1"
+  local database="${2:-${POSTGRES_DB}}"
+  docker exec "${POSTGRES_CONTAINER}" psql -v ON_ERROR_STOP=1 -U "${POSTGRES_USER}" -d "${database}" -c "${query}" >/dev/null
+}
+
 trap cleanup EXIT
 
 echo "==> Running workspace tests"
@@ -122,11 +128,9 @@ fi
 docker exec "${POSTGRES_CONTAINER}" dropdb --if-exists -U "${POSTGRES_USER}" "${ROLLBACK_DB}" >/dev/null
 docker exec "${POSTGRES_CONTAINER}" rm -f "${ROLLBACK_DUMP}" >/dev/null
 
-docker exec "${POSTGRES_CONTAINER}" psql -v ON_ERROR_STOP=1 -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" \
-  -c "DELETE FROM outbox_events WHERE idempotency_key = 'e2e-dup-key';" >/dev/null
+psql_exec "DELETE FROM outbox_events WHERE idempotency_key = 'e2e-dup-key';"
 
-docker exec "${POSTGRES_CONTAINER}" psql -v ON_ERROR_STOP=1 -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" \
-  -c "INSERT INTO outbox_events (event_id, event_type, correlation_id, idempotency_key, schema_version, payload, status, occurred_at, available_at) VALUES ('00000000-0000-0000-0000-000000000001', 'graph.rebuilt', '00000000-0000-0000-0000-000000000111', 'e2e-dup-key', 1, '{\"ok\":true}'::jsonb, 'pending', NOW(), NOW());" >/dev/null
+psql_exec "INSERT INTO outbox_events (event_id, event_type, correlation_id, idempotency_key, schema_version, payload, status, occurred_at, available_at) VALUES ('00000000-0000-0000-0000-000000000001', 'graph.rebuilt', '00000000-0000-0000-0000-000000000111', 'e2e-dup-key', 1, '{\"ok\":true}'::jsonb, 'pending', NOW(), NOW());"
 
 if docker exec "${POSTGRES_CONTAINER}" psql -v ON_ERROR_STOP=1 -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" \
   -c "INSERT INTO outbox_events (event_id, event_type, correlation_id, idempotency_key, schema_version, payload, status, occurred_at, available_at) VALUES ('00000000-0000-0000-0000-000000000002', 'graph.rebuilt', '00000000-0000-0000-0000-000000000222', 'e2e-dup-key', 1, '{\"ok\":true}'::jsonb, 'pending', NOW(), NOW());" >/dev/null 2>&1; then
@@ -135,8 +139,7 @@ if docker exec "${POSTGRES_CONTAINER}" psql -v ON_ERROR_STOP=1 -U "${POSTGRES_US
 fi
 
 echo "==> Running transactional boundary hard assertions"
-docker exec "${POSTGRES_CONTAINER}" psql -v ON_ERROR_STOP=1 -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" \
-  -c "DELETE FROM skills WHERE id = '00000000-0000-0000-0000-000000000901'; DELETE FROM outbox_events WHERE idempotency_key = 'e2e-atomicity-key';" >/dev/null
+psql_exec "DELETE FROM skills WHERE id = '00000000-0000-0000-0000-000000000901'; DELETE FROM outbox_events WHERE idempotency_key = 'e2e-atomicity-key';"
 
 if docker exec "${POSTGRES_CONTAINER}" psql -v ON_ERROR_STOP=1 -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" \
   -c "BEGIN; INSERT INTO skills (id, name, description, scope, status, lifecycle, tags) VALUES ('00000000-0000-0000-0000-000000000901', 'atomicity-probe', 'verifies rollback when outbox insert fails', 'project', 'draft', 'proposed', '{}'::text[]); INSERT INTO outbox_events (event_id, event_type, correlation_id, idempotency_key, schema_version, payload, status, occurred_at, available_at) VALUES ('00000000-0000-0000-0000-000000000903', 'graph.rebuilt', '00000000-0000-0000-0000-000000000913', 'e2e-atomicity-key', 1, '{\"ok\":true}'::jsonb, 'pending', NOW(), NOW()); INSERT INTO outbox_events (event_id, event_type, correlation_id, idempotency_key, schema_version, payload, status, occurred_at, available_at) VALUES ('00000000-0000-0000-0000-000000000904', 'graph.rebuilt', '00000000-0000-0000-0000-000000000914', 'e2e-atomicity-key', 1, '{\"ok\":true}'::jsonb, 'pending', NOW(), NOW()); COMMIT;" >/dev/null 2>&1; then
@@ -150,11 +153,9 @@ assert_sql_true "outbox rows should roll back when transaction aborts" \
   "SELECT NOT EXISTS (SELECT 1 FROM outbox_events WHERE idempotency_key = 'e2e-atomicity-key');"
 
 echo "==> Running outbox state-machine hard assertions"
-docker exec "${POSTGRES_CONTAINER}" psql -v ON_ERROR_STOP=1 -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" \
-  -c "DELETE FROM outbox_events WHERE idempotency_key = 'e2e-state-machine-key';" >/dev/null
+psql_exec "DELETE FROM outbox_events WHERE idempotency_key = 'e2e-state-machine-key';"
 
-docker exec "${POSTGRES_CONTAINER}" psql -v ON_ERROR_STOP=1 -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" \
-  -c "INSERT INTO outbox_events (event_id, event_type, correlation_id, idempotency_key, schema_version, payload, status, attempts, occurred_at, available_at) VALUES ('00000000-0000-0000-0000-000000000010', 'graph.rebuilt', '00000000-0000-0000-0000-000000000110', 'e2e-state-machine-key', 1, '{\"ok\":true}'::jsonb, 'pending', 0, NOW(), NOW());" >/dev/null
+psql_exec "INSERT INTO outbox_events (event_id, event_type, correlation_id, idempotency_key, schema_version, payload, status, attempts, occurred_at, available_at) VALUES ('00000000-0000-0000-0000-000000000010', 'graph.rebuilt', '00000000-0000-0000-0000-000000000110', 'e2e-state-machine-key', 1, '{\"ok\":true}'::jsonb, 'pending', 0, NOW(), NOW());"
 
 published_without_processing="$(sql_value "WITH updated AS (UPDATE outbox_events SET status = 'published', stream_id = 'stream-1', published_at = NOW(), updated_at = NOW() WHERE event_id = '00000000-0000-0000-0000-000000000010' AND status = 'processing' RETURNING 1) SELECT COUNT(*) FROM updated;")"
 if [[ "${published_without_processing}" != "0" ]]; then
@@ -163,11 +164,9 @@ if [[ "${published_without_processing}" != "0" ]]; then
 fi
 
 for attempt in 1 2 3; do
-  docker exec "${POSTGRES_CONTAINER}" psql -v ON_ERROR_STOP=1 -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" \
-    -c "UPDATE outbox_events SET status = 'processing', updated_at = NOW() WHERE event_id = '00000000-0000-0000-0000-000000000010';" >/dev/null
+  psql_exec "UPDATE outbox_events SET status = 'processing', updated_at = NOW() WHERE event_id = '00000000-0000-0000-0000-000000000010';"
 
-  docker exec "${POSTGRES_CONTAINER}" psql -v ON_ERROR_STOP=1 -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" \
-    -c "UPDATE outbox_events SET status = CASE WHEN attempts + 1 >= 3 THEN 'failed' ELSE 'pending' END, attempts = attempts + 1, last_error = 'e2e failure', available_at = CASE WHEN attempts + 1 >= 3 THEN available_at ELSE NOW() + INTERVAL '10 seconds' END, updated_at = NOW() WHERE event_id = '00000000-0000-0000-0000-000000000010' AND status = 'processing';" >/dev/null
+  psql_exec "UPDATE outbox_events SET status = CASE WHEN attempts + 1 >= 3 THEN 'failed' ELSE 'pending' END, attempts = attempts + 1, last_error = 'e2e failure', available_at = CASE WHEN attempts + 1 >= 3 THEN available_at ELSE NOW() + INTERVAL '10 seconds' END, updated_at = NOW() WHERE event_id = '00000000-0000-0000-0000-000000000010' AND status = 'processing';"
 
   current_state="$(sql_value "SELECT status || ':' || attempts::text FROM outbox_events WHERE event_id = '00000000-0000-0000-0000-000000000010';")"
   if [[ "${attempt}" -lt 3 && "${current_state}" != "pending:${attempt}" ]]; then
@@ -180,11 +179,9 @@ for attempt in 1 2 3; do
   fi
 done
 
-docker exec "${POSTGRES_CONTAINER}" psql -v ON_ERROR_STOP=1 -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" \
-  -c "DELETE FROM rebuild_locks WHERE lock_name = 'e2e-lock';" >/dev/null
+psql_exec "DELETE FROM rebuild_locks WHERE lock_name = 'e2e-lock';"
 
-docker exec "${POSTGRES_CONTAINER}" psql -v ON_ERROR_STOP=1 -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" \
-  -c "INSERT INTO rebuild_locks (lock_name, owner_id, acquired_at, expires_at) VALUES ('e2e-lock', '00000000-0000-0000-0000-000000000333', NOW(), NOW() + INTERVAL '5 minutes');" >/dev/null
+psql_exec "INSERT INTO rebuild_locks (lock_name, owner_id, acquired_at, expires_at) VALUES ('e2e-lock', '00000000-0000-0000-0000-000000000333', NOW(), NOW() + INTERVAL '5 minutes');"
 
 if docker exec "${POSTGRES_CONTAINER}" psql -v ON_ERROR_STOP=1 -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" \
   -c "INSERT INTO rebuild_locks (lock_name, owner_id, acquired_at, expires_at) VALUES ('e2e-lock', '00000000-0000-0000-0000-000000000444', NOW(), NOW() + INTERVAL '5 minutes');" >/dev/null 2>&1; then

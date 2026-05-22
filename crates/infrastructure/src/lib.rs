@@ -4,6 +4,7 @@ pub mod embeddings {
 
 pub mod extraction {
     pub mod claude;
+    pub(crate) mod http;
     pub(crate) mod limits;
     pub mod ollama;
 }

@@ -1,5 +1,5 @@
 ---
-status: pending
+status: complete
 priority: p3
 issue_id: "010"
 tags: [code-review, simplicity, maintainability, quality-improvement]
@@ -38,12 +38,12 @@ Several low-severity readability and maintainability issues were flagged that ar
 
 ## Recommended Action
 
-To be filled during triage.
+Implemented Option 1 as a bounded cleanup pass: corrected misleading index naming, extracted shared extraction helpers, and factored repeated SQL command blocks in the infrastructure test script.
 
 ## Acceptance Criteria
 
-- [ ] Naming and helper structure no longer mislead readers.
-- [ ] No behavior change introduced by cleanup-only edits.
+- [x] Naming and helper structure no longer mislead readers.
+- [x] No behavior change introduced by cleanup-only edits.
 
 ## Work Log
 
@@ -57,3 +57,14 @@ To be filled during triage.
 **Learnings:**
 - These are quality improvements, not blockers, and should remain capped as P3 scope.
 
+### 2026-05-22 - Execution
+
+**By:** Copilot CLI
+
+**Actions:**
+- Renamed misleading schema index name in `crates/infrastructure/migrations/001_initial_schema.sql` (`idx_skills_name_trgm` -> `idx_skills_name`).
+- Added shared extraction helpers in `crates/infrastructure/src/extraction/http.rs` and expanded `limits.rs`, then reused them from both provider adapters.
+- Factored repeated PostgreSQL execution blocks in `scripts/run-t02-infrastructure-tests.sh` into a shared `psql_exec` helper.
+
+**Learnings:**
+- Centralizing identical request/validation paths keeps provider adapters aligned without changing runtime behavior.

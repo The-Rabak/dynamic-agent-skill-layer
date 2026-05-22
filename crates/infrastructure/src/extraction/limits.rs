@@ -1,11 +1,38 @@
 use domain::{ExtractionError, SessionTranscript};
 
+pub(crate) fn validate_extraction_config(
+    timeout_ms: u64,
+    max_entries: usize,
+    max_entry_chars: usize,
+    max_total_chars: usize,
+) -> Result<(), ExtractionError> {
+    if timeout_ms == 0 {
+        return Err(ExtractionError::InvalidTranscript(
+            "extraction timeout must be greater than zero".to_owned(),
+        ));
+    }
+
+    if max_entries == 0 || max_entry_chars == 0 || max_total_chars == 0 {
+        return Err(ExtractionError::InvalidTranscript(
+            "transcript limits must be greater than zero".to_owned(),
+        ));
+    }
+
+    Ok(())
+}
+
 pub(crate) fn validate_transcript_limits(
     transcript: &SessionTranscript,
     max_entries: usize,
     max_entry_chars: usize,
     max_total_chars: usize,
 ) -> Result<(), ExtractionError> {
+    if transcript.entries.is_empty() {
+        return Err(ExtractionError::InvalidTranscript(
+            "transcript must include at least one entry".to_owned(),
+        ));
+    }
+
     if transcript.entries.len() > max_entries {
         return Err(ExtractionError::InvalidTranscript(format!(
             "transcript entry count {} exceeds maximum {}",

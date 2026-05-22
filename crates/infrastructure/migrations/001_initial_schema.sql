@@ -119,7 +119,7 @@ ON CONFLICT (singleton) DO NOTHING;
 
 CREATE INDEX IF NOT EXISTS idx_skills_scope_status
     ON skills (scope, status, lifecycle);
-CREATE INDEX IF NOT EXISTS idx_skills_name_trgm
+CREATE INDEX IF NOT EXISTS idx_skills_name
     ON skills (name);
 CREATE INDEX IF NOT EXISTS idx_subunits_kind
     ON subunits (kind);
