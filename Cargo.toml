@@ -1,3 +1,9 @@
 [workspace]
-members = ["crates/domain", "crates/infrastructure"]
+members = [
+    "crates/domain",
+    "crates/infrastructure",
+    "crates/retrieval",
+    "crates/compiler",
+    "crates/mcp-server",
+]
 resolver = "2"
