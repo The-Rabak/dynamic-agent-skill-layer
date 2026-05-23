@@ -1,0 +1,28 @@
+{
+  "mcpServers": {
+    "skill-layer": {
+      "type": "http",
+      "url": "http://localhost:3001/mcp"
+    }
+  },
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "type": "mcp_tool",
+        "server": "skill-layer",
+        "tool_name": "compile_context",
+        "arguments": {
+          "prompt": "{{prompt}}",
+          "session_id": "{{session_id}}",
+          "repo_path": "{{repo_path}}"
+        },
+        "result_policy": {
+          "inject_additional_context_on": ["ok"],
+          "suppress_duplicate_on_healthy": ["ok", "no_match"],
+          "retry_on": ["degraded"],
+          "ignore_on": ["duplicate_suppressed"]
+        }
+      }
+    ]
+  }
+}

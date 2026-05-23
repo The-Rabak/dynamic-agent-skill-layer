@@ -8,8 +8,11 @@ pub mod tools {
 use std::sync::Arc;
 
 use compiler::TemplateOnlyCompiler;
-use domain::EmbeddingService;
-use retrieval::{RetrievalConfig, RetrievalOrchestrator, SeededGraph, SkillRetriever};
+use domain::{EmbeddingService, ScopeResolver};
+use infrastructure::{EnvPathGlobalResolver, GitRootProjectResolver};
+use retrieval::{
+    DualScopeResolver, RetrievalConfig, RetrievalOrchestrator, SeededGraph, SkillRetriever,
+};
 use tools::{
     compile_context::{CompileContextRequest, CompileContextResponse, CompileContextTool},
     find_skill::{FindSkillRequest, FindSkillResponse, FindSkillTool},
@@ -57,6 +60,12 @@ pub fn build_seeded_server<E>(
 where
     E: EmbeddingService + Send + Sync + 'static,
 {
-    let retriever = RetrievalOrchestrator::new(embedding_service, graph, config);
+    let start_dir = std::env::current_dir().unwrap_or_else(|_| ".".into());
+    let project_resolver: Arc<dyn ScopeResolver> = Arc::new(GitRootProjectResolver::new(start_dir));
+    let global_resolver: Arc<dyn ScopeResolver> = Arc::new(EnvPathGlobalResolver::default());
+    let scope_resolver = DualScopeResolver::new(project_resolver, global_resolver);
+
+    let retriever =
+        RetrievalOrchestrator::new_dual_scope(embedding_service, graph, config, scope_resolver);
     McpServerApp::new(Arc::new(retriever))
 }

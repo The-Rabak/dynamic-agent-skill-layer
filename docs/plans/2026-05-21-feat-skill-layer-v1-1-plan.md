@@ -950,7 +950,7 @@ For this slice, the graph is seeded manually (test SKILL.md files loaded by migr
 **Rollback path:** Remove hook config from `.claude/settings.json`
 
 ###### What to build
-Extend retrieval from single-scope to dual-scope. Concurrent retrieval: `tokio::join!` for project and global scope searches. Project scope detected from git root (cwd from hook payload). Global scope from `SKILL_GLOBAL_PATHS` env var (comma-separated path array). RRF cross-scope fusion applied after per-scope MMR deduplication. Weighted by scope priority (project scope weight 1.0, global scope weight configurable, default 0.7). Example Claude Code hook configuration documented. The hook example must honor status semantics: inject only on `ok`, suppress only after healthy result, retry later after `degraded`.
+Extend retrieval from single-scope to dual-scope. Concurrent retrieval: `tokio::join!` for project and global scope searches. Project scope detected from git root (cwd from hook payload). Global scope from required `SKILL_GLOBAL_PATHS` env var (comma-separated path array) constrained by required `SKILL_GLOBAL_ALLOWED_ROOTS` absolute allowlist (no implicit fallback). RRF cross-scope fusion applied after per-scope MMR deduplication. Weighted by scope priority (project scope weight 1.0, global scope weight configurable, default 0.7). Example Claude Code hook configuration documented. The hook example must honor status semantics: inject only on `ok`, suppress only after healthy result, retry later after `degraded`.
 
 ###### Scope
 - **Owns:** Dual-scope concurrent retrieval, scope resolution, RRF cross-scope fusion, Claude Code hook configuration docs
@@ -960,7 +960,7 @@ Extend retrieval from single-scope to dual-scope. Concurrent retrieval: `tokio::
 ###### Acceptance criteria
 - [ ] Dual-scope retrieval runs project + global searches concurrently (verified: total time ≤ max(project_latency, global_latency) + overhead)
 - [ ] Project scope detected from git root (cwd from hook payload or env var)
-- [ ] Global scope paths read from `SKILL_GLOBAL_PATHS` env var
+- [ ] Global scope paths read from `SKILL_GLOBAL_PATHS` env var and validated against required `SKILL_GLOBAL_ALLOWED_ROOTS` absolute allowlist
 - [ ] RRF cross-scope fusion correctly merges two ranked lists (point: same skill ranks high in both scopes → boosted)
 - [ ] Scope weighting applied (project skills weighted higher than global)
 - [ ] Claude Code `.claude/settings.json` hook example works end-to-end (manual verification)

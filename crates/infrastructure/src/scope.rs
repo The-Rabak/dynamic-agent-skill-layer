@@ -19,10 +19,13 @@ impl GitRootProjectResolver {
 
 #[async_trait]
 impl ScopeResolver for GitRootProjectResolver {
-    async fn resolve(&self) -> Result<Vec<ScopeDescriptor>, ScopeError> {
+    async fn resolve(&self, repo_path: Option<&str>) -> Result<Vec<ScopeDescriptor>, ScopeError> {
+        let start_dir = repo_path
+            .map(PathBuf::from)
+            .unwrap_or_else(|| self.start_dir.clone());
         let output = Command::new("git")
             .arg("-C")
-            .arg(&self.start_dir)
+            .arg(start_dir)
             .arg("rev-parse")
             .arg("--show-toplevel")
             .output()
@@ -82,7 +85,7 @@ impl Default for EnvPathGlobalResolver {
 
 #[async_trait]
 impl ScopeResolver for EnvPathGlobalResolver {
-    async fn resolve(&self) -> Result<Vec<ScopeDescriptor>, ScopeError> {
+    async fn resolve(&self, _repo_path: Option<&str>) -> Result<Vec<ScopeDescriptor>, ScopeError> {
         let value = env::var(&self.env_var).map_err(|_| {
             ScopeError::InvalidConfiguration(format!("{} is not set", self.env_var))
         })?;
@@ -90,16 +93,9 @@ impl ScopeResolver for EnvPathGlobalResolver {
             ScopeError::InvalidConfiguration(format!("{} is not set", self.allowed_roots_env_var))
         })?;
 
-        let paths: Vec<PathBuf> = value
-            .split(':')
-            .map(str::trim)
-            .filter(|part| !part.is_empty())
-            .map(PathBuf::from)
-            .collect();
-        let roots: Vec<PathBuf> = allowed_roots
-            .split(':')
-            .map(str::trim)
-            .filter(|part| !part.is_empty())
+        let paths: Vec<PathBuf> = split_paths(&value).into_iter().map(PathBuf::from).collect();
+        let roots: Vec<PathBuf> = split_paths(&allowed_roots)
+            .into_iter()
             .map(PathBuf::from)
             .collect();
 
@@ -177,9 +173,44 @@ impl ScopeResolver for EnvPathGlobalResolver {
     }
 }
 
+fn split_paths(value: &str) -> Vec<String> {
+    value
+        .split([':', ','])
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use super::*;
+
+    #[tokio::test]
+    async fn git_root_project_resolver_returns_repository_root() {
+        let start_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src");
+        let expected_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .canonicalize()
+            .expect("repo root should canonicalize");
+        let resolver = GitRootProjectResolver::new(start_dir);
+
+        let scopes = resolver
+            .resolve(None)
+            .await
+            .expect("git root should resolve");
+
+        assert_eq!(scopes.len(), 1);
+        assert_eq!(scopes[0].scope_type, ScopeType::Project);
+        assert_eq!(
+            scopes[0].paths[0]
+                .canonicalize()
+                .expect("project path should canonicalize"),
+            expected_root
+        );
+    }
 
     #[tokio::test]
     async fn env_resolver_requires_configured_paths() {
@@ -195,7 +226,7 @@ mod tests {
         }
 
         let error = resolver
-            .resolve()
+            .resolve(None)
             .await
             .expect_err("unset global paths should fail");
 
@@ -231,7 +262,7 @@ mod tests {
         }
 
         let scopes = resolver
-            .resolve()
+            .resolve(None)
             .await
             .expect("resolver should parse paths");
 
@@ -275,7 +306,7 @@ mod tests {
         }
 
         let error = resolver
-            .resolve()
+            .resolve(None)
             .await
             .expect_err("resolver should reject out-of-bounds path");
 
@@ -287,5 +318,43 @@ mod tests {
             env::remove_var(allowed_roots_var);
         }
         std::fs::remove_dir_all(sandbox).expect("sandbox cleanup should succeed");
+    }
+
+    #[tokio::test]
+    async fn default_env_resolver_reads_skill_global_paths_variable() {
+        let resolver = EnvPathGlobalResolver::default();
+        let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .canonicalize()
+            .expect("repo root should canonicalize");
+        let docs_path = repo_root.join("docs");
+        let scripts_path = repo_root.join("scripts");
+
+        // SAFETY: test-scoped environment mutation.
+        unsafe {
+            env::set_var(
+                "SKILL_GLOBAL_PATHS",
+                format!("{},{}", docs_path.display(), scripts_path.display()),
+            );
+            env::set_var(
+                "SKILL_GLOBAL_ALLOWED_ROOTS",
+                repo_root.display().to_string(),
+            );
+        }
+
+        let scopes = resolver
+            .resolve(None)
+            .await
+            .expect("default resolver should read SKILL_GLOBAL_PATHS");
+
+        assert_eq!(scopes.len(), 1);
+        assert_eq!(scopes[0].scope_type, ScopeType::Global);
+        assert_eq!(scopes[0].paths.len(), 2);
+
+        // SAFETY: test-scoped environment mutation.
+        unsafe {
+            env::remove_var("SKILL_GLOBAL_PATHS");
+            env::remove_var("SKILL_GLOBAL_ALLOWED_ROOTS");
+        }
     }
 }

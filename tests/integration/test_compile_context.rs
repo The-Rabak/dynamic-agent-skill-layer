@@ -1,6 +1,9 @@
-use std::sync::{
-    Arc,
-    atomic::{AtomicUsize, Ordering},
+use std::{
+    path::PathBuf,
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
 };
 
 use async_trait::async_trait;
@@ -18,6 +21,9 @@ use mcp_server::{
 };
 use retrieval::{RetrievalConfig, SeededGraph, SeededSkill};
 use serde_json::json;
+
+#[path = "env_guard.rs"]
+mod env_guard;
 
 #[derive(Clone)]
 struct DeterministicEmbeddingService {
@@ -84,6 +90,12 @@ impl EmbeddingService for DeterministicEmbeddingService {
 }
 
 fn seeded_graph() -> SeededGraph {
+    let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .expect("repo root should canonicalize");
+    let docs_root = repo_root.join("docs");
+
     let rust_skill = Skill {
         id: DomainId::new_unchecked("skill-rust-file"),
         name: "rust-file-reading".to_owned(),
@@ -122,6 +134,8 @@ fn seeded_graph() -> SeededGraph {
         vec![
             SeededSkill {
                 skill: rust_skill.clone(),
+                scope_id: "global".to_owned(),
+                source_paths: vec![docs_root.join("rust-file.md")],
                 embedding: vec![1.0, 1.0, 0.0, 0.0],
                 subunits: vec![Subunit {
                     id: DomainId::new_unchecked("sub-rust-file-read"),
@@ -136,6 +150,8 @@ fn seeded_graph() -> SeededGraph {
             },
             SeededSkill {
                 skill: tokio_skill.clone(),
+                scope_id: "global".to_owned(),
+                source_paths: vec![docs_root.join("tokio-io.md")],
                 embedding: vec![0.9, 0.5, 1.0, 0.0],
                 subunits: vec![Subunit {
                     id: DomainId::new_unchecked("sub-tokio-file-read"),
@@ -150,6 +166,8 @@ fn seeded_graph() -> SeededGraph {
             },
             SeededSkill {
                 skill: python_skill.clone(),
+                scope_id: "global".to_owned(),
+                source_paths: vec![docs_root.join("python-http.md")],
                 embedding: vec![0.0, 0.0, 0.0, 1.0],
                 subunits: vec![Subunit {
                     id: DomainId::new_unchecked("sub-python-http"),
@@ -179,8 +197,18 @@ fn retrieval_config() -> RetrievalConfig {
     }
 }
 
+fn test_repo_path() -> String {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .expect("repo root should resolve")
+        .display()
+        .to_string()
+}
+
 #[tokio::test]
 async fn registers_compile_context_and_find_skill_tools() {
+    let _env_guard = env_guard::configure_scope_env();
     let server = build_seeded_server(
         Arc::new(DeterministicEmbeddingService::healthy()),
         seeded_graph(),
@@ -194,6 +222,7 @@ async fn registers_compile_context_and_find_skill_tools() {
 
 #[tokio::test]
 async fn compile_context_returns_ok_then_duplicate_suppressed_after_healthy_result() {
+    let _env_guard = env_guard::configure_scope_env();
     let server = build_seeded_server(
         Arc::new(DeterministicEmbeddingService::healthy()),
         seeded_graph(),
@@ -203,7 +232,7 @@ async fn compile_context_returns_ok_then_duplicate_suppressed_after_healthy_resu
     let request = CompileContextRequest {
         prompt: "how do i read a file in rust".to_owned(),
         session_id: "session-ok".to_owned(),
-        repo_path: "/repo/path".to_owned(),
+        repo_path: test_repo_path(),
     };
 
     let first = server.compile_context(request.clone()).await;
@@ -227,6 +256,7 @@ async fn compile_context_returns_ok_then_duplicate_suppressed_after_healthy_resu
 
 #[tokio::test]
 async fn compile_context_returns_no_match_for_healthy_empty_and_suppresses_followups() {
+    let _env_guard = env_guard::configure_scope_env();
     let server = build_seeded_server(
         Arc::new(DeterministicEmbeddingService::healthy()),
         seeded_graph(),
@@ -236,7 +266,7 @@ async fn compile_context_returns_no_match_for_healthy_empty_and_suppresses_follo
     let request = CompileContextRequest {
         prompt: "quantum banana".to_owned(),
         session_id: "session-empty".to_owned(),
-        repo_path: "/repo/path".to_owned(),
+        repo_path: test_repo_path(),
     };
 
     let first = server.compile_context(request.clone()).await;
@@ -252,6 +282,7 @@ async fn compile_context_returns_no_match_for_healthy_empty_and_suppresses_follo
 
 #[tokio::test]
 async fn degraded_first_attempt_does_not_set_suppression_state() {
+    let _env_guard = env_guard::configure_scope_env();
     let server = build_seeded_server(
         Arc::new(DeterministicEmbeddingService::fail_first()),
         seeded_graph(),
@@ -261,7 +292,7 @@ async fn degraded_first_attempt_does_not_set_suppression_state() {
     let request = CompileContextRequest {
         prompt: "how do i read a file in rust".to_owned(),
         session_id: "session-degraded".to_owned(),
-        repo_path: "/repo/path".to_owned(),
+        repo_path: test_repo_path(),
     };
 
     let degraded = server.compile_context(request.clone()).await;
@@ -277,6 +308,7 @@ async fn degraded_first_attempt_does_not_set_suppression_state() {
 
 #[tokio::test]
 async fn find_skill_reports_top_matches_from_seeded_graph() {
+    let _env_guard = env_guard::configure_scope_env();
     let server = build_seeded_server(
         Arc::new(DeterministicEmbeddingService::healthy()),
         seeded_graph(),
@@ -296,6 +328,7 @@ async fn find_skill_reports_top_matches_from_seeded_graph() {
 
 #[tokio::test]
 async fn json_rpc_tools_list_and_call_compile_context() {
+    let _env_guard = env_guard::configure_scope_env();
     let server = build_seeded_server(
         Arc::new(DeterministicEmbeddingService::healthy()),
         seeded_graph(),
@@ -337,7 +370,7 @@ async fn json_rpc_tools_list_and_call_compile_context() {
                 "arguments": {
                     "prompt": "how do i read a file in rust",
                     "session_id": "session-rpc",
-                    "repo_path": "/repo/path"
+                    "repo_path": test_repo_path()
                 }
             }),
         })

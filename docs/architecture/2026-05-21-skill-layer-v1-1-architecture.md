@@ -193,7 +193,7 @@ crates/
 
 - **Seam: Scope resolution**
   - **Adapter:** `GitRootProjectResolver` + `EnvPathGlobalResolver` (both in `infrastructure`, implement `ScopeResolver`)
-  - **Contract:** `resolve()` returns path array per scope. Project scope = git root directory. Global scope = paths from `SKILL_GLOBAL_PATHS` env var. V2 adds `RemoteTeamScopeResolver` implementing same trait
+  - **Contract:** `resolve()` returns path array per scope. Project scope = git root directory. Global scope = paths from `SKILL_GLOBAL_PATHS` env var constrained by required `SKILL_GLOBAL_ALLOWED_ROOTS` absolute allowlist (no implicit fallback). V2 adds `RemoteTeamScopeResolver` implementing same trait
 
 - **Seam: Retrieval pipeline**
   - **Adapter:** `DualScopeRetriever` (in `retrieval`) — orchestrates concurrent scope searches, scoring, MMR, RRF
@@ -231,7 +231,7 @@ crates/
 
 ## Context Tiers
 
-- **Global context:** Constitution v1.0.0 (5 principles, 8 approval boundaries). `domain` types and traits (stable vocabulary). Config defaults (`SKILL_GLOBAL_PATHS`, `RUST_LOG`, provider settings). PG schema contracts. Redis event envelope schema. Docker Compose topology. Crate dependency direction rules (domain ← infrastructure ← service crates)
+- **Global context:** Constitution v1.0.0 (5 principles, 8 approval boundaries). `domain` types and traits (stable vocabulary). Config defaults (`SKILL_GLOBAL_PATHS`, `SKILL_GLOBAL_ALLOWED_ROOTS`, `RUST_LOG`, provider settings). PG schema contracts. Redis event envelope schema. Docker Compose topology. Crate dependency direction rules (domain ← infrastructure ← service crates)
 - **On-demand context:** This architecture artifact (deepening candidates, design-it-twice, drift checks). Vertical-slice architecture contract. SkillRAE paper (arXiv:2605.10114) for scoring formula details. PG schema ERD. Qdrant collection config. Latency budget table. Event catalog with payload schemas
 - **Ticket-local context:** Exact feature home (which crate). Files list from execution slice. Scope fence and non-goals. Acceptance criteria. Evidence command (`cargo test --workspace` or `docker compose -f docker-compose.test.yml`). Problem narrative + user story linkage. Any slice-specific architectural decisions
 
