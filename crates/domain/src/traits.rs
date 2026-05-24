@@ -21,7 +21,7 @@ pub trait TranscriptSkillExtractionService: Send + Sync {
 
 #[async_trait]
 pub trait ScopeResolver: Send + Sync {
-    async fn resolve(&self) -> Result<Vec<ScopeDescriptor>, ScopeError>;
+    async fn resolve(&self, repo_path: Option<&str>) -> Result<Vec<ScopeDescriptor>, ScopeError>;
 }
 
 pub trait ContextCompiler: Send + Sync {

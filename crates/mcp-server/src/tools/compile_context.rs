@@ -83,9 +83,12 @@ impl CompileContextTool {
             };
         }
 
-        let outcome = self.retriever.retrieve(&request.prompt).await;
+        let outcome = self
+            .retriever
+            .retrieve(&request.prompt, Some(request.repo_path.as_str()))
+            .await;
 
-        if outcome.is_degraded() {
+        if outcome.skills.is_empty() && outcome.is_degraded() {
             return CompileContextResponse {
                 status: CompileContextStatus::Degraded,
                 reason_code: outcome
@@ -153,6 +156,23 @@ impl CompileContextTool {
         let markdown =
             self.compiler
                 .compile_with_rescue(&request.prompt, &compiled_skills, &rescue_pool);
+
+        if outcome.is_degraded() {
+            return CompileContextResponse {
+                status: CompileContextStatus::Degraded,
+                reason_code: outcome
+                    .reason_codes
+                    .first()
+                    .cloned()
+                    .or_else(|| Some("retrieval_degraded".to_owned())),
+                additional_context: Some(markdown),
+                health: outcome.health,
+                scopes_considered: outcome.scopes_considered,
+                graph_version: outcome.graph_version,
+                latency_ms: outcome.latency_ms,
+            };
+        }
+
         self.state.mark_healthy(
             &request.session_id,
             &request.repo_path,

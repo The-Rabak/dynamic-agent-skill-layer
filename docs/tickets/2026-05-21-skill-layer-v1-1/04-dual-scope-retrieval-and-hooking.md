@@ -2,7 +2,7 @@
 ticket_id: T04
 title: Dual-scope retrieval and Claude hook example
 kind: expansion
-status: ready
+status: completed
 plan_ref: docs/plans/2026-05-21-feat-skill-layer-v1-1-plan.md
 tickets_ref: docs/tickets/2026-05-21-skill-layer-v1-1/index.md
 architecture_ref: docs/architecture/2026-05-21-skill-layer-v1-1-architecture.md
@@ -46,7 +46,7 @@ Extend retrieval into a dual-scope pipeline and document the hook configuration 
 ## Acceptance Criteria
 
 - Project and global scope searches run concurrently and finish within the expected parallel latency envelope.
-- Scope resolution uses git-root project detection plus `SKILL_GLOBAL_PATHS`.
+- Scope resolution uses git-root project detection plus required `SKILL_GLOBAL_PATHS` and `SKILL_GLOBAL_ALLOWED_ROOTS` (absolute root allowlist; no implicit fallback).
 - RRF happens after per-scope MMR and honors scope weighting.
 - Hook documentation shows inject-on-`ok` and suppress-on-healthy-only behavior.
 - Session isolation works across different `{session_id, repo_path}` pairs.

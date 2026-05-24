@@ -1,24 +1,28 @@
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{BTreeMap, HashSet},
+    path::PathBuf,
     sync::Arc,
     time::Instant,
 };
 
 use async_trait::async_trait;
 use domain::{
-    EmbeddingError, EmbeddingService, ScopeType, ScoredSkill, Skill, Subunit, SubunitType,
+    EmbeddingError, EmbeddingService, ScopeDescriptor, ScopeType, ScoredSkill, Skill, Subunit,
+    SubunitType,
 };
 
 use crate::{
-    fusion::{FusedCandidate, mmr_select},
-    graph_search::{GraphHit, search_graph},
-    qdrant_search::search_qdrant,
-    scoring::{ScoreComponents, ScoringWeights, score_eq3},
+    dual_scope::search_scopes_concurrently,
+    fusion::{ScopeRanking, weighted_reciprocal_rank_fusion},
+    scope_resolution::DualScopeResolver,
+    scoring::ScoringWeights,
 };
 
 #[derive(Debug, Clone)]
 pub struct SeededSkill {
     pub skill: Skill,
+    pub scope_id: String,
+    pub source_paths: Vec<PathBuf>,
     pub embedding: Vec<f32>,
     pub subunits: Vec<Subunit>,
     pub prior: f32,
@@ -91,6 +95,10 @@ pub struct RetrievalConfig {
     pub relevance_threshold: f32,
     pub mmr_lambda: f32,
     pub scoring_weights: ScoringWeights,
+    pub project_scope_weight: f32,
+    pub global_scope_weight: f32,
+    pub rrf_k: f32,
+    pub scope_timeout_ms: u64,
 }
 
 impl Default for RetrievalConfig {
@@ -105,13 +113,17 @@ impl Default for RetrievalConfig {
             relevance_threshold: 0.20,
             mmr_lambda: 0.65,
             scoring_weights: ScoringWeights::default(),
+            project_scope_weight: 1.0,
+            global_scope_weight: 0.7,
+            rrf_k: 60.0,
+            scope_timeout_ms: 400,
         }
     }
 }
 
 #[async_trait]
 pub trait SkillRetriever: Send + Sync {
-    async fn retrieve(&self, prompt: &str) -> RetrievalOutcome;
+    async fn retrieve(&self, prompt: &str, repo_path: Option<&str>) -> RetrievalOutcome;
     fn current_graph_version(&self) -> i64;
     fn configured_scopes(&self) -> Vec<String>;
 }
@@ -123,6 +135,7 @@ where
     embedding_service: Arc<E>,
     graph: Arc<SeededGraph>,
     config: RetrievalConfig,
+    scope_resolver: Option<DualScopeResolver>,
 }
 
 impl<E> RetrievalOrchestrator<E>
@@ -134,6 +147,21 @@ where
             embedding_service,
             graph: Arc::new(graph),
             config,
+            scope_resolver: None,
+        }
+    }
+
+    pub fn new_dual_scope(
+        embedding_service: Arc<E>,
+        graph: SeededGraph,
+        config: RetrievalConfig,
+        scope_resolver: DualScopeResolver,
+    ) -> Self {
+        Self {
+            embedding_service,
+            graph: Arc::new(graph),
+            config,
+            scope_resolver: Some(scope_resolver),
         }
     }
 
@@ -166,6 +194,77 @@ where
             EmbeddingError::Unexpected(_) => "embedding_unexpected".to_owned(),
         }
     }
+
+    async fn resolve_scopes(
+        &self,
+        repo_path: Option<&str>,
+    ) -> (Vec<ScopeDescriptor>, Vec<String>, Vec<String>, Vec<String>) {
+        if let Some(scope_resolver) = &self.scope_resolver {
+            let outcome = scope_resolver.resolve(repo_path).await;
+            (
+                outcome.resolved_scopes(),
+                outcome.scopes_considered(),
+                outcome.degraded_scopes,
+                outcome.reason_codes,
+            )
+        } else {
+            (
+                vec![ScopeDescriptor {
+                    scope_id: self.config.scope_id.clone(),
+                    scope_type: self.config.scope_type,
+                    paths: Vec::new(),
+                    config: BTreeMap::from([("resolver".to_owned(), "static".to_owned())]),
+                }],
+                vec![self.config.scope_id.clone()],
+                Vec::new(),
+                Vec::new(),
+            )
+        }
+    }
+
+    fn scope_weight(&self, scope_type: ScopeType) -> f32 {
+        match scope_type {
+            ScopeType::Project => self.config.project_scope_weight,
+            ScopeType::Global => self.config.global_scope_weight,
+            ScopeType::Team => self.config.global_scope_weight,
+        }
+    }
+
+    fn dedupe(values: &mut Vec<String>) {
+        let mut seen = HashSet::new();
+        values.retain(|value| seen.insert(value.clone()));
+    }
+
+    fn build_degraded_outcome(
+        &self,
+        started: Instant,
+        mut degraded_scopes: Vec<String>,
+        mut reason_codes: Vec<String>,
+        scopes_considered: Vec<String>,
+    ) -> RetrievalOutcome {
+        Self::dedupe(&mut degraded_scopes);
+        Self::dedupe(&mut reason_codes);
+
+        if degraded_scopes.is_empty() {
+            degraded_scopes = scopes_considered.clone();
+        }
+
+        let reason = reason_codes
+            .first()
+            .cloned()
+            .unwrap_or_else(|| "retrieval_degraded".to_owned());
+
+        RetrievalOutcome {
+            skills: Vec::new(),
+            rescue_pool: Vec::new(),
+            degraded_scopes,
+            reason_codes,
+            health: Self::degraded_marker(&reason),
+            scopes_considered,
+            graph_version: self.graph.graph_version,
+            latency_ms: started.elapsed().as_millis(),
+        }
+    }
 }
 
 #[async_trait]
@@ -173,116 +272,85 @@ impl<E> SkillRetriever for RetrievalOrchestrator<E>
 where
     E: EmbeddingService + Send + Sync + 'static,
 {
-    async fn retrieve(&self, prompt: &str) -> RetrievalOutcome {
+    async fn retrieve(&self, prompt: &str, repo_path: Option<&str>) -> RetrievalOutcome {
         let started = Instant::now();
-        let scope = self.config.scope_id.clone();
+        let (scopes, scopes_considered, mut degraded_scopes, mut reason_codes) =
+            self.resolve_scopes(repo_path).await;
+
+        if scopes.is_empty() {
+            return self.build_degraded_outcome(
+                started,
+                degraded_scopes,
+                reason_codes,
+                scopes_considered,
+            );
+        }
 
         let prompt_embedding = match self.embedding_service.embed_text(prompt).await {
             Ok(embedding) => embedding,
             Err(error) => {
-                let reason = Self::map_embedding_error_to_reason(&error);
-                return RetrievalOutcome {
-                    skills: Vec::new(),
-                    rescue_pool: Vec::new(),
-                    degraded_scopes: vec![scope.clone()],
-                    reason_codes: vec![reason.clone()],
-                    health: Self::degraded_marker(&reason),
-                    scopes_considered: vec![scope],
-                    graph_version: self.graph.graph_version,
-                    latency_ms: started.elapsed().as_millis(),
-                };
+                reason_codes.push(Self::map_embedding_error_to_reason(&error));
+                return self.build_degraded_outcome(
+                    started,
+                    scopes_considered.clone(),
+                    reason_codes,
+                    scopes_considered,
+                );
             }
         };
 
-        let skill_embeddings: Vec<Vec<f32>> = self
-            .graph
-            .skills
-            .iter()
-            .map(|seeded_skill| seeded_skill.embedding.clone())
-            .collect();
-        let qdrant_hits = search_qdrant(
-            &prompt_embedding,
-            &skill_embeddings,
-            self.config.candidate_limit,
-        );
-        let candidate_indices: Vec<usize> = qdrant_hits.iter().map(|hit| hit.skill_index).collect();
-
-        let skill_text: Vec<String> = self
-            .graph
-            .skills
-            .iter()
-            .map(|seeded_skill| {
-                format!(
-                    "{} {} {}",
-                    seeded_skill.skill.name,
-                    seeded_skill.skill.description,
-                    seeded_skill.skill.tags.join(" ")
-                )
-            })
-            .collect();
-
-        let skill_subunits: Vec<Vec<Subunit>> = self
-            .graph
-            .skills
-            .iter()
-            .map(|seeded_skill| seeded_skill.subunits.clone())
-            .collect();
-
-        let graph_hits = search_graph(
+        let (scope_results, scope_failures) = search_scopes_concurrently(
             prompt,
-            &skill_text,
-            &skill_subunits,
-            &candidate_indices,
-            self.config.max_subunits_per_skill,
-        );
+            &prompt_embedding,
+            self.graph.clone(),
+            &self.config,
+            &scopes,
+        )
+        .await;
 
-        let graph_hits_by_skill: HashMap<usize, GraphHit> = graph_hits
+        for failure in scope_failures {
+            degraded_scopes.push(failure.scope_id);
+            reason_codes.push(failure.reason_code);
+        }
+
+        if scope_results.is_empty() {
+            return self.build_degraded_outcome(
+                started,
+                degraded_scopes,
+                reason_codes,
+                scopes_considered,
+            );
+        }
+
+        let scope_rankings: Vec<ScopeRanking> = scope_results
             .into_iter()
-            .map(|hit| (hit.skill_index, hit))
-            .collect();
-
-        let mut fused_candidates: Vec<FusedCandidate> = qdrant_hits
-            .iter()
-            .filter_map(|qdrant_hit| {
-                let seeded_skill = self.graph.skills.get(qdrant_hit.skill_index)?;
-                let graph_hit = graph_hits_by_skill.get(&qdrant_hit.skill_index);
-                let lexical_score = graph_hit.map_or(0.0, |hit| hit.lexical_score);
-                let score = score_eq3(
-                    ScoreComponents {
-                        l1_semantic: qdrant_hit.semantic_score,
-                        l0_lexical: lexical_score,
-                        prior: seeded_skill.prior,
-                        community_boost: seeded_skill.community_boost,
-                    },
-                    self.config.scoring_weights,
-                );
-
-                Some(FusedCandidate {
-                    skill_index: qdrant_hit.skill_index,
-                    score,
-                    semantic_score: qdrant_hit.semantic_score,
-                    lexical_score,
-                    embedding: seeded_skill.embedding.clone(),
-                    highlights: graph_hit
-                        .map(|hit| hit.projections.clone())
-                        .unwrap_or_default(),
-                })
+            .map(|result| ScopeRanking {
+                scope_id: result.scope_id,
+                weight: self.scope_weight(result.scope_type),
+                candidates: result.candidates,
             })
-            .filter(|candidate| candidate.score >= self.config.relevance_threshold)
             .collect();
 
-        fused_candidates.sort_by(|left, right| right.score.total_cmp(&left.score));
-        let selected = mmr_select(
-            &fused_candidates,
-            self.config.max_results,
-            self.config.mmr_lambda,
-        );
-        let selected_indexes: HashSet<usize> = selected
+        let fusion_limit = scope_rankings
             .iter()
-            .map(|candidate| candidate.skill_index)
+            .map(|ranking| ranking.candidates.len())
+            .sum::<usize>()
+            .max(self.config.max_results);
+
+        let ranked_candidates =
+            weighted_reciprocal_rank_fusion(&scope_rankings, self.config.rrf_k, fusion_limit);
+
+        let selected_candidates: Vec<_> = ranked_candidates
+            .iter()
+            .take(self.config.max_results)
+            .cloned()
+            .collect();
+        let selected_ids: HashSet<String> = selected_candidates
+            .iter()
+            .map(|candidate| candidate.skill_id.clone())
             .collect();
 
-        let selected_skills: Vec<RetrievedSkill> = selected
+        let selected_skills: Vec<RetrievedSkill> = selected_candidates
             .into_iter()
             .filter_map(|candidate| {
                 let seeded_skill = self.graph.skills.get(candidate.skill_index)?;
@@ -303,8 +371,9 @@ where
                     scored_skill: ScoredSkill {
                         skill: seeded_skill.skill.clone(),
                         score: candidate.score,
-                        matched_scope: self.config.scope_type,
+                        matched_scope: candidate.matched_scope,
                         rationale: vec![
+                            format!("rrf={:.6}", candidate.score),
                             format!("semantic={:.3}", candidate.semantic_score),
                             format!("lexical={:.3}", candidate.lexical_score),
                         ],
@@ -314,9 +383,9 @@ where
             })
             .collect();
 
-        let rescue_pool: Vec<RescueCue> = fused_candidates
+        let rescue_pool: Vec<RescueCue> = ranked_candidates
             .iter()
-            .filter(|candidate| !selected_indexes.contains(&candidate.skill_index))
+            .filter(|candidate| !selected_ids.contains(&candidate.skill_id))
             .flat_map(|candidate| {
                 let skill_name = self
                     .graph
@@ -338,13 +407,26 @@ where
             })
             .collect();
 
+        Self::dedupe(&mut degraded_scopes);
+        Self::dedupe(&mut reason_codes);
+
+        let health = if degraded_scopes.is_empty() {
+            Self::healthy_markers()
+        } else {
+            let reason = reason_codes
+                .first()
+                .cloned()
+                .unwrap_or_else(|| "retrieval_degraded".to_owned());
+            Self::degraded_marker(&reason)
+        };
+
         RetrievalOutcome {
             skills: selected_skills,
             rescue_pool,
-            degraded_scopes: Vec::new(),
-            reason_codes: Vec::new(),
-            health: Self::healthy_markers(),
-            scopes_considered: vec![self.config.scope_id.clone()],
+            degraded_scopes,
+            reason_codes,
+            health,
+            scopes_considered,
             graph_version: self.graph.graph_version,
             latency_ms: started.elapsed().as_millis(),
         }
@@ -355,6 +437,10 @@ where
     }
 
     fn configured_scopes(&self) -> Vec<String> {
-        vec![self.config.scope_id.clone()]
+        if let Some(scope_resolver) = &self.scope_resolver {
+            scope_resolver.configured_scope_ids()
+        } else {
+            vec![self.config.scope_id.clone()]
+        }
     }
 }

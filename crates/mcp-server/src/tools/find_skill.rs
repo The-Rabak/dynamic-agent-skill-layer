@@ -35,7 +35,7 @@ impl FindSkillTool {
     }
 
     pub async fn invoke(&self, request: FindSkillRequest) -> FindSkillResponse {
-        let outcome = self.retriever.retrieve(&request.prompt).await;
+        let outcome = self.retriever.retrieve(&request.prompt, None).await;
 
         if outcome.is_degraded() {
             return FindSkillResponse {
