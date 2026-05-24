@@ -21,13 +21,31 @@ Required files:
 
 `index.md` must include:
 
+- frontmatter with:
+  - `plan_ref`
+  - `architecture_ref` or an explicit handoff note
+  - `execution_shape`
+  - `ticket_set_status` -- `ready | in_progress | blocked | completed`
+  - `last_completed_batch`
+  - `total_batches`
 - plan path
 - architecture artifact path or explicit handoff note
 - execution shape
 - ticket order
-- dependency view
+- dependency graph
+- execution batches
+- file-overlap safety notes for every multi-ticket batch
 - blocker summary
 - review summary split into `Blocking gaps` and `Recommendations`
+
+Recommended body shape:
+
+1. `# Ticket Set: <topic>`
+2. `## Dependency Graph`
+3. `## Execution Batches`
+4. `## Ticket Table`
+5. `## Blockers`
+6. `## Review Summary`
 
 ## Ticket file naming
 
@@ -103,6 +121,15 @@ Use these ticket statuses:
 
 ## Execution consumption rules
 
+When `/workflows-work` receives `index.md`:
+
+- treat the index as the authoritative ticket queue for this ticket set
+- read `last_completed_batch` to choose the next unfinished batch
+- load only the tickets named in that next batch
+- execute multiple tickets together only when the batch is explicitly declared as parallel-safe and the index records why the file sets do not conflict
+- if the index or ticket files leave overlap safety ambiguous, collapse that batch to sequential execution instead of guessing
+- update batch progress in `index.md`, and increment `last_completed_batch` only after every ticket in the batch reaches `completed`
+
 When `/workflows-work` receives a ticket file:
 
 - treat that ticket as one pre-scoped execution unit
@@ -117,4 +144,6 @@ When `/workflows-review` or `ticket-flow-auditor` consumes ticket artifacts, ver
 - the ticket still matches the parent plan and architecture
 - the implementation stayed inside the ticket scope fence unless the change was explicitly documented
 - dependency order and status changes stayed honest
+- the dependency graph and batch partition still match the ticket files
+- parallel-safe batches really stay file-disjoint and race-safe
 - evidence matches the ticket's stated acceptance criteria and test command

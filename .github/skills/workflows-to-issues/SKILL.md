@@ -84,6 +84,8 @@ Rules:
 - size by coupling and boundary clarity, not by arbitrary task counts
 - keep tracer bullets first when the mode is `vertical-slices`
 - surface uncertainty instead of hiding it when ticketizing directly after `/workflows-plan`
+- build a conservative dependency graph and execution batches while ticketizing
+- default to sequential singleton batches whenever safe parallelism is unclear
 
 Each ticket must include the required ticket-local context defined in `ticketization-contract.md`, and each ticket file must follow the exact frontmatter/body shape in `ticket-execution-contract.md`.
 
@@ -112,6 +114,15 @@ Required files:
 - `index.md`
 - one `NN-<ticket-slug>.md` file per ticket
 
+`index.md` is not just a directory listing. It is the authoritative ticket-set graph and execution cursor. It must include the dependency graph, the conservative batch partition, file-overlap safety notes for every multi-ticket batch, and an updateable `last_completed_batch` counter that `/workflows-work` can use to resume from the next batch.
+
+When partitioning tickets into batches:
+
+- only group tickets together when all dependencies are satisfied by earlier batches
+- only group tickets together when their declared `files` sets do not overlap
+- treat shared mutable state, config churn, migrations, and boundary ambiguity as reasons to split the batch
+- if unsure, split into sequential batches instead of inventing parallelism
+
 Write every ticket using the exact schema from `ticket-execution-contract.md`, including its required frontmatter, section order, status lifecycle, and parent refs.
 
 Then record `tickets_ref` back into the plan frontmatter when possible. If frontmatter cannot be updated safely, add the ticket-set path under `## Related Artifacts`.
@@ -135,6 +146,8 @@ Check for:
 - feature-home drift
 - shared/global drift
 - missing blockers or bad dependency ordering
+- bad dependency graph layering or unsafe batch partitioning
+- tickets grouped in parallel despite overlapping files or shared mutable surfaces
 - oversized tickets
 - tickets with weak WHY tracing
 - missing acceptance criteria or evidence commands
@@ -154,6 +167,8 @@ A complete run must leave behind:
 - a local ticket set under `docs/tickets/`
 - `tickets_ref` or a labeled related-artifact link back into the plan
 - explicit blocker/dependency ordering
+- a dependency graph plus conservative execution batches in `index.md`
+- an updateable `last_completed_batch` progress pointer in `index.md`
 - compact ticket-local context packs
 - a final ticket-set review result from `ticket-flow-auditor`
 
@@ -172,7 +187,7 @@ Execution readiness:
 - Recommendations: <count>
 
 Recommended next step:
-- Run `/workflows-work` on one ticket file once ticket-scoped execution is supported, or use the generated tickets as the scoped execution packet source for the next implementation pass.
+- Run `/workflows-work` on the generated `index.md` so execution can pick the next safe batch automatically, or target one ticket file manually when you need to force a narrower run.
 ```
 
 NEVER CODE! This phase shapes execution artifacts and context packets. It does not implement the feature itself.

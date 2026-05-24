@@ -38,7 +38,7 @@ docs/tickets/YYYY-MM-DD-<topic>/
 
 Required outputs:
 
-- `index.md` -- ticket-set summary, dependency view, and run guidance
+- `index.md` -- ticket-set summary, dependency graph, execution batches, run guidance, and progress pointer
 - `NN-<ticket-slug>.md` -- one file per ticket in execution order
 
 Record the ticket set back into the plan as:
@@ -62,6 +62,30 @@ The first version is **local-artifact first**.
 - A ticket may cross backend, frontend, and tests when that is the thinnest honest slice.
 - Split a packet when one ticket would deliver more than one meaningful outcome, blur ownership, or bury the feature home.
 - Keep the first ticket a tracer bullet when the selected execution shape is `vertical-slices`.
+
+## Dependency graph and execution batches
+
+Ticketization must build a conservative ticket dependency graph and then derive execution batches from it.
+
+- Start from each ticket's explicit `depends_on` edges.
+- Then partition tickets into `Batch 1`, `Batch 2`, and so on, where every ticket in a batch depends only on earlier batches.
+- A batch may contain multiple tickets only when their declared `files` sets do not overlap and there is no unresolved shared mutable state, migration risk, or boundary ambiguity between them.
+- If two tickets might race, overwrite each other, or require the same shared adapter/config surface, keep them in separate sequential batches.
+- **Default-to-sequential rule:** if batch safety is uncertain, emit singleton batches instead of guessing at parallelism.
+
+The index file becomes the authoritative execution queue for ticketized work. `/workflows-work` should be able to read `index.md`, find the next unfinished batch, and execute only that batch without recomputing the whole backlog.
+
+## Required index progress state
+
+`index.md` must record batch progress explicitly so ticketized execution can resume from the index alone.
+
+Required fields:
+
+- `last_completed_batch` -- integer counter; `0` means no batches completed yet
+- `total_batches` -- total number of execution batches in the ticket set
+- batch-level status view showing which batches are pending, in progress, blocked, or completed
+
+`last_completed_batch` advances only after every ticket in that batch is complete. If any ticket in the batch is blocked or still running, do not advance the counter.
 
 ## Required ticket-local context
 
@@ -116,6 +140,9 @@ That review must check:
 - feature-home clarity
 - shared/global boundary honesty
 - blocker and dependency correctness
+- dependency graph correctness
+- execution batch safety and parallelization honesty
+- file-overlap conflicts between tickets claimed to be parallel-safe
 - context completeness
 - ticket size and coupling quality
 
@@ -133,5 +160,7 @@ The ticketization contract is satisfied only when:
 - the priming skill and ticket schema contract are explicit
 - local-artifact-first behavior is explicit
 - `tickets_ref` recording is explicit
+- the dependency graph and conservative batch partition are explicit
+- the index progress pointer is explicit
 - each ticket's required local context is explicit
 - the final ticket-set review step and reviewer are explicit
