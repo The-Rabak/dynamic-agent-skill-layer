@@ -7,6 +7,7 @@ description = "Concrete infrastructure adapters for the dynamic agent skill laye
 
 [dependencies]
 async-trait = "0.1.89"
+blake3 = "1.8.2"
 chrono = { version = "0.4.42", features = ["clock", "serde"] }
 domain = { path = "../domain" }
 redis = { version = "0.32.7", features = ["aio", "tokio-comp"] }

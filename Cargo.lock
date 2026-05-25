@@ -617,6 +617,7 @@ dependencies = [
 name = "graph-builder"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "blake3",
  "chrono",
  "domain",
@@ -626,6 +627,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+ "sqlx",
  "thiserror",
  "tokio",
  "uuid",
@@ -958,6 +960,7 @@ name = "infrastructure"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "blake3",
  "chrono",
  "domain",
  "redis",

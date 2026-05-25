@@ -6,9 +6,22 @@ use graph_builder::{
 };
 use infrastructure::EventEnvelope;
 
+fn synthetic_outbox_drain_enabled() -> bool {
+    matches!(
+        std::env::var("GRAPH_BUILDER_ALLOW_SYNTHETIC_OUTBOX_DRAIN")
+            .ok()
+            .as_deref(),
+        Some("1") | Some("true") | Some("TRUE") | Some("yes") | Some("YES")
+    )
+}
+
 /// Runs one watcher + rebuild cycle for local validation.
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    if !synthetic_outbox_drain_enabled() {
+        return Err("graph-builder runtime durable state has no relay-backed outbox drain wiring yet; refusing to run with synthetic drain disabled (set GRAPH_BUILDER_ALLOW_SYNTHETIC_OUTBOX_DRAIN=1 only for local test/demo runs)".into());
+    }
+
     let repo_root = PathBuf::from(std::env::var("GRAPH_BUILDER_PROJECT_ROOT").unwrap_or_else(
         |_| {
             std::env::current_dir()
@@ -30,7 +43,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut watcher = SkillWatcher::new(scopes)?;
     let mut recovery = WatcherRecovery::default();
-    let mut durable_state = InMemoryDurableGraphState::default();
+    let mut durable_state = InMemoryDurableGraphState::with_synthetic_outbox_drain();
     let mut published_events: Vec<EventEnvelope> = Vec::new();
     let mut orchestrator = GraphRebuildOrchestrator::new(&mut durable_state, &mut published_events);
 

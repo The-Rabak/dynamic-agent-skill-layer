@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
 use serde_json::Value;
-use sqlx::{PgPool, Postgres, Row, Transaction};
+use sqlx::{PgPool, Postgres, Row, Transaction, postgres::PgRow};
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -27,6 +27,7 @@ pub struct OutboxRecord {
 }
 
 pub const MAX_OUTBOX_RETRIES: i32 = 3;
+pub const VECTOR_UPSERT_EVENT_TYPE: &str = "vector.upsert";
 
 #[derive(Debug, Error)]
 pub enum OutboxError {
@@ -46,6 +47,30 @@ pub enum OutboxError {
     Persistence(#[from] sqlx::Error),
 }
 
+#[derive(Debug, Error)]
+pub enum OutboxRelayError {
+    #[error("invalid vector payload contract: {0}")]
+    InvalidPayload(String),
+    #[error("outbox coordinator failure: {0}")]
+    Coordinator(#[from] OutboxError),
+    #[error("vector store failure: {0}")]
+    VectorStore(String),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct VectorUpsertRequest {
+    pub content_hash: String,
+    pub vector: Vec<f32>,
+    pub payload: Value,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OutboxRelayRunReport {
+    pub claimed: usize,
+    pub published: usize,
+    pub failed: usize,
+}
+
 #[async_trait]
 pub trait GraphWriteCoordinator: Send + Sync {
     async fn begin_outbox_transaction(&self)
@@ -57,6 +82,11 @@ pub trait GraphWriteCoordinator: Send + Sync {
         event: &OutboxEvent,
     ) -> Result<(), OutboxError>;
     async fn claim_pending_outbox(&self, limit: i64) -> Result<Vec<OutboxRecord>, OutboxError>;
+    async fn claim_pending_outbox_for_correlation(
+        &self,
+        correlation_id: Uuid,
+        limit: i64,
+    ) -> Result<Vec<OutboxRecord>, OutboxError>;
     async fn mark_outbox_published(
         &self,
         event_id: Uuid,
@@ -68,6 +98,238 @@ pub trait GraphWriteCoordinator: Send + Sync {
         error_message: &str,
         retry_after_seconds: u64,
     ) -> Result<(), OutboxError>;
+}
+
+#[async_trait]
+pub trait OutboxInspection: Send + Sync {
+    async fn has_pending_for_correlation(&self, correlation_id: Uuid) -> Result<bool, OutboxError>;
+    async fn list_published_events_by_type(
+        &self,
+        event_type: &str,
+        limit: i64,
+    ) -> Result<Vec<OutboxRecord>, OutboxError>;
+}
+
+#[async_trait]
+pub trait OutboxVectorStore: Send + Sync {
+    async fn upsert_vector(
+        &self,
+        point_id: u64,
+        vector: &[f32],
+        payload: &Value,
+    ) -> Result<(), String>;
+    async fn has_vector(&self, point_id: u64) -> Result<bool, String>;
+    async fn list_point_ids(&self) -> Result<VectorPointListing, String>;
+    async fn delete_points(&self, point_ids: &[u64]) -> Result<(), String>;
+}
+
+/// Captures the visible point id set and whether the listing is complete.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VectorPointListing {
+    pub point_ids: Vec<u64>,
+    pub is_complete: bool,
+}
+
+/// Converts a content hash into the canonical Qdrant point id used for idempotent replay.
+pub fn qdrant_point_id_from_content_hash(content_hash: &str) -> u64 {
+    let digest = blake3::hash(content_hash.as_bytes());
+    let mut bytes = [0_u8; 8];
+    bytes.copy_from_slice(&digest.as_bytes()[..8]);
+    u64::from_be_bytes(bytes)
+}
+
+/// Parses outbox payload into the minimal vector upsert contract.
+pub fn parse_vector_upsert_request(
+    payload: &Value,
+) -> Result<VectorUpsertRequest, OutboxRelayError> {
+    let content_hash = payload
+        .get("content_hash")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| {
+            OutboxRelayError::InvalidPayload(
+                "payload.content_hash must be a non-empty string".to_owned(),
+            )
+        })?
+        .to_owned();
+
+    let vector_values = payload
+        .get("vector")
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            OutboxRelayError::InvalidPayload(
+                "payload.vector must be a non-empty numeric array".to_owned(),
+            )
+        })?;
+
+    if vector_values.is_empty() {
+        return Err(OutboxRelayError::InvalidPayload(
+            "payload.vector must be a non-empty numeric array".to_owned(),
+        ));
+    }
+
+    let mut vector = Vec::with_capacity(vector_values.len());
+    for item in vector_values {
+        let value = item.as_f64().ok_or_else(|| {
+            OutboxRelayError::InvalidPayload(
+                "payload.vector must contain only numeric values".to_owned(),
+            )
+        })?;
+        vector.push(value as f32);
+    }
+
+    let payload_body = payload.get("payload").cloned().unwrap_or(Value::Null);
+    Ok(VectorUpsertRequest {
+        content_hash,
+        vector,
+        payload: payload_body,
+    })
+}
+
+/// Drives outbox -> Qdrant relay transitions for one polling cycle.
+pub struct OutboxRelay<'a, C, S>
+where
+    C: GraphWriteCoordinator,
+    S: OutboxVectorStore,
+{
+    coordinator: &'a C,
+    vector_store: &'a S,
+    claim_limit: i64,
+    retry_after_seconds: u64,
+}
+
+impl<'a, C, S> OutboxRelay<'a, C, S>
+where
+    C: GraphWriteCoordinator,
+    S: OutboxVectorStore,
+{
+    pub fn new(
+        coordinator: &'a C,
+        vector_store: &'a S,
+        claim_limit: i64,
+        retry_after_seconds: u64,
+    ) -> Result<Self, OutboxRelayError> {
+        if claim_limit <= 0 {
+            return Err(OutboxRelayError::InvalidPayload(
+                "claim_limit must be greater than zero".to_owned(),
+            ));
+        }
+
+        Ok(Self {
+            coordinator,
+            vector_store,
+            claim_limit,
+            retry_after_seconds,
+        })
+    }
+
+    pub async fn relay_once(&self) -> Result<OutboxRelayRunReport, OutboxRelayError> {
+        let claimed_records = self
+            .coordinator
+            .claim_pending_outbox(self.claim_limit)
+            .await?;
+        self.process_claimed_records(claimed_records).await
+    }
+
+    /// Relays one cycle of outbox records for a specific correlation id only.
+    pub async fn relay_once_for_correlation(
+        &self,
+        correlation_id: Uuid,
+    ) -> Result<OutboxRelayRunReport, OutboxRelayError> {
+        let claimed_records = self
+            .coordinator
+            .claim_pending_outbox_for_correlation(correlation_id, self.claim_limit)
+            .await?;
+        self.process_claimed_records(claimed_records).await
+    }
+
+    async fn process_claimed_records(
+        &self,
+        claimed_records: Vec<OutboxRecord>,
+    ) -> Result<OutboxRelayRunReport, OutboxRelayError> {
+        let mut report = OutboxRelayRunReport {
+            claimed: claimed_records.len(),
+            published: 0,
+            failed: 0,
+        };
+
+        for record in claimed_records {
+            if record.event.event_type != VECTOR_UPSERT_EVENT_TYPE {
+                report.failed += 1;
+                self.coordinator
+                    .mark_outbox_failed(
+                        record.event.event_id,
+                        &format!(
+                            "unsupported outbox event type `{}`",
+                            record.event.event_type
+                        ),
+                        self.retry_after_seconds,
+                    )
+                    .await?;
+                continue;
+            }
+
+            let upsert = match parse_vector_upsert_request(&record.event.payload) {
+                Ok(request) => request,
+                Err(error) => {
+                    report.failed += 1;
+                    self.coordinator
+                        .mark_outbox_failed(
+                            record.event.event_id,
+                            &error.to_string(),
+                            self.retry_after_seconds,
+                        )
+                        .await?;
+                    continue;
+                }
+            };
+
+            let point_id = qdrant_point_id_from_content_hash(&upsert.content_hash);
+            let write_result = self
+                .vector_store
+                .upsert_vector(point_id, &upsert.vector, &upsert.payload)
+                .await;
+            match write_result {
+                Ok(()) => {
+                    self.coordinator
+                        .mark_outbox_published(record.event.event_id, &format!("qdrant:{point_id}"))
+                        .await?;
+                    report.published += 1;
+                }
+                Err(error) => {
+                    report.failed += 1;
+                    self.coordinator
+                        .mark_outbox_failed(record.event.event_id, &error, self.retry_after_seconds)
+                        .await?;
+                }
+            }
+        }
+
+        Ok(report)
+    }
+
+    /// Drains outbox entries scoped to one correlation id before rebuild visibility changes.
+    pub async fn drain_correlation_outbox<I: OutboxInspection>(
+        &self,
+        inspection: &I,
+        correlation_id: Uuid,
+        max_polls: u32,
+    ) -> Result<(), OutboxRelayError> {
+        for _ in 0..max_polls {
+            if !inspection
+                .has_pending_for_correlation(correlation_id)
+                .await?
+            {
+                return Ok(());
+            }
+            let _ = self.relay_once_for_correlation(correlation_id).await?;
+        }
+
+        Err(OutboxRelayError::InvalidPayload(format!(
+            "outbox for correlation `{correlation_id}` did not drain after {max_polls} poll cycles"
+        )))
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -117,6 +379,38 @@ fn validate_outbox_event(event: &OutboxEvent) -> Result<i32, OutboxError> {
     i32::try_from(event.schema_version).map_err(|_| {
         OutboxError::InvalidContract("schema_version exceeds i32 storage limit".to_owned())
     })
+}
+
+fn validate_claim_limit(limit: i64) -> Result<(), OutboxError> {
+    if limit <= 0 {
+        return Err(OutboxError::InvalidContract(
+            "claim limit must be greater than zero".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+fn map_outbox_records(rows: Vec<PgRow>) -> Result<Vec<OutboxRecord>, OutboxError> {
+    let mut records = Vec::with_capacity(rows.len());
+    for row in rows {
+        records.push(OutboxRecord {
+            event: OutboxEvent {
+                event_id: row.try_get("event_id")?,
+                event_type: row.try_get("event_type")?,
+                correlation_id: row.try_get("correlation_id")?,
+                idempotency_key: row.try_get("idempotency_key")?,
+                schema_version: row.try_get::<i32, _>("schema_version")? as u32,
+                timestamp: row.try_get("occurred_at")?,
+                payload: row.try_get("payload")?,
+            },
+            attempts: row.try_get("attempts")?,
+            stream_id: row.try_get("stream_id")?,
+            last_error: row.try_get("last_error")?,
+            occurred_at: row.try_get("occurred_at")?,
+            available_at: row.try_get("available_at")?,
+        });
+    }
+    Ok(records)
 }
 
 async fn insert_outbox_event(
@@ -193,11 +487,7 @@ impl GraphWriteCoordinator for PostgresGraphWriteCoordinator {
     }
 
     async fn claim_pending_outbox(&self, limit: i64) -> Result<Vec<OutboxRecord>, OutboxError> {
-        if limit <= 0 {
-            return Err(OutboxError::InvalidContract(
-                "claim limit must be greater than zero".to_owned(),
-            ));
-        }
+        validate_claim_limit(limit)?;
 
         let rows = sqlx::query(
             r#"
@@ -229,27 +519,50 @@ impl GraphWriteCoordinator for PostgresGraphWriteCoordinator {
         .fetch_all(&self.pool)
         .await?;
 
-        let mut records = Vec::with_capacity(rows.len());
-        for row in rows {
-            records.push(OutboxRecord {
-                event: OutboxEvent {
-                    event_id: row.try_get("event_id")?,
-                    event_type: row.try_get("event_type")?,
-                    correlation_id: row.try_get("correlation_id")?,
-                    idempotency_key: row.try_get("idempotency_key")?,
-                    schema_version: row.try_get::<i32, _>("schema_version")? as u32,
-                    timestamp: row.try_get("occurred_at")?,
-                    payload: row.try_get("payload")?,
-                },
-                attempts: row.try_get("attempts")?,
-                stream_id: row.try_get("stream_id")?,
-                last_error: row.try_get("last_error")?,
-                occurred_at: row.try_get("occurred_at")?,
-                available_at: row.try_get("available_at")?,
-            });
-        }
+        map_outbox_records(rows)
+    }
 
-        Ok(records)
+    async fn claim_pending_outbox_for_correlation(
+        &self,
+        correlation_id: Uuid,
+        limit: i64,
+    ) -> Result<Vec<OutboxRecord>, OutboxError> {
+        validate_claim_limit(limit)?;
+
+        let rows = sqlx::query(
+            r#"
+            UPDATE outbox_events
+            SET status = 'processing', updated_at = NOW()
+            WHERE event_id IN (
+                SELECT event_id
+                FROM outbox_events
+                WHERE status = 'pending'
+                  AND available_at <= NOW()
+                  AND correlation_id = $1
+                ORDER BY available_at ASC, occurred_at ASC
+                LIMIT $2
+                FOR UPDATE SKIP LOCKED
+            )
+            RETURNING
+                event_id,
+                event_type,
+                correlation_id,
+                idempotency_key,
+                schema_version,
+                payload,
+                attempts,
+                stream_id,
+                last_error,
+                occurred_at,
+                available_at
+            "#,
+        )
+        .bind(correlation_id)
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await?;
+
+        map_outbox_records(rows)
     }
 
     async fn mark_outbox_published(
@@ -338,12 +651,115 @@ impl GraphWriteCoordinator for PostgresGraphWriteCoordinator {
     }
 }
 
+#[async_trait]
+impl OutboxInspection for PostgresGraphWriteCoordinator {
+    async fn has_pending_for_correlation(&self, correlation_id: Uuid) -> Result<bool, OutboxError> {
+        let (exists,): (bool,) = sqlx::query_as(
+            r#"
+            SELECT EXISTS (
+                SELECT 1
+                FROM outbox_events
+                WHERE correlation_id = $1
+                  AND status IN ('pending', 'processing')
+            )
+            "#,
+        )
+        .bind(correlation_id)
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(exists)
+    }
+
+    async fn list_published_events_by_type(
+        &self,
+        event_type: &str,
+        limit: i64,
+    ) -> Result<Vec<OutboxRecord>, OutboxError> {
+        if event_type.trim().is_empty() {
+            return Err(OutboxError::InvalidContract(
+                "event_type must not be blank".to_owned(),
+            ));
+        }
+        if limit <= 0 {
+            return Err(OutboxError::InvalidContract(
+                "limit must be greater than zero".to_owned(),
+            ));
+        }
+
+        let rows = sqlx::query(
+            r#"
+            SELECT
+                event_id,
+                event_type,
+                correlation_id,
+                idempotency_key,
+                schema_version,
+                payload,
+                attempts,
+                stream_id,
+                last_error,
+                occurred_at,
+                available_at
+            FROM outbox_events
+            WHERE status = 'published'
+              AND event_type = $1
+            ORDER BY occurred_at DESC
+            LIMIT $2
+            "#,
+        )
+        .bind(event_type)
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut records = Vec::with_capacity(rows.len());
+        for row in rows {
+            records.push(OutboxRecord {
+                event: OutboxEvent {
+                    event_id: row.try_get("event_id")?,
+                    event_type: row.try_get("event_type")?,
+                    correlation_id: row.try_get("correlation_id")?,
+                    idempotency_key: row.try_get("idempotency_key")?,
+                    schema_version: row.try_get::<i32, _>("schema_version")? as u32,
+                    timestamp: row.try_get("occurred_at")?,
+                    payload: row.try_get("payload")?,
+                },
+                attempts: row.try_get("attempts")?,
+                stream_id: row.try_get("stream_id")?,
+                last_error: row.try_get("last_error")?,
+                occurred_at: row.try_get("occurred_at")?,
+                available_at: row.try_get("available_at")?,
+            });
+        }
+
+        Ok(records)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn outbox_retry_limit_matches_event_contract() {
         assert_eq!(MAX_OUTBOX_RETRIES, 3);
+    }
+
+    #[test]
+    fn qdrant_point_id_is_deterministic_for_same_content_hash() {
+        let first = qdrant_point_id_from_content_hash("abc123");
+        let second = qdrant_point_id_from_content_hash("abc123");
+        let different = qdrant_point_id_from_content_hash("xyz789");
+
+        assert_eq!(first, second);
+        assert_ne!(first, different);
+    }
+
+    #[test]
+    fn parse_vector_upsert_request_rejects_invalid_contract() {
+        let error = parse_vector_upsert_request(&json!({"vector":[1.0]}))
+            .expect_err("missing content_hash should fail");
+        assert!(error.to_string().contains("content_hash"));
     }
 }
