@@ -1,0 +1,37 @@
+[package]
+name = "graph-builder"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Watcher-driven offline graph rebuild for the dynamic agent skill layer"
+
+[lib]
+name = "graph_builder"
+path = "src/lib.rs"
+
+[[bin]]
+name = "graph-builder"
+path = "src/main.rs"
+
+[[test]]
+name = "test_watcher_rebuild"
+path = "../../tests/integration/test_watcher_rebuild.rs"
+
+[[test]]
+name = "test_watcher_churn_reconciliation"
+path = "../../tests/e2e/test_watcher_churn_reconciliation.rs"
+
+[dependencies]
+blake3 = "1.8.2"
+chrono = { version = "0.4.42", features = ["clock", "serde"] }
+domain = { path = "../domain" }
+infrastructure = { path = "../infrastructure" }
+notify = "8.2.0"
+notify-debouncer-full = "0.6.0"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.145"
+thiserror = "2.0.18"
+tokio = { version = "1.48.0", features = ["macros", "rt-multi-thread"] }
+reqwest = { version = "0.12.24", default-features = false, features = ["json", "rustls-tls"] }
+uuid = { version = "1.18.1", features = ["serde", "v7"] }
+walkdir = "2.5.0"
