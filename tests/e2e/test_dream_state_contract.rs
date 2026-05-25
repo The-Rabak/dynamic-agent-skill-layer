@@ -70,7 +70,10 @@ fn mcp_transport_roundtrip_over_stdio_and_http_is_lossless() {
             "Status/reason code equality",
             "No transport-specific behavior drift",
         ],
-        determinism_strategy: &["Deterministic request corpus", "Canonical JSON normalization"],
+        determinism_strategy: &[
+            "Deterministic request corpus",
+            "Canonical JSON normalization",
+        ],
     });
 }
 
@@ -90,7 +93,10 @@ fn dependency_chaos_matrix_preserves_degraded_semantics_and_fast_recovery() {
             "Reason-coded degraded status for each outage class",
             "Bounded time-to-recovery for healthy path",
         ],
-        determinism_strategy: &["Controlled fault injection schedule", "Fixed traffic replay traces"],
+        determinism_strategy: &[
+            "Controlled fault injection schedule",
+            "Fixed traffic replay traces",
+        ],
     });
 }
 
@@ -111,7 +117,10 @@ fn outbox_backlog_replays_without_data_loss_after_multi_restart_sequence() {
             "Idempotency keys prevent duplicate side effects",
             "Final PG/Qdrant state converges",
         ],
-        determinism_strategy: &["Deterministic crash points", "Reproducible mutation fixture set"],
+        determinism_strategy: &[
+            "Deterministic crash points",
+            "Reproducible mutation fixture set",
+        ],
     });
 }
 
@@ -151,7 +160,10 @@ fn sustained_watcher_and_extraction_saturation_keeps_eventual_consistency() {
             "No silent event loss",
             "Graph state eventually converges to filesystem truth",
         ],
-        determinism_strategy: &["Bounded synthetic workload model", "Periodic stable checkpoints"],
+        determinism_strategy: &[
+            "Bounded synthetic workload model",
+            "Periodic stable checkpoints",
+        ],
     });
 }
 
@@ -213,7 +225,10 @@ fn full_restart_cycle_preserves_session_suppression_and_cache_invalidation_contr
             "Suppression semantics preserved correctly",
             "No duplicate injection after restart",
         ],
-        determinism_strategy: &["Restart choreography script", "Golden pre/post state snapshots"],
+        determinism_strategy: &[
+            "Restart choreography script",
+            "Golden pre/post state snapshots",
+        ],
     });
 }
 
@@ -233,7 +248,10 @@ fn hostile_input_suite_never_breaches_writer_or_transcript_trust_boundaries() {
             "No path traversal reads",
             "Explicit failure reason codes for all rejected inputs",
         ],
-        determinism_strategy: &["Curated adversarial fixture corpus", "Negative-case reason-code matrix"],
+        determinism_strategy: &[
+            "Curated adversarial fixture corpus",
+            "Negative-case reason-code matrix",
+        ],
     });
 }
 
@@ -272,7 +290,10 @@ fn extraction_provider_parity_holds_for_contract_shape_and_quality_floor() {
             "Quality floor thresholds are met for both providers",
             "Provider switch does not break ingestion contracts",
         ],
-        determinism_strategy: &["Pinned model versions", "Fixture corpus with expected quality bands"],
+        determinism_strategy: &[
+            "Pinned model versions",
+            "Fixture corpus with expected quality bands",
+        ],
     });
 }
 

@@ -95,6 +95,13 @@ Focus on the outbox worker and reconciliation surfaces only. Important constrain
 
 Unknowns: none beyond worker polling/backoff tuning within the existing outbox contract.
 
+## Runtime Truth Status (2026-05-26)
+
+- Relay/reconciliation primitives and tests exist.
+- Graph-builder runtime still lacks relay-backed durable rebuild wiring.
+- Runtime now fails closed unless explicitly started in synthetic local-demo mode to avoid false `graph.rebuilt` visibility guarantees.
+- Full runtime wiring remains required before this ticket can return to `completed`.
+
 ## Parent Refs
 
 - Plan: `docs/plans/2026-05-21-feat-skill-layer-v1-1-plan.md`
@@ -112,3 +119,16 @@ Unknowns: none beyond worker polling/backoff tuning within the existing outbox c
 
 - Relay and reconciliation stay together because both belong to the same "PG and Qdrant stay honest" outcome.
 - Splitting replay from repair would leave one half of the consistency contract unowned.
+
+## Work Log Addendum
+
+### 2026-05-26 - Reopened for runtime-truth hardening
+
+**By:** Copilot CLI
+
+**Actions:**
+- Reconciled ticket status with runtime reality: changed `status` from `completed` to `ready`.
+- Added explicit runtime-truth note documenting fail-closed behavior while relay-backed rebuild wiring is still deferred.
+
+**Learnings:**
+- Completion state must reflect production/runtime behavior, not only isolated test harness coverage.

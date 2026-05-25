@@ -1,5 +1,5 @@
 ---
-review_agents: [constitution-guardian, code-simplicity-reviewer, security-sentinel, performance-oracle, architecture-strategist]
+review_agents: [constitution-guardian, code-simplicity-reviewer, security-sentinel, performance-oracle, architecture-strategist, rabak-rust-reviewer]
 plan_review_agents: [constitution-guardian, code-simplicity-reviewer]
 tdd_enabled: true
 tdd:

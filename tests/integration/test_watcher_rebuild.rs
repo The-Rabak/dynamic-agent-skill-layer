@@ -123,7 +123,7 @@ fn watcher_detects_pending_approval_and_rebuild_respects_invalidation_order() {
         "reconciliation should be idempotent for repeated snapshots"
     );
 
-    let mut durable_state = InMemoryDurableGraphState::default();
+    let mut durable_state = InMemoryDurableGraphState::with_synthetic_outbox_drain();
     let mut published_events: Vec<EventEnvelope> = Vec::new();
     let mut orchestrator = GraphRebuildOrchestrator::new(&mut durable_state, &mut published_events);
     let mut all_changes = rename_changes;

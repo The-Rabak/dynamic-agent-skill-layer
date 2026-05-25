@@ -148,7 +148,7 @@ fn watcher_churn_and_reconciliation_preserve_contracts_under_heavy_file_activity
 
     observed_changes.extend(recovered_first);
 
-    let mut durable_state = InMemoryDurableGraphState::default();
+    let mut durable_state = InMemoryDurableGraphState::with_synthetic_outbox_drain();
     let mut published_events: Vec<EventEnvelope> = Vec::new();
     let mut orchestrator = GraphRebuildOrchestrator::new(&mut durable_state, &mut published_events);
     let outcome = orchestrator

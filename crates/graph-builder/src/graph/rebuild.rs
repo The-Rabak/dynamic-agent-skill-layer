@@ -123,11 +123,36 @@ where
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct InMemoryDurableGraphState {
     pub operation_log: Vec<String>,
     pub graph_version: i64,
     pub mutations: Vec<DurableGraphMutation>,
+    allow_synthetic_outbox_drain: bool,
+}
+
+impl Default for InMemoryDurableGraphState {
+    fn default() -> Self {
+        Self {
+            operation_log: Vec::new(),
+            graph_version: 0,
+            mutations: Vec::new(),
+            allow_synthetic_outbox_drain: false,
+        }
+    }
+}
+
+impl InMemoryDurableGraphState {
+    /// Enables an explicit synthetic outbox drain mode for tests and local demos.
+    ///
+    /// This state does not wire real outbox relay/drain behavior. Callers must opt in
+    /// intentionally when they want deterministic non-production rebuild flows.
+    pub fn with_synthetic_outbox_drain() -> Self {
+        Self {
+            allow_synthetic_outbox_drain: true,
+            ..Self::default()
+        }
+    }
 }
 
 impl DurableGraphState for InMemoryDurableGraphState {
@@ -141,6 +166,11 @@ impl DurableGraphState for InMemoryDurableGraphState {
     }
 
     fn mark_outbox_drained(&mut self) -> Result<(), GraphRebuildError> {
+        if !self.allow_synthetic_outbox_drain {
+            return Err(GraphRebuildError::DurableWrite(
+                "outbox drain boundary is not wired for this durable state; use a runtime relay-backed durable state or explicitly opt in with InMemoryDurableGraphState::with_synthetic_outbox_drain() for test-only execution".to_owned(),
+            ));
+        }
         self.operation_log.push("mark_outbox_drained".to_owned());
         Ok(())
     }
@@ -149,5 +179,30 @@ impl DurableGraphState for InMemoryDurableGraphState {
         self.operation_log.push("bump_graph_version".to_owned());
         self.graph_version += 1;
         Ok(self.graph_version)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn in_memory_durable_state_fails_closed_without_explicit_synthetic_drain_opt_in() {
+        let mut state = InMemoryDurableGraphState::default();
+
+        let result = state.mark_outbox_drained();
+
+        assert!(result.is_err());
+        let error_text = result
+            .expect_err("default in-memory state must not fake outbox drain completion")
+            .to_string();
+        assert!(
+            error_text.contains("not wired"),
+            "error should explicitly report missing outbox drain wiring"
+        );
+        assert!(
+            state.operation_log.is_empty(),
+            "failed drain should not log synthetic completion"
+        );
     }
 }

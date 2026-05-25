@@ -18,6 +18,10 @@ name = "test_watcher_rebuild"
 path = "../../tests/integration/test_watcher_rebuild.rs"
 
 [[test]]
+name = "test_outbox_consistency"
+path = "../../tests/integration/test_outbox_consistency.rs"
+
+[[test]]
 name = "test_watcher_churn_reconciliation"
 path = "../../tests/e2e/test_watcher_churn_reconciliation.rs"
 
@@ -35,3 +39,7 @@ tokio = { version = "1.48.0", features = ["macros", "rt-multi-thread"] }
 reqwest = { version = "0.12.24", default-features = false, features = ["json", "rustls-tls"] }
 uuid = { version = "1.18.1", features = ["serde", "v7"] }
 walkdir = "2.5.0"
+
+[dev-dependencies]
+async-trait = "0.1.89"
+sqlx = { version = "0.8.6", default-features = false, features = ["postgres"] }

@@ -96,8 +96,7 @@ fn seeded_graph() -> SeededGraph {
                     skill_id: project_skill.id.clone(),
                     kind: SubunitType::Procedure,
                     title: "Inspect auth middleware chain".to_owned(),
-                    content: "Validate auth middleware ordering and file access guards."
-                        .to_owned(),
+                    content: "Validate auth middleware ordering and file access guards.".to_owned(),
                     lifecycle: LifecycleStatus::Active,
                 }],
                 prior: 0.2,
@@ -200,7 +199,9 @@ impl TranscriptSkillExtractionService for InlineSuccessExtractor {
                 name: "Session Extract Inline Workflow".to_owned(),
                 description: "Validated inline transcript extraction flow.".to_owned(),
                 tags: vec!["extraction".to_owned(), "inline".to_owned()],
-                procedures: vec!["Accept inline transcript JSONL and emit pending draft.".to_owned()],
+                procedures: vec![
+                    "Accept inline transcript JSONL and emit pending draft.".to_owned(),
+                ],
                 conventions: vec!["Publish requested/completed lifecycle events.".to_owned()],
                 assets: vec!["tests/e2e/test_live_data_plane_roundtrip.rs".to_owned()],
                 confidence: 0.95,

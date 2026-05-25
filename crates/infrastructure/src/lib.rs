@@ -13,6 +13,7 @@ pub mod health;
 pub mod logging;
 pub mod persistence {
     pub mod outbox;
+    pub mod outbox_reconciler;
     pub mod postgres;
     pub mod rebuild;
 }
@@ -30,8 +31,12 @@ pub use extraction::claude::{ClaudeExtractionConfig, ClaudeExtractor};
 pub use extraction::ollama::{OllamaExtractionConfig, OllamaExtractor};
 pub use health::{HealthComponent, HealthReport, InfrastructureHealthChecker};
 pub use persistence::outbox::{
-    GraphWriteCoordinator, OutboxEvent, OutboxRecord, PostgresGraphWriteCoordinator,
+    GraphWriteCoordinator, OutboxEvent, OutboxInspection, OutboxRecord, OutboxRelay,
+    OutboxRelayError, OutboxRelayRunReport, OutboxVectorStore, PostgresGraphWriteCoordinator,
+    VECTOR_UPSERT_EVENT_TYPE, VectorPointListing, parse_vector_upsert_request,
+    qdrant_point_id_from_content_hash,
 };
+pub use persistence::outbox_reconciler::{OutboxReconciler, OutboxReconciliationReport};
 pub use persistence::postgres::{PostgresAdapter, PostgresConfig, PostgresError};
 pub use persistence::rebuild::{PostgresRebuildCoordinator, RebuildCoordinator, RebuildError};
 pub use resilience::{CircuitBreaker, CircuitState, RetryPolicy, retry_with_backoff};
