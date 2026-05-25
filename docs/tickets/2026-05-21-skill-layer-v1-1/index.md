@@ -40,6 +40,7 @@
 | 11 | `11-graceful-degrade-and-health-checks.md` | hardening | Resilience and health semantics are explicit across services | T08 |
 | 12 | `12-session-persistence-and-context-cache.md` | hardening | Session suppression and compiled-context caching survive restart and invalidation | T11 |
 | 13 | `13-logging-benchmarks-and-docs.md` | hardening | Structured logs, latency evidence, and operator docs are complete | T11 |
+| 14 | `14-live-data-plane-e2e-and-stress-suite.md` | hardening | Full live data-plane flow is validated under realistic dependency and load conditions | T07, T11, T13 |
 
 ## Dependency View
 
@@ -58,6 +59,7 @@
 | T11 | T08 | Resilience pass comes after the main offline policy loop exists |
 | T12 | T11 | Cache and suppression semantics rely on final degraded/healthy rules |
 | T13 | T11 | Logging and docs should describe the hardened runtime, not a moving target |
+| T14 | T07, T11, T13 | Final hardening gate validates live data-plane correctness, degraded recovery, and bounded stress behavior end to end |
 
 ## Blocker Summary
 

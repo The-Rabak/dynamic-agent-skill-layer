@@ -1,0 +1,2 @@
+{"type":"message","message":{"role":"user","content":"I keep repeating Rust file I/O setup steps in new repos."}}
+{"type":"message","message":{"role":"assistant","content":"Capture a reusable skill covering safe read/write helpers and explicit Result handling."}}

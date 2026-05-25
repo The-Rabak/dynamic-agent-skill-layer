@@ -5,5 +5,7 @@ members = [
     "crates/retrieval",
     "crates/compiler",
     "crates/mcp-server",
+    "crates/graph-builder",
+    "crates/session-extractor",
 ]
 resolver = "2"

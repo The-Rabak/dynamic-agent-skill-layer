@@ -71,6 +71,7 @@ pub(crate) fn configure_scope_env_with_global_path(global_scope: PathBuf) -> Sco
 
 #[test]
 fn scope_env_guard_restores_previous_values() {
+    let _lock = ENV_LOCK.lock().expect("env lock poisoned");
     // SAFETY: test-scoped setup.
     unsafe {
         env::set_var("SKILL_GLOBAL_ALLOWED_ROOTS", "before-roots");
@@ -78,7 +79,17 @@ fn scope_env_guard_restores_previous_values() {
     }
 
     {
-        let _guard = configure_scope_env();
+        let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .canonicalize()
+            .expect("repo root should resolve");
+        let global_scope = repo_root.join("docs");
+        let _allowed_roots = EnvVarGuard::set(
+            "SKILL_GLOBAL_ALLOWED_ROOTS",
+            repo_root.display().to_string(),
+        );
+        let _global_paths =
+            EnvVarGuard::set("SKILL_GLOBAL_PATHS", global_scope.display().to_string());
         assert_ne!(
             env::var("SKILL_GLOBAL_ALLOWED_ROOTS").ok().as_deref(),
             Some("before-roots")

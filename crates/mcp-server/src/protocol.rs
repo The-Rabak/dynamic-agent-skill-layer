@@ -6,7 +6,10 @@ use serde_json::{Value, json};
 
 use crate::{
     McpServerApp,
-    tools::{compile_context::CompileContextRequest, find_skill::FindSkillRequest},
+    tools::{
+        compile_context::CompileContextRequest, extract_session::ExtractSessionRequest,
+        find_skill::FindSkillRequest,
+    },
 };
 
 #[derive(Debug, Clone, Deserialize)]
@@ -92,6 +95,14 @@ impl McpServerApp {
                                 "type": "object",
                                 "required": ["prompt"]
                             }
+                        },
+                        {
+                            "name": "extract_session",
+                            "description": "Queue session transcript extraction into .pending drafts",
+                            "inputSchema": {
+                                "type": "object",
+                                "required": ["transcript_ref", "session_id"]
+                            }
                         }
                     ]
                 }),
@@ -143,6 +154,26 @@ impl McpServerApp {
                 };
 
                 match serde_json::to_value(self.find_skill(request).await) {
+                    Ok(result) => JsonRpcResponse::ok(id, result),
+                    Err(error) => {
+                        JsonRpcResponse::error(id, -32603, format!("internal error: {error}"))
+                    }
+                }
+            }
+            "extract_session" => {
+                let request: ExtractSessionRequest =
+                    match serde_json::from_value(tool_call.arguments) {
+                        Ok(value) => value,
+                        Err(error) => {
+                            return JsonRpcResponse::error(
+                                id,
+                                -32602,
+                                format!("invalid extract_session arguments: {error}"),
+                            );
+                        }
+                    };
+
+                match serde_json::to_value(self.extract_session(request).await) {
                     Ok(result) => JsonRpcResponse::ok(id, result),
                     Err(error) => {
                         JsonRpcResponse::error(id, -32603, format!("internal error: {error}"))

@@ -207,7 +207,7 @@ fn test_repo_path() -> String {
 }
 
 #[tokio::test]
-async fn registers_compile_context_and_find_skill_tools() {
+async fn registers_compile_context_find_skill_and_extract_session_tools() {
     let _env_guard = env_guard::configure_scope_env();
     let server = build_seeded_server(
         Arc::new(DeterministicEmbeddingService::healthy()),
@@ -216,7 +216,11 @@ async fn registers_compile_context_and_find_skill_tools() {
     );
     assert_eq!(
         server.registered_tools(),
-        &["compile_context".to_owned(), "find_skill".to_owned()]
+        &[
+            "compile_context".to_owned(),
+            "extract_session".to_owned(),
+            "find_skill".to_owned()
+        ]
     );
 }
 
@@ -358,6 +362,11 @@ async fn json_rpc_tools_list_and_call_compile_context() {
         tools
             .iter()
             .any(|tool| tool.get("name") == Some(&json!("find_skill")))
+    );
+    assert!(
+        tools
+            .iter()
+            .any(|tool| tool.get("name") == Some(&json!("extract_session")))
     );
 
     let call_response = server
