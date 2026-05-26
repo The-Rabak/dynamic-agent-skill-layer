@@ -88,3 +88,16 @@ Open question to surface during execution if needed: choose the exact canonical-
 
 - Merge, retire, and cron stay together because they are one maintenance-policy feature home with one reason to change.
 - Admin tools were intentionally split out so this ticket can stay focused on offline policy instead of online inspection surfaces.
+
+## Work Log Addendum
+
+### 2026-05-26 - Reopened for dependency-order truth
+
+**By:** Copilot CLI
+
+**Actions:**
+- Reconciled ticket status with hard-dependency ordering by explicitly keeping this ticket at `ready` while T07 remains incomplete.
+- Kept the dependency contract explicit (`depends_on: T05, T07`) with no waiver because out-of-order completion was not approved.
+
+**Learnings:**
+- Hard dependency status must remain truthful across ticket metadata to preserve execution governance confidence.

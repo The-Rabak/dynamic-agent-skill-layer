@@ -498,8 +498,10 @@ mod tests {
 
     #[tokio::test]
     async fn qdrant_adapter_list_point_ids_paginates_until_complete() {
-        let first_page = r#"{"status":"ok","result":{"points":[{"id":1},{"id":"2"}],"next_page_offset":2}}"#;
-        let second_page = r#"{"status":"ok","result":{"points":[{"id":3}],"next_page_offset":null}}"#;
+        let first_page =
+            r#"{"status":"ok","result":{"points":[{"id":1},{"id":"2"}],"next_page_offset":2}}"#;
+        let second_page =
+            r#"{"status":"ok","result":{"points":[{"id":3}],"next_page_offset":null}}"#;
         let (endpoint, server) = spawn_sequence_response_server(vec![
             ("200 OK".to_owned(), first_page.to_owned()),
             ("200 OK".to_owned(), second_page.to_owned()),

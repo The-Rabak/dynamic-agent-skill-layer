@@ -1,0 +1,32 @@
+[package]
+name = "maintenance"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Offline maintenance workflows for merge, retirement, and scheduled passes"
+
+[lib]
+name = "maintenance"
+path = "src/lib.rs"
+
+[[test]]
+name = "test_merge_workflow"
+path = "../../tests/integration/test_merge_workflow.rs"
+
+[[test]]
+name = "test_retire_workflow"
+path = "../../tests/integration/test_retire_workflow.rs"
+
+[dependencies]
+chrono = { version = "0.4.42", features = ["clock", "serde"] }
+domain = { path = "../domain" }
+infrastructure = { path = "../infrastructure" }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_yaml = "0.9.34"
+thiserror = "2.0.18"
+tokio = { version = "1.48.0", features = ["macros", "rt-multi-thread", "time"] }
+tracing = "0.1.41"
+walkdir = "2.5.0"
+
+[dev-dependencies]
+graph-builder = { path = "../graph-builder" }

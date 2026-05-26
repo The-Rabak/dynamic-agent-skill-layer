@@ -1,4 +1,7 @@
-use std::{fs, path::PathBuf};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 use domain::ScopeType;
 use thiserror::Error;
@@ -48,6 +51,9 @@ pub fn build_skills_from_scope_roots(
             if !is_active_skill_file(path) {
                 continue;
             }
+            if has_retired_marker(path) {
+                continue;
+            }
             let content =
                 fs::read_to_string(path).map_err(|error| GraphBuildError::ReadFailure {
                     path: path.display().to_string(),
@@ -83,4 +89,10 @@ pub fn build_skills_from_scope_roots(
     }
     skills.sort_by(|left, right| left.id.cmp(&right.id));
     Ok(skills)
+}
+
+fn has_retired_marker(active_skill_path: &Path) -> bool {
+    active_skill_path
+        .with_file_name("SKILL.md.retired")
+        .exists()
 }

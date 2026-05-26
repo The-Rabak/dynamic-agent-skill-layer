@@ -613,7 +613,10 @@ async fn reconciler_enqueues_repair_with_latest_payload_for_duplicate_point_hist
                 && event.event.idempotency_key.starts_with("reconcile:")
         })
         .expect("repair event should be queued for missing vector");
-    assert_eq!(repair_event.event.payload["payload"]["revision"], json!("latest"));
+    assert_eq!(
+        repair_event.event.payload["payload"]["revision"],
+        json!("latest")
+    );
 }
 
 #[derive(Default)]

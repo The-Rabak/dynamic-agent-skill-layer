@@ -7,5 +7,6 @@ members = [
     "crates/mcp-server",
     "crates/graph-builder",
     "crates/session-extractor",
+    "crates/maintenance",
 ]
 resolver = "2"
