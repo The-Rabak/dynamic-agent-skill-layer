@@ -150,5 +150,6 @@ fn expected_points_by_event(
 
 /// Compares duplicate outbox records for the same point id and chooses the latest replay candidate.
 fn outbox_record_is_newer(candidate: &OutboxRecord, current: &OutboxRecord) -> bool {
-    (candidate.occurred_at, candidate.event.event_id) > (current.occurred_at, current.event.event_id)
+    (candidate.occurred_at, candidate.event.event_id)
+        > (current.occurred_at, current.event.event_id)
 }
