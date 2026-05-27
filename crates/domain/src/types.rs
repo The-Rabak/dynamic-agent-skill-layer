@@ -45,10 +45,11 @@ pub enum ScopeType {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum LifecycleStatus {
-    Proposed,
+    Draft,
     Active,
-    Deprecated,
     Retired,
+    Rejected,
+    Deleted,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

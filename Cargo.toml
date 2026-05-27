@@ -8,5 +8,6 @@ members = [
     "crates/graph-builder",
     "crates/session-extractor",
     "crates/maintenance",
+    "crates/admin",
 ]
 resolver = "2"

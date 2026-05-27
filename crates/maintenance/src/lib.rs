@@ -9,7 +9,10 @@ pub use audit::{
     MaintenanceAuditError, MaintenanceAuditEvent, MaintenanceAuditSink, MergeProposalAuditEvent,
     NoopMaintenanceAuditSink, RetirementProposalAuditEvent,
 };
-pub use cleanup::{CleanupError, PendingWarning, PendingWarningScanner};
+pub use cleanup::{
+    CleanupError, MalformedPendingFileDiagnostic, PendingScanReport, PendingWarning,
+    PendingWarningScanner,
+};
 pub use cron::{
     CronDecision, CronError, MaintenanceCron, MaintenancePassOutcome, MergePassRunner,
     RetirementPassRunner,

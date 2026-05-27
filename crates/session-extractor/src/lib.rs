@@ -405,6 +405,11 @@ impl SessionExtractionError {
                 WriterError::InvalidRepoPath(_) => "invalid_repo_path",
                 WriterError::ScopeResolution(_) => "scope_resolution_failed",
                 WriterError::WriteFailure(_, _) => "pending_draft_write_failed",
+                WriterError::FrontmatterSerialization(_) => {
+                    "pending_frontmatter_serialization_failed"
+                }
+                WriterError::BatchValidation(_) => "pending_draft_batch_validation_failed",
+                WriterError::RejectedTombstonePresent(_) => "rejected_tombstone_present",
             },
             Self::EventPublication(_) => "event_publication_failed",
         }

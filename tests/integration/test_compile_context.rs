@@ -4,8 +4,10 @@ use std::{
         Arc,
         atomic::{AtomicUsize, Ordering},
     },
+    time::{SystemTime, UNIX_EPOCH},
 };
 
+use admin::tools::{RebuildGraphRequest, RebuildGraphStatusRequest};
 use async_trait::async_trait;
 use domain::{
     DomainId, EmbeddingError, EmbeddingService, LifecycleStatus, ScopeType, Skill, SkillStatus,
@@ -13,7 +15,7 @@ use domain::{
 };
 use mcp_server::{
     build_seeded_server,
-    protocol::JsonRpcRequest,
+    protocol::{JsonRpcRequest, registered_tool_descriptors},
     tools::{
         compile_context::{CompileContextRequest, CompileContextStatus},
         find_skill::FindSkillRequest,
@@ -24,6 +26,34 @@ use serde_json::json;
 
 #[path = "env_guard.rs"]
 mod env_guard;
+
+struct DatabaseUrlGuard {
+    previous: Option<std::ffi::OsString>,
+}
+
+impl DatabaseUrlGuard {
+    fn unset() -> Self {
+        let previous = std::env::var_os("DATABASE_URL");
+        // SAFETY: integration tests mutate process env in scoped guard usage only.
+        unsafe {
+            std::env::remove_var("DATABASE_URL");
+        }
+        Self { previous }
+    }
+}
+
+impl Drop for DatabaseUrlGuard {
+    fn drop(&mut self) {
+        // SAFETY: integration tests mutate process env in scoped guard usage only.
+        unsafe {
+            if let Some(previous) = &self.previous {
+                std::env::set_var("DATABASE_URL", previous);
+            } else {
+                std::env::remove_var("DATABASE_URL");
+            }
+        }
+    }
+}
 
 #[derive(Clone)]
 struct DeterministicEmbeddingService {
@@ -206,6 +236,40 @@ fn test_repo_path() -> String {
         .to_string()
 }
 
+fn fresh_sandbox(prefix: &str) -> PathBuf {
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock should be after unix epoch")
+        .as_nanos();
+    let sandbox = std::env::temp_dir().join(format!("{prefix}-{nonce}"));
+    std::fs::create_dir_all(&sandbox).expect("sandbox should be creatable");
+    sandbox
+}
+
+fn write_skill_file(root: &PathBuf, slug: &str, title: &str) {
+    let skill_dir = root.join(slug);
+    std::fs::create_dir_all(&skill_dir).expect("skill dir should be creatable");
+    std::fs::write(
+        skill_dir.join("SKILL.md"),
+        format!(
+            r#"# {title}
+
+## Description
+Reusable capability for {title}.
+
+## Tags
+- rust
+- integration
+
+## Procedure
+1. Validate input.
+2. Return deterministic output.
+"#
+        ),
+    )
+    .expect("skill file should be writable");
+}
+
 #[tokio::test]
 async fn registers_compile_context_find_skill_and_extract_session_tools() {
     let _env_guard = env_guard::configure_scope_env();
@@ -216,12 +280,67 @@ async fn registers_compile_context_find_skill_and_extract_session_tools() {
     );
     assert_eq!(
         server.registered_tools(),
-        &[
-            "compile_context".to_owned(),
-            "extract_session".to_owned(),
-            "find_skill".to_owned()
+        vec![
+            "compile_context",
+            "find_skill",
+            "extract_session",
+            "rebuild_graph",
+            "rebuild_graph_status",
+            "inspect_skill",
+            "list_communities"
         ]
     );
+}
+
+#[tokio::test]
+async fn rebuild_graph_requires_live_graph_database_for_seeded_server() {
+    let _database_url_guard = DatabaseUrlGuard::unset();
+    let sandbox = fresh_sandbox("compile-context-rebuild");
+    let project_root = sandbox.join("project");
+    let global_root = sandbox.join("global");
+    std::fs::create_dir_all(&project_root).expect("project root should exist");
+    std::fs::create_dir_all(&global_root).expect("global root should exist");
+    write_skill_file(&project_root, "project-skill", "Project Skill");
+    write_skill_file(&global_root, "global-skill", "Global Skill");
+    let _env_guard = env_guard::configure_scope_env_with_graph_builder_roots(
+        global_root.clone(),
+        Some(project_root),
+        Some(global_root),
+    );
+    let server = build_seeded_server(
+        Arc::new(DeterministicEmbeddingService::healthy()),
+        seeded_graph(),
+        retrieval_config(),
+    );
+
+    let response = server.rebuild_graph(RebuildGraphRequest::default()).await;
+    assert_eq!(response.status, "accepted");
+    let job_id = response
+        .job_id
+        .clone()
+        .expect("accepted response should include job id");
+
+    let mut reason_code = None;
+    for _attempt in 0..50 {
+        let status = server
+            .rebuild_graph_status(RebuildGraphStatusRequest {
+                job_id: job_id.clone(),
+            })
+            .await;
+        let lifecycle = status
+            .job
+            .as_ref()
+            .map(|job| job.lifecycle_status.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        reason_code = status.job.as_ref().and_then(|job| job.reason_code.clone());
+        if lifecycle == "failed" {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+
+    assert_eq!(reason_code.as_deref(), Some("rebuild_unavailable"));
 }
 
 #[tokio::test]
@@ -353,21 +472,41 @@ async fn json_rpc_tools_list_and_call_compile_context() {
         .and_then(|result| result.get("tools"))
         .and_then(|tools| tools.as_array())
         .expect("tools/list result should include tools array");
-    assert!(
-        tools
+    let listed_tool_names = tools
+        .iter()
+        .map(|tool| {
+            tool.get("name")
+                .and_then(|name| name.as_str())
+                .expect("tool should expose a string name")
+        })
+        .collect::<Vec<&str>>();
+    assert_eq!(listed_tool_names, server.registered_tools());
+    let canonical_required_arguments = registered_tool_descriptors()
+        .into_iter()
+        .map(|tool| (tool.name, tool.required_arguments))
+        .collect::<std::collections::BTreeMap<&str, &[&str]>>();
+    for listed_tool in tools {
+        let tool_name = listed_tool
+            .get("name")
+            .and_then(|name| name.as_str())
+            .expect("listed tool should have a name");
+        let listed_required = listed_tool
+            .pointer("/inputSchema/required")
+            .and_then(|required| required.as_array())
+            .expect("listed tool should expose required arguments")
             .iter()
-            .any(|tool| tool.get("name") == Some(&json!("compile_context")))
-    );
-    assert!(
-        tools
-            .iter()
-            .any(|tool| tool.get("name") == Some(&json!("find_skill")))
-    );
-    assert!(
-        tools
-            .iter()
-            .any(|tool| tool.get("name") == Some(&json!("extract_session")))
-    );
+            .map(|value| {
+                value
+                    .as_str()
+                    .expect("required argument should serialize to string")
+            })
+            .collect::<Vec<&str>>();
+        let canonical_required = canonical_required_arguments
+            .get(tool_name)
+            .expect("listed tool should exist in canonical registry")
+            .to_vec();
+        assert_eq!(listed_required, canonical_required);
+    }
 
     let call_response = server
         .handle_json_rpc(JsonRpcRequest {

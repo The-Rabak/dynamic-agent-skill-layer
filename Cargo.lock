@@ -3,6 +3,20 @@
 version = 4
 
 [[package]]
+name = "admin"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "domain",
+ "graph-builder",
+ "infrastructure",
+ "serde",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "aho-corasick"
 version = "1.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -385,6 +399,7 @@ name = "domain"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "chrono",
  "serde",
  "thiserror",
 ]
@@ -1125,6 +1140,7 @@ dependencies = [
  "infrastructure",
  "serde",
  "serde_yaml",
+ "session-extractor",
  "thiserror",
  "tokio",
  "tracing",
@@ -1150,19 +1166,25 @@ checksum = "47e1ffaa40ddd1f3ed91f717a33c8c0ee23fff369e3aa8772b9605cc1d22f4c3"
 name = "mcp-server"
 version = "0.1.0"
 dependencies = [
+ "admin",
  "async-trait",
  "axum",
+ "blake3",
+ "chrono",
  "compiler",
  "dashmap",
  "domain",
+ "graph-builder",
  "infrastructure",
  "reqwest",
  "retrieval",
  "serde",
  "serde_json",
  "session-extractor",
+ "sqlx",
  "tokio",
  "tracing",
+ "uuid",
 ]
 
 [[package]]
@@ -1862,11 +1884,13 @@ name = "session-extractor"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "chrono",
  "domain",
  "infrastructure",
  "reqwest",
  "serde",
  "serde_json",
+ "serde_yaml",
  "thiserror",
  "tokio",
  "uuid",

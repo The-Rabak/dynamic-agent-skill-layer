@@ -234,7 +234,7 @@ async fn extract_session_returns_processing_and_writes_pending_draft() {
             .any(|event| event.event_type == "extraction.failed")
     );
 
-    let pending_path = project_root.join(".skills/rust-file-io-setup.pending");
+    let pending_path = project_root.join(".skills/rust-file-io-setup/SKILL.md.pending");
     assert!(pending_path.exists(), "pending draft should be written");
     let pending_body = std::fs::read_to_string(&pending_path).expect("pending file should read");
     assert!(pending_body.contains("suggested_tags: [\"rust\", \"io\"]"));

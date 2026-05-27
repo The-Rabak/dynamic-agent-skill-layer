@@ -31,6 +31,7 @@ This repository builds **Dynamic Agent Skill Layer** — a local-first, self-gro
 
 - **In scope:** Skill graph construction (offline), dual-scope semantic retrieval + context compilation (online), session-end skill extraction with human approval, skill deduplication/merge/retirement, MCP protocol integration with agent harnesses, Docker Compose local deployment.
 - **Out of scope:** Agent memory systems, chat/transcript management, agent orchestration, team collaboration UI, cloud hosting, auth/access control, monitoring dashboards. This is infrastructure, not an agent.
+- **Deferred-risk guard (current phase):** Admin MCP tools are unauthenticated in this phase and MUST only be exposed on localhost or private network surfaces. Public internet exposure is not allowed until auth/access control is explicitly added in a later scope.
 
 ## Core Principles
 

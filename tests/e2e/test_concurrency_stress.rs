@@ -8,8 +8,8 @@ use std::{
 use async_trait::async_trait;
 use domain::{
     DomainId, EmbeddingError, EmbeddingService, ExtractedSkillCandidate, ExtractionError,
-    ExtractionResult, LifecycleStatus, ScopeType, SessionTranscript, Skill, SkillStatus, Subunit,
-    SubunitType, TranscriptSkillExtractionService,
+    ExtractionResult, LifecycleStatus, PENDING_SKILL_FILE_NAME, ScopeType, SessionTranscript,
+    Skill, SkillStatus, Subunit, SubunitType, TranscriptSkillExtractionService,
 };
 use infrastructure::EventEnvelope;
 use mcp_server::{
@@ -381,16 +381,40 @@ async fn extract_session_parallel_burst_completes_all_jobs_and_persists_drafts()
     );
 
     let pending_root = global_root.join(".skills");
-    let pending_count = std::fs::read_dir(&pending_root)
-        .expect("pending root should exist")
-        .filter_map(Result::ok)
-        .filter(|entry| {
-            entry
-                .file_name()
-                .to_str()
-                .is_some_and(|name| name.ends_with(".pending"))
-        })
-        .count();
+    let mut pending_count = 0usize;
+    let mut noncanonical_pending_paths = Vec::new();
+    let mut directories_to_scan = vec![pending_root.clone()];
+    while let Some(directory) = directories_to_scan.pop() {
+        for entry in std::fs::read_dir(&directory)
+            .unwrap_or_else(|error| panic!("pending directory should be readable: {error}"))
+        {
+            let entry = entry.expect("pending directory entry should be readable");
+            let entry_path = entry.path();
+            let file_type = entry
+                .file_type()
+                .expect("pending directory entry type should be readable");
+            if file_type.is_dir() {
+                directories_to_scan.push(entry_path);
+                continue;
+            }
+            let Some(file_name) = entry.file_name().to_str().map(str::to_owned) else {
+                continue;
+            };
+            if !file_name.ends_with(".pending") {
+                continue;
+            }
+            if file_name == PENDING_SKILL_FILE_NAME {
+                pending_count += 1;
+            } else {
+                noncanonical_pending_paths.push(entry.path());
+            }
+        }
+    }
+    assert!(
+        noncanonical_pending_paths.is_empty(),
+        "pending drafts must use canonical file name `{PENDING_SKILL_FILE_NAME}`; found {:?}",
+        noncanonical_pending_paths
+    );
     assert_eq!(pending_count, request_count);
 
     std::fs::remove_dir_all(sandbox).expect("sandbox cleanup should succeed");

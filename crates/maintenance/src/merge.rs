@@ -6,7 +6,9 @@ use std::{
 };
 
 use chrono::{DateTime, Utc};
-use domain::ScopeType;
+use domain::{
+    PENDING_SKILL_FILE_NAME, ScopeType, pending_default_expires_at, pending_default_warning_at,
+};
 use serde::Serialize;
 use thiserror::Error;
 
@@ -256,7 +258,12 @@ where
                 })?;
         ensure_path_is_within_scope_root(&canonical_pending_root, &canonical_scope_root)?;
 
-        let pending_path = canonical_pending_root.join(proposal_file_name(left, right));
+        let proposal_root = canonical_pending_root.join(proposal_directory_name(left, right));
+        fs::create_dir_all(&proposal_root).map_err(|error| MergeError::WriteFailure {
+            path: proposal_root.display().to_string(),
+            message: error.to_string(),
+        })?;
+        let pending_path = proposal_root.join(PENDING_SKILL_FILE_NAME);
         let pending_body = render_pending_markdown(left, right, canonical_scope, similarity, now)?;
         let mut pending_file = fs::OpenOptions::new()
             .write(true)
@@ -490,6 +497,8 @@ fn render_pending_markdown(
         ],
         similarity,
         created_at: now.to_rfc3339(),
+        warning_at: pending_default_warning_at(now).to_rfc3339(),
+        expires_at: pending_default_expires_at(now).to_rfc3339(),
     };
     let frontmatter_yaml = serialize_frontmatter(&frontmatter)?;
 
@@ -527,6 +536,8 @@ struct MergeProposalFrontmatter<'a> {
     merged_from: Vec<String>,
     similarity: f32,
     created_at: String,
+    warning_at: String,
+    expires_at: String,
 }
 
 fn serialize_frontmatter(frontmatter: &MergeProposalFrontmatter<'_>) -> Result<String, MergeError> {
@@ -562,12 +573,12 @@ fn sorted_unique_scopes(scopes: &[ScopeType]) -> Vec<ScopeType> {
     ordered
 }
 
-/// Builds a deterministic pending proposal file name that preserves source ID traceability.
-fn proposal_file_name(left: &SkillSnapshot, right: &SkillSnapshot) -> String {
+/// Builds a deterministic proposal directory name that preserves source ID traceability.
+fn proposal_directory_name(left: &SkillSnapshot, right: &SkillSnapshot) -> String {
     let merged_name_slug = slugify(&format!("{}-{}", left.name, right.name));
     let left_id_slug = slugify(&left.id);
     let right_id_slug = slugify(&right.id);
-    format!("{merged_name_slug}--{left_id_slug}--{right_id_slug}.pending")
+    format!("{merged_name_slug}--{left_id_slug}--{right_id_slug}")
 }
 
 fn slugify(value: &str) -> String {

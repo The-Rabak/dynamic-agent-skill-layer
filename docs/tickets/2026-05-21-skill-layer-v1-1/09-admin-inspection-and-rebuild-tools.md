@@ -2,7 +2,7 @@
 ticket_id: T09
 title: Admin inspection and rebuild tools
 kind: expansion
-status: ready
+status: in_progress
 plan_ref: docs/plans/2026-05-21-feat-skill-layer-v1-1-plan.md
 tickets_ref: docs/tickets/2026-05-21-skill-layer-v1-1/index.md
 architecture_ref: docs/architecture/2026-05-21-skill-layer-v1-1-architecture.md
@@ -18,6 +18,10 @@ files:
   - crates/admin/Cargo.toml
   - crates/admin/src/lib.rs
   - crates/admin/src/tools.rs
+  - crates/mcp-server/Cargo.toml
+  - crates/mcp-server/src/lib.rs
+  - crates/mcp-server/src/protocol.rs
+  - tests/integration/test_admin_tools.rs
 test_command: cargo test --workspace && docker compose -f docker-compose.test.yml up --abort-on-container-exit
 tdd_mode: inherit
 ---
@@ -38,6 +42,13 @@ Create the `admin` feature home for online debug tools: `rebuild_graph`, `inspec
 - Do not move merge/retire policy or graph construction into the admin crate.
 - Keep tools read-only or trigger-only; no approval or mutation authority beyond rebuild initiation.
 - Do not duplicate existing extraction approval workflows in admin tooling.
+- Do not implement authn/authz in this phase; access-control work is explicitly deferred.
+
+## Deferred Access-Control Decision
+
+- Auth/access control for admin tools is deferred by scope decision for this phase.
+- Admin tools are currently unauthenticated and therefore MUST be deployed only on localhost or private network surfaces.
+- Public exposure is out of bounds until a dedicated auth/access-control unit lands.
 
 ## Acceptance Criteria
 

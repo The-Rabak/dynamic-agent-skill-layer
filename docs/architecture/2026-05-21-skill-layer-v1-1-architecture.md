@@ -277,5 +277,6 @@ crates/
 ## Resolved Operational Choices
 
 - **`admin` stays a separate crate but is composed into the online binary via router composition.** Split ownership, single deployment surface.
+- **Admin access control is deferred for V1.1.** Admin MCP tools are unauthenticated for V1.1 and rely on localhost/private deployment boundaries until a later auth scope adds access control.
 - **`session-extractor` stays a separate crate but its MCP router is also composed into the online binary for V1.1.** If extraction load becomes disruptive later, it can graduate to its own process without changing the tool contract.
 - **Transcript ingress uses `transcript_ref` under a mounted transcript root.** This closes the Docker trust boundary without inventing a new host-path exception.
