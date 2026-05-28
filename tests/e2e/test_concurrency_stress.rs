@@ -258,6 +258,7 @@ async fn compile_context_parallel_burst_stays_within_contract_statuses() {
         Arc::new(BurstEmbeddingService),
         seeded_graph(),
         retrieval_config(),
+        None,
     );
     let repo_path = test_repo_path();
 

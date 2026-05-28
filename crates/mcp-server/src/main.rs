@@ -1,8 +1,5 @@
-use std::sync::Arc;
-
-use domain::EmbeddingService;
 use infrastructure::{
-    OllamaEmbeddingConfig, OllamaEmbeddingService,
+    DependencyFactory,
     logging::{ServiceLoggingConfig, init_service_logging},
 };
 use mcp_server::{build_seeded_server, protocol::serve_http};
@@ -21,9 +18,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "info",
     ))?;
 
-    let embedding_service = build_default_embedding_service()?;
+    let embedding_service = DependencyFactory::build_embedding_service_from_environment()?;
     let graph = SeededGraph::new(Vec::new(), 0);
-    let app = build_seeded_server(embedding_service, graph, RetrievalConfig::default());
+    let redis_client = DependencyFactory::build_redis_client_from_environment();
+    let app = build_seeded_server(embedding_service, graph, RetrievalConfig::default(), redis_client);
+    let health_checker = DependencyFactory::build_health_checker_from_environment();
     let address = std::env::var("MCP_SERVER_ADDR")
         .unwrap_or_else(|_| "127.0.0.1:3001".to_owned())
         .parse()?;
@@ -34,15 +33,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         registered_tools = ?app.registered_tools(),
         "mcp server listening"
     );
-    serve_http(app, address).await?;
+    serve_http(app, health_checker, address).await?;
     Ok(())
-}
-
-fn build_default_embedding_service()
--> Result<Arc<impl EmbeddingService>, Box<dyn std::error::Error>> {
-    let service =
-        OllamaEmbeddingService::new(reqwest::Client::new(), OllamaEmbeddingConfig::default())
-            .map_err(|error| std::io::Error::other(error.to_string()))?;
-
-    Ok(Arc::new(service))
 }

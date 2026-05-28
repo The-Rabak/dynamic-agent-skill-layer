@@ -257,6 +257,7 @@ async fn roundtrip_compile_context_returns_context_then_duplicate_suppression() 
         Arc::new(DeterministicEmbeddingService),
         seeded_graph(),
         retrieval_config(),
+        None,
     );
 
     let request = CompileContextRequest {
@@ -287,6 +288,7 @@ async fn invalid_repo_path_degrades_but_preserves_global_context_contract() {
         Arc::new(DeterministicEmbeddingService),
         seeded_graph(),
         retrieval_config(),
+        None,
     );
     let sandbox = fresh_sandbox("live-roundtrip-nonrepo");
 

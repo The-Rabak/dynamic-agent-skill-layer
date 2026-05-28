@@ -50,6 +50,12 @@ pub enum CircuitState {
     HalfOpen,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ResilienceError<E> {
+    CircuitOpen,
+    Operation(E),
+}
+
 #[derive(Debug)]
 struct CircuitStateData {
     state: CircuitState,
@@ -121,6 +127,36 @@ impl CircuitBreaker {
     }
 }
 
+/// Executes an operation behind a circuit-breaker gate and bounded retry policy.
+///
+/// Returns `ResilienceError::CircuitOpen` when the breaker is currently open.
+/// Otherwise, the operation is retried according to `policy`; repeated failures
+/// are recorded on the breaker and returned as `ResilienceError::Operation`.
+pub async fn execute_with_resilience<T, E, F, Fut>(
+    breaker: &CircuitBreaker,
+    policy: &RetryPolicy,
+    operation: F,
+) -> Result<T, ResilienceError<E>>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Result<T, E>>,
+{
+    if !breaker.allow_request().await {
+        return Err(ResilienceError::CircuitOpen);
+    }
+
+    match retry_with_backoff(policy, operation).await {
+        Ok(value) => {
+            breaker.record_success().await;
+            Ok(value)
+        }
+        Err(error) => {
+            breaker.record_failure().await;
+            Err(ResilienceError::Operation(error))
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::{
@@ -166,5 +202,17 @@ mod tests {
 
         assert_eq!(breaker.state().await, CircuitState::Open);
         assert!(!breaker.allow_request().await);
+    }
+
+    #[tokio::test]
+    async fn execute_with_resilience_short_circuits_when_open() {
+        let breaker = CircuitBreaker::new(1, Duration::from_secs(10));
+        breaker.record_failure().await;
+        let policy = RetryPolicy::default();
+
+        let result =
+            execute_with_resilience(&breaker, &policy, || async { Ok::<_, &str>("ok") }).await;
+
+        assert_eq!(result, Err(ResilienceError::CircuitOpen));
     }
 }

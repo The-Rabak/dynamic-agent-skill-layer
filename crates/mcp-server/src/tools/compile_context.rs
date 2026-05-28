@@ -59,18 +59,24 @@ impl CompileContextTool {
         let current_graph_version = self.retriever.current_graph_version();
         let configured_scopes = self.retriever.configured_scopes();
 
-        if self.state.is_suppressed(
-            &request.session_id,
-            &request.repo_path,
-            current_graph_version,
-        ) {
+        if self
+            .state
+            .is_suppressed(
+                &request.session_id,
+                &request.repo_path,
+                current_graph_version,
+            )
+            .await
+        {
             let graph_version = self
                 .state
                 .graph_version(&request.session_id, &request.repo_path)
+                .await
                 .unwrap_or(current_graph_version);
             let scopes_considered = self
                 .state
                 .scopes_considered(&request.session_id, &request.repo_path)
+                .await
                 .unwrap_or(configured_scopes);
             return CompileContextResponse {
                 status: CompileContextStatus::DuplicateSuppressed,
@@ -105,12 +111,14 @@ impl CompileContextTool {
         }
 
         if outcome.skills.is_empty() {
-            self.state.mark_healthy(
-                &request.session_id,
-                &request.repo_path,
-                outcome.graph_version,
-                &outcome.scopes_considered,
-            );
+            self.state
+                .mark_healthy(
+                    &request.session_id,
+                    &request.repo_path,
+                    outcome.graph_version,
+                    &outcome.scopes_considered,
+                )
+                .await;
 
             return CompileContextResponse {
                 status: CompileContextStatus::NoMatch,
@@ -173,12 +181,14 @@ impl CompileContextTool {
             };
         }
 
-        self.state.mark_healthy(
-            &request.session_id,
-            &request.repo_path,
-            outcome.graph_version,
-            &outcome.scopes_considered,
-        );
+        self.state
+            .mark_healthy(
+                &request.session_id,
+                &request.repo_path,
+                outcome.graph_version,
+                &outcome.scopes_considered,
+            )
+            .await;
 
         CompileContextResponse {
             status: CompileContextStatus::Ok,

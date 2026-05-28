@@ -15,16 +15,89 @@ use thiserror::Error;
 
 use crate::ExtractSessionRequest;
 
+/// Validates write targets are within approved output roots and not inside
+/// protected skill source directories.
+#[derive(Debug, Clone)]
+pub struct WriteTargetGuard {
+    write_allowed_roots: Vec<PathBuf>,
+}
+
+impl WriteTargetGuard {
+    /// Creates a permissive guard that allows writes everywhere.
+    pub fn permissive() -> Self {
+        Self {
+            write_allowed_roots: Vec::new(),
+        }
+    }
+
+    pub fn new(write_allowed_roots: Vec<PathBuf>) -> Self {
+        Self {
+            write_allowed_roots,
+        }
+    }
+
+    pub fn from_environment() -> Result<Self, WriterError> {
+        let write_roots = resolve_write_allowed_roots()?;
+        Ok(Self::new(write_roots))
+    }
+
+    /// Verify that `scope_root` — already resolved and canonicalized in the
+    /// scope-resolution step — lies within at least one write-allowed root.
+    /// This prevents `.skills` output from landing inside skill-source
+    /// directories that should be treated as read-only.
+    pub fn check_scope_root(&self, scope_root: &Path) -> Result<(), WriterError> {
+        if self.write_allowed_roots.is_empty() {
+            return Ok(());
+        }
+
+        let canonical = scope_root.canonicalize().map_err(|error| {
+            WriterError::WriteDenied(format!(
+                "cannot canonicalize output root `{}`: {error}",
+                scope_root.display()
+            ))
+        })?;
+
+        let allowed = self
+            .write_allowed_roots
+            .iter()
+            .any(|root| canonical.starts_with(root));
+
+        if !allowed {
+            return Err(WriterError::WriteDenied(format!(
+                "write denied: scope root `{}` is outside write-allowed output roots; \
+                 check SKILL_GLOBAL_WRITE_ROOTS configuration",
+                canonical.display()
+            )));
+        }
+        Ok(())
+    }
+}
+
 /// Writes extracted candidates as `.pending` drafts for human approval by rename.
 #[derive(Clone)]
 pub struct PendingDraftWriter {
     global_scope_paths: Vec<PathBuf>,
+    write_guard: WriteTargetGuard,
 }
 
 impl PendingDraftWriter {
-    /// Creates a writer with configured global scope roots.
+    /// Creates a writer with configured global scope roots and a write-target guard.
     pub fn new(global_scope_paths: Vec<PathBuf>) -> Self {
-        Self { global_scope_paths }
+        Self {
+            global_scope_paths,
+            write_guard: WriteTargetGuard::permissive(),
+        }
+    }
+
+    /// Creates a writer with an explicit write-target guard for testing.
+    pub fn new_with_guard(
+        global_scope_paths: Vec<PathBuf>,
+        write_guard: WriteTargetGuard,
+    ) -> Self {
+        Self {
+            global_scope_paths,
+            write_guard,
+        }
     }
 
     /// Builds a writer from `SKILL_GLOBAL_PATHS`.
@@ -44,7 +117,12 @@ impl PendingDraftWriter {
             })?);
         }
 
-        Ok(Self::new(global_scope_paths))
+        let write_guard = WriteTargetGuard::from_environment()?;
+
+        Ok(Self {
+            global_scope_paths,
+            write_guard,
+        })
     }
 
     /// Persists one `.pending` file per extracted skill candidate.
@@ -55,6 +133,7 @@ impl PendingDraftWriter {
         provider_name: &str,
     ) -> Result<Vec<PathBuf>, WriterError> {
         let scope_root = self.resolve_scope_root(request)?;
+        self.write_guard.check_scope_root(&scope_root)?;
         let pending_root = scope_root.join(".skills");
         fs::create_dir_all(&pending_root).map_err(|error| {
             WriterError::WriteFailure(pending_root.display().to_string(), error.to_string())
@@ -197,6 +276,8 @@ pub enum WriterError {
     BatchValidation(String),
     #[error("rejected tombstone blocks pending draft reproposal: `{0}`")]
     RejectedTombstonePresent(String),
+    #[error("write denied: path `{0}` is outside write-allowed output roots")]
+    WriteDenied(String),
 }
 
 impl WriterError {
@@ -209,9 +290,44 @@ impl WriterError {
             Self::FrontmatterSerialization(_) => "pending_frontmatter_serialization_failed",
             Self::BatchValidation(_) => "pending_draft_batch_validation_failed",
             Self::RejectedTombstonePresent(_) => "rejected_tombstone_present",
+            Self::WriteDenied(_) => "write_denied",
         }
         .to_owned()
     }
+}
+
+fn resolve_write_allowed_roots() -> Result<Vec<PathBuf>, WriterError> {
+    let env_value = std::env::var("SKILL_GLOBAL_WRITE_ROOTS")
+        .or_else(|_| std::env::var("SKILL_GLOBAL_ALLOWED_ROOTS"))
+        .map_err(|_| {
+            WriterError::InvalidRepoPath(
+                "neither SKILL_GLOBAL_WRITE_ROOTS nor SKILL_GLOBAL_ALLOWED_ROOTS is set"
+                    .to_owned(),
+            )
+        })?;
+    let entries = split_env_paths(&env_value);
+    if entries.is_empty() {
+        return Err(WriterError::InvalidRepoPath(
+            "SKILL_GLOBAL_WRITE_ROOTS must include at least one root path".to_owned(),
+        ));
+    }
+
+    entries
+        .into_iter()
+        .map(|entry| {
+            let root = PathBuf::from(&entry);
+            if !root.is_absolute() {
+                return Err(WriterError::InvalidRepoPath(format!(
+                    "write-allowed root `{entry}` must be absolute"
+                )));
+            }
+            root.canonicalize().map_err(|error| {
+                WriterError::InvalidRepoPath(format!(
+                    "write-allowed root `{entry}` is invalid: {error}"
+                ))
+            })
+        })
+        .collect()
 }
 
 fn allowed_roots_from_environment() -> Result<Vec<PathBuf>, WriterError> {
@@ -433,4 +549,274 @@ fn append_section(output: &mut String, heading: &str, lines: &[String]) {
         output.push_str(&format!("- {line}\n"));
     }
     output.push('\n');
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{env, fs};
+
+    use super::*;
+
+    fn sandbox() -> PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock should be after epoch")
+            .as_nanos();
+        let path = env::temp_dir().join(format!("dasl-writer-{}-{}", std::process::id(), nonce));
+        let _ = fs::remove_dir_all(&path);
+        fs::create_dir_all(&path).expect("sandbox root should be creatable");
+        path
+    }
+
+    fn stub_request(repo_path: Option<&str>) -> ExtractSessionRequest {
+        ExtractSessionRequest {
+            transcript_ref: "session-123.json".to_owned(),
+            transcript_inline: None,
+            session_id: "session-123".to_owned(),
+            repo_path: repo_path.map(str::to_owned),
+        }
+    }
+
+    fn minimal_candidate(name: &str) -> ExtractedSkillCandidate {
+        ExtractedSkillCandidate {
+            name: name.to_owned(),
+            description: "test description".to_owned(),
+            tags: vec!["test".to_owned()],
+            procedures: vec!["do the thing".to_owned()],
+            conventions: vec![],
+            assets: vec![],
+            confidence: 0.9,
+        }
+    }
+
+    fn minimal_result(candidates: Vec<ExtractedSkillCandidate>) -> ExtractionResult {
+        ExtractionResult {
+            source_session_id: domain::DomainId::new_unchecked("session-123"),
+            candidates,
+            provider: "test".to_owned(),
+        }
+    }
+
+    #[test]
+    fn write_guard_allows_pending_root_inside_write_allowed_root() {
+        let sandbox = sandbox();
+        let write_root = sandbox.join("output");
+        fs::create_dir_all(&write_root).expect("write root should be creatable");
+
+        let write_guard = WriteTargetGuard::new(vec![write_root.clone()]);
+
+        assert!(write_guard.check_scope_root(&write_root).is_ok());
+    }
+
+    #[test]
+    fn write_guard_denies_pending_root_outside_write_allowed_root() {
+        let sandbox = sandbox();
+        let write_root = sandbox.join("output");
+        let other_root = sandbox.join("other");
+
+        fs::create_dir_all(&write_root).expect("write root should be creatable");
+        fs::create_dir_all(&other_root).expect("other root should be creatable");
+
+        let write_guard = WriteTargetGuard::new(vec![write_root]);
+
+        let err = write_guard
+            .check_scope_root(&other_root)
+            .expect_err("write outside allowed root must be denied");
+        assert!(
+            matches!(err, WriterError::WriteDenied(_)),
+            "expected WriteDenied, got {err:?}"
+        );
+        assert!(
+            err.to_string().contains("write denied"),
+            "error message must say 'write denied': {err}"
+        );
+    }
+
+    #[test]
+    fn write_guard_denies_nonexistent_scope_root() {
+        let sandbox = sandbox();
+        let write_root = sandbox.join("output");
+        fs::create_dir_all(&write_root).expect("write root should be creatable");
+
+        let write_guard = WriteTargetGuard::new(vec![write_root]);
+
+        let nonexistent = sandbox.join("nonexistent");
+        let err = write_guard
+            .check_scope_root(&nonexistent)
+            .expect_err("nonexistent path must be denied");
+        assert!(matches!(err, WriterError::WriteDenied(_)));
+    }
+
+    #[test]
+    fn write_guard_block_skill_source_directory() {
+        let sandbox = sandbox();
+        let output_root = sandbox.join("output");
+        let skill_source_root = sandbox.join("skills");
+
+        fs::create_dir_all(&output_root).expect("output root should be creatable");
+        fs::create_dir_all(skill_source_root.join("my-skill")).expect("skill source should be creatable");
+
+        // only output_root is in the write allowlist — skill_source_root is NOT
+        let write_guard = WriteTargetGuard::new(vec![output_root.clone()]);
+
+        let err = write_guard
+            .check_scope_root(&skill_source_root)
+            .expect_err("skill source root must be denied for writes");
+        assert!(matches!(err, WriterError::WriteDenied(_)));
+        assert!(
+            err.to_string().contains("write denied"),
+            "error message must say 'write denied' for skill source protection"
+        );
+    }
+
+    #[test]
+    fn write_guard_respects_env_var() {
+        let sandbox = sandbox();
+        let write_root = sandbox.join("output-env");
+        fs::create_dir_all(&write_root).expect("output root should be creatable");
+
+        unsafe {
+            env::set_var("SKILL_GLOBAL_WRITE_ROOTS", write_root.display().to_string());
+            env::remove_var("SKILL_GLOBAL_ALLOWED_ROOTS");
+        }
+
+        let guard = WriteTargetGuard::from_environment()
+            .expect("guard should build from SKILL_GLOBAL_WRITE_ROOTS");
+
+        let result = guard.check_scope_root(&write_root);
+        assert!(result.is_ok(), "write to env-configured root must be allowed");
+
+        unsafe {
+            env::remove_var("SKILL_GLOBAL_WRITE_ROOTS");
+        }
+    }
+
+    #[test]
+    fn write_guard_falls_back_to_allowed_roots_env_var() {
+        let sandbox = sandbox();
+        let write_root = sandbox.join("fallback-root");
+        fs::create_dir_all(&write_root).expect("fallback root should be creatable");
+
+        unsafe {
+            env::remove_var("SKILL_GLOBAL_WRITE_ROOTS");
+            env::set_var("SKILL_GLOBAL_ALLOWED_ROOTS", write_root.display().to_string());
+        }
+
+        let guard = WriteTargetGuard::from_environment()
+            .expect("guard should fall back to SKILL_GLOBAL_ALLOWED_ROOTS");
+
+        let result = guard.check_scope_root(&write_root);
+        assert!(result.is_ok(), "write to allowed-roots fallback must be permitted");
+
+        unsafe {
+            env::remove_var("SKILL_GLOBAL_ALLOWED_ROOTS");
+        }
+    }
+
+    #[test]
+    fn writer_rejects_pending_drafts_when_pending_root_is_outside_guard() {
+        let sandbox = sandbox();
+        let allowed_root = sandbox.join("allowed");
+        let blocked_root = sandbox.join("blocked");
+
+        fs::create_dir_all(&allowed_root).expect("allowed root should be creatable");
+        fs::create_dir_all(&blocked_root).expect("blocked root should be creatable");
+
+        // repo_path points inside allowed_root so resolve_scope_root succeeds,
+        // but the guard only allows a different root
+        let writer = PendingDraftWriter::new_with_guard(
+            vec![sandbox.clone()],
+            WriteTargetGuard::new(vec![allowed_root.clone()]),
+        );
+        let request = stub_request(Some(blocked_root.to_str().unwrap()));
+
+        unsafe {
+            env::set_var(
+                "SKILL_GLOBAL_ALLOWED_ROOTS",
+                sandbox.display().to_string(),
+            );
+            env::remove_var("SKILL_GLOBAL_WRITE_ROOTS");
+        }
+
+        let result = writer.write_pending_drafts(
+            &minimal_result(vec![minimal_candidate("blocked-skill")]),
+            &request,
+            "test",
+        );
+
+        unsafe {
+            env::remove_var("SKILL_GLOBAL_ALLOWED_ROOTS");
+        }
+
+        let err = result.expect_err("write outside guard must be denied");
+        assert!(
+            matches!(err, WriterError::WriteDenied(_)),
+            "expected WriteDenied, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn writer_allows_pending_drafts_inside_guard() {
+        let sandbox = sandbox();
+        let output_root = sandbox.join("output");
+        fs::create_dir_all(&output_root).expect("output root should be creatable");
+
+        let writer = PendingDraftWriter::new_with_guard(
+            vec![sandbox.clone()],
+            WriteTargetGuard::new(vec![output_root.clone()]),
+        );
+
+        // repo_path inside output_root => pending_root = output_root/.skills
+        let repo_subdir = output_root.join("project");
+        fs::create_dir_all(&repo_subdir).expect("project subdir should be creatable");
+        let request = stub_request(Some(repo_subdir.to_str().unwrap()));
+
+        unsafe {
+            env::set_var(
+                "SKILL_GLOBAL_ALLOWED_ROOTS",
+                sandbox.display().to_string(),
+            );
+            env::remove_var("SKILL_GLOBAL_WRITE_ROOTS");
+        }
+
+        let result = writer.write_pending_drafts(
+            &minimal_result(vec![minimal_candidate("allowed-skill")]),
+            &request,
+            "test",
+        );
+
+        unsafe {
+            env::remove_var("SKILL_GLOBAL_ALLOWED_ROOTS");
+        }
+
+        let paths = result.expect("write inside guard must succeed");
+        assert!(!paths.is_empty(), "at least one path should be committed");
+        assert!(paths[0].starts_with(&output_root));
+    }
+
+    #[test]
+    fn write_denied_error_includes_clear_message() {
+        let sandbox = sandbox();
+        let write_root = sandbox.join("output");
+        let blocked = sandbox.join("skills");
+        fs::create_dir_all(&write_root).expect("write root should be creatable");
+        fs::create_dir_all(&blocked).expect("blocked path should be creatable");
+
+        let guard = WriteTargetGuard::new(vec![write_root]);
+
+        let err = guard
+            .check_scope_root(&blocked)
+            .expect_err("must be denied");
+
+        let msg = err.to_string();
+        assert!(msg.contains("write denied"));
+        assert!(msg.contains(&blocked.canonicalize().unwrap().display().to_string()));
+        assert!(msg.contains("SKILL_GLOBAL_WRITE_ROOTS"));
+    }
+
+    #[test]
+    fn reason_code_write_denied_returns_stable_string() {
+        let err = WriterError::WriteDenied("write denied: path `/skills/global/skills/foo/SKILL.md` is a skill source directory (read-only)".to_owned());
+        assert_eq!(err.reason_code(), "write_denied");
+    }
 }
