@@ -41,6 +41,7 @@
 | 12 | `12-session-persistence-and-context-cache.md` | hardening | Session suppression and compiled-context caching survive restart and invalidation | T11 |
 | 13 | `13-logging-benchmarks-and-docs.md` | hardening | Structured logs, latency evidence, and operator docs are complete | T11 |
 | 14 | `14-live-data-plane-e2e-and-stress-suite.md` | hardening | Full live data-plane flow is validated under realistic dependency and load conditions | T07, T11, T13 |
+| 15 | `15-extraction-prompt-review-and-unification.md` | hardening | Extraction prompt strategy is reviewed, unified where possible, and provider-specific divergence is explicitly justified | T06 |
 
 ## Dependency View
 
@@ -60,6 +61,7 @@
 | T12 | T11 | Cache and suppression semantics rely on final degraded/healthy rules |
 | T13 | T11 | Logging and docs should describe the hardened runtime, not a moving target |
 | T14 | T07, T11, T13 | Final hardening gate validates live data-plane correctness, degraded recovery, and bounded stress behavior end to end |
+| T15 | T06 | Prompt strategy hardening depends on the established extraction contract and must preserve provider-parity outputs |
 
 ## Blocker Summary
 

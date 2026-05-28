@@ -17,6 +17,18 @@ path = "../../tests/integration/test_merge_workflow.rs"
 name = "test_retire_workflow"
 path = "../../tests/integration/test_retire_workflow.rs"
 
+[[test]]
+name = "test_pending_lifecycle"
+path = "../../tests/integration/test_pending_lifecycle.rs"
+
+[[test]]
+name = "test_pending_lifecycle_frontmatter_contract"
+path = "../../tests/integration/test_pending_lifecycle_frontmatter_contract.rs"
+
+[[test]]
+name = "test_cleanup_scan_resilience"
+path = "../../tests/integration/test_cleanup_scan_resilience.rs"
+
 [dependencies]
 chrono = { version = "0.4.42", features = ["clock", "serde"] }
 domain = { path = "../domain" }
@@ -30,3 +42,4 @@ walkdir = "2.5.0"
 
 [dev-dependencies]
 graph-builder = { path = "../graph-builder" }
+session-extractor = { path = "../session-extractor" }

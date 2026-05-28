@@ -5,7 +5,7 @@ use std::{
 };
 
 use chrono::{TimeZone, Utc};
-use domain::ScopeType;
+use domain::{ScopeType, pending_default_expires_at, pending_default_warning_at};
 use maintenance::{
     MaintenanceAuditError, MaintenanceAuditEvent, MaintenanceAuditSink, MergeConfig,
     MergeProposalWriter, MergeSemanticVerifier, SeededSkillProjection, SkillSnapshot,
@@ -138,14 +138,17 @@ fn merge_workflow_writes_pending_proposal_with_scope_provenance_and_human_gate()
     assert_eq!(proposals.len(), 1);
     let proposal = &proposals[0];
     assert!(proposal.pending_path.exists());
-    let proposal_name = proposal
+    let proposal_directory_name = proposal
         .pending_path
+        .parent()
+        .expect("proposal path should include a parent directory")
         .file_name()
-        .expect("proposal path should include a filename")
+        .expect("proposal directory should include a name")
         .to_string_lossy();
     assert!(
-        proposal_name.contains("skill-project-auth") && proposal_name.contains("skill-global-auth"),
-        "proposal filename should retain source skill IDs for traceability"
+        proposal_directory_name.contains("skill-project-auth")
+            && proposal_directory_name.contains("skill-global-auth"),
+        "proposal directory name should retain source skill IDs for traceability"
     );
     assert_eq!(proposal.canonical_scope, ScopeType::Project);
     assert_eq!(
@@ -167,6 +170,29 @@ fn merge_workflow_writes_pending_proposal_with_scope_provenance_and_human_gate()
         frontmatter["merged_from_scopes"],
         Value::Sequence(vec![Value::from("project"), Value::from("global")])
     );
+    let created_at = chrono::DateTime::parse_from_rfc3339(
+        frontmatter["created_at"]
+            .as_str()
+            .expect("created_at should be serialized"),
+    )
+    .expect("created_at should parse")
+    .with_timezone(&Utc);
+    let warning_at = chrono::DateTime::parse_from_rfc3339(
+        frontmatter["warning_at"]
+            .as_str()
+            .expect("warning_at should be serialized"),
+    )
+    .expect("warning_at should parse")
+    .with_timezone(&Utc);
+    let expires_at = chrono::DateTime::parse_from_rfc3339(
+        frontmatter["expires_at"]
+            .as_str()
+            .expect("expires_at should be serialized"),
+    )
+    .expect("expires_at should parse")
+    .with_timezone(&Utc);
+    assert_eq!(warning_at, pending_default_warning_at(created_at));
+    assert_eq!(expires_at, pending_default_expires_at(created_at));
 
     let emitted_events = audit_sink.emitted_events();
     assert_eq!(emitted_events.len(), 1);

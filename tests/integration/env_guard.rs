@@ -40,6 +40,8 @@ impl Drop for EnvVarGuard {
 pub(crate) struct ScopeEnvGuard {
     _allowed_roots: EnvVarGuard,
     _global_paths: EnvVarGuard,
+    _graph_builder_project_root: Option<EnvVarGuard>,
+    _graph_builder_global_root: Option<EnvVarGuard>,
     _lock: MutexGuard<'static, ()>,
 }
 
@@ -53,6 +55,14 @@ pub(crate) fn configure_scope_env() -> ScopeEnvGuard {
 }
 
 pub(crate) fn configure_scope_env_with_global_path(global_scope: PathBuf) -> ScopeEnvGuard {
+    configure_scope_env_with_graph_builder_roots(global_scope, None, None)
+}
+
+pub(crate) fn configure_scope_env_with_graph_builder_roots(
+    global_scope: PathBuf,
+    graph_builder_project_root: Option<PathBuf>,
+    graph_builder_global_root: Option<PathBuf>,
+) -> ScopeEnvGuard {
     let lock = ENV_LOCK.lock().expect("env lock poisoned");
     let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
@@ -65,6 +75,10 @@ pub(crate) fn configure_scope_env_with_global_path(global_scope: PathBuf) -> Sco
             repo_root.display().to_string(),
         ),
         _global_paths: EnvVarGuard::set("SKILL_GLOBAL_PATHS", global_scope.display().to_string()),
+        _graph_builder_project_root: graph_builder_project_root
+            .map(|path| EnvVarGuard::set("GRAPH_BUILDER_PROJECT_ROOT", path.display().to_string())),
+        _graph_builder_global_root: graph_builder_global_root
+            .map(|path| EnvVarGuard::set("GRAPH_BUILDER_GLOBAL_ROOT", path.display().to_string())),
         _lock: lock,
     }
 }

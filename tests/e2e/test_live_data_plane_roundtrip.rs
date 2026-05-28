@@ -341,7 +341,7 @@ async fn extract_session_inline_payload_writes_pending_and_emits_completion_even
     wait_for_tool_event_count(&tool, "extraction.completed", 1).await;
     wait_for_published_event_count(&publisher, "extraction.completed", 1).await;
 
-    let pending_path = global_root.join(".skills/session-extract-inline-workflow.pending");
+    let pending_path = global_root.join(".skills/session-extract-inline-workflow/SKILL.md.pending");
     assert!(pending_path.exists(), "pending file should be written");
     let pending_body =
         std::fs::read_to_string(&pending_path).expect("pending file should be readable");

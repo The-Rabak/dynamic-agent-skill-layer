@@ -1,11 +1,21 @@
 pub mod config;
 pub mod errors;
+pub mod lifecycle_files;
+pub mod lifecycle_policy;
 pub mod traits;
 pub mod types;
 
 pub use config::{CompilationConfig, DomainConfig, EmbeddingConfig, ExtractionConfig, ScopeConfig};
 pub use errors::{
     CompilationError, ConfigError, DomainError, EmbeddingError, ExtractionError, ScopeError,
+};
+pub use lifecycle_files::{
+    ACTIVE_SKILL_FILE_NAME, PENDING_SKILL_FILE_NAME, REJECTED_SKILL_FILE_NAME,
+    RETIRED_SKILL_FILE_NAME, has_lifecycle_file_name, is_rejected_tombstone,
+};
+pub use lifecycle_policy::{
+    PENDING_DEFAULT_EXPIRY_AFTER_DAYS, PENDING_DEFAULT_WARNING_AFTER_DAYS,
+    pending_default_expires_at, pending_default_warning_at,
 };
 pub use traits::{
     ContextCompiler, EmbeddingService, ScopeResolver, TranscriptSkillExtractionService,

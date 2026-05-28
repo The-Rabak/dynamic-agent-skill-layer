@@ -2,7 +2,7 @@
 ticket_id: T07
 title: Outbox relay and reconciliation
 kind: hardening
-status: ready
+status: completed
 plan_ref: docs/plans/2026-05-21-feat-skill-layer-v1-1-plan.md
 tickets_ref: docs/tickets/2026-05-21-skill-layer-v1-1/index.md
 architecture_ref: docs/architecture/2026-05-21-skill-layer-v1-1-architecture.md

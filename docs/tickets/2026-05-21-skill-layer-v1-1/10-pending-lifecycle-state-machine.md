@@ -2,7 +2,7 @@
 ticket_id: T10
 title: Pending lifecycle state machine
 kind: hardening
-status: ready
+status: completed
 plan_ref: docs/plans/2026-05-21-feat-skill-layer-v1-1-plan.md
 tickets_ref: docs/tickets/2026-05-21-skill-layer-v1-1/index.md
 architecture_ref: docs/architecture/2026-05-21-skill-layer-v1-1-architecture.md
@@ -16,10 +16,19 @@ serves:
   - SC-3: approval workflow with explicit lifecycle metadata
   - SC-5: filesystem-observable draft, reject, retire, and approval transitions
 files:
-  - crates/graph-builder/src/maintenance/cleanup.rs
-  - crates/session-extractor/src/writer.rs
+  - crates/domain/src/lib.rs
   - crates/domain/src/types.rs
+  - crates/domain/src/lifecycle_files.rs
+  - crates/domain/src/lifecycle_policy.rs
+  - crates/session-extractor/src/lib.rs
+  - crates/session-extractor/src/writer.rs
+  - crates/maintenance/src/cleanup.rs
+  - crates/maintenance/src/merge.rs
+  - crates/graph-builder/src/watcher.rs
+  - tests/integration/test_extract_session.rs
+  - tests/integration/test_merge_workflow.rs
   - tests/integration/test_pending_lifecycle.rs
+  - tests/integration/test_pending_lifecycle_frontmatter_contract.rs
 test_command: cargo test --workspace && docker compose -f docker-compose.test.yml up --abort-on-container-exit
 tdd_mode: inherit
 ---

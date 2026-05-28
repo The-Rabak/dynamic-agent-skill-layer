@@ -38,7 +38,12 @@ pub use persistence::outbox::{
 };
 pub use persistence::outbox_reconciler::{OutboxReconciler, OutboxReconciliationReport};
 pub use persistence::postgres::{PostgresAdapter, PostgresConfig, PostgresError};
-pub use persistence::rebuild::{PostgresRebuildCoordinator, RebuildCoordinator, RebuildError};
+pub use persistence::rebuild::{
+    LiveGraphCommunityRecord, LiveGraphSkillRecord, LiveGraphSnapshotMutation,
+    LiveGraphSubunitRecord, PersistedGraphCommunityRecord, PersistedGraphSkillRecord,
+    PersistedGraphSubunitRecord, PostgresGraphSnapshotStore, PostgresRebuildCoordinator,
+    RebuildCoordinator, RebuildError,
+};
 pub use resilience::{CircuitBreaker, CircuitState, RetryPolicy, retry_with_backoff};
 pub use scope::{EnvPathGlobalResolver, GitRootProjectResolver};
 pub use streaming::redis::{
