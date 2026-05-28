@@ -277,6 +277,7 @@ async fn registers_compile_context_find_skill_and_extract_session_tools() {
         Arc::new(DeterministicEmbeddingService::healthy()),
         seeded_graph(),
         retrieval_config(),
+        None,
     );
     assert_eq!(
         server.registered_tools(),
@@ -311,6 +312,7 @@ async fn rebuild_graph_requires_live_graph_database_for_seeded_server() {
         Arc::new(DeterministicEmbeddingService::healthy()),
         seeded_graph(),
         retrieval_config(),
+        None,
     );
 
     let response = server.rebuild_graph(RebuildGraphRequest::default()).await;
@@ -350,6 +352,7 @@ async fn compile_context_returns_ok_then_duplicate_suppressed_after_healthy_resu
         Arc::new(DeterministicEmbeddingService::healthy()),
         seeded_graph(),
         retrieval_config(),
+        None,
     );
 
     let request = CompileContextRequest {
@@ -384,6 +387,7 @@ async fn compile_context_returns_no_match_for_healthy_empty_and_suppresses_follo
         Arc::new(DeterministicEmbeddingService::healthy()),
         seeded_graph(),
         retrieval_config(),
+        None,
     );
 
     let request = CompileContextRequest {
@@ -410,6 +414,7 @@ async fn degraded_first_attempt_does_not_set_suppression_state() {
         Arc::new(DeterministicEmbeddingService::fail_first()),
         seeded_graph(),
         retrieval_config(),
+        None,
     );
 
     let request = CompileContextRequest {
@@ -436,6 +441,7 @@ async fn find_skill_reports_top_matches_from_seeded_graph() {
         Arc::new(DeterministicEmbeddingService::healthy()),
         seeded_graph(),
         retrieval_config(),
+        None,
     );
 
     let response = server
@@ -456,6 +462,7 @@ async fn json_rpc_tools_list_and_call_compile_context() {
         Arc::new(DeterministicEmbeddingService::healthy()),
         seeded_graph(),
         retrieval_config(),
+        None,
     );
 
     let tools_list = server
@@ -506,7 +513,68 @@ async fn json_rpc_tools_list_and_call_compile_context() {
             .expect("listed tool should exist in canonical registry")
             .to_vec();
         assert_eq!(listed_required, canonical_required);
+
+        let properties = listed_tool
+            .pointer("/inputSchema/properties")
+            .and_then(|props| props.as_object());
+        assert!(
+            properties.is_some(),
+            "{tool_name}: inputSchema should include properties object"
+        );
+        let properties = properties.unwrap();
+        for (prop_name, prop_value) in properties {
+            assert!(
+                prop_value.get("type").is_some(),
+                "{tool_name}.{prop_name}: property should include type"
+            );
+            assert!(
+                prop_value.get("description").is_some(),
+                "{tool_name}.{prop_name}: property should include description"
+            );
+        }
     }
+
+    let extract_schema = tools
+        .iter()
+        .find(|t| t.get("name").and_then(|n| n.as_str()) == Some("extract_session"))
+        .expect("extract_session should be listed")
+        .get("inputSchema")
+        .expect("extract_session should have inputSchema");
+    let extract_properties = extract_schema
+        .get("properties")
+        .and_then(|p| p.as_object())
+        .expect("extract_session inputSchema should have properties");
+    assert!(
+        extract_properties.contains_key("repo_path"),
+        "extract_session properties should include repo_path for discoverability"
+    );
+    assert!(
+        extract_properties.contains_key("transcript_inline"),
+        "extract_session properties should include transcript_inline for discoverability"
+    );
+    let extract_required = extract_schema
+        .get("required")
+        .and_then(|r| r.as_array())
+        .expect("extract_session inputSchema should have required array")
+        .iter()
+        .map(|v| v.as_str().unwrap())
+        .collect::<Vec<&str>>();
+    assert!(
+        extract_required.contains(&"transcript_ref"),
+        "extract_session required should include transcript_ref"
+    );
+    assert!(
+        extract_required.contains(&"session_id"),
+        "extract_session required should include session_id"
+    );
+    assert!(
+        !extract_required.contains(&"repo_path"),
+        "extract_session required should not include repo_path (optional)"
+    );
+    assert!(
+        !extract_required.contains(&"transcript_inline"),
+        "extract_session required should not include transcript_inline (optional)"
+    );
 
     let call_response = server
         .handle_json_rpc(JsonRpcRequest {

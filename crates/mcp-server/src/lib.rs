@@ -37,12 +37,13 @@ pub struct McpServerApp {
 }
 
 impl McpServerApp {
-    pub fn new(retriever: Arc<dyn SkillRetriever>) -> Self {
+    pub fn new(retriever: Arc<dyn SkillRetriever>, redis_client: Option<redis::Client>) -> Self {
         let admin_runtime_dependencies = admin_wiring::live_admin_runtime_dependencies();
         Self::new_with_admin(
             retriever,
             admin_runtime_dependencies.rebuild_trigger,
             admin_runtime_dependencies.graph_reader,
+            redis_client,
         )
     }
 
@@ -50,8 +51,9 @@ impl McpServerApp {
         retriever: Arc<dyn SkillRetriever>,
         rebuild_trigger: Arc<dyn GraphRebuildTrigger>,
         graph_reader: Arc<dyn GraphSnapshotReader>,
+        redis_client: Option<redis::Client>,
     ) -> Self {
-        let state = SessionSuppressionState::default();
+        let state = SessionSuppressionState::new(redis_client, SessionSuppressionState::DEFAULT_TTL_SECS);
         let compiler = TemplateOnlyCompiler::default();
         let admin_tools = AdminTools::new(rebuild_trigger, graph_reader);
 
@@ -115,6 +117,7 @@ pub fn build_seeded_server<E>(
     embedding_service: Arc<E>,
     graph: SeededGraph,
     config: RetrievalConfig,
+    redis_client: Option<redis::Client>,
 ) -> McpServerApp
 where
     E: EmbeddingService + Send + Sync + 'static,
@@ -136,5 +139,6 @@ where
         Arc::new(retriever),
         admin_runtime_dependencies.rebuild_trigger,
         admin_runtime_dependencies.graph_reader,
+        redis_client,
     )
 }

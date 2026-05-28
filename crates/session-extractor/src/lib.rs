@@ -3,18 +3,23 @@ pub mod providers {
     pub mod ollama;
 }
 pub mod transcripts;
+pub mod worker_pool;
 pub mod writer;
 
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use domain::{ExtractionError, ExtractionResult, TranscriptSkillExtractionService};
-use infrastructure::{EventEnvelope, RedisStreamError, RedisStreamsAdapter, RedisStreamsConfig};
+use infrastructure::{
+    EventEnvelope, RedisStreamError, RedisStreamsAdapter, RedisStreamsConfig, RetryPolicy,
+    retry_with_backoff,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use thiserror::Error;
 use transcripts::{TranscriptError, TranscriptLoader};
 use uuid::Uuid;
+use worker_pool::{ExtractionWorkerPool, ExtractionWorkerPoolConfig};
 use writer::{PendingDraftWriter, WriterError};
 
 /// Request payload for the session-end extraction tool.
@@ -137,7 +142,7 @@ impl ExtractionEventPublisher for RedisExtractionEventPublisher {
 }
 
 #[derive(Clone, Default)]
-struct NoopExtractionEventPublisher;
+pub(crate) struct NoopExtractionEventPublisher;
 
 #[async_trait]
 impl ExtractionEventPublisher for NoopExtractionEventPublisher {
@@ -176,12 +181,13 @@ impl std::str::FromStr for ExtractionProvider {
 /// Coordinates transcript loading, provider extraction, draft writing, and lifecycle events.
 #[derive(Clone)]
 pub struct SessionExtractor {
-    provider: ExtractionProvider,
-    extractor: Arc<dyn TranscriptSkillExtractionService>,
-    transcript_loader: TranscriptLoader,
-    draft_writer: PendingDraftWriter,
-    lifecycle_events: ExtractionLifecycleEvents,
-    event_publisher: Arc<dyn ExtractionEventPublisher>,
+    pub(crate) provider: ExtractionProvider,
+    pub(crate) extractor: Arc<dyn TranscriptSkillExtractionService>,
+    pub(crate) transcript_loader: TranscriptLoader,
+    pub(crate) draft_writer: PendingDraftWriter,
+    pub(crate) lifecycle_events: ExtractionLifecycleEvents,
+    pub(crate) event_publisher: Arc<dyn ExtractionEventPublisher>,
+    pub(crate) worker_pool: Option<ExtractionWorkerPool>,
 }
 
 impl SessionExtractor {
@@ -206,6 +212,9 @@ impl SessionExtractor {
             draft_writer: PendingDraftWriter::from_environment()?,
             lifecycle_events: ExtractionLifecycleEvents::default(),
             event_publisher: Arc::new(RedisExtractionEventPublisher::from_environment()?),
+            worker_pool: Some(ExtractionWorkerPool::new(
+                ExtractionWorkerPoolConfig::default(),
+            )),
         })
     }
 
@@ -240,6 +249,29 @@ impl SessionExtractor {
             draft_writer,
             lifecycle_events: ExtractionLifecycleEvents::default(),
             event_publisher,
+            worker_pool: Some(ExtractionWorkerPool::new(
+                ExtractionWorkerPoolConfig::default(),
+            )),
+        }
+    }
+
+    /// Constructs an extractor with an explicit worker pool config for tests.
+    pub fn new_for_tests_with_pool(
+        provider: ExtractionProvider,
+        extractor: Arc<dyn TranscriptSkillExtractionService>,
+        transcript_loader: TranscriptLoader,
+        draft_writer: PendingDraftWriter,
+        event_publisher: Arc<dyn ExtractionEventPublisher>,
+        pool_config: ExtractionWorkerPoolConfig,
+    ) -> Self {
+        Self {
+            provider,
+            extractor,
+            transcript_loader,
+            draft_writer,
+            lifecycle_events: ExtractionLifecycleEvents::default(),
+            event_publisher,
+            worker_pool: Some(ExtractionWorkerPool::new(pool_config)),
         }
     }
 
@@ -249,6 +281,7 @@ impl SessionExtractor {
     }
 
     /// Schedules asynchronous extraction after transcript contract validation.
+    /// Uses worker pool when available; falls back to direct spawn.
     pub async fn enqueue(&self, request: ExtractSessionRequest) -> ExtractSessionResponse {
         if request.transcript_inline.is_none()
             && let Err(error) = self.transcript_loader.validate_ref(&request.transcript_ref)
@@ -289,40 +322,52 @@ impl SessionExtractor {
             };
         }
 
-        let worker = self.clone();
-        let worker_request = request;
-        let worker_job_id = job_id.clone();
-        tokio::spawn(async move {
-            if let Err(error) = worker.execute_job(&worker_job_id, &worker_request).await {
-                if let Err(failed_publish_error) = worker
-                    .publish_lifecycle_event(EventEnvelope::new(
-                        "extraction.failed",
-                        format!("extraction.failed:{worker_job_id}"),
-                        json!({
-                            "job_id": worker_job_id.as_str(),
-                            "provider": worker.provider.as_str(),
-                            "error": error.to_string(),
-                        }),
-                    ))
-                    .await
-                {
-                    eprintln!(
-                        "failed to publish extraction.failed lifecycle event: {}",
-                        failed_publish_error
-                    );
-                }
+        if let Some(ref pool) = self.worker_pool {
+            match pool.submit(self.clone(), job_id.clone(), request.clone()) {
+                Ok(_response_rx) => ExtractSessionResponse {
+                    status: "processing".to_owned(),
+                    reason_code: None,
+                    job_id: Some(job_id),
+                    provider: Some(self.provider.as_str().to_owned()),
+                },
+                Err(rejection) => rejection,
             }
-        });
+        } else {
+            let worker = self.clone();
+            let worker_request = request;
+            let worker_job_id = job_id.clone();
+            tokio::spawn(async move {
+                if let Err(error) = worker.execute_job(&worker_job_id, &worker_request).await {
+                    if let Err(failed_publish_error) = worker
+                        .publish_lifecycle_event(EventEnvelope::new(
+                            "extraction.failed",
+                            format!("extraction.failed:{worker_job_id}"),
+                            json!({
+                                "job_id": worker_job_id.as_str(),
+                                "provider": worker.provider.as_str(),
+                                "error": error.to_string(),
+                            }),
+                        ))
+                        .await
+                    {
+                        eprintln!(
+                            "failed to publish extraction.failed lifecycle event: {}",
+                            failed_publish_error
+                        );
+                    }
+                }
+            });
 
-        ExtractSessionResponse {
-            status: "processing".to_owned(),
-            reason_code: None,
-            job_id: Some(job_id),
-            provider: Some(self.provider.as_str().to_owned()),
+            ExtractSessionResponse {
+                status: "processing".to_owned(),
+                reason_code: None,
+                job_id: Some(job_id),
+                provider: Some(self.provider.as_str().to_owned()),
+            }
         }
     }
 
-    async fn execute_job(
+    pub(crate) async fn execute_job(
         &self,
         job_id: &str,
         request: &ExtractSessionRequest,
@@ -332,7 +377,7 @@ impl SessionExtractor {
             &request.transcript_ref,
             request.transcript_inline.as_deref(),
         )?;
-        let extraction_result = self.extractor.extract(&transcript).await?;
+        let extraction_result = self.extract_with_retry(&transcript).await?;
         let draft_paths = self.draft_writer.write_pending_drafts(
             &extraction_result,
             request,
@@ -355,7 +400,25 @@ impl SessionExtractor {
         Ok(())
     }
 
-    async fn publish_lifecycle_event(
+    async fn extract_with_retry(
+        &self,
+        transcript: &domain::SessionTranscript,
+    ) -> Result<ExtractionResult, SessionExtractionError> {
+        let policy = RetryPolicy {
+            max_attempts: 3,
+            base_delay: std::time::Duration::from_millis(150),
+            max_delay: std::time::Duration::from_secs(1),
+        };
+
+        retry_with_backoff(&policy, || {
+            let extractor = Arc::clone(&self.extractor);
+            async move { extractor.extract(transcript).await }
+        })
+        .await
+        .map_err(SessionExtractionError::from)
+    }
+
+    pub(crate) async fn publish_lifecycle_event(
         &self,
         envelope: EventEnvelope,
     ) -> Result<(), SessionExtractionError> {
@@ -380,7 +443,7 @@ pub enum SessionExtractorInitError {
 }
 
 #[derive(Debug, Error)]
-enum SessionExtractionError {
+pub(crate) enum SessionExtractionError {
     #[error(transparent)]
     Transcript(#[from] TranscriptError),
     #[error(transparent)]
@@ -410,6 +473,7 @@ impl SessionExtractionError {
                 }
                 WriterError::BatchValidation(_) => "pending_draft_batch_validation_failed",
                 WriterError::RejectedTombstonePresent(_) => "rejected_tombstone_present",
+                WriterError::WriteDenied(_) => "write_denied",
             },
             Self::EventPublication(_) => "event_publication_failed",
         }

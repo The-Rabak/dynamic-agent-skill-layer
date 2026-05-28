@@ -180,6 +180,7 @@ async fn compile_context_searches_project_and_global_with_project_priority_bias(
         Arc::new(DeterministicEmbeddingService::healthy()),
         seeded_dual_scope_graph(),
         retrieval_config(),
+        None,
     );
 
     let response = server
@@ -219,6 +220,7 @@ async fn suppression_is_scoped_by_session_and_repo_pair_and_degraded_does_not_co
         Arc::new(DeterministicEmbeddingService::fail_first()),
         seeded_dual_scope_graph(),
         retrieval_config(),
+        None,
     );
 
     let base_request = CompileContextRequest {
@@ -261,6 +263,7 @@ async fn compile_context_uses_request_repo_path_for_scope_resolution() {
         Arc::new(DeterministicEmbeddingService::healthy()),
         seeded_dual_scope_graph(),
         retrieval_config(),
+        None,
     );
 
     let valid_repo = test_repo_path();
@@ -307,6 +310,7 @@ async fn partial_scope_failure_returns_degraded_with_available_context_and_no_su
         Arc::new(DeterministicEmbeddingService::healthy()),
         seeded_dual_scope_graph(),
         retrieval_config(),
+        None,
     );
 
     let request = CompileContextRequest {

@@ -237,7 +237,11 @@ async fn extract_session_returns_processing_and_writes_pending_draft() {
     let pending_path = project_root.join(".skills/rust-file-io-setup/SKILL.md.pending");
     assert!(pending_path.exists(), "pending draft should be written");
     let pending_body = std::fs::read_to_string(&pending_path).expect("pending file should read");
-    assert!(pending_body.contains("suggested_tags: [\"rust\", \"io\"]"));
+    assert!(
+        pending_body.contains("suggested_tags: [\"rust\", \"io\"]")
+            || pending_body.contains("suggested_tags:\n- rust\n- io"),
+        "pending frontmatter should retain extracted tags, got:\n{pending_body}"
+    );
     assert!(pending_body.contains("origin: session_extraction"));
     assert!(pending_body.contains("# Rust File IO Setup"));
 }

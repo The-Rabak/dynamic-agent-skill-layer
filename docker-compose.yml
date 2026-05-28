@@ -40,6 +40,12 @@ services:
       - "${QDRANT_GRPC_PORT:-16334}:6334"
     volumes:
       - qdrant_data:/qdrant/storage
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:6333/collections"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   ollama:
     image: ollama/ollama:0.24.0
@@ -48,9 +54,20 @@ services:
       - "${OLLAMA_PORT:-11444}:11434"
     volumes:
       - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:11434/api/tags"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
 
   mcp-server:
-    image: alpine:3.23.4
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        BIN: mcp-server
+    image: skill-layer/mcp-server:latest
     container_name: ${COMPOSE_PROJECT_NAME:-skill-layer}-mcp-server
     depends_on:
       postgres:
@@ -61,10 +78,45 @@ services:
         condition: service_started
       ollama:
         condition: service_started
-    command: ["sh", "-c", "echo mcp-server placeholder ready && tail -f /dev/null"]
+    # Network exposure contract (constitution §Deferred-risk guard):
+    # - Container-internal binding uses 0.0.0.0 (required for Docker health checks:
+    #   wget localhost:3001/health inside container).
+    # - Host-side port mapping restricted to 127.0.0.1. MCP control plane (including
+    #   mutating/admin tools) is not callable from remote network surfaces.
+    # - Docker inter-service traffic (graph-builder -> postgres, etc.) uses internal
+    #   Docker DNS names and is unaffected by the host mapping.
+    # - Auth is deferred per current-phase policy; surface restriction is the primary guard.
+    ports:
+      - "127.0.0.1:${MCP_SERVER_PORT:-3001}:3001"
+    environment:
+      RUST_LOG: ${RUST_LOG:-info}
+      MCP_SERVER_ADDR: 0.0.0.0:3001
+      DATABASE_URL: postgres://${POSTGRES_USER:-skill_layer}:${POSTGRES_PASSWORD:-skill_layer}@postgres:5432/${POSTGRES_DB:-skill_layer}
+      REDIS_URL: redis://redis:6379
+      QDRANT_URL: http://qdrant:6333
+      OLLAMA_URL: http://ollama:11434
+      SKILL_GLOBAL_PATHS: /skills/global
+      SKILL_GLOBAL_ALLOWED_ROOTS: ${SKILL_GLOBAL_ALLOWED_ROOTS:-/skills/project,/skills/global}
+      GRAPH_BUILDER_PROJECT_ROOT: ${GRAPH_BUILDER_PROJECT_ROOT:-/skills/project}
+      CLAUDE_TRANSCRIPT_ROOT: ${CLAUDE_TRANSCRIPT_ROOT:-/transcripts}
+    volumes:
+      - ${GRAPH_BUILDER_PROJECT_ROOT:-.}:/skills/project:ro
+      - ${SKILL_GLOBAL_HOST_PATH:-./docs}:/skills/global
+      - ${CLAUDE_TRANSCRIPT_ROOT:-./tests/fixtures}:/transcripts:ro
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3001/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
 
   graph-builder:
-    image: alpine:3.23.4
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        BIN: graph-builder
+    image: skill-layer/graph-builder:latest
     container_name: ${COMPOSE_PROJECT_NAME:-skill-layer}-graph-builder
     depends_on:
       postgres:
@@ -75,17 +127,53 @@ services:
         condition: service_started
       ollama:
         condition: service_started
-    command: ["sh", "-c", "echo graph-builder placeholder ready && tail -f /dev/null"]
+    environment:
+      RUST_LOG: ${RUST_LOG:-info}
+      DATABASE_URL: postgres://${POSTGRES_USER:-skill_layer}:${POSTGRES_PASSWORD:-skill_layer}@postgres:5432/${POSTGRES_DB:-skill_layer}
+      REDIS_URL: redis://redis:6379
+      QDRANT_URL: http://qdrant:6333
+      OLLAMA_URL: http://ollama:11434
+      GRAPH_BUILDER_PROJECT_ROOT: ${GRAPH_BUILDER_PROJECT_ROOT:-/skills/project}
+      GRAPH_BUILDER_GLOBAL_ROOT: ${GRAPH_BUILDER_GLOBAL_ROOT:-/skills/global}
+      GRAPH_BUILDER_ADDR: 0.0.0.0:${GRAPH_BUILDER_PORT:-8080}
+      GRAPH_BUILDER_ALLOW_SYNTHETIC_OUTBOX_DRAIN: ${GRAPH_BUILDER_ALLOW_SYNTHETIC_OUTBOX_DRAIN:-1}
+    volumes:
+      - ${GRAPH_BUILDER_PROJECT_ROOT:-.}:/skills/project:ro
+      - ${SKILL_GLOBAL_HOST_PATH:-./docs}:/skills/global
+    # Graph-builder port also bound to localhost-only (same exposure contract as mcp-server).
+    ports:
+      - "127.0.0.1:${GRAPH_BUILDER_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
 
   maintenance-worker:
-    image: alpine:3.23.4
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        BIN: maintenance-worker
+    image: skill-layer/maintenance-worker:latest
     container_name: ${COMPOSE_PROJECT_NAME:-skill-layer}-maintenance-worker
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-    command: ["sh", "-c", "echo maintenance placeholder ready && tail -f /dev/null"]
+      qdrant:
+        condition: service_started
+      ollama:
+        condition: service_started
+    environment:
+      RUST_LOG: ${RUST_LOG:-info}
+      DATABASE_URL: postgres://${POSTGRES_USER:-skill_layer}:${POSTGRES_PASSWORD:-skill_layer}@postgres:5432/${POSTGRES_DB:-skill_layer}
+      REDIS_URL: redis://redis:6379
+      QDRANT_URL: http://qdrant:6333
+      OLLAMA_URL: http://ollama:11434
+    restart: unless-stopped
 
 volumes:
   postgres_data:

@@ -2,7 +2,7 @@
 ticket_id: T11
 title: Graceful degrade and health checks
 kind: hardening
-status: ready
+status: completed
 plan_ref: docs/plans/2026-05-21-feat-skill-layer-v1-1-plan.md
 tickets_ref: docs/tickets/2026-05-21-skill-layer-v1-1/index.md
 architecture_ref: docs/architecture/2026-05-21-skill-layer-v1-1-architecture.md
@@ -257,3 +257,101 @@ Unknowns: none beyond retry threshold tuning and circuit-breaker settings. Docke
 
 - Retry, degrade, and health semantics stay together because they all define what "safe failure" means across the runtime.
 - Splitting runtime resilience from health reporting would make operator-facing status drift from actual fallback behavior.
+
+## Implementation Notes
+
+*Post-completion alignment notes — the ticket body above reflects the original design contract. The actual implementation evolved in several ways. These notes bridge the gap for traceability.*
+
+### Env variable semantics
+
+The implementation separates host-path and container-path concerns more explicitly than the ticket examples:
+
+| Purpose | Ticket examples | Actual implementation |
+|---|---|---|
+| Host path for global skill mount | `SKILL_GLOBAL_PATHS` (multi-host-path) | `SKILL_GLOBAL_HOST_PATH` (single host path, default `./docs`) |
+| Container path for global skills | Implicit in ticket compose | `SKILL_GLOBAL_PATHS` (always `/skills/global`) |
+| MCP server project-root mount | Not shown | `GRAPH_BUILDER_PROJECT_ROOT` (default `./`) mounted at `/skills/project:ro` |
+| Global volume read-only | `:ro` on mount | Not `:ro` (writeable global mount for session-extractor) |
+| QDRANT_URL port | `http://qdrant:6334` (gRPC) | `http://qdrant:6333` (HTTP) |
+| `SKILL_GLOBAL_ALLOWED_ROOTS` default | Empty string | `/skills/project,/skills/global` |
+
+**Environment variables in actual `.env.example`** (26 lines, all values confirmed against `docker-compose.yml` and source):
+
+```bash
+COMPOSE_PROJECT_NAME=skill-layer
+POSTGRES_DB=skill_layer
+POSTGRES_USER=skill_layer
+POSTGRES_PASSWORD=skill_layer
+POSTGRES_PORT=15432
+REDIS_PORT=16379
+QDRANT_HTTP_PORT=16333
+QDRANT_GRPC_PORT=16334
+OLLAMA_PORT=11444
+OLLAMA_NUM_PARALLEL=2
+OLLAMA_KEEP_ALIVE=5m
+RUST_LOG=info
+MCP_SERVER_PORT=3001
+GRAPH_BUILDER_PORT=8080
+SKILL_GLOBAL_HOST_PATH=./docs
+SKILL_GLOBAL_PATHS=/skills/global
+SKILL_GLOBAL_ALLOWED_ROOTS=/skills/project,/skills/global
+GRAPH_BUILDER_PROJECT_ROOT=.
+GRAPH_BUILDER_GLOBAL_ROOT=./docs
+GRAPH_BUILDER_ALLOW_SYNTHETIC_OUTBOX_DRAIN=1
+CLAUDE_TRANSCRIPT_ROOT=./tests/fixtures
+```
+
+**Runtime env var usage by binary** (confirmed from source):
+
+| Variable | mcp-server | graph-builder | session-extractor |
+|---|---|---|---|
+| `DATABASE_URL` | health check | health check | — |
+| `REDIS_URL` | health check | health check | — |
+| `OLLAMA_URL` | health check + embedding | health check | — |
+| `QDRANT_URL` | health check | health check | — |
+| `MCP_SERVER_ADDR` | bind address | — | — |
+| `GRAPH_BUILDER_ADDR` | — | bind address | — |
+| `GRAPH_BUILDER_PROJECT_ROOT` | — | project scope root | — |
+| `GRAPH_BUILDER_GLOBAL_ROOT` | — | global scope root | — |
+| `GRAPH_BUILDER_POLL_INTERVAL_MS` | — | poll interval | — |
+| `GRAPH_BUILDER_ALLOW_SYNTHETIC_OUTBOX_DRAIN` | — | drain gating | — |
+| `SKILL_GLOBAL_PATHS` | — | — | container output path |
+| `SKILL_GLOBAL_ALLOWED_ROOTS` | — | — | path validation allowlist |
+| `CLAUDE_TRANSCRIPT_ROOT` | — | — | transcript file loader |
+| `APP_ENV` / `ENVIRONMENT` | logging env label | — | — |
+
+### Key differences from ticket body
+
+1. **`SKILL_GLOBAL_HOST_PATH` is a separate variable.** The ticket examples use `SKILL_GLOBAL_PATHS` as both a host mount source and a container path. The implementation splits these: `SKILL_GLOBAL_HOST_PATH` (host side, default `./docs`) maps to `/skills/global`, while `SKILL_GLOBAL_PATHS` is the container-side path `/skills/global` used by session-extractor for writing `.pending` files.
+
+2. **QPInput defaults are test fixtures, not home directories.** The ticket `.env.example` block defaults to `~/.config/opencode/skills`, `~/.claude/skills`, and `~/.claude/transcripts`. The actual implementation defaults to `./docs` and `./tests/fixtures` — appropriate for the Docker Compose local deployment, not a host-agent integration.
+
+3. **QDRANT_URL uses HTTP port 6333, not gRPC 6334.** Ticket compose examples reference `http://qdrant:6334` but the implementation uses `http://qdrant:6333` for REST endpoint access.
+
+4. **MCP server mounts `/skills/project` volume.** The ticket's mcp-server compose block lacks the `GRAPH_BUILDER_PROJECT_ROOT` volume mount present in the actual `docker-compose.yml`.
+
+5. **Global mount is not read-only.** The ticket specifies `:ro` on the global skill mount. The implementation omits `:ro` because session-extractor needs to write `.pending` files to the global scope directory.
+
+6. **`.env.example` includes three variables not in the ticket's suggested additions:** `SKILL_GLOBAL_HOST_PATH`, `GRAPH_BUILDER_GLOBAL_ROOT`, and `GRAPH_BUILDER_ALLOW_SYNTHETIC_OUTBOX_DRAIN`.
+
+### Files changed
+
+The ticket's `files:` frontmatter list is accurate for the implementation scope:
+
+| File | Role |
+|---|---|
+| `crates/infrastructure/src/resilience.rs` | `RetryPolicy`, `CircuitBreaker`, `ResilienceError`, `execute_with_resilience` |
+| `crates/infrastructure/src/health.rs` | `InfrastructureHealthChecker`, `HealthReport`, dep-level status |
+| `crates/mcp-server/src/main.rs` | `InfrastructureHealthChecker` wiring; `/health` via `serve_http` |
+| `crates/graph-builder/src/main.rs` | Retry+breaker loop, custom health endpoint, scope-root config, synthetic drain gating |
+| `crates/session-extractor/src/lib.rs` | Module root (covers `writer.rs`: `SKILL_GLOBAL_PATHS`/`SKILL_GLOBAL_ALLOWED_ROOTS`; `transcripts.rs`: `CLAUDE_TRANSCRIPT_ROOT`) |
+| `docker-compose.yml` | Health checks, service definitions, volume mounts, env vars |
+| `Dockerfile` | Multi-stage `cargo-chef` build with `ARG BIN` |
+| `tests/integration/test_resilience.rs` | Resilience behavior tests |
+
+### Verification
+
+- `docker compose build` succeeds with musl + `tls-rustls` (no OpenSSL).
+- `docker compose up` starts all 7 services; no `tail -f /dev/null` placeholders.
+- All service images expose `/health` consumed by Docker health checks.
+- Service images target ~12MB per binary (per Dockerfile multi-stage design).

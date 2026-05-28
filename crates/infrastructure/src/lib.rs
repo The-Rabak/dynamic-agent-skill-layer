@@ -29,7 +29,7 @@ pub mod vector {
 pub use embeddings::ollama::{OllamaEmbeddingConfig, OllamaEmbeddingService};
 pub use extraction::claude::{ClaudeExtractionConfig, ClaudeExtractor};
 pub use extraction::ollama::{OllamaExtractionConfig, OllamaExtractor};
-pub use health::{HealthComponent, HealthReport, InfrastructureHealthChecker};
+pub use health::{DependencyFactory, HealthComponent, HealthReport, InfrastructureHealthChecker};
 pub use persistence::outbox::{
     GraphWriteCoordinator, OutboxEvent, OutboxInspection, OutboxRecord, OutboxRelay,
     OutboxRelayError, OutboxRelayRunReport, OutboxVectorStore, PostgresGraphWriteCoordinator,
@@ -44,7 +44,10 @@ pub use persistence::rebuild::{
     PersistedGraphSubunitRecord, PostgresGraphSnapshotStore, PostgresRebuildCoordinator,
     RebuildCoordinator, RebuildError,
 };
-pub use resilience::{CircuitBreaker, CircuitState, RetryPolicy, retry_with_backoff};
+pub use resilience::{
+    CircuitBreaker, CircuitState, ResilienceError, RetryPolicy, execute_with_resilience,
+    retry_with_backoff,
+};
 pub use scope::{EnvPathGlobalResolver, GitRootProjectResolver};
 pub use streaming::redis::{
     EventEnvelope, RedisStreamError, RedisStreamsAdapter, RedisStreamsConfig, StreamMessage,

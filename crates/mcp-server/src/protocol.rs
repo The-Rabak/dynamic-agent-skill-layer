@@ -1,6 +1,15 @@
-use std::{future::Future, net::SocketAddr, pin::Pin};
+use std::{
+    future::Future, net::SocketAddr, pin::Pin, sync::LazyLock,
+};
 
-use axum::{Json, Router, extract::State, routing::post};
+use axum::{
+    Json, Router,
+    extract::State,
+    http::StatusCode,
+    response::IntoResponse,
+    routing::{get, post},
+};
+use infrastructure::InfrastructureHealthChecker;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
 
@@ -11,86 +20,140 @@ use admin::tools::{
 };
 
 /// Metadata describing an MCP tool exposed by this server.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ToolDescriptor {
     pub name: &'static str,
     pub description: &'static str,
     pub required_arguments: &'static [&'static str],
+    pub input_schema: Value,
 }
 
 type ToolCallFuture<'a> = Pin<Box<dyn Future<Output = JsonRpcResponse> + Send + 'a>>;
 type ToolCallHandler = for<'a> fn(&'a McpServerApp, Option<Value>, Value) -> ToolCallFuture<'a>;
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct RegisteredTool {
     descriptor: ToolDescriptor,
     handler: ToolCallHandler,
 }
 
-const REGISTERED_TOOLS: [RegisteredTool; 7] = [
-    RegisteredTool {
-        descriptor: ToolDescriptor {
-            name: "compile_context",
-            description: "Compile task-relevant context for the current session",
-            required_arguments: &["prompt", "session_id", "repo_path"],
+static REGISTERED_TOOLS: LazyLock<[RegisteredTool; 7]> = LazyLock::new(|| {
+    [
+        RegisteredTool {
+            descriptor: ToolDescriptor {
+                name: "compile_context",
+                description: "Compile task-relevant context for the current session",
+                required_arguments: &["prompt", "session_id", "repo_path"],
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "prompt": {"type": "string", "description": "Natural-language description of the task to compile skills for"},
+                        "session_id": {"type": "string", "description": "Identifier for the current agent session"},
+                        "repo_path": {"type": "string", "description": "Absolute path to the current repository root"}
+                    },
+                    "required": ["prompt", "session_id", "repo_path"]
+                }),
+            },
+            handler: call_compile_context,
         },
-        handler: call_compile_context,
-    },
-    RegisteredTool {
-        descriptor: ToolDescriptor {
-            name: "find_skill",
-            description: "Find top matching skills from the retrieval graph",
-            required_arguments: &["prompt"],
+        RegisteredTool {
+            descriptor: ToolDescriptor {
+                name: "find_skill",
+                description: "Find top matching skills from the retrieval graph",
+                required_arguments: &["prompt"],
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "prompt": {"type": "string", "description": "Natural-language query to match against the skill graph"},
+                        "limit": {"type": "integer", "description": "Maximum number of skills to return (default 5)"}
+                    },
+                    "required": ["prompt"]
+                }),
+            },
+            handler: call_find_skill,
         },
-        handler: call_find_skill,
-    },
-    RegisteredTool {
-        descriptor: ToolDescriptor {
-            name: "extract_session",
-            description: "Queue session transcript extraction into .pending drafts",
-            required_arguments: &["transcript_ref", "session_id"],
+        RegisteredTool {
+            descriptor: ToolDescriptor {
+                name: "extract_session",
+                description: "Queue session transcript extraction into .pending drafts",
+                required_arguments: &["transcript_ref", "session_id"],
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "transcript_ref": {"type": "string", "description": "Path to the session transcript file to extract from"},
+                        "session_id": {"type": "string", "description": "Identifier for the source session"},
+                        "transcript_inline": {"type": "string", "description": "Inline transcript content, used instead of loading from file"},
+                        "repo_path": {"type": "string", "description": "Absolute path to the repository root for scoping drafts"}
+                    },
+                    "required": ["transcript_ref", "session_id"]
+                }),
+            },
+            handler: call_extract_session,
         },
-        handler: call_extract_session,
-    },
-    RegisteredTool {
-        descriptor: ToolDescriptor {
-            name: "rebuild_graph",
-            description: "Trigger a full graph rebuild via the graph-builder workflow",
-            required_arguments: &[],
+        RegisteredTool {
+            descriptor: ToolDescriptor {
+                name: "rebuild_graph",
+                description: "Trigger a full graph rebuild via the graph-builder workflow",
+                required_arguments: &[],
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                }),
+            },
+            handler: call_rebuild_graph,
         },
-        handler: call_rebuild_graph,
-    },
-    RegisteredTool {
-        descriptor: ToolDescriptor {
-            name: "rebuild_graph_status",
-            description: "Read lifecycle and result fields for a queued rebuild job",
-            required_arguments: &["job_id"],
+        RegisteredTool {
+            descriptor: ToolDescriptor {
+                name: "rebuild_graph_status",
+                description: "Read lifecycle and result fields for a queued rebuild job",
+                required_arguments: &["job_id"],
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "job_id": {"type": "string", "description": "The rebuild job identifier returned by rebuild_graph"}
+                    },
+                    "required": ["job_id"]
+                }),
+            },
+            handler: call_rebuild_graph_status,
         },
-        handler: call_rebuild_graph_status,
-    },
-    RegisteredTool {
-        descriptor: ToolDescriptor {
-            name: "inspect_skill",
-            description: "Inspect skill neighborhood, subunits, and community context",
-            required_arguments: &["skill_id"],
+        RegisteredTool {
+            descriptor: ToolDescriptor {
+                name: "inspect_skill",
+                description: "Inspect skill neighborhood, subunits, and community context",
+                required_arguments: &["skill_id"],
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "skill_id": {"type": "string", "description": "Stable identifier of the skill to inspect"}
+                    },
+                    "required": ["skill_id"]
+                }),
+            },
+            handler: call_inspect_skill,
         },
-        handler: call_inspect_skill,
-    },
-    RegisteredTool {
-        descriptor: ToolDescriptor {
-            name: "list_communities",
-            description: "List graph communities with member counts",
-            required_arguments: &[],
+        RegisteredTool {
+            descriptor: ToolDescriptor {
+                name: "list_communities",
+                description: "List graph communities with member counts",
+                required_arguments: &[],
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                }),
+            },
+            handler: call_list_communities,
         },
-        handler: call_list_communities,
-    },
-];
+    ]
+});
 
 /// Returns canonical MCP tool metadata used by both `tools/list` and `tools/call`.
 pub fn registered_tool_descriptors() -> Vec<ToolDescriptor> {
     REGISTERED_TOOLS
         .iter()
-        .map(|tool| tool.descriptor)
+        .map(|tool| tool.descriptor.clone())
         .collect::<Vec<ToolDescriptor>>()
 }
 
@@ -220,10 +283,7 @@ fn tools_list_payload() -> Value {
             json!({
                 "name": tool.descriptor.name,
                 "description": tool.descriptor.description,
-                "inputSchema": {
-                    "type": "object",
-                    "required": tool.descriptor.required_arguments
-                }
+                "inputSchema": tool.descriptor.input_schema
             })
         })
         .collect::<Vec<Value>>();
@@ -341,21 +401,46 @@ fn call_list_communities<'a>(
 }
 
 async fn mcp_handler(
-    State(app): State<McpServerApp>,
+    State(state): State<HttpAppState>,
     Json(request): Json<JsonRpcRequest>,
 ) -> Json<JsonRpcResponse> {
-    Json(app.handle_json_rpc(request).await)
+    Json(state.app.handle_json_rpc(request).await)
 }
 
-pub fn router(app: McpServerApp) -> Router {
+#[derive(Clone)]
+struct HttpAppState {
+    app: McpServerApp,
+    health_checker: InfrastructureHealthChecker,
+}
+
+async fn health_handler(State(state): State<HttpAppState>) -> impl IntoResponse {
+    let report = state.health_checker.check().await;
+    let status = if report.healthy {
+        StatusCode::OK
+    } else {
+        StatusCode::SERVICE_UNAVAILABLE
+    };
+
+    (status, Json(report))
+}
+
+pub fn router(app: McpServerApp, health_checker: InfrastructureHealthChecker) -> Router {
     Router::new()
         .route("/mcp", post(mcp_handler))
-        .with_state(app)
+        .route("/health", get(health_handler))
+        .with_state(HttpAppState {
+            app,
+            health_checker,
+        })
 }
 
-pub async fn serve_http(app: McpServerApp, address: SocketAddr) -> std::io::Result<()> {
+pub async fn serve_http(
+    app: McpServerApp,
+    health_checker: InfrastructureHealthChecker,
+    address: SocketAddr,
+) -> std::io::Result<()> {
     let listener = tokio::net::TcpListener::bind(address).await?;
-    axum::serve(listener, router(app))
+    axum::serve(listener, router(app, health_checker))
         .await
         .map_err(std::io::Error::other)
 }

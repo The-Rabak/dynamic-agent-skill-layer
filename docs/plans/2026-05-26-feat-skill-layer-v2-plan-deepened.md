@@ -51,8 +51,9 @@ execution_shape:
 ## Enhancement Summary
 
 **Deepened on:** 2026-05-26
-**Sections enhanced:** 12 (all phases + cross-harness deep-dive + SkillOpt params + extraction architecture)
-**Research agents used:** 10 (SkillLens deep-dive, SkillOpt deep-dive, cross-harness synthesis, multi-harness format research, Phase 1-5 research agents, architecture/security/performance reviews)
+**Sections enhanced:** 13 (all phases + cross-harness deep-dive + SkillOpt params + extraction architecture + pipeline architecture + E2E test specification)
+**Research agents used:** 11 (SkillLens deep-dive, SkillOpt deep-dive, cross-harness synthesis, multi-harness format research, Phase 1-5 research agents, team scope research, architecture/security/performance reviews)
+**Slices:** 39 (original 38 + Slice 1.6: Pipeline architecture docs + E2E test harness infrastructure)
 
 ### WHY Integrity Check
 - Problem Narrative: preserved
@@ -471,6 +472,111 @@ fn validate_dimensions(embedding: &[f32], expected: usize) -> Result<(), Embeddi
     Ok(())
 }
 ```
+
+---
+
+##### Slice 1.6: Pipeline architecture documentation and E2E test harness
+
+**Slice type:** infra-track
+**Capability enabled:** Architecture-verified pipeline execution with exhaustive test coverage. Every pipeline stage, decision point, and error path has a corresponding E2E test before implementation begins. This is the evidence contract for the entire V2 plan.
+**Consumers / downstream work unlocked:** All 37 subsequent slices across Phases 1-5. Each slice's acceptance criteria now trace to specific E2E test cases (E2E-1.1 through E2E-9.9). `/workflows:work` execution agents use this test catalog as their "done" checklist.
+**Feature home:** `tests/e2e/` + `docs/architecture/`
+**Files:**
+- `docs/architecture/2026-05-26-skill-layer-v2-architecture.md` — NEW section: Pipeline Architecture (6 pipelines, 350+ lines of stage-by-stage detail) + E2E Test Specification (99 tests across 9 categories)
+- `tests/e2e/pipeline_architecture.rs` — NEW: E2E test harness entry point, fixture generation, Docker Compose test topology orchestration
+- `tests/e2e/fixtures/` — NEW: fixture directory for transcripts, skills, graph states
+  - `fixtures/transcripts/` — session transcripts (15-turn mixed, 5-turn success-only, 5-turn failure-only, empty, malformed)
+  - `fixtures/skills/` — skill fixtures (valid, invalid YAML, bad name, multi-scope)
+  - `fixtures/graph_states/` — serialized graph snapshots for replay testing
+  - `fixtures/canary_queries/` — 50 behavioral canary queries with expected top-3 rankings
+  - `fixtures/team_scope/` — multi-tenant fixtures with canary tokens for isolation verification
+- `tests/e2e/test_extraction_pipeline.rs` — NEW: E2E-1.1 through E2E-1.23 (23 tests)
+- `tests/e2e/test_graph_builder.rs` — NEW: E2E-2.1 through E2E-2.12 (12 tests)
+- `tests/e2e/test_merge_workflow.rs` — EXTENDED: E2E-3.1 through E2E-3.11 (11 tests)
+- `tests/e2e/test_retire_workflow.rs` — EXTENDED: E2E-4.1 through E2E-4.11 (11 tests)
+- `tests/e2e/test_optimization_loop.rs` — NEW: E2E-5.1 through E2E-5.18 (18 tests)
+- `tests/e2e/test_health_self_healing.rs` — NEW: E2E-6.1 through E2E-6.12 (12 tests)
+- `tests/e2e/test_drift_sentinel.rs` — NEW: E2E-7.1 through E2E-7.11 (11 tests)
+- `tests/e2e/test_outcome_learning.rs` — NEW: E2E-8.1 through E2E-8.12 (12 tests)
+- `tests/e2e/test_cross_cutting.rs` — NEW: E2E-9.1 through E2E-9.9 (9 tests)
+- `docker-compose.test.yml` — EXTENDED: fault injection support, canary fixture seeding, multi-tenant mock containers
+- `tests/e2e/dream_state_contracts.rs` — EXTENDED: un-ignore DS-003, DS-008, DS-012, DS-014, DS-015, DS-017, DS-018, DS-019, DS-022, DS-024
+**Depends on:** None (infra-track — runs in parallel with all Phase 1 slices)
+**Dependency type:** parallel-safe
+**Risk / Rollback:** Low risk. Tests are additive — they fail when code is wrong, pass when correct. No production code changes. E2E fixture generation does not modify existing fixtures. Rollback is `git revert`.
+**Validation command:** `docker compose -f docker-compose.test.yml up --abort-on-container-exit && cargo test --test test_extraction_pipeline && cargo test --test test_graph_builder && cargo test --test test_merge_workflow && cargo test --test test_retire_workflow && cargo test --test test_health_self_healing && cargo test --test test_drift_sentinel && cargo test --test test_dream_state_contract`
+
+###### What to build
+
+This slice builds the evidence framework before implementation begins. Every stage in the 6-pipeline architecture gets a corresponding E2E test with:
+- Fixture data (transcripts, skills, graph snapshots, canary queries, multi-tenant scenarios)
+- Explicit assertion (what "correct" looks like for this pipeline stage)
+- Evidence command (the exact `cargo test` or `docker compose` invocation that proves it)
+
+The architecture doc section ("Pipeline Architecture" + "System Cadence" + "E2E Test Specification") serves as the living contract between plan and implementation. `/workflows:work` execution agents reference exact test IDs (E2E-3.7, E2E-5.10) as their "done" criteria.
+
+**Pipeline Architecture Documentation (6 pipelines, ~350 lines):**
+
+Document every pipeline stage with: trigger, runtime, inputs, outputs, decision points, error handling, fallback paths, and constitutional compliance checks. This replaces implicit implementation knowledge with explicit stage-by-stage contracts:
+
+1. **Pipeline 1: Session-End Extraction** — 6 stages (Preflight, Map Phase, Reduce-Intermediate, Reduce-Final, Quality Assessment, Output). Decision trees for provider routing, map-reduce vs single-pass, budget enforcement, skill deduplication within run.
+
+2. **Pipeline 2: Graph Builder** — 4 loops (Filesystem Watcher continuous, Merge Proposals 30min, Retirement Proposals 30min, SkillOpt Optimizer on-trigger/weekly). Per-loop stages with error handling, partial failure recovery, consistency verification.
+
+3. **Pipeline 3: Health Monitoring** — 30s probe cycle with 4 concurrent probes, state transition FSM (Healthy→Degraded→Unavailable→Recovered), self-healing remediation catalog with bounded retries.
+
+4. **Pipeline 4: Drift Sentinel** — 5 check types (PG↔Qdrant, Vector↔Content, Filesystem↔Graph, Behavioral Canary, Lifecycle Metadata) with CUSUM tracking, alarm emission, quarantine policy.
+
+5. **Pipeline 5: Reconciliation** — 5min catchup scan for watcher event loss, orphan vector detection, outbox drain.
+
+6. **Pipeline 6: Outcome-Based Learning** — 7-day cycle with signal collection (30-day window), statistical power checks, sandbox validation, regression guard.
+
+**System Cadence Table:**
+```
+continuous  ────  watcher (inotify)
+    30s     ────  health probes + self-healing
+   5min     ────  drift sentinel + reconciliation
+  30min     ────  merge + retirement proposals
+   session  ────  extraction (3-8 min async)
+ trigger/wk ────  SkillOpt (20 min async)
+     7d     ────  outcome learning
+```
+
+**E2E Test Specification (99 tests across 9 categories):**
+
+Every test has: Setup (what fixture/state is prepared), Assertion (what must be true), Evidence (exact test command).
+
+| Category | Tests | Coverage |
+|----------|-------|----------|
+| E2E-1: Extraction Pipeline | 23 | Full lifecycle: trigger → preflight → map → reduce → quality → output → events. Includes partial failure, total failure, budget enforcement, single-pass fallback, provider switching. |
+| E2E-2: Graph Builder | 12 | Watcher: new/update/delete/invalid skills, embedding generation, community assignment, version atomicity, cache invalidation, team scope promotion, reconciliation catchup, debounce. |
+| E2E-3: Merge Proposals | 11 | Candidate discovery (high/low similarity), cross-tenant blocking, merge execution, held-out validation (improvement/degradation/tie), proposal output, human approval flow, duplicate skip, metrics. |
+| E2E-4: Retirement | 11 | Usage collection (zero/frequent), utility scoring (high quality survives, low quality retires early), quality weight phasing, confidence scaling, regression guard, team scope aggregation, cross-scope independence. |
+| E2E-5: SkillOpt | 18 | Prerequisites (insufficient/adequate data), rollout batching, reflect pattern identification, edit budget enforcement, protected sections, cosine schedule, gate (strict improvement/tie/cross-consumer), rejected-edit buffer, slow update, 4-epoch convergence, no-improvement scenario, .optimized output, event+PG writes, concurrent runs. |
+| E2E-6: Health & Self-Healing | 12 | All probes healthy, degradation per dependency, recovery detection, self-healing actions (reconnect/recreate/purge/restart), max retry limit, idempotent remediation, graph_version_mismatch escalation, skill content protection (compile-time), audit trail completeness, health caching, jitter. |
+| E2E-7: Drift Sentinel | 11 | All checks healthy, PG↔Qdrant skill missing, embedding drift (CUSUM), filesystem↔graph gap, behavioral canary stable/drift, lifecycle metadata stale, quarantine exclusion/reversibility/no data deletion, false positive rate. |
+| E2E-8: Outcome Learning | 12 | Insufficient/adequate signals, sandbox validation (no improvement/improvement), regression guard (blocks/allows), deployment (learning_state + filesystem observable), quality score decay detection, oscillating threshold detection, 30-day window correctness, DS-024 contract. |
+| E2E-9: Cross-Cutting | 9 | Full data plane, V1.1 backward compatibility (×3), concurrent extraction+retrieval, concurrent optimization+retrieval, concurrent merge+retirement, graceful shutdown, crash recovery. |
+
+###### Scope
+- **Owns:** Architecture pipeline documentation (6 pipelines, system cadence, concurrency rules), E2E test harness (fixture generation, Docker Compose test topology, 99 test cases), E2E test file scaffolding with `#[ignore]` markers (un-ignored per slice as implementation progresses), dream-state contract un-ignoring plan
+- **Non-goals:** Implementing any pipeline stage (that's what the other 37 slices do), writing production code, passing tests before implementation. Tests start `#[ignore]` — un-ignored slice by slice.
+- **Scope fence:** This slice creates the test framework and documentation contract. It does NOT implement the system. Tests are written but marked `#[ignore]` until their corresponding implementation slice delivers.
+
+###### Acceptance criteria
+- [ ] Architecture doc contains Pipeline Architecture sections 1-6 with ≥350 lines of stage detail, decision trees, error paths
+- [ ] Architecture doc contains System Cadence summary with concurrency rules and overlap prevention
+- [ ] Architecture doc contains E2E Test Specification with 99 tests, each with setup/assertion/evidence
+- [ ] `tests/e2e/pipeline_architecture.rs` scaffolded with test module structure for all 9 categories
+- [ ] `tests/e2e/fixtures/` populated: 5 transcript types, 5 skill types, 3 graph states, 50 canary queries, multi-tenant fixtures with canary tokens
+- [ ] `docker-compose.test.yml` extended with fault injection support and canary fixture seeding
+- [ ] All 99 tests compile and are marked `#[ignore]` (or `#[cfg(test)]` for pure-unit checks that can pass immediately)
+- [ ] Dream-state contracts DS-003, DS-008, DS-012, DS-014, DS-015, DS-017, DS-018, DS-019, DS-022, DS-024 have test structures written and are marked `#[ignore]`
+- [ ] Architecture doc `pipeline_architecture` section referenced in plan's enhancement summary
+
+###### Evidence
+- **Test command:** `cargo test --test pipeline_architecture -- --list` (verifies all 99 tests exist and compile)
+- **Evidence focus:** Test compilation, fixture validity, architecture doc completeness, dream-state contract scaffolding
 
 ---
 

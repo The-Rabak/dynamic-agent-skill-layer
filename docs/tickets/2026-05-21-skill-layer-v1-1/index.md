@@ -74,6 +74,10 @@
 
 - None. `ticket-flow-auditor` final sweep found the ticket set execution-safe against the plan, architecture, and ticket contracts.
 
+### Post-Execution Artifacts
+
+- **T11 realignment (2026-05-28):** Implementation notes appended to `11-graceful-degrade-and-health-checks.md` to reconcile ticket env-var semantics with actual compose/code defaults. See the `## Implementation Notes` section in the ticket file for detailed diffs.
+
 ### Recommendations
 
 - Clarify the canonical-scope policy for approved merge proposals in T08 before execution starts. The ticket already surfaces this as an open question, but the policy itself is still intentionally unresolved.
