@@ -26,7 +26,7 @@ use tools::{
     find_skill::{FindSkillRequest, FindSkillResponse, FindSkillTool},
 };
 
-use crate::state::SessionSuppressionState;
+use crate::state::{CompiledContextCache, SessionSuppressionState};
 
 #[derive(Clone)]
 pub struct McpServerApp {
@@ -53,12 +53,13 @@ impl McpServerApp {
         graph_reader: Arc<dyn GraphSnapshotReader>,
         redis_client: Option<redis::Client>,
     ) -> Self {
-        let state = SessionSuppressionState::new(redis_client, SessionSuppressionState::DEFAULT_TTL_SECS);
+        let state = SessionSuppressionState::new(redis_client.clone(), SessionSuppressionState::DEFAULT_TTL_SECS);
+        let cache = CompiledContextCache::new(redis_client, CompiledContextCache::DEFAULT_TTL_SECS);
         let compiler = TemplateOnlyCompiler::default();
         let admin_tools = AdminTools::new(rebuild_trigger, graph_reader);
 
         Self {
-            compile_context: CompileContextTool::new(retriever.clone(), compiler, state),
+            compile_context: CompileContextTool::new(retriever.clone(), compiler, state, cache),
             extract_session: ExtractSessionTool::from_environment(),
             find_skill: FindSkillTool::new(retriever),
             admin_tools,

@@ -6,7 +6,7 @@ use compiler::{
 use retrieval::SkillRetriever;
 use serde::{Deserialize, Serialize};
 
-use crate::state::SessionSuppressionState;
+use crate::state::{CachedContext, CompiledContextCache, SessionSuppressionState};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -35,11 +35,18 @@ pub struct CompileContextResponse {
     pub latency_ms: u128,
 }
 
+fn scope_fingerprint(configured_scopes: &[String]) -> String {
+    let mut sorted = configured_scopes.to_vec();
+    sorted.sort();
+    sorted.join(",")
+}
+
 #[derive(Clone)]
 pub struct CompileContextTool {
     retriever: Arc<dyn SkillRetriever>,
     compiler: TemplateOnlyCompiler,
     state: SessionSuppressionState,
+    cache: CompiledContextCache,
 }
 
 impl CompileContextTool {
@@ -47,17 +54,36 @@ impl CompileContextTool {
         retriever: Arc<dyn SkillRetriever>,
         compiler: TemplateOnlyCompiler,
         state: SessionSuppressionState,
+        cache: CompiledContextCache,
     ) -> Self {
         Self {
             retriever,
             compiler,
             state,
+            cache,
         }
     }
 
     pub async fn invoke(&self, request: CompileContextRequest) -> CompileContextResponse {
         let current_graph_version = self.retriever.current_graph_version();
         let configured_scopes = self.retriever.configured_scopes();
+        let fingerprint = scope_fingerprint(&configured_scopes);
+
+        if let Some(cached) = self
+            .cache
+            .get(&request.prompt, &configured_scopes, current_graph_version)
+            .await
+        {
+            return CompileContextResponse {
+                status: cached.status,
+                reason_code: cached.reason_code,
+                additional_context: cached.additional_context,
+                health: BTreeMap::new(),
+                scopes_considered: cached.scopes_considered,
+                graph_version: cached.graph_version,
+                latency_ms: 0,
+            };
+        }
 
         if self
             .state
@@ -117,6 +143,21 @@ impl CompileContextTool {
                     &request.repo_path,
                     outcome.graph_version,
                     &outcome.scopes_considered,
+                )
+                .await;
+
+            self.cache
+                .set(
+                    &request.session_id,
+                    &request.prompt,
+                    &configured_scopes,
+                    CachedContext {
+                        status: CompileContextStatus::NoMatch,
+                        reason_code: Some("no_relevant_skills".to_owned()),
+                        additional_context: None,
+                        scopes_considered: outcome.scopes_considered.clone(),
+                        graph_version: outcome.graph_version,
+                    },
                 )
                 .await;
 
@@ -187,6 +228,21 @@ impl CompileContextTool {
                 &request.repo_path,
                 outcome.graph_version,
                 &outcome.scopes_considered,
+            )
+            .await;
+
+        self.cache
+            .set(
+                &request.session_id,
+                &request.prompt,
+                &configured_scopes,
+                CachedContext {
+                    status: CompileContextStatus::Ok,
+                    reason_code: None,
+                    additional_context: Some(markdown.clone()),
+                    scopes_considered: outcome.scopes_considered.clone(),
+                    graph_version: outcome.graph_version,
+                },
             )
             .await;
 

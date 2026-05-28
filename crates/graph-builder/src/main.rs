@@ -7,7 +7,7 @@ use graph_builder::{
 };
 use infrastructure::{
     CircuitBreaker, CircuitState, DependencyFactory, EventEnvelope, InfrastructureHealthChecker,
-    ResilienceError, RetryPolicy, execute_with_resilience,
+    ResilienceError, RetryPolicy, execute_with_resilience, logging::init_logging,
 };
 use serde::Serialize;
 use tokio::{
@@ -94,9 +94,11 @@ fn run_rebuild_cycle(
     let outcome = orchestrator
         .rebuild_from_changes(&watcher.scopes(), &all_changes)
         .map_err(|error| error.to_string())?;
-    println!(
-        "graph rebuilt at version {} with {} skills across {} communities",
-        outcome.graph_version, outcome.skills_count, outcome.communities_count
+    tracing::info!(
+        graph_version = outcome.graph_version,
+        skills_count = outcome.skills_count,
+        communities_count = outcome.communities_count,
+        "graph rebuilt"
     );
     Ok(Some(outcome.graph_version))
 }
@@ -166,6 +168,8 @@ async fn serve_health_endpoint(
 /// Runs a durable graph-builder loop with bounded retries and health reporting.
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    init_logging("graph-builder", "info")?;
+
     if !synthetic_outbox_drain_enabled() {
         return Err("graph-builder runtime durable state has no relay-backed outbox drain wiring yet; refusing to run with synthetic drain disabled (set GRAPH_BUILDER_ALLOW_SYNTHETIC_OUTBOX_DRAIN=1 only for local test/demo runs)".into());
     }
@@ -187,7 +191,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tokio::spawn(async move {
         if let Err(error) = serve_health_endpoint(DependencyFactory::build_health_checker_from_environment(), health_server_state).await
         {
-            eprintln!("graph-builder health endpoint failed: {error}");
+            tracing::error!(%error, "graph-builder health endpoint failed");
         }
     });
 
