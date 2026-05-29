@@ -83,6 +83,97 @@ services:
           echo "nomic-embed-text already present"
         fi
 
+  mcp-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        BIN: mcp-server
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+      ollama:
+        condition: service_healthy
+    ports:
+      - "3001:3001"
+    environment:
+      RUST_LOG: debug
+      DATABASE_URL: postgres://skill_layer:skill_layer@postgres:5432/skill_layer_test
+      REDIS_URL: redis://redis:6379
+      QDRANT_URL: http://qdrant:6334
+      OLLAMA_URL: http://ollama:11434
+      MCP_SERVER_ADDR: 0.0.0.0:3001
+      SKILL_GLOBAL_PATHS: /skills/global
+      SKILL_GLOBAL_ALLOWED_ROOTS: /skills/global
+      GRAPH_BUILDER_GLOBAL_ROOT: /skills/global
+    volumes:
+      - test-global-skills:/skills/global:ro
+      - test-transcripts:/transcripts:ro
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  graph-builder:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        BIN: graph-builder
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+      ollama:
+        condition: service_healthy
+    environment:
+      RUST_LOG: debug
+      DATABASE_URL: postgres://skill_layer:skill_layer@postgres:5432/skill_layer_test
+      REDIS_URL: redis://redis:6379
+      QDRANT_URL: http://qdrant:6334
+      OLLAMA_URL: http://ollama:11434
+      GRAPH_BUILDER_PROJECT_ROOT: /skills/project
+      GRAPH_BUILDER_GLOBAL_ROOT: /skills/global
+      GRAPH_BUILDER_POLL_INTERVAL_MS: "5000"
+    volumes:
+      - test-project-skills:/skills/project:ro
+      - test-global-skills:/skills/global:ro
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 25s
+
+  live-e2e-check:
+    image: alpine:3.23.4
+    depends_on:
+      mcp-server:
+        condition: service_healthy
+      graph-builder:
+        condition: service_healthy
+    command:
+      - sh
+      - -c
+      - |
+        echo "==> mcp-server reachable"
+        nc -z mcp-server 3001
+        echo "==> graph-builder reachable"
+        nc -z graph-builder 8080
+        echo "==> live e2e topology ready"
+
 volumes:
   ollama_data:
     external: true
+  test-global-skills:
+  test-transcripts:
+  test-project-skills:
