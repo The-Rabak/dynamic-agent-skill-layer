@@ -7,7 +7,40 @@ use serde::{Deserialize, Serialize};
 use crate::extraction::{
     http::post_json_with_timeout,
     limits::{validate_extraction_config, validate_transcript_limits},
+    prompt_contract::build_ollama_extraction_prompt,
 };
+
+// # OllamaExtractor — Local Prompt Ownership
+//
+// OllamaExtractor builds a natural-language extraction prompt locally and sends it to
+// Ollama's `/api/generate` endpoint with `format: "json"` for structured output.
+//
+// ## Why local prompt ownership?
+//
+// Unlike Claude (which delegates to an external extraction service), Ollama's
+// `/api/generate` endpoint is a raw model interface. It has no extraction-specific
+// prompt engineering. Ollama also lacks `tool_choice` support, so all schema and
+// quality guidance must be embedded in the prompt text alongside `format: "json"`.
+//
+// ## Prompt contract
+//
+// The prompt is built by `prompt_contract::build_ollama_extraction_prompt()`, which
+// generates a production-quality extraction prompt covering:
+// 1. Extraction target categories (rules, conventions, workflows, error patterns)
+// 2. Quality rubric (FME, actionable specificity, correctness, conciseness, blacklist)
+// 3. Output format specification matching `ExtractedSkillCandidate` schema
+// 4. Anti-pattern warnings (generic skills, context-dependent skills, non-actionable)
+// 5. Confidence scoring guidance
+// 6. A concrete example candidate
+//
+// See `prompt_contract.rs` for the semantic contract shared with the Claude endpoint.
+//
+// ## T14 Enhancement
+//
+// Original prompt was a single line: "Extract reusable skill candidates as JSON..."
+// This was inadequate. The enhanced prompt follows the research-backed quality criteria
+// from `docs/research/2026-05-26-llm-extraction-quality-map-reduce.md` and the SkillLens
+// paper (arXiv:2605.23899).
 
 #[derive(Debug, Clone)]
 pub struct OllamaExtractionConfig {
@@ -92,12 +125,12 @@ impl TranscriptSkillExtractionService for OllamaExtractor {
             self.config.max_total_chars,
         )?;
 
-        let mut prompt = String::from(
-            "Extract reusable skill candidates as JSON with a top-level `candidates` array.\n",
-        );
+        let mut transcript_lines = String::new();
         for entry in &transcript.entries {
-            prompt.push_str(&format!("{}: {}\n", entry.speaker, entry.content));
+            transcript_lines.push_str(&format!("{}: {}\n", entry.speaker, entry.content));
         }
+
+        let prompt = build_ollama_extraction_prompt(&transcript_lines);
 
         let request = OllamaExtractionRequest {
             model: self.config.model.clone(),

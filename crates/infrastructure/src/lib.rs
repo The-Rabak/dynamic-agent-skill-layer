@@ -2,12 +2,7 @@ pub mod embeddings {
     pub mod ollama;
 }
 
-pub mod extraction {
-    pub mod claude;
-    pub(crate) mod http;
-    pub(crate) mod limits;
-    pub mod ollama;
-}
+pub mod extraction;
 
 pub mod health;
 pub mod logging;
