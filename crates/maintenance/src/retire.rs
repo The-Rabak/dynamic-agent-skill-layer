@@ -47,27 +47,30 @@ impl Default for RetirementConfig {
 }
 
 /// Scores stale skills and writes non-destructive `.retired` proposal markers.
-pub struct RetirementProposalWriter<S = NoopMaintenanceAuditSink>
+pub struct RetirementProposalWriter<'s, S = NoopMaintenanceAuditSink>
 where
     S: MaintenanceAuditSink,
 {
     config: RetirementConfig,
-    audit_sink: S,
+    audit_sink: &'s S,
 }
 
-impl RetirementProposalWriter<NoopMaintenanceAuditSink> {
+impl<'s> RetirementProposalWriter<'s, NoopMaintenanceAuditSink> {
     /// Creates a retirement workflow with explicit scoring settings.
     pub fn new(config: RetirementConfig) -> Self {
-        Self::with_audit_sink(config, NoopMaintenanceAuditSink)
+        Self {
+            config,
+            audit_sink: &NoopMaintenanceAuditSink,
+        }
     }
 }
 
-impl<S> RetirementProposalWriter<S>
+impl<'s, S> RetirementProposalWriter<'s, S>
 where
     S: MaintenanceAuditSink,
 {
     /// Creates a retirement workflow with an explicit audit sink.
-    pub fn with_audit_sink(config: RetirementConfig, audit_sink: S) -> Self {
+    pub fn with_audit_sink(config: RetirementConfig, audit_sink: &'s S) -> Self {
         Self { config, audit_sink }
     }
 

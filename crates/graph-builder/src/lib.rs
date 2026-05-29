@@ -5,6 +5,7 @@ pub mod watcher_recovery;
 
 pub use graph::rebuild::{
     DurableGraphState, GraphRebuildOrchestrator, GraphRebuildOutcome, InMemoryDurableGraphState,
+    PostgresDurableGraphState,
 };
 pub use watcher::{
     FileChangeSource, ScopeRoot, SkillFileChange, SkillFileChangeKind, SkillWatcher,

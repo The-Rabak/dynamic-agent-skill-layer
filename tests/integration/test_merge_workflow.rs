@@ -124,7 +124,7 @@ fn merge_workflow_writes_pending_proposal_with_scope_provenance_and_human_gate()
     let writer = MergeProposalWriter::with_audit_sink(
         MergeConfig::default(),
         EquivalentSemanticVerifier,
-        audit_sink.clone(),
+        &audit_sink,
     );
     let now = Utc
         .with_ymd_and_hms(2026, 5, 26, 12, 34, 56)
@@ -506,4 +506,34 @@ fn merge_workflow_rejects_symlinked_pending_root_that_escapes_scope_root() {
         ),
         "pending symlink that resolves outside project root should be rejected"
     );
+}
+
+#[test]
+fn live_merge_runner_exists_and_implements_merge_pass_runner_trait() {
+    use maintenance::cron::MergePassRunner;
+    use maintenance::LiveMergePassRunner;
+
+    fn assert_merge_runner(_r: &impl MergePassRunner) {}
+    fn assert_merge_runner_object_safe(_r: &dyn MergePassRunner) {}
+}
+
+#[test]
+fn live_retirement_runner_exists_and_implements_retirement_pass_runner_trait() {
+    use maintenance::cron::RetirementPassRunner;
+    use maintenance::LiveRetirementPassRunner;
+
+    fn assert_retirement_runner(_r: &impl RetirementPassRunner) {}
+    fn assert_retirement_runner_object_safe(_r: &dyn RetirementPassRunner) {}
+}
+
+#[test]
+fn maintenance_runtime_noop_runners_dont_compromise_trait_existence() {
+    use maintenance::cron::{MergePassRunner, RetirementPassRunner};
+    use maintenance::{NoopMergePassRunner, NoopRetirementPassRunner};
+
+    fn assert_merge_runner(r: &impl MergePassRunner) {}
+    fn assert_retirement_runner(r: &impl RetirementPassRunner) {}
+
+    assert_merge_runner(&NoopMergePassRunner);
+    assert_retirement_runner(&NoopRetirementPassRunner);
 }

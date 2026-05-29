@@ -1,12 +1,16 @@
-use std::{collections::BTreeMap, sync::Arc};
+use std::{
+    collections::BTreeMap,
+    sync::Arc,
+    time::Instant,
+};
 
 use compiler::{
     CompilerHighlightInput, CompilerRescueCueInput, CompilerSkillInput, TemplateOnlyCompiler,
 };
-use retrieval::SkillRetriever;
+use retrieval::{RetrievalOutcome, SkillRetriever};
 use serde::{Deserialize, Serialize};
 
-use crate::state::SessionSuppressionState;
+use crate::state::{CachedContext, CompiledContextCache, SessionSuppressionState};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -33,6 +37,7 @@ pub struct CompileContextResponse {
     pub scopes_considered: Vec<String>,
     pub graph_version: i64,
     pub latency_ms: u128,
+    pub source: String,
 }
 
 #[derive(Clone)]
@@ -40,6 +45,7 @@ pub struct CompileContextTool {
     retriever: Arc<dyn SkillRetriever>,
     compiler: TemplateOnlyCompiler,
     state: SessionSuppressionState,
+    cache: CompiledContextCache,
 }
 
 impl CompileContextTool {
@@ -47,46 +53,26 @@ impl CompileContextTool {
         retriever: Arc<dyn SkillRetriever>,
         compiler: TemplateOnlyCompiler,
         state: SessionSuppressionState,
+        cache: CompiledContextCache,
     ) -> Self {
         Self {
             retriever,
             compiler,
             state,
+            cache,
         }
     }
 
     pub async fn invoke(&self, request: CompileContextRequest) -> CompileContextResponse {
-        let current_graph_version = self.retriever.current_graph_version();
-        let configured_scopes = self.retriever.configured_scopes();
+        let started_at = Instant::now();
+        let graph_version = self.retriever.current_graph_version();
+        let scopes = self.retriever.configured_scopes();
 
-        if self
-            .state
-            .is_suppressed(
-                &request.session_id,
-                &request.repo_path,
-                current_graph_version,
-            )
+        if let Some(response) = self
+            .try_suppression_or_cache(&request, &scopes, graph_version, started_at)
             .await
         {
-            let graph_version = self
-                .state
-                .graph_version(&request.session_id, &request.repo_path)
-                .await
-                .unwrap_or(current_graph_version);
-            let scopes_considered = self
-                .state
-                .scopes_considered(&request.session_id, &request.repo_path)
-                .await
-                .unwrap_or(configured_scopes);
-            return CompileContextResponse {
-                status: CompileContextStatus::DuplicateSuppressed,
-                reason_code: Some("already_compiled_for_session".to_owned()),
-                additional_context: None,
-                health: BTreeMap::new(),
-                scopes_considered,
-                graph_version,
-                latency_ms: 0,
-            };
+            return response;
         }
 
         let outcome = self
@@ -94,29 +80,109 @@ impl CompileContextTool {
             .retrieve(&request.prompt, Some(request.repo_path.as_str()))
             .await;
 
-        if outcome.skills.is_empty() && outcome.is_degraded() {
-            return CompileContextResponse {
-                status: CompileContextStatus::Degraded,
-                reason_code: outcome
-                    .reason_codes
-                    .first()
-                    .cloned()
-                    .or_else(|| Some("retrieval_degraded".to_owned())),
+        self.handle_retrieval_result(&request, outcome, &scopes).await
+    }
+
+    async fn try_suppression_or_cache(
+        &self,
+        request: &CompileContextRequest,
+        scopes: &[String],
+        graph_version: i64,
+        started_at: Instant,
+    ) -> Option<CompileContextResponse> {
+        if self
+            .state
+            .is_suppressed(&request.session_id, &request.repo_path, graph_version)
+            .await
+        {
+            let gv = self
+                .state
+                .graph_version(&request.session_id, &request.repo_path)
+                .await
+                .unwrap_or(graph_version);
+            let sc = self
+                .state
+                .scopes_considered(&request.session_id, &request.repo_path)
+                .await
+                .unwrap_or_else(|| scopes.to_vec());
+            return Some(CompileContextResponse {
+                status: CompileContextStatus::DuplicateSuppressed,
+                reason_code: Some("already_compiled_for_session".to_owned()),
                 additional_context: None,
-                health: outcome.health,
-                scopes_considered: outcome.scopes_considered,
-                graph_version: outcome.graph_version,
-                latency_ms: outcome.latency_ms,
-            };
+                health: BTreeMap::new(),
+                scopes_considered: sc,
+                graph_version: gv,
+                latency_ms: started_at.elapsed().as_millis(),
+                source: "suppression".to_owned(),
+            });
         }
 
+        if let Some(cached) = self
+            .cache
+            .get(&request.session_id, &request.prompt, scopes, graph_version)
+            .await
+        {
+            return Some(CompileContextResponse {
+                status: cached.status,
+                reason_code: cached.reason_code,
+                additional_context: cached.additional_context,
+                health: cached.health,
+                scopes_considered: cached.scopes_considered,
+                graph_version: cached.graph_version,
+                latency_ms: started_at.elapsed().as_millis(),
+                source: "cache".to_owned(),
+            });
+        }
+
+        None
+    }
+
+    async fn handle_retrieval_result(
+        &self,
+        request: &CompileContextRequest,
+        outcome: RetrievalOutcome,
+        scopes: &[String],
+    ) -> CompileContextResponse {
         if outcome.skills.is_empty() {
+            if outcome.is_degraded() {
+                return CompileContextResponse {
+                    status: CompileContextStatus::Degraded,
+                    reason_code: outcome
+                        .reason_codes
+                        .first()
+                        .cloned()
+                        .or_else(|| Some("retrieval_degraded".to_owned())),
+                    additional_context: None,
+                    health: outcome.health,
+                    scopes_considered: outcome.scopes_considered,
+                    graph_version: outcome.graph_version,
+                    latency_ms: outcome.latency_ms,
+                    source: "retrieval".to_owned(),
+                };
+            }
+
             self.state
                 .mark_healthy(
                     &request.session_id,
                     &request.repo_path,
                     outcome.graph_version,
                     &outcome.scopes_considered,
+                )
+                .await;
+
+            self.cache
+                .set(
+                    &request.session_id,
+                    &request.prompt,
+                    scopes,
+                    CachedContext {
+                        status: CompileContextStatus::NoMatch,
+                        reason_code: Some("no_relevant_skills".to_owned()),
+                        additional_context: None,
+                        scopes_considered: outcome.scopes_considered.clone(),
+                        graph_version: outcome.graph_version,
+                        health: outcome.health.clone(),
+                    },
                 )
                 .await;
 
@@ -128,9 +194,78 @@ impl CompileContextTool {
                 scopes_considered: outcome.scopes_considered,
                 graph_version: outcome.graph_version,
                 latency_ms: outcome.latency_ms,
+                source: "retrieval".to_owned(),
             };
         }
 
+        let markdown = self.compile_markdown(&request.prompt, &outcome);
+
+        if outcome.is_degraded() {
+            return CompileContextResponse {
+                status: CompileContextStatus::Degraded,
+                reason_code: outcome
+                    .reason_codes
+                    .first()
+                    .cloned()
+                    .or_else(|| Some("retrieval_degraded".to_owned())),
+                additional_context: Some(markdown),
+                health: outcome.health,
+                scopes_considered: outcome.scopes_considered,
+                graph_version: outcome.graph_version,
+                latency_ms: outcome.latency_ms,
+                source: "retrieval".to_owned(),
+            };
+        }
+
+        self.cache_and_suppress_ok(request, &outcome, &markdown, scopes)
+            .await;
+
+        CompileContextResponse {
+            status: CompileContextStatus::Ok,
+            reason_code: None,
+            additional_context: Some(markdown),
+            health: outcome.health,
+            scopes_considered: outcome.scopes_considered,
+            graph_version: outcome.graph_version,
+            latency_ms: outcome.latency_ms,
+            source: "retrieval".to_owned(),
+        }
+    }
+
+    async fn cache_and_suppress_ok(
+        &self,
+        request: &CompileContextRequest,
+        outcome: &RetrievalOutcome,
+        markdown: &str,
+        scopes: &[String],
+    ) {
+        self.state
+            .mark_healthy(
+                &request.session_id,
+                &request.repo_path,
+                outcome.graph_version,
+                &outcome.scopes_considered,
+            )
+            .await;
+
+        self.cache
+            .set(
+                &request.session_id,
+                &request.prompt,
+                scopes,
+                CachedContext {
+                    status: CompileContextStatus::Ok,
+                    reason_code: None,
+                    additional_context: Some(markdown.to_owned()),
+                    scopes_considered: outcome.scopes_considered.clone(),
+                    graph_version: outcome.graph_version,
+                    health: outcome.health.clone(),
+                },
+            )
+            .await;
+    }
+
+    fn compile_markdown(&self, prompt: &str, outcome: &RetrievalOutcome) -> String {
         let compiled_skills: Vec<CompilerSkillInput> = outcome
             .skills
             .iter()
@@ -161,43 +296,7 @@ impl CompileContextTool {
             })
             .collect();
 
-        let markdown =
-            self.compiler
-                .compile_with_rescue(&request.prompt, &compiled_skills, &rescue_pool);
-
-        if outcome.is_degraded() {
-            return CompileContextResponse {
-                status: CompileContextStatus::Degraded,
-                reason_code: outcome
-                    .reason_codes
-                    .first()
-                    .cloned()
-                    .or_else(|| Some("retrieval_degraded".to_owned())),
-                additional_context: Some(markdown),
-                health: outcome.health,
-                scopes_considered: outcome.scopes_considered,
-                graph_version: outcome.graph_version,
-                latency_ms: outcome.latency_ms,
-            };
-        }
-
-        self.state
-            .mark_healthy(
-                &request.session_id,
-                &request.repo_path,
-                outcome.graph_version,
-                &outcome.scopes_considered,
-            )
-            .await;
-
-        CompileContextResponse {
-            status: CompileContextStatus::Ok,
-            reason_code: None,
-            additional_context: Some(markdown),
-            health: outcome.health,
-            scopes_considered: outcome.scopes_considered,
-            graph_version: outcome.graph_version,
-            latency_ms: outcome.latency_ms,
-        }
+        self.compiler
+            .compile_with_rescue(prompt, &compiled_skills, &rescue_pool)
     }
 }

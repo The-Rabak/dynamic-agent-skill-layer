@@ -47,8 +47,8 @@ fn copy_tree(from: &Path, to: &Path) {
     }
 }
 
-#[test]
-fn watcher_detects_pending_approval_and_rebuild_respects_invalidation_order() {
+#[tokio::test]
+async fn watcher_detects_pending_approval_and_rebuild_respects_invalidation_order() {
     let sandbox = fresh_sandbox();
     let project_root = sandbox.join("project");
     let global_root = sandbox.join("global");
@@ -131,6 +131,7 @@ fn watcher_detects_pending_approval_and_rebuild_respects_invalidation_order() {
 
     let outcome = orchestrator
         .rebuild_from_changes(&scopes, &all_changes)
+        .await
         .expect("rebuild should succeed");
     assert_eq!(outcome.graph_version, 1);
     assert_eq!(outcome.skills_count, 2);

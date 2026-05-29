@@ -63,7 +63,7 @@ pub(crate) fn configure_scope_env_with_graph_builder_roots(
     graph_builder_project_root: Option<PathBuf>,
     graph_builder_global_root: Option<PathBuf>,
 ) -> ScopeEnvGuard {
-    let lock = ENV_LOCK.lock().expect("env lock poisoned");
+    let lock = ENV_LOCK.lock().unwrap_or_else(|poison| poison.into_inner());
     let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
         .canonicalize()
@@ -85,7 +85,7 @@ pub(crate) fn configure_scope_env_with_graph_builder_roots(
 
 #[test]
 fn scope_env_guard_restores_previous_values() {
-    let _lock = ENV_LOCK.lock().expect("env lock poisoned");
+    let _lock = ENV_LOCK.lock().unwrap_or_else(|poison| poison.into_inner());
     // SAFETY: test-scoped setup.
     unsafe {
         env::set_var("SKILL_GLOBAL_ALLOWED_ROOTS", "before-roots");

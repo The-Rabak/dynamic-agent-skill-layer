@@ -25,7 +25,12 @@ path = "../../tests/integration/test_outbox_consistency.rs"
 name = "test_watcher_churn_reconciliation"
 path = "../../tests/e2e/test_watcher_churn_reconciliation.rs"
 
+[[test]]
+name = "test_real_infrastructure_e2e"
+path = "../../tests/e2e/test_real_infrastructure_e2e.rs"
+
 [dependencies]
+async-trait = "0.1.89"
 blake3 = "1.8.2"
 chrono = { version = "0.4.42", features = ["clock", "serde"] }
 domain = { path = "../domain" }
@@ -36,6 +41,7 @@ serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.145"
 thiserror = "2.0.18"
 tokio = { version = "1.48.0", features = ["macros", "rt-multi-thread"] }
+tracing = "0.1.41"
 reqwest = { version = "0.12.24", default-features = false, features = ["json", "rustls-tls"] }
 sqlx = { version = "0.8.6", default-features = false, features = ["runtime-tokio-rustls", "postgres"] }
 uuid = { version = "1.18.1", features = ["serde", "v7"] }

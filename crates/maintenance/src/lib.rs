@@ -1,7 +1,9 @@
 pub mod audit;
+pub mod audit_sink;
 pub mod cleanup;
 pub mod cron;
 pub mod merge;
+pub mod merge_verifier;
 pub mod retire;
 pub mod runtime;
 
@@ -25,6 +27,7 @@ pub use retire::{
     RetirementConfig, RetirementError, RetirementProposal, RetirementProposalWriter, UsageSample,
 };
 pub use runtime::{
-    MaintenanceRuntimeError, MaintenanceWorkerConfig, NoopMergePassRunner,
-    NoopRetirementPassRunner, run_maintenance_worker, run_maintenance_worker_from_environment,
+    LiveMergePassRunner, LiveRetirementPassRunner, MaintenanceRuntimeError,
+    MaintenanceWorkerConfig, NoopMergePassRunner, NoopRetirementPassRunner,
+    run_maintenance_worker, run_maintenance_worker_from_environment,
 };

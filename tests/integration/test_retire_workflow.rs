@@ -85,7 +85,7 @@ fn retirement_workflow_creates_non_destructive_retired_proposal_marker() {
     let healthy_skill = skill_snapshot("healthy-skill", healthy_skill_path.clone());
     let audit_sink = RecordingMaintenanceAuditSink::default();
     let writer =
-        RetirementProposalWriter::with_audit_sink(RetirementConfig::default(), audit_sink.clone());
+        RetirementProposalWriter::with_audit_sink(RetirementConfig::default(), &audit_sink);
     let now = Utc
         .with_ymd_and_hms(2026, 5, 26, 13, 14, 15)
         .single()

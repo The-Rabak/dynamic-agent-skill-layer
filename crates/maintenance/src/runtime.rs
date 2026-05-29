@@ -1,20 +1,29 @@
 use std::time::Duration;
 
 use chrono::Utc;
-use infrastructure::logging::{ServiceLoggingConfig, init_service_logging};
+use infrastructure::{
+    PostgresAdapter, PostgresConfig, PostgresGraphSnapshotStore,
+    logging::{ServiceLoggingConfig, init_service_logging},
+};
 use thiserror::Error;
 use tokio::time::MissedTickBehavior;
 use tracing::{error, info};
 
+use crate::audit::MaintenanceAuditSink;
+use crate::audit_sink::PostgresMaintenanceAuditSink;
 use crate::cron::{
     CronDecision, CronError, MaintenanceCron, MergePassRunner, RetirementPassRunner,
 };
+use crate::merge::{
+    MergeConfig, MergeProposal, MergeProposalWriter, SkillSnapshot,
+};
+use crate::merge_verifier::TextOverlapMergeSemanticVerifier;
+use crate::retire::{RetirementConfig, RetirementProposal, RetirementProposalWriter};
 
-const DEFAULT_CRON_INTERVAL_SECS: u64 = 60;
-const CRON_INTERVAL_ENV: &str = "MAINTENANCE_CRON_INTERVAL_SECS";
-const RUN_ONCE_ENV: &str = "MAINTENANCE_RUN_ONCE";
+pub const DEFAULT_CRON_INTERVAL_SECS: u64 = 60;
+pub const CRON_INTERVAL_ENV: &str = "MAINTENANCE_CRON_INTERVAL_SECS";
+pub const RUN_ONCE_ENV: &str = "MAINTENANCE_RUN_ONCE";
 
-/// Runtime configuration for the maintenance worker process.
 #[derive(Debug, Clone, PartialEq)]
 pub struct MaintenanceWorkerConfig {
     pub cron_interval: Duration,
@@ -22,7 +31,6 @@ pub struct MaintenanceWorkerConfig {
 }
 
 impl MaintenanceWorkerConfig {
-    /// Loads maintenance worker settings from environment variables.
     pub fn from_environment() -> Result<Self, MaintenanceRuntimeError> {
         let interval_seconds = match std::env::var(CRON_INTERVAL_ENV) {
             Ok(raw) => parse_positive_seconds(CRON_INTERVAL_ENV, &raw)?,
@@ -39,33 +47,208 @@ impl MaintenanceWorkerConfig {
     }
 }
 
-/// Placeholder merge runner used until runtime adapters are connected.
+pub struct LiveMergePassRunner<A = PostgresMaintenanceAuditSink>
+where
+    A: MaintenanceAuditSink,
+{
+    pub snapshot_store: PostgresGraphSnapshotStore,
+    pub scope_roots: Vec<std::path::PathBuf>,
+    audit_sink: A,
+}
+
+impl LiveMergePassRunner<PostgresMaintenanceAuditSink> {
+    pub fn new(
+        snapshot_store: PostgresGraphSnapshotStore,
+        scope_roots: Vec<std::path::PathBuf>,
+        audit_adapter: &PostgresAdapter,
+    ) -> Self {
+        Self {
+            snapshot_store,
+            scope_roots,
+            audit_sink: PostgresMaintenanceAuditSink::from_pool(audit_adapter.pool().clone()),
+        }
+    }
+}
+
+impl<A> LiveMergePassRunner<A>
+where
+    A: MaintenanceAuditSink,
+{
+    pub fn with_audit_sink(
+        snapshot_store: PostgresGraphSnapshotStore,
+        scope_roots: Vec<std::path::PathBuf>,
+        audit_sink: A,
+    ) -> Self {
+        Self {
+            snapshot_store,
+            scope_roots,
+            audit_sink,
+        }
+    }
+}
+
+impl<A> MergePassRunner for LiveMergePassRunner<A>
+where
+    A: MaintenanceAuditSink,
+{
+    fn run_merge_pass(
+        &mut self,
+        now: chrono::DateTime<Utc>,
+    ) -> Result<Vec<MergeProposal>, CronError> {
+        let skills = load_skill_snapshots(&self.scope_roots)
+            .map_err(|e| CronError::MergePass(e.to_string()))?;
+        if skills.len() < 2 {
+            return Ok(Vec::new());
+        }
+        let verifier = TextOverlapMergeSemanticVerifier::default();
+        let config = MergeConfig {
+            similarity_threshold: 0.85,
+            ..MergeConfig::default()
+        };
+        let writer = MergeProposalWriter::with_audit_sink(config, verifier, &self.audit_sink);
+        writer
+            .propose(&skills, now)
+            .map_err(|e| CronError::MergePass(e.to_string()))
+    }
+}
+
+pub struct LiveRetirementPassRunner<A = PostgresMaintenanceAuditSink>
+where
+    A: MaintenanceAuditSink,
+{
+    pub snapshot_store: PostgresGraphSnapshotStore,
+    pub scope_roots: Vec<std::path::PathBuf>,
+    pub retirement_config: RetirementConfig,
+    audit_sink: A,
+}
+
+impl LiveRetirementPassRunner<PostgresMaintenanceAuditSink> {
+    pub fn new(
+        snapshot_store: PostgresGraphSnapshotStore,
+        scope_roots: Vec<std::path::PathBuf>,
+        retirement_config: RetirementConfig,
+        audit_adapter: &PostgresAdapter,
+    ) -> Self {
+        Self {
+            snapshot_store,
+            scope_roots,
+            retirement_config,
+            audit_sink: PostgresMaintenanceAuditSink::from_pool(audit_adapter.pool().clone()),
+        }
+    }
+}
+
+impl<A> LiveRetirementPassRunner<A>
+where
+    A: MaintenanceAuditSink,
+{
+    pub fn with_audit_sink(
+        snapshot_store: PostgresGraphSnapshotStore,
+        scope_roots: Vec<std::path::PathBuf>,
+        retirement_config: RetirementConfig,
+        audit_sink: A,
+    ) -> Self {
+        Self {
+            snapshot_store,
+            scope_roots,
+            retirement_config,
+            audit_sink,
+        }
+    }
+}
+
+impl<A> RetirementPassRunner for LiveRetirementPassRunner<A>
+where
+    A: MaintenanceAuditSink,
+{
+    fn run_retirement_pass(
+        &mut self,
+        now: chrono::DateTime<Utc>,
+    ) -> Result<Vec<RetirementProposal>, CronError> {
+        let skills = load_skill_snapshots(&self.scope_roots)
+            .map_err(|e| CronError::RetirementPass(e.to_string()))?;
+        if skills.is_empty() {
+            return Ok(Vec::new());
+        }
+        let writer = RetirementProposalWriter::with_audit_sink(
+            self.retirement_config.clone(),
+            &self.audit_sink,
+        );
+        writer
+            .propose(&skills, &[], now)
+            .map_err(|e| CronError::RetirementPass(e.to_string()))
+    }
+}
+
+fn load_skill_snapshots(
+    scope_roots: &[std::path::PathBuf],
+) -> Result<Vec<SkillSnapshot>, String> {
+    use graph_builder::{
+        graph::build::build_skills_from_scope_roots,
+        graph::embeddings::DeterministicEmbeddingGenerator,
+        ScopeRoot,
+    };
+    use domain::ScopeType;
+
+    let roots: Vec<ScopeRoot> = scope_roots
+        .iter()
+        .enumerate()
+        .map(|(i, path)| {
+            let scope_id = format!("scope-{i}");
+            let scope_type = if path
+                .to_str()
+                .is_some_and(|s| s.contains("global"))
+            {
+                ScopeType::Global
+            } else {
+                ScopeType::Project
+            };
+            ScopeRoot::new(&scope_id, scope_type, path.clone())
+        })
+        .collect();
+
+    let built = build_skills_from_scope_roots(&roots, &DeterministicEmbeddingGenerator)
+        .map_err(|e| e.to_string())?;
+
+    Ok(built
+        .into_iter()
+        .map(|skill| SkillSnapshot {
+            id: skill.id,
+            name: skill.name,
+            description: skill.description,
+            scope: skill.scope_type,
+            source_path: skill.source_path,
+            tags: skill.tags,
+            subunits: skill.subunits.into_iter().map(|s| s.content).collect(),
+            embedding: skill.embedding,
+        })
+        .collect())
+}
+
 #[derive(Debug, Default)]
 pub struct NoopMergePassRunner;
 
 impl MergePassRunner for NoopMergePassRunner {
     fn run_merge_pass(
         &mut self,
-        _now: chrono::DateTime<chrono::Utc>,
-    ) -> Result<Vec<crate::merge::MergeProposal>, CronError> {
+        _now: chrono::DateTime<Utc>,
+    ) -> Result<Vec<MergeProposal>, CronError> {
         Ok(Vec::new())
     }
 }
 
-/// Placeholder retirement runner used until runtime adapters are connected.
 #[derive(Debug, Default)]
 pub struct NoopRetirementPassRunner;
 
 impl RetirementPassRunner for NoopRetirementPassRunner {
     fn run_retirement_pass(
         &mut self,
-        _now: chrono::DateTime<chrono::Utc>,
-    ) -> Result<Vec<crate::retire::RetirementProposal>, CronError> {
+        _now: chrono::DateTime<Utc>,
+    ) -> Result<Vec<RetirementProposal>, CronError> {
         Ok(Vec::new())
     }
 }
 
-/// Runs the maintenance worker loop with explicit dependencies.
 pub async fn run_maintenance_worker(
     config: MaintenanceWorkerConfig,
     cron: &mut MaintenanceCron,
@@ -92,7 +275,6 @@ pub async fn run_maintenance_worker(
     }
 }
 
-/// Builds runtime config and executes the maintenance worker with default runners.
 pub async fn run_maintenance_worker_from_environment() -> Result<(), MaintenanceRuntimeError> {
     let environment = std::env::var("APP_ENV")
         .or_else(|_| std::env::var("ENVIRONMENT"))
@@ -107,10 +289,54 @@ pub async fn run_maintenance_worker_from_environment() -> Result<(), Maintenance
 
     let config = MaintenanceWorkerConfig::from_environment()?;
     let mut cron = MaintenanceCron::new(config.cron_interval)?;
-    let mut merge_runner = NoopMergePassRunner;
-    let mut retirement_runner = NoopRetirementPassRunner;
+
+    let db_url = std::env::var("DATABASE_URL")
+        .unwrap_or_else(|_| "postgres://skill_layer:skill_layer@localhost:15432/skill_layer".to_owned());
+    let pg_adapter = PostgresAdapter::connect(&PostgresConfig {
+        database_url: db_url,
+        ..PostgresConfig::default()
+    })
+    .await
+    .map_err(|error| MaintenanceRuntimeError::InvalidConfiguration(error.to_string()))?;
+    let snapshot_store = PostgresGraphSnapshotStore::new(pg_adapter.pool().clone());
+
+    let scope_roots = build_scope_roots_from_environment();
+
+    let mut merge_runner = LiveMergePassRunner::new(
+        snapshot_store.clone(),
+        scope_roots.clone(),
+        &pg_adapter,
+    );
+    let mut retirement_runner = LiveRetirementPassRunner::new(
+        snapshot_store,
+        scope_roots,
+        RetirementConfig::default(),
+        &pg_adapter,
+    );
 
     run_maintenance_worker(config, &mut cron, &mut merge_runner, &mut retirement_runner).await
+}
+
+fn build_scope_roots_from_environment() -> Vec<std::path::PathBuf> {
+    let mut roots = Vec::new();
+    if let Ok(project_root) = std::env::var("GRAPH_BUILDER_PROJECT_ROOT") {
+        let path = std::path::PathBuf::from(project_root);
+        if path.is_dir() {
+            roots.push(path);
+        }
+    }
+    if let Ok(global_root) = std::env::var("GRAPH_BUILDER_GLOBAL_ROOT") {
+        let path = std::path::PathBuf::from(global_root);
+        if path.is_dir() {
+            roots.push(path);
+        }
+    }
+    if roots.is_empty() {
+        if let Ok(cwd) = std::env::current_dir() {
+            roots.push(cwd);
+        }
+    }
+    roots
 }
 
 #[derive(Debug, Error)]
@@ -124,7 +350,6 @@ pub enum MaintenanceRuntimeError {
 }
 
 impl MaintenanceRuntimeError {
-    /// Maps runtime failures to stable reason codes.
     pub fn reason_code(&self) -> &'static str {
         match self {
             Self::InvalidConfiguration(_) => "maintenance_runtime_invalid_configuration",
@@ -190,7 +415,7 @@ fn parse_boolean_switch(name: &str, raw_value: &str) -> Result<bool, Maintenance
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::{DateTime, Utc};
+    use chrono::DateTime;
 
     #[derive(Default)]
     struct CountingMergeRunner {
@@ -201,7 +426,7 @@ mod tests {
         fn run_merge_pass(
             &mut self,
             _now: DateTime<Utc>,
-        ) -> Result<Vec<crate::merge::MergeProposal>, CronError> {
+        ) -> Result<Vec<MergeProposal>, CronError> {
             self.invocations += 1;
             Ok(Vec::new())
         }
@@ -216,7 +441,7 @@ mod tests {
         fn run_retirement_pass(
             &mut self,
             _now: DateTime<Utc>,
-        ) -> Result<Vec<crate::retire::RetirementProposal>, CronError> {
+        ) -> Result<Vec<RetirementProposal>, CronError> {
             self.invocations += 1;
             Ok(Vec::new())
         }

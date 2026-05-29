@@ -1,8 +1,12 @@
 ---
-ticket_id: T14
+ticket_id: T15
 title: Live data-plane E2E and stress suite
 kind: hardening
-status: ready
+status: superseded
+superseded_by:
+  - T15a
+  - T15b
+split_reason: scope too large for one ticket — split into harness factory + roundtrip validation (T15a) and stress/resilience/edge-case suite (T15b)
 plan_ref: docs/plans/2026-05-21-feat-skill-layer-v1-1-plan.md
 tickets_ref: docs/tickets/2026-05-21-skill-layer-v1-1/index.md
 architecture_ref: docs/architecture/2026-05-21-skill-layer-v1-1-architecture.md
