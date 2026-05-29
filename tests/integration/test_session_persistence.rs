@@ -216,11 +216,20 @@ async fn repeated_prompt_returns_cached_context_without_rerunning_pipeline() {
     assert!(first.additional_context.is_some());
     let first_markdown = first.additional_context.clone().unwrap_or_default();
 
+    // Same session: second call is suppressed (suppression before cache per #073).
     let second = server.compile_context(request.clone()).await;
-    assert_eq!(second.status, CompileContextStatus::Ok);
-    assert_eq!(second.additional_context, Some(first_markdown));
-    assert_eq!(second.scopes_considered, first.scopes_considered);
-    assert_eq!(second.graph_version, first.graph_version);
+    assert_eq!(second.status, CompileContextStatus::DuplicateSuppressed);
+
+    // Different session with same prompt: cache is per-session now (#076), so
+    // new session triggers fresh retrieval — no cross-session cache sharing.
+    let different_session = CompileContextRequest {
+        prompt: "how do i read a file in rust".to_owned(),
+        session_id: "session-cache-b".to_owned(),
+        repo_path: test_repo_path(),
+    };
+    let third = server.compile_context(different_session).await;
+    assert_eq!(third.status, CompileContextStatus::Ok);
+    assert!(third.additional_context.is_some());
 }
 
 #[tokio::test]
@@ -342,7 +351,16 @@ async fn healthy_no_match_populates_cache_and_returns_cached_on_repeat() {
     assert_eq!(first.status, CompileContextStatus::NoMatch);
 
     let second = server.compile_context(request.clone()).await;
-    assert_eq!(second.status, CompileContextStatus::NoMatch);
-    assert_eq!(second.reason_code, first.reason_code);
-    assert_eq!(second.scopes_considered, first.scopes_considered);
+    assert_eq!(second.status, CompileContextStatus::DuplicateSuppressed);
+
+    // Different session: cache is per-session (#076), fresh retrieval.
+    let different_session = CompileContextRequest {
+        prompt: "quantum banana".to_owned(),
+        session_id: "session-nomatch-cache-b".to_owned(),
+        repo_path: test_repo_path(),
+    };
+    let third = server.compile_context(different_session).await;
+    assert_eq!(third.status, CompileContextStatus::NoMatch);
+    assert_eq!(third.reason_code, first.reason_code);
+    assert_eq!(third.scopes_considered, first.scopes_considered);
 }

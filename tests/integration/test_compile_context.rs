@@ -371,8 +371,8 @@ async fn compile_context_returns_ok_then_duplicate_suppressed_after_healthy_resu
     assert!(first.latency_ms < 500);
 
     let second = server.compile_context(request).await;
-    assert_eq!(second.status, CompileContextStatus::Ok);
-    assert_eq!(second.additional_context, Some(markdown));
+    assert_eq!(second.status, CompileContextStatus::DuplicateSuppressed);
+    assert!(second.additional_context.is_none());
     assert_eq!(second.graph_version, first.graph_version);
     assert_eq!(second.scopes_considered, first.scopes_considered);
 }
@@ -399,8 +399,8 @@ async fn compile_context_returns_no_match_for_healthy_empty_and_suppresses_follo
     assert!(first.additional_context.is_none());
 
     let second = server.compile_context(request).await;
-    assert_eq!(second.status, CompileContextStatus::NoMatch);
-    assert_eq!(second.reason_code.as_deref(), Some("no_relevant_skills"));
+    assert_eq!(second.status, CompileContextStatus::DuplicateSuppressed);
+    assert_eq!(second.reason_code.as_deref(), Some("already_compiled_for_session"));
     assert_eq!(second.graph_version, first.graph_version);
     assert_eq!(second.scopes_considered, first.scopes_considered);
 }

@@ -25,7 +25,12 @@ path = "../../tests/integration/test_outbox_consistency.rs"
 name = "test_watcher_churn_reconciliation"
 path = "../../tests/e2e/test_watcher_churn_reconciliation.rs"
 
+[[test]]
+name = "test_real_infrastructure_e2e"
+path = "../../tests/e2e/test_real_infrastructure_e2e.rs"
+
 [dependencies]
+async-trait = "0.1.89"
 blake3 = "1.8.2"
 chrono = { version = "0.4.42", features = ["clock", "serde"] }
 domain = { path = "../domain" }

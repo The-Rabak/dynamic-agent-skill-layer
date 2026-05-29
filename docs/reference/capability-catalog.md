@@ -36,6 +36,7 @@ Deep architecture reference: [`docs/architecture/2026-05-21-skill-layer-v1-1-arc
 - `scopes_considered`: list of scope IDs searched
 - `graph_version`: current graph version at time of request
 - `latency_ms`: end-to-end latency in milliseconds
+- `source`: origin of the response — `"retrieval"` (fresh), `"cache"` (cached hit), or `"suppression"` (duplicate suppressed)
 
 **Latency target:** <500ms p95 (verified by `cargo bench --bench compile_context_bench`)
 

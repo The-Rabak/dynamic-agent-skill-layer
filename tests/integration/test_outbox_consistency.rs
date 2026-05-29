@@ -624,8 +624,9 @@ struct OutboxDrainRequiredState {
     operation_log: Vec<String>,
 }
 
+#[async_trait]
 impl DurableGraphState for OutboxDrainRequiredState {
-    fn persist_graph_mutation(
+    async fn persist_graph_mutation(
         &mut self,
         _mutation: graph_builder::graph::rebuild::DurableGraphMutation,
     ) -> Result<(), GraphRebuildError> {
@@ -633,14 +634,14 @@ impl DurableGraphState for OutboxDrainRequiredState {
         Ok(())
     }
 
-    fn mark_outbox_drained(&mut self) -> Result<(), GraphRebuildError> {
+    async fn mark_outbox_drained(&mut self) -> Result<(), GraphRebuildError> {
         self.operation_log.push("mark_outbox_drained".to_owned());
         Err(GraphRebuildError::DurableWrite(
             "outbox backlog not drained".to_owned(),
         ))
     }
 
-    fn bump_graph_version(&mut self) -> Result<i64, GraphRebuildError> {
+    async fn bump_graph_version(&mut self) -> Result<i64, GraphRebuildError> {
         self.operation_log.push("bump_graph_version".to_owned());
         Ok(1)
     }
@@ -656,8 +657,8 @@ fn fresh_sandbox() -> PathBuf {
     sandbox
 }
 
-#[test]
-fn graph_rebuilt_is_not_emitted_when_outbox_drain_fails() {
+#[tokio::test]
+async fn graph_rebuilt_is_not_emitted_when_outbox_drain_fails() {
     let sandbox = fresh_sandbox();
     let skill_dir = sandbox.join("skill-a");
     fs::create_dir_all(&skill_dir).expect("skill directory should be creatable");
@@ -683,7 +684,7 @@ fn graph_rebuilt_is_not_emitted_when_outbox_drain_fails() {
     let mut published_events = Vec::new();
     let mut orchestrator = GraphRebuildOrchestrator::new(&mut durable_state, &mut published_events);
 
-    let result = orchestrator.rebuild_from_changes(&[scope], &[file_change]);
+    let result = orchestrator.rebuild_from_changes(&[scope], &[file_change]).await;
     assert!(result.is_err());
     assert!(
         published_events.is_empty(),
@@ -694,6 +695,136 @@ fn graph_rebuilt_is_not_emitted_when_outbox_drain_fails() {
         vec![
             "persist_graph_mutation".to_owned(),
             "mark_outbox_drained".to_owned()
+        ]
+    );
+
+    fs::remove_dir_all(&sandbox).expect("sandbox should clean up");
+}
+
+#[derive(Default)]
+struct RelayBackedState {
+    operation_log: Vec<String>,
+    graph_version: i64,
+    outbox_events: Vec<OutboxEvent>,
+    outbox_pending_count: usize,
+}
+
+#[async_trait]
+impl DurableGraphState for RelayBackedState {
+    async fn persist_graph_mutation(
+        &mut self,
+        _mutation: graph_builder::graph::rebuild::DurableGraphMutation,
+    ) -> Result<(), GraphRebuildError> {
+        self.operation_log.push("persist_graph_mutation".to_owned());
+        Ok(())
+    }
+
+    async fn mark_outbox_drained(&mut self) -> Result<(), GraphRebuildError> {
+        self.operation_log.push("mark_outbox_drained".to_owned());
+        if self.outbox_pending_count > 0 {
+            return Err(GraphRebuildError::DurableWrite(
+                "outbox still has pending items after relay drain".to_owned(),
+            ));
+        }
+        Ok(())
+    }
+
+    async fn bump_graph_version(&mut self) -> Result<i64, GraphRebuildError> {
+        self.operation_log.push("bump_graph_version".to_owned());
+        self.graph_version += 1;
+        Ok(self.graph_version)
+    }
+}
+
+#[tokio::test]
+async fn graph_rebuilt_ordering_persist_then_outbox_drain_then_version_then_event() {
+    let sandbox = fresh_sandbox();
+    let skill_dir = sandbox.join("ordering-skill");
+    fs::create_dir_all(&skill_dir).expect("skill directory should be creatable");
+    fs::write(
+        skill_dir.join("SKILL.md"),
+        "# Ordering Skill\n\ndescription: ordering test\n\n## Procedures\n- step one\n",
+    )
+    .expect("skill fixture should be writable");
+
+    let scope = ScopeRoot::new("project", ScopeType::Project, sandbox.clone());
+    let file_change = SkillFileChange {
+        scope_id: "project".to_owned(),
+        scope_type: ScopeType::Project,
+        file_path: skill_dir.join("SKILL.md"),
+        kind: SkillFileChangeKind::Created,
+        source: FileChangeSource::Direct,
+        content_hash: "hash-ordering".to_owned(),
+        idempotency_key: "ordering:hash".to_owned(),
+    };
+
+    let mut durable_state = RelayBackedState::default();
+    let mut published_events = Vec::new();
+    let mut orchestrator = GraphRebuildOrchestrator::new(&mut durable_state, &mut published_events);
+
+    let outcome = orchestrator
+        .rebuild_from_changes(&[scope], &[file_change])
+        .await
+        .expect("rebuild should succeed with clean relay");
+
+    assert_eq!(
+        durable_state.operation_log,
+        vec![
+            "persist_graph_mutation".to_owned(),
+            "mark_outbox_drained".to_owned(),
+            "bump_graph_version".to_owned(),
+        ]
+    );
+    assert_eq!(published_events.len(), 1);
+    assert_eq!(published_events[0].event_type, "graph.rebuilt");
+
+    fs::remove_dir_all(&sandbox).expect("sandbox should clean up");
+}
+
+#[tokio::test]
+async fn graph_rebuilt_fails_when_outbox_drain_reports_pending_items() {
+    let sandbox = fresh_sandbox();
+    let skill_dir = sandbox.join("backlog-skill");
+    fs::create_dir_all(&skill_dir).expect("skill directory should be creatable");
+    fs::write(
+        skill_dir.join("SKILL.md"),
+        "# Backlog Skill\n\ndescription: drain test\n\n## Procedures\n- step one\n",
+    )
+    .expect("skill fixture should be writable");
+
+    let scope = ScopeRoot::new("project", ScopeType::Project, sandbox.clone());
+    let file_change = SkillFileChange {
+        scope_id: "project".to_owned(),
+        scope_type: ScopeType::Project,
+        file_path: skill_dir.join("SKILL.md"),
+        kind: SkillFileChangeKind::Created,
+        source: FileChangeSource::Direct,
+        content_hash: "hash-backlog".to_owned(),
+        idempotency_key: "backlog:hash".to_owned(),
+    };
+
+    let mut durable_state = RelayBackedState {
+        operation_log: Vec::new(),
+        graph_version: 0,
+        outbox_events: Vec::new(),
+        outbox_pending_count: 3,
+    };
+    let mut published_events = Vec::new();
+    let mut orchestrator = GraphRebuildOrchestrator::new(&mut durable_state, &mut published_events);
+
+    let result = orchestrator
+        .rebuild_from_changes(&[scope], &[file_change])
+        .await;
+    assert!(result.is_err());
+    assert!(
+        published_events.is_empty(),
+        "graph.rebuilt must not fire when outbox has pending backlog"
+    );
+    assert_eq!(
+        durable_state.operation_log,
+        vec![
+            "persist_graph_mutation".to_owned(),
+            "mark_outbox_drained".to_owned(),
         ]
     );
 

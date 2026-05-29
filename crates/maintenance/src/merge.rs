@@ -136,7 +136,7 @@ pub trait MergeSemanticVerifier: Send + Sync {
 }
 
 /// Writes merged `.pending` artifacts without mutating active source skills.
-pub struct MergeProposalWriter<V, S = NoopMaintenanceAuditSink>
+pub struct MergeProposalWriter<'s, V, S = NoopMaintenanceAuditSink>
 where
     V: MergeSemanticVerifier,
     S: MaintenanceAuditSink,
@@ -144,26 +144,32 @@ where
     config: MergeConfig,
     scope_policy: ScopeSelectionPolicy,
     semantic_verifier: V,
-    audit_sink: S,
+    audit_sink: &'s S,
 }
 
-impl<V> MergeProposalWriter<V, NoopMaintenanceAuditSink>
+impl<'s, V> MergeProposalWriter<'s, V, NoopMaintenanceAuditSink>
 where
     V: MergeSemanticVerifier,
 {
     /// Creates a writer with explicit merge config and deterministic scope policy.
     pub fn new(config: MergeConfig, semantic_verifier: V) -> Self {
-        Self::with_audit_sink(config, semantic_verifier, NoopMaintenanceAuditSink)
+        static NOOP: NoopMaintenanceAuditSink = NoopMaintenanceAuditSink;
+        Self {
+            config,
+            scope_policy: ScopeSelectionPolicy::PreferProjectThenGlobal,
+            semantic_verifier,
+            audit_sink: &NOOP,
+        }
     }
 }
 
-impl<V, S> MergeProposalWriter<V, S>
+impl<'s, V, S> MergeProposalWriter<'s, V, S>
 where
     V: MergeSemanticVerifier,
     S: MaintenanceAuditSink,
 {
     /// Creates a writer with an explicit merge audit sink.
-    pub fn with_audit_sink(config: MergeConfig, semantic_verifier: V, audit_sink: S) -> Self {
+    pub fn with_audit_sink(config: MergeConfig, semantic_verifier: V, audit_sink: &'s S) -> Self {
         Self {
             config,
             scope_policy: ScopeSelectionPolicy::PreferProjectThenGlobal,

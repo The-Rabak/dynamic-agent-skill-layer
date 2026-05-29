@@ -40,8 +40,10 @@
 | 11 | `11-graceful-degrade-and-health-checks.md` | hardening | Resilience and health semantics are explicit across services | T08 |
 | 12 | `12-session-persistence-and-context-cache.md` | hardening | Session suppression and compiled-context caching survive restart and invalidation | T11 |
 | 13 | `13-logging-benchmarks-and-docs.md` | hardening | Structured logs, latency evidence, and operator docs are complete | T11 |
-| 14 | `14-live-data-plane-e2e-and-stress-suite.md` | hardening | Full live data-plane flow is validated under realistic dependency and load conditions | T07, T11, T13 |
-| 15 | `15-extraction-prompt-review-and-unification.md` | hardening | Extraction prompt strategy is reviewed, unified where possible, and provider-specific divergence is explicitly justified | T06 |
+| 14 | `14-extraction-prompt-review-and-unification.md` | hardening | Extraction prompt strategy is reviewed, unified where possible, and provider-specific divergence is explicitly justified | T06 |
+| 15a | `15a-live-harness-factory-and-roundtrip-validation.md` | hardening | `build_live_server()` factory, Docker test topology, fixtures, report infrastructure, and one live roundtrip smoke test exist | T07, T11, T13 |
+| 15b | `15b-stress-resilience-and-edge-case-suite.md` | hardening | Extraction, degraded/recovery, churn, concurrency stress, and dream-state E2E tests validate the live data plane under realistic load and failure | T15a |
+
 
 ## Dependency View
 
@@ -60,8 +62,10 @@
 | T11 | T08 | Resilience pass comes after the main offline policy loop exists |
 | T12 | T11 | Cache and suppression semantics rely on final degraded/healthy rules |
 | T13 | T11 | Logging and docs should describe the hardened runtime, not a moving target |
-| T14 | T07, T11, T13 | Final hardening gate validates live data-plane correctness, degraded recovery, and bounded stress behavior end to end |
-| T15 | T06 | Prompt strategy hardening depends on the established extraction contract and must preserve provider-parity outputs |
+| T14 | T06 | Prompt strategy hardening depends on the established extraction contract and must preserve provider-parity outputs |
+| T15a | T07, T11, T13 | Live harness factory gates all live E2E testing — wires real infra adapters into `McpServerApp`, extends Docker topology, seeds fixtures, and builds report infrastructure |
+| T15b | T15a | Stress/resilience/edge-case suite consumes the T15a harness — extraction, degradation, churn, concurrency, and dream-state tests against live dependencies |
+
 
 ## Blocker Summary
 
@@ -77,6 +81,7 @@
 ### Post-Execution Artifacts
 
 - **T11 realignment (2026-05-28):** Implementation notes appended to `11-graceful-degrade-and-health-checks.md` to reconcile ticket env-var semantics with actual compose/code defaults. See the `## Implementation Notes` section in the ticket file for detailed diffs.
+- **T15 split (2026-05-29):** Original `15-live-data-plane-e2e-and-stress-suite.md` was too large for one ticket. Split into `15a-live-harness-factory-and-roundtrip-validation.md` (harness, topology, fixtures, reports, one roundtrip smoke test) and `15b-stress-resilience-and-edge-case-suite.md` (extraction, degraded/recovery, churn, concurrency, dream-state tests). T15b hard-depends on T15a. Original T15 marked `superseded`.
 
 ### Recommendations
 

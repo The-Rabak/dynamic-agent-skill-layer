@@ -350,9 +350,9 @@ impl SessionExtractor {
                         ))
                         .await
                     {
-                        eprintln!(
-                            "failed to publish extraction.failed lifecycle event: {}",
-                            failed_publish_error
+                        tracing::error!(
+                            ?failed_publish_error,
+                            "failed to publish extraction.failed lifecycle event"
                         );
                     }
                 }

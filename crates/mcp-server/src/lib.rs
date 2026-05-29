@@ -1,5 +1,7 @@
 mod admin_wiring;
+mod context_cache;
 pub mod protocol;
+mod suppression_state;
 pub mod state;
 pub mod tools {
     pub mod compile_context;
@@ -34,6 +36,8 @@ pub struct McpServerApp {
     extract_session: ExtractSessionTool,
     find_skill: FindSkillTool,
     admin_tools: AdminTools,
+    session_state: SessionSuppressionState,
+    cache: CompiledContextCache,
 }
 
 impl McpServerApp {
@@ -59,10 +63,17 @@ impl McpServerApp {
         let admin_tools = AdminTools::new(rebuild_trigger, graph_reader);
 
         Self {
-            compile_context: CompileContextTool::new(retriever.clone(), compiler, state, cache),
+            compile_context: CompileContextTool::new(
+                retriever.clone(),
+                compiler,
+                state.clone(),
+                cache.clone(),
+            ),
             extract_session: ExtractSessionTool::from_environment(),
             find_skill: FindSkillTool::new(retriever),
             admin_tools,
+            session_state: state,
+            cache,
         }
     }
 
@@ -85,7 +96,17 @@ impl McpServerApp {
         &self,
         request: ExtractSessionRequest,
     ) -> session_extractor::ExtractSessionResponse {
-        self.extract_session.invoke(request).await
+        let session_id = request.session_id.clone();
+        let response = self.extract_session.invoke(request).await;
+        if response.status != "failed" {
+            tracing::info!(
+                session_id = %session_id,
+                "clearing session suppression and cache after extraction enqueue"
+            );
+            self.cache.clear_session(&session_id);
+            self.session_state.clear_session(&session_id);
+        }
+        response
     }
 
     pub async fn rebuild_graph(&self, request: RebuildGraphRequest) -> RebuildGraphResponse {

@@ -48,8 +48,8 @@ fn copy_tree(from: &Path, to: &Path) {
     }
 }
 
-#[test]
-fn watcher_churn_and_reconciliation_preserve_contracts_under_heavy_file_activity() {
+#[tokio::test]
+async fn watcher_churn_and_reconciliation_preserve_contracts_under_heavy_file_activity() {
     let sandbox = fresh_sandbox();
     let project_root = sandbox.join("project");
     let global_root = sandbox.join("global");
@@ -153,6 +153,7 @@ fn watcher_churn_and_reconciliation_preserve_contracts_under_heavy_file_activity
     let mut orchestrator = GraphRebuildOrchestrator::new(&mut durable_state, &mut published_events);
     let outcome = orchestrator
         .rebuild_from_changes(&scopes, &observed_changes)
+        .await
         .expect("rebuild should succeed after churn and reconciliation");
 
     assert_eq!(outcome.graph_version, 1);

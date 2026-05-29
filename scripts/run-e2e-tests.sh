@@ -20,6 +20,34 @@ for arg in "$@"; do
   esac
 done
 
+COMPOSE_FILE="docker-compose.test.yml"
+
+cleanup_infra() {
+  docker compose --ansi never -f "${COMPOSE_FILE}" down --remove-orphans >/dev/null 2>&1 || true
+}
+
+if [[ "${SKIP_INFRA}" -eq 0 ]]; then
+  trap cleanup_infra EXIT
+
+  echo "==> Starting infrastructure test stack"
+  docker compose --ansi never -f "${COMPOSE_FILE}" down --remove-orphans >/dev/null 2>&1 || true
+  docker compose --ansi never -f "${COMPOSE_FILE}" up -d postgres redis qdrant ollama
+
+  echo "==> Verifying topology"
+  docker compose --ansi never -f "${COMPOSE_FILE}" run --rm --no-deps topology-check >/dev/null
+
+  echo "==> Running infrastructure/container E2E checks"
+  ./scripts/run-t02-infrastructure-tests.sh
+
+  echo "==> Running real-infrastructure Rust E2E tests (graph-builder -> PG + Qdrant)"
+  export DATABASE_URL="postgres://skill_layer:skill_layer@localhost:15432/skill_layer"
+  export QDRANT_URL="http://localhost:16333"
+  cargo test -p graph-builder --test test_real_infrastructure_e2e
+
+  echo "==> Running maintenance real-infrastructure E2E tests"
+  cargo test -p maintenance --test test_maintenance_e2e
+fi
+
 echo "==> Running realistic MCP E2E tests"
 cargo test -p mcp-server \
   --test test_compile_context \
@@ -36,13 +64,8 @@ cargo test -p graph-builder \
 echo "==> Validating dream-state contract tests compile and register"
 cargo test -p mcp-server --test test_dream_state_contract
 
-if [[ "${SKIP_INFRA}" -eq 0 ]]; then
-  echo "==> Running infrastructure/container E2E checks"
-  ./scripts/run-t02-infrastructure-tests.sh
-fi
-
 if [[ "${INCLUDE_DREAM}" -eq 1 ]]; then
-  echo "==> Executing ignored dream-state contracts (expected to fail until fully implemented)"
+  echo "==> Executing ignored dream-state contracts"
   cargo test -p mcp-server --test test_dream_state_contract -- --ignored
 fi
 

@@ -136,7 +136,6 @@ services:
       GRAPH_BUILDER_PROJECT_ROOT: ${GRAPH_BUILDER_PROJECT_ROOT:-/skills/project}
       GRAPH_BUILDER_GLOBAL_ROOT: ${GRAPH_BUILDER_GLOBAL_ROOT:-/skills/global}
       GRAPH_BUILDER_ADDR: 0.0.0.0:${GRAPH_BUILDER_PORT:-8080}
-      GRAPH_BUILDER_ALLOW_SYNTHETIC_OUTBOX_DRAIN: ${GRAPH_BUILDER_ALLOW_SYNTHETIC_OUTBOX_DRAIN:-1}
     volumes:
       - ${GRAPH_BUILDER_PROJECT_ROOT:-.}:/skills/project:ro
       - ${SKILL_GLOBAL_HOST_PATH:-./docs}:/skills/global
@@ -180,3 +179,4 @@ volumes:
   redis_data:
   qdrant_data:
   ollama_data:
+    external: true
