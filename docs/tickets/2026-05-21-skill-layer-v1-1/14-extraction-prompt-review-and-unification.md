@@ -7,7 +7,7 @@ plan_ref: docs/plans/2026-05-21-feat-skill-layer-v1-1-plan.md
 tickets_ref: docs/tickets/2026-05-21-skill-layer-v1-1/index.md
 architecture_ref: docs/architecture/2026-05-21-skill-layer-v1-1-architecture.md
 source_packet_ref: "Follow-on hardening after T06"
-feature_home: crates/session-extractor/
+feature_home: crates/infrastructure/
 depends_on:
   - T06
 dependency_type: hard
@@ -16,9 +16,9 @@ serves:
 files:
   - crates/infrastructure/src/extraction/claude.rs
   - crates/infrastructure/src/extraction/ollama.rs
-  - crates/session-extractor/src/providers/claude.rs
-  - crates/session-extractor/src/providers/ollama.rs
-  - crates/session-extractor/src/lib.rs
+  - crates/infrastructure/src/extraction/prompt_contract.rs
+  - crates/infrastructure/src/extraction/http.rs
+  - crates/infrastructure/src/extraction/limits.rs
   - tests/integration/test_extract_session.rs
   - docs/architecture/2026-05-21-skill-layer-v1-1-architecture.md
 test_command: cargo test --workspace && docker compose -f docker-compose.test.yml up --abort-on-container-exit

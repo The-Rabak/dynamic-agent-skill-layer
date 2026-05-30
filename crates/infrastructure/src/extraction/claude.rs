@@ -14,29 +14,7 @@ use crate::extraction::{
 // ClaudeExtractor is a *pure transport adapter*. It sends raw transcript data to an
 // external extraction endpoint that OWNS its own prompt engineering and model interaction.
 //
-// ## Why no local prompt?
-//
-// The default endpoint (`http://127.0.0.1:8080/extract`) is a standalone extraction
-// service, not a passthrough to the Anthropic API. This service is expected to apply
-// Claude's `strict: true` tool-calling with a structured schema (per the extraction
-// quality research document, §4). Embedding a prompt in the request body would risk
-// conflicting with the endpoint's own strategy.
-//
-// ## What ClaudeExtractor sends:
-//   - `model`: the model specifier (e.g. "claude-sonnet") — can be overridden via env
-//   - `session_id`: the session being extracted
-//   - `transcript`: array of `{speaker, content}` entries — raw data, no prompt wrapper
-//
-// ## Contract parity
-//
-// ClaudeExtractor expects the endpoint to return `{ candidates: [...] }` matching the
-// `ExtractedSkillCandidate` schema. Both providers produce `ExtractionResult` with
-// identical shape. See `prompt_contract.rs` for the semantic contract both providers
-// must satisfy.
-//
-// ## Prompt strategy decision (T14):
-// Path A — Claude endpoint owns prompting. This is architecturally intentional.
-// See `extraction/mod.rs` for the full analysis.
+// See `extraction/mod.rs` for the full prompt strategy rationale.
 
 #[derive(Debug, Clone)]
 pub struct ClaudeExtractionConfig {

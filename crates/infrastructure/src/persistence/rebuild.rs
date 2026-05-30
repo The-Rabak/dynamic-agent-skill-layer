@@ -58,6 +58,7 @@ pub struct LiveGraphSnapshotMutation {
 /// Persisted subunit projection used by live graph read adapters.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PersistedGraphSubunitRecord {
+    pub subunit_id: String,
     pub kind: String,
     pub title: String,
     pub content: String,
@@ -69,6 +70,7 @@ pub struct PersistedGraphSkillRecord {
     pub skill_id: String,
     pub name: String,
     pub description: String,
+    pub scope: String,
     pub tags: Vec<String>,
     pub community_id: Option<String>,
     pub subunits: Vec<PersistedGraphSubunitRecord>,
@@ -96,14 +98,15 @@ impl PostgresGraphSnapshotStore {
 
     pub async fn list_skills(&self) -> Result<Vec<PersistedGraphSkillRecord>, RebuildError> {
         let skill_rows =
-            sqlx::query_as::<_, (String, String, String, Vec<String>, Option<String>)>(
+            sqlx::query_as::<_, (String, String, String, Vec<String>, Option<String>, String)>(
                 r#"
             SELECT
                 skills.id::TEXT,
                 skills.name,
                 skills.description,
                 skills.tags,
-                communities.id::TEXT
+                communities.id::TEXT,
+                skills.scope
             FROM skills
             LEFT JOIN community_skills
                 ON community_skills.skill_id = skills.id
@@ -116,10 +119,11 @@ impl PostgresGraphSnapshotStore {
             .fetch_all(&self.pool)
             .await?;
 
-        let subunit_rows = sqlx::query_as::<_, (String, String, String, String)>(
+        let subunit_rows = sqlx::query_as::<_, (String, String, String, String, String)>(
             r#"
             SELECT
                 skill_subunits.skill_id::TEXT,
+                subunits.id::TEXT,
                 subunits.kind,
                 subunits.title,
                 subunits.content
@@ -136,11 +140,12 @@ impl PostgresGraphSnapshotStore {
             String,
             Vec<PersistedGraphSubunitRecord>,
         > = std::collections::HashMap::new();
-        for (skill_id, kind, title, content) in subunit_rows {
+        for (skill_id, subunit_id, kind, title, content) in subunit_rows {
             subunits_by_skill
                 .entry(skill_id)
                 .or_default()
                 .push(PersistedGraphSubunitRecord {
+                    subunit_id,
                     kind,
                     title,
                     content,
@@ -150,13 +155,16 @@ impl PostgresGraphSnapshotStore {
         Ok(skill_rows
             .into_iter()
             .map(
-                |(skill_id, name, description, tags, community_id)| PersistedGraphSkillRecord {
-                    subunits: subunits_by_skill.remove(&skill_id).unwrap_or_default(),
-                    skill_id,
-                    name,
-                    description,
-                    tags,
-                    community_id,
+                |(skill_id, name, description, tags, community_id, scope)| {
+                    PersistedGraphSkillRecord {
+                        subunits: subunits_by_skill.remove(&skill_id).unwrap_or_default(),
+                        skill_id,
+                        name,
+                        description,
+                        scope,
+                        tags,
+                        community_id,
+                    }
                 },
             )
             .collect())

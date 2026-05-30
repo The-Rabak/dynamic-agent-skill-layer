@@ -1,0 +1,9 @@
+# Test fixtures excluded from Docker build context
+tests/fixtures/
+
+# Dev artifacts
+target/
+.git/
+*.md
+!Cargo.toml
+!Cargo.lock

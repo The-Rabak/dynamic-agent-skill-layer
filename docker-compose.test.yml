@@ -99,7 +99,7 @@ services:
       ollama:
         condition: service_healthy
     ports:
-      - "3001:3001"
+      - "127.0.0.1:3001:3001"
     environment:
       RUST_LOG: debug
       DATABASE_URL: postgres://skill_layer:skill_layer@postgres:5432/skill_layer_test
@@ -109,7 +109,6 @@ services:
       MCP_SERVER_ADDR: 0.0.0.0:3001
       SKILL_GLOBAL_PATHS: /skills/global
       SKILL_GLOBAL_ALLOWED_ROOTS: /skills/global
-      GRAPH_BUILDER_GLOBAL_ROOT: /skills/global
     volumes:
       - test-global-skills:/skills/global:ro
       - test-transcripts:/transcripts:ro

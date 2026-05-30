@@ -92,6 +92,16 @@ impl PostgresAdapter {
             .map_err(|error| PostgresError::Migration(error.to_string()))?;
         Ok(())
     }
+
+    /// Truncates all application tables. Intended for test teardown only.
+    pub async fn truncate_all_tables(&self) -> Result<(), PostgresError> {
+        sqlx::query(
+            "TRUNCATE TABLE community_skills, skill_subunits, communities, subunits, skills, outbox_events, rebuild_locks CASCADE"
+        )
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]

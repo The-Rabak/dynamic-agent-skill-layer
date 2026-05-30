@@ -28,6 +28,13 @@ COMPOSE_FILE="docker-compose.test.yml"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 
+# Port mappings — keep in sync with docker-compose.test.yml
+OLLAMA_PORT=11444
+QDRANT_HTTP_PORT=16333
+QDRANT_GRPC_PORT=16334
+POSTGRES_PORT=15432
+REDIS_PORT=16379
+
 cleanup_all() {
   docker compose --ansi never -f "${REPO_ROOT}/${COMPOSE_FILE}" down --remove-orphans >/dev/null 2>&1 || true
 }
@@ -46,8 +53,8 @@ if [[ "${SKIP_INFRA}" -eq 0 ]]; then
   ./scripts/run-t02-infrastructure-tests.sh
 
   echo "==> Running real-infrastructure Rust E2E tests (graph-builder -> PG + Qdrant)"
-  export DATABASE_URL="postgres://skill_layer:skill_layer@localhost:15432/skill_layer"
-  export QDRANT_URL="http://localhost:16333"
+  export DATABASE_URL="postgres://skill_layer:skill_layer@localhost:${POSTGRES_PORT}/skill_layer"
+  export QDRANT_URL="http://localhost:${QDRANT_HTTP_PORT}"
   cargo test -p graph-builder --test test_real_infrastructure_e2e
 
   echo "==> Running maintenance real-infrastructure E2E tests"
@@ -65,10 +72,10 @@ if [[ "${SKIP_INFRA}" -eq 0 ]]; then
     docker compose --ansi never -f "${REPO_ROOT}/${COMPOSE_FILE}" run --rm --no-deps live-e2e-check
 
     echo "==> Running live data plane roundtrip E2E test"
-    export OLLAMA_URL="http://localhost:11444"
-    export QDRANT_URL="http://localhost:16334"
-    export DATABASE_URL="postgres://skill_layer:skill_layer@localhost:15432/skill_layer_test"
-    export REDIS_URL="redis://localhost:16379"
+    export OLLAMA_URL="http://localhost:${OLLAMA_PORT}"
+    export QDRANT_URL="http://localhost:${QDRANT_GRPC_PORT}"
+    export DATABASE_URL="postgres://skill_layer:skill_layer@localhost:${POSTGRES_PORT}/skill_layer_test"
+    export REDIS_URL="redis://localhost:${REDIS_PORT}"
     cargo test -p mcp-server --test test_live_data_plane_roundtrip -- --ignored
 
     echo "==> Tearing down service containers"

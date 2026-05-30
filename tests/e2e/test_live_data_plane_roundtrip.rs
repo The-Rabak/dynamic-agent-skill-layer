@@ -17,7 +17,6 @@ use infrastructure::{
 };
 use mcp_server::{
     build_live_server, build_seeded_server,
-    ServerMode,
     tools::{
         compile_context::{CompileContextRequest, CompileContextStatus},
         extract_session::{ExtractSessionRequest, ExtractSessionTool},
@@ -426,16 +425,7 @@ async fn test_live_data_plane_roundtrip() {
     let start = std::time::Instant::now();
 
     let components = build_live_server(
-        ServerMode::Live,
-        RetrievalConfig {
-            candidate_limit: 32,
-            max_results: 2,
-            max_subunits_per_skill: 4,
-            rescue_threshold: 0.1,
-            relevance_threshold: 0.15,
-            mmr_lambda: 0.6,
-            ..RetrievalConfig::default()
-        },
+        retrieval_config(),
     )
     .await
     .expect("should connect to live infrastructure");
@@ -467,20 +457,11 @@ async fn test_live_data_plane_roundtrip() {
         description: "seed roundtrip skill into PG".to_owned(),
         status: report::AssertionResult::Passed,
         side_effects: vec![report::SideEffect::DbRowInserted("roundtrip-rust-file-io".to_owned())],
-        duration_ms: seed_start.elapsed().as_millis() as u128,
+        duration_ms: seed_start.elapsed().as_millis() as u64,
     });
 
     let components2 = build_live_server(
-        ServerMode::Live,
-        RetrievalConfig {
-            candidate_limit: 32,
-            max_results: 2,
-            max_subunits_per_skill: 4,
-            rescue_threshold: 0.1,
-            relevance_threshold: 0.15,
-            mmr_lambda: 0.6,
-            ..RetrievalConfig::default()
-        },
+        retrieval_config(),
     )
     .await
     .expect("should connect to live infrastructure after seeding");
@@ -500,10 +481,15 @@ async fn test_live_data_plane_roundtrip() {
     };
 
     let first = components2.app.compile_context(request.clone()).await;
-    let first_latency = compile_start.elapsed().as_millis() as u128;
-    builder.record_latency("compile_context_first", first_latency as u64);
+    let first_latency = compile_start.elapsed().as_millis() as u64;
+    builder.record_latency("compile_context_first", first_latency);
 
     assert_eq!(first.status, CompileContextStatus::Ok);
+    assert!(
+        first.additional_context.as_deref().unwrap_or("").contains("roundtrip-rust-file-io"),
+        "compiled context must contain seeded skill name, got: '{:?}'",
+        first.additional_context
+    );
     builder.push_action("compile_context", report::ReportedAction {
         description: "compile context returns Ok with skill content".to_owned(),
         status: report::AssertionResult::Passed,
@@ -513,8 +499,8 @@ async fn test_live_data_plane_roundtrip() {
 
     let dup_start = std::time::Instant::now();
     let second = components2.app.compile_context(request).await;
-    let dup_latency = dup_start.elapsed().as_millis() as u128;
-    builder.record_latency("compile_context_dup", dup_latency as u64);
+    let dup_latency = dup_start.elapsed().as_millis() as u64;
+    builder.record_latency("compile_context_dup", dup_latency);
 
     assert_eq!(second.status, CompileContextStatus::DuplicateSuppressed);
     assert_eq!(

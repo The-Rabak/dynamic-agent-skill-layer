@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use domain::{
-    ExtractionError, ExtractionResult, SessionTranscript, TranscriptSkillExtractionService,
+    ExtractionError, ExtractionResult, SessionTranscript, TranscriptEntry, TranscriptSkillExtractionService,
 };
 use serde::{Deserialize, Serialize};
 
@@ -15,32 +15,7 @@ use crate::extraction::{
 // OllamaExtractor builds a natural-language extraction prompt locally and sends it to
 // Ollama's `/api/generate` endpoint with `format: "json"` for structured output.
 //
-// ## Why local prompt ownership?
-//
-// Unlike Claude (which delegates to an external extraction service), Ollama's
-// `/api/generate` endpoint is a raw model interface. It has no extraction-specific
-// prompt engineering. Ollama also lacks `tool_choice` support, so all schema and
-// quality guidance must be embedded in the prompt text alongside `format: "json"`.
-//
-// ## Prompt contract
-//
-// The prompt is built by `prompt_contract::build_ollama_extraction_prompt()`, which
-// generates a production-quality extraction prompt covering:
-// 1. Extraction target categories (rules, conventions, workflows, error patterns)
-// 2. Quality rubric (FME, actionable specificity, correctness, conciseness, blacklist)
-// 3. Output format specification matching `ExtractedSkillCandidate` schema
-// 4. Anti-pattern warnings (generic skills, context-dependent skills, non-actionable)
-// 5. Confidence scoring guidance
-// 6. A concrete example candidate
-//
-// See `prompt_contract.rs` for the semantic contract shared with the Claude endpoint.
-//
-// ## T14 Enhancement
-//
-// Original prompt was a single line: "Extract reusable skill candidates as JSON..."
-// This was inadequate. The enhanced prompt follows the research-backed quality criteria
-// from `docs/research/2026-05-26-llm-extraction-quality-map-reduce.md` and the SkillLens
-// paper (arXiv:2605.23899).
+// See `extraction/mod.rs` for the full prompt strategy rationale.
 
 #[derive(Debug, Clone)]
 pub struct OllamaExtractionConfig {
@@ -93,6 +68,52 @@ impl OllamaExtractor {
     }
 }
 
+/// Known jailbreak prefixes that indicate prompt-injection attempts in transcript content.
+const JAILBREAK_PREFIXES: &[&str] = &[
+    "Ignore previous instructions",
+    "You are now",
+    "Override",
+    "SYSTEM PROMPT",
+    "New instructions",
+    "Disregard",
+];
+
+/// Known speaker names used to impersonate system or assistant roles.
+const SUSPICIOUS_SPEAKERS: &[&str] = &[
+    "system",
+    "System",
+    "assistant",
+    "Assistant",
+    "SYSTEM",
+    "ASSISTANT",
+];
+
+/// Sanitizes a single transcript entry before it enters the prompt.
+///
+/// Returns `None` if the entry should be dropped entirely (suspicious speaker or
+/// jailbreak prefix). Otherwise returns the sanitized content string with control
+/// characters stripped.
+fn sanitize_transcript_entry(entry: &TranscriptEntry) -> Option<String> {
+    // Reject entries where the speaker impersonates system/assistant roles
+    if SUSPICIOUS_SPEAKERS.iter().any(|s| entry.speaker.contains(s)) {
+        return None;
+    }
+
+    // Strip control characters (keep only printable ASCII + newline)
+    let cleaned: String = entry
+        .content
+        .chars()
+        .filter(|c| c.is_ascii_graphic() || *c == ' ' || *c == '\n')
+        .collect();
+
+    // Reject entries whose content starts with a known jailbreak prefix
+    if JAILBREAK_PREFIXES.iter().any(|prefix| cleaned.starts_with(*prefix)) {
+        return None;
+    }
+
+    Some(cleaned)
+}
+
 #[derive(Debug, Serialize)]
 struct OllamaExtractionRequest {
     model: String,
@@ -127,7 +148,9 @@ impl TranscriptSkillExtractionService for OllamaExtractor {
 
         let mut transcript_lines = String::new();
         for entry in &transcript.entries {
-            transcript_lines.push_str(&format!("{}: {}\n", entry.speaker, entry.content));
+            if let Some(sanitized) = sanitize_transcript_entry(entry) {
+                transcript_lines.push_str(&format!("{}: {}\n", entry.speaker, sanitized));
+            }
         }
 
         let prompt = build_ollama_extraction_prompt(&transcript_lines);
