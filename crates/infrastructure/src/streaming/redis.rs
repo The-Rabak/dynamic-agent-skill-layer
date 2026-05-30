@@ -267,6 +267,17 @@ impl RedisStreamsAdapter {
         let exists: i64 = redis::cmd("EXISTS").arg(key).query_async(&mut conn).await?;
         Ok(exists > 0)
     }
+
+    /// Deletes the configured stream key from Redis.
+    /// Intended for test teardown only.
+    pub async fn delete_stream(&self) -> Result<(), RedisStreamError> {
+        let mut conn = self.connection().await?;
+        redis::cmd("DEL")
+            .arg(&self.config.stream_key)
+            .query_async::<()>(&mut conn)
+            .await?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]

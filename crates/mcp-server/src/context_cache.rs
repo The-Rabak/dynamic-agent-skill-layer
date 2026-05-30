@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use dashmap::DashMap;
-use redis::AsyncCommands;
+use infrastructure::{AsyncCommands, RedisClient};
 use serde::{Deserialize, Serialize};
 
 use crate::tools::compile_context::CompileContextStatus;
@@ -22,14 +22,14 @@ pub struct CachedContext {
 #[derive(Debug, Clone)]
 pub struct CompiledContextCache {
     inner: Arc<DashMap<String, CachedContext>>,
-    redis_client: Option<redis::Client>,
+    redis_client: Option<RedisClient>,
     ttl_secs: u64,
 }
 
 impl CompiledContextCache {
     pub const DEFAULT_TTL_SECS: u64 = 600;
 
-    pub fn new(redis_client: Option<redis::Client>, ttl_secs: u64) -> Self {
+    pub fn new(redis_client: Option<RedisClient>, ttl_secs: u64) -> Self {
         Self {
             inner: Arc::default(),
             redis_client,

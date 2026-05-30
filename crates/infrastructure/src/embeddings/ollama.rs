@@ -47,6 +47,10 @@ impl std::fmt::Debug for OllamaEmbeddingService {
 }
 
 impl OllamaEmbeddingService {
+    pub fn from_config(config: OllamaEmbeddingConfig) -> Result<Self, EmbeddingError> {
+        Self::new(reqwest::Client::new(), config)
+    }
+
     pub fn new(
         client: reqwest::Client,
         config: OllamaEmbeddingConfig,

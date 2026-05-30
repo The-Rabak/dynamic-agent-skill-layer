@@ -10,9 +10,13 @@ use domain::{
     ExtractionResult, LifecycleStatus, ScopeType, SessionTranscript, Skill, SkillStatus, Subunit,
     SubunitType, TranscriptSkillExtractionService,
 };
-use infrastructure::EventEnvelope;
+use infrastructure::{
+    EventEnvelope,
+    LiveGraphSkillRecord, LiveGraphSnapshotMutation, LiveGraphSubunitRecord,
+    RebuildCoordinator,
+};
 use mcp_server::{
-    build_seeded_server,
+    build_live_server, build_seeded_server,
     tools::{
         compile_context::{CompileContextRequest, CompileContextStatus},
         extract_session::{ExtractSessionRequest, ExtractSessionTool},
@@ -23,6 +27,9 @@ use session_extractor::{
     ExtractionEventPublisher, ExtractionProvider, SessionExtractor, transcripts::TranscriptLoader,
     writer::PendingDraftWriter,
 };
+
+#[path = "report.rs"]
+mod report;
 
 #[path = "../integration/env_guard.rs"]
 mod env_guard;
@@ -407,4 +414,124 @@ async fn extract_session_invalid_inline_payload_surfaces_failed_event_without_pe
     }
 
     std::fs::remove_dir_all(sandbox).expect("sandbox cleanup should succeed");
+}
+
+#[ignore = "requires live containers"]
+#[tokio::test]
+async fn test_live_data_plane_roundtrip() {
+    let _env_guard = env_guard::configure_scope_env();
+    let mut builder = report::ReportBuilder::new("test_live_data_plane_roundtrip");
+
+    let start = std::time::Instant::now();
+
+    let components = build_live_server(
+        retrieval_config(),
+    )
+    .await
+    .expect("should connect to live infrastructure");
+    builder.record_latency("server_bootstrap", start.elapsed().as_millis() as u64);
+
+    let mutation = LiveGraphSnapshotMutation {
+        rebuilt_at: chrono::Utc::now(),
+        skills: vec![LiveGraphSkillRecord {
+            stable_id: "roundtrip-rust-file-io".to_owned(),
+            name: "roundtrip-rust-file-io".to_owned(),
+            description: "Live roundtrip file I/O patterns in Rust with async tokio and error boundaries".to_owned(),
+            scope: ScopeType::Global,
+            tags: vec!["rust".to_owned(), "file".to_owned(), "io".to_owned()],
+            subunits: vec![LiveGraphSubunitRecord {
+                kind: SubunitType::Procedure,
+                title: "Read file async".to_owned(),
+                content: "Use tokio::fs::read_to_string for small files within async contexts".to_owned(),
+            }],
+        }],
+        communities: vec![],
+    };
+    let seed_start = std::time::Instant::now();
+    components.rebuild_coordinator
+        .replace_snapshot_and_bump_version(mutation)
+        .await
+        .expect("should seed roundtrip skill into PG");
+    builder.record_latency("seed_skill", seed_start.elapsed().as_millis() as u64);
+    builder.push_action("setup", report::ReportedAction {
+        description: "seed roundtrip skill into PG".to_owned(),
+        status: report::AssertionResult::Passed,
+        side_effects: vec![report::SideEffect::DbRowInserted("roundtrip-rust-file-io".to_owned())],
+        duration_ms: seed_start.elapsed().as_millis() as u64,
+    });
+
+    let components2 = build_live_server(
+        retrieval_config(),
+    )
+    .await
+    .expect("should connect to live infrastructure after seeding");
+
+    let compile_start = std::time::Instant::now();
+    let repo_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .expect("repo root should resolve")
+        .display()
+        .to_string();
+
+    let request = CompileContextRequest {
+        prompt: "how to read files in rust with tokio async".to_owned(),
+        session_id: "live-roundtrip-session".to_owned(),
+        repo_path,
+    };
+
+    let first = components2.app.compile_context(request.clone()).await;
+    let first_latency = compile_start.elapsed().as_millis() as u64;
+    builder.record_latency("compile_context_first", first_latency);
+
+    assert_eq!(first.status, CompileContextStatus::Ok);
+    assert!(
+        first.additional_context.as_deref().unwrap_or("").contains("roundtrip-rust-file-io"),
+        "compiled context must contain seeded skill name, got: '{:?}'",
+        first.additional_context
+    );
+    builder.push_action("compile_context", report::ReportedAction {
+        description: "compile context returns Ok with skill content".to_owned(),
+        status: report::AssertionResult::Passed,
+        side_effects: vec![report::SideEffect::EventPublished("compile_context.Ok".to_owned())],
+        duration_ms: first_latency,
+    });
+
+    let dup_start = std::time::Instant::now();
+    let second = components2.app.compile_context(request).await;
+    let dup_latency = dup_start.elapsed().as_millis() as u64;
+    builder.record_latency("compile_context_dup", dup_latency);
+
+    assert_eq!(second.status, CompileContextStatus::DuplicateSuppressed);
+    assert_eq!(
+        second.reason_code.as_deref(),
+        Some("already_compiled_for_session")
+    );
+    builder.push_action("compile_context", report::ReportedAction {
+        description: "duplicate compile returns DuplicateSuppressed".to_owned(),
+        status: report::AssertionResult::Passed,
+        side_effects: vec![],
+        duration_ms: dup_latency,
+    });
+
+    builder.add_contract_assertion(report::ContractAssertion {
+        contract_name: "compile_context_roundtrip".to_owned(),
+        status: report::AssertionResult::Passed,
+        details: "live data plane: skill seeded, context compiled, duplicate suppressed".to_owned(),
+    });
+
+    let report = builder.build();
+    let report_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../tests/e2e/reports");
+    std::fs::create_dir_all(&report_dir).expect("reports dir should exist");
+    let report_path = report_dir.join(format!(
+        "{}__{}.json",
+        report.test_name, report.test_id
+    ));
+    let report_json = serde_json::to_string_pretty(&report)
+        .expect("report should serialize");
+    std::fs::write(&report_path, report_json).expect("report should be writable");
+
+    components2.teardown().await.expect("teardown should succeed");
+    components.teardown().await.expect("teardown should succeed");
 }

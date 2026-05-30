@@ -2,12 +2,7 @@ pub mod embeddings {
     pub mod ollama;
 }
 
-pub mod extraction {
-    pub mod claude;
-    pub(crate) mod http;
-    pub(crate) mod limits;
-    pub mod ollama;
-}
+pub mod extraction;
 
 pub mod health;
 pub mod logging;
@@ -53,6 +48,13 @@ pub use streaming::redis::{
     EventEnvelope, RedisStreamError, RedisStreamsAdapter, RedisStreamsConfig, StreamMessage,
 };
 pub use vector::qdrant::{QdrantAdapter, QdrantConfig, QdrantError};
+
+// Re-export infrastructure-bound types so service crates never import
+// reqwest, sqlx, or redis directly.
+pub use redis::AsyncCommands;
+pub use redis::Client as RedisClient;
+pub use redis::cmd as redis_cmd;
+pub use sqlx::PgPool as PostgresPool;
 
 #[cfg(test)]
 mod tests {

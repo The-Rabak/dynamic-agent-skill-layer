@@ -1,13 +1,21 @@
 use async_trait::async_trait;
 use domain::{
-    ExtractionError, ExtractionResult, SessionTranscript, TranscriptSkillExtractionService,
+    ExtractionError, ExtractionResult, SessionTranscript, TranscriptEntry, TranscriptSkillExtractionService,
 };
 use serde::{Deserialize, Serialize};
 
 use crate::extraction::{
     http::post_json_with_timeout,
     limits::{validate_extraction_config, validate_transcript_limits},
+    prompt_contract::build_ollama_extraction_prompt,
 };
+
+// # OllamaExtractor — Local Prompt Ownership
+//
+// OllamaExtractor builds a natural-language extraction prompt locally and sends it to
+// Ollama's `/api/generate` endpoint with `format: "json"` for structured output.
+//
+// See `extraction/mod.rs` for the full prompt strategy rationale.
 
 #[derive(Debug, Clone)]
 pub struct OllamaExtractionConfig {
@@ -60,6 +68,52 @@ impl OllamaExtractor {
     }
 }
 
+/// Known jailbreak prefixes that indicate prompt-injection attempts in transcript content.
+const JAILBREAK_PREFIXES: &[&str] = &[
+    "Ignore previous instructions",
+    "You are now",
+    "Override",
+    "SYSTEM PROMPT",
+    "New instructions",
+    "Disregard",
+];
+
+/// Known speaker names used to impersonate system or assistant roles.
+const SUSPICIOUS_SPEAKERS: &[&str] = &[
+    "system",
+    "System",
+    "assistant",
+    "Assistant",
+    "SYSTEM",
+    "ASSISTANT",
+];
+
+/// Sanitizes a single transcript entry before it enters the prompt.
+///
+/// Returns `None` if the entry should be dropped entirely (suspicious speaker or
+/// jailbreak prefix). Otherwise returns the sanitized content string with control
+/// characters stripped.
+fn sanitize_transcript_entry(entry: &TranscriptEntry) -> Option<String> {
+    // Reject entries where the speaker impersonates system/assistant roles
+    if SUSPICIOUS_SPEAKERS.iter().any(|s| entry.speaker.contains(s)) {
+        return None;
+    }
+
+    // Strip control characters (keep only printable ASCII + newline)
+    let cleaned: String = entry
+        .content
+        .chars()
+        .filter(|c| c.is_ascii_graphic() || *c == ' ' || *c == '\n')
+        .collect();
+
+    // Reject entries whose content starts with a known jailbreak prefix
+    if JAILBREAK_PREFIXES.iter().any(|prefix| cleaned.starts_with(*prefix)) {
+        return None;
+    }
+
+    Some(cleaned)
+}
+
 #[derive(Debug, Serialize)]
 struct OllamaExtractionRequest {
     model: String,
@@ -92,12 +146,14 @@ impl TranscriptSkillExtractionService for OllamaExtractor {
             self.config.max_total_chars,
         )?;
 
-        let mut prompt = String::from(
-            "Extract reusable skill candidates as JSON with a top-level `candidates` array.\n",
-        );
+        let mut transcript_lines = String::new();
         for entry in &transcript.entries {
-            prompt.push_str(&format!("{}: {}\n", entry.speaker, entry.content));
+            if let Some(sanitized) = sanitize_transcript_entry(entry) {
+                transcript_lines.push_str(&format!("{}: {}\n", entry.speaker, sanitized));
+            }
         }
+
+        let prompt = build_ollama_extraction_prompt(&transcript_lines);
 
         let request = OllamaExtractionRequest {
             model: self.config.model.clone(),

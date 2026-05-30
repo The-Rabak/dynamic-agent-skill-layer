@@ -1,8 +1,7 @@
-use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use dashmap::DashMap;
-use redis::AsyncCommands;
+use infrastructure::{AsyncCommands, RedisClient, redis_cmd};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -15,12 +14,12 @@ struct SuppressionEntry {
 #[derive(Debug, Clone)]
 pub struct SessionSuppressionState {
     inner: Arc<DashMap<String, SuppressionEntry>>,
-    redis_client: Option<redis::Client>,
+    redis_client: Option<RedisClient>,
     ttl_secs: u64,
 }
 
 pub(crate) async fn scan_and_del_pattern(
-    client: &redis::Client,
+    client: &RedisClient,
     pattern: &str,
     context: &str,
 ) {
@@ -40,7 +39,7 @@ pub(crate) async fn scan_and_del_pattern(
     let mut cursor: u64 = 0;
     let mut keys: Vec<String> = Vec::new();
     loop {
-        let (next_cursor, mut batch): (u64, Vec<String>) = match redis::cmd("SCAN")
+        let (next_cursor, mut batch): (u64, Vec<String>) = match redis_cmd("SCAN")
             .cursor_arg(cursor)
             .arg("MATCH")
             .arg(pattern)
@@ -81,7 +80,7 @@ pub(crate) async fn scan_and_del_pattern(
 impl SessionSuppressionState {
     pub const DEFAULT_TTL_SECS: u64 = 3600;
 
-    pub fn new(redis_client: Option<redis::Client>, ttl_secs: u64) -> Self {
+    pub fn new(redis_client: Option<RedisClient>, ttl_secs: u64) -> Self {
         Self {
             inner: Arc::default(),
             redis_client,

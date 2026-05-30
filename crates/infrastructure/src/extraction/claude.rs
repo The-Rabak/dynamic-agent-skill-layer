@@ -9,6 +9,13 @@ use crate::extraction::{
     limits::{validate_extraction_config, validate_transcript_limits},
 };
 
+// # ClaudeExtractor — Transport Adapter Design
+//
+// ClaudeExtractor is a *pure transport adapter*. It sends raw transcript data to an
+// external extraction endpoint that OWNS its own prompt engineering and model interaction.
+//
+// See `extraction/mod.rs` for the full prompt strategy rationale.
+
 #[derive(Debug, Clone)]
 pub struct ClaudeExtractionConfig {
     pub endpoint: String,

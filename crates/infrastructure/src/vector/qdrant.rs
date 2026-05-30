@@ -46,6 +46,10 @@ pub struct QdrantAdapter {
 }
 
 impl QdrantAdapter {
+    pub fn from_config(config: QdrantConfig) -> Result<Self, QdrantError> {
+        Self::new(reqwest::Client::new(), config)
+    }
+
     pub fn new(client: reqwest::Client, config: QdrantConfig) -> Result<Self, QdrantError> {
         if config.endpoint.trim().is_empty() {
             return Err(QdrantError::InvalidConfiguration(
