@@ -3,8 +3,8 @@ plan_ref: docs/plans/2026-05-31-feat-skill-layer-v1-5-close-the-loop-plan.md
 architecture_ref: docs/architecture/2026-05-31-skill-layer-v1-5-close-the-loop-architecture.md
 execution_shape: vertical-slices
 ticket_set_status: in_progress # ready | in_progress | blocked | completed
-last_completed_batch: 1
-total_batches: 8
+last_completed_batch: 2
+total_batches: 9 # re-batched 2026-05-31: T02 pulled forward into its own batch (was paired w/ T05); see Execution Batches note
 ---
 
 # Ticket Set: skill-layer-v1-5 — Close the Loop
@@ -55,13 +55,16 @@ Explicit `depends_on` edges:
 | Batch | Tickets | Status | Gating reason |
 |---|---|---|---|
 | 1 | T01 | completed | Foundation. Sweeping cross-crate rename (`SeededGraph`→`RetrievalSnapshot`) + prod constructor. Must be alone — it edits files every downstream retrieval ticket also touches. |
-| 2 | T03, **‖** T04 | pending | Both depend only on T01. **Parallel-safe** — file-disjoint (see safety note). |
-| 3 | T02, **‖** T05 | pending | T02 dep T01 ✓; T05 dep T04 ✓ (done in B2). **Parallel-safe** — file-disjoint. |
-| 4 | T06 | pending | Singleton — shares `mcp-server/lib.rs`, `retrieval/orchestrator.rs`, `maintenance/runtime.rs` with other tickets. |
-| 5 | T07 | pending | Singleton — shares `maintenance/runtime.rs` with T06. Deps T04+T05 satisfied. |
-| 6 | T08 | pending | Singleton — shares `tests/e2e/*` with T09/T10 and `run-e2e-tests.sh` with T10 (line-ownership fence). Deps T01–T03 satisfied. |
-| 7 | T09 | pending | Singleton — shares `orchestrator.rs`/`dual_scope.rs` with T02/T03/T06 and `tests/e2e/*` with neighbors. Deps T01,T02,T03 satisfied. |
-| 8 | T10 | pending | Terminal integration gate. Deps T01,T02,T05,T06,T08,T09 all satisfied. Retires all V1.5 rollback flags. |
+| 2 | T03, **‖** T04 | completed | Both depend only on T01. **Parallel-safe** — file-disjoint (see safety note). T04 hooks.example.json human-gate approved. |
+| 3 | T02 | in_progress | **Pulled forward 2026-05-31** (was paired with T05). Singleton — T02 and T03 both edit `retrieval/src/orchestrator.rs`, so T02 CANNOT run parallel with T03; it runs sequentially right after Batch 2. Dep T01 ✓. |
+| 4 | T05 | pending | Singleton — was paired with T02; now solo. Dep T04 ✓ (done in B2). File-disjoint from T02 but separated by the re-batch; gated cloud dep on the opt-in `provider=claude` path. |
+| 5 | T06 | pending | Singleton — shares `mcp-server/lib.rs`, `retrieval/orchestrator.rs`, `maintenance/runtime.rs` with other tickets. |
+| 6 | T07 | pending | Singleton — shares `maintenance/runtime.rs` with T06. Deps T04+T05 satisfied. |
+| 7 | T08 | pending | Singleton — shares `tests/e2e/*` with T09/T10 and `run-e2e-tests.sh` with T10 (line-ownership fence). Deps T01–T03 satisfied. |
+| 8 | T09 | pending | Singleton — shares `orchestrator.rs`/`dual_scope.rs` with T02/T03/T06, `persistence/rebuild.rs` with T01, and `tests/e2e/*` with neighbors. **Now also owns the `skills.source_paths` column + human-gated migration `004` (replaces T01's scope-root stand-in).** Deps T01,T02,T03 satisfied. |
+| 9 | T10 | pending | Terminal integration gate. Deps T01,T02,T03,T05,T06,T08,T09 all satisfied. Retires all V1.5 rollback flags. |
+
+> **Re-batch note (2026-05-31, maintainer direction):** T02 ("refresh on `graph.rebuilt`") was moved out of the old `T02 ‖ T05` batch into its own batch (now Batch 3) so it executes immediately after Batch 2 rather than later. It could not simply join Batch 2 as a parallel unit because **T02 and T03 both edit `retrieval/src/orchestrator.rs`** (T02 adds the `ArcSwap` swap; T03 relabels health markers) — parallel agents would race that file. So Batch 2 runs `T03 ‖ T04` in parallel, then Batch 3 runs `T02` sequentially. T05 becomes its own Batch 4. `total_batches` 8 → 9; downstream batch numbers shifted +1.
 
 ### File-overlap safety notes (every multi-ticket batch)
 
@@ -70,12 +73,16 @@ Explicit `depends_on` edges:
 - T04 files: `config/claude-code/hooks.example.json`, `docs/reference/capability-catalog.md`, `docs/runbooks/degraded-state.md`, `crates/mcp-server/src/tools/compile_context.rs`.
 - **Disjoint:** no shared code file. Both write under `docs/reference/` but to **different files** (T03 → new `online-retrieval-cqrs.md`; T04 → existing `capability-catalog.md`). The two `compile_context` surfaces are distinct: T04 edits `tools/compile_context.rs` (pure query unit); no other ticket in this batch touches it. No shared mutable state, no migration, no shared adapter edited concurrently.
 
-**Batch 3 — T02 ‖ T05 (parallel-safe):**
+**Batch 3 — T02 (singleton, was T02 ‖ T05):**
 - T02 files: `retrieval/src/orchestrator.rs`, `mcp-server/src/lib.rs`, `mcp-server/src/graph_refresh_subscriber.rs`, `infrastructure/src/events/mod.rs`, `graph-builder/src/rebuild.rs`, `graph-builder/src/main.rs`.
-- T05 files: `session-extractor/src/worker_pool.rs`, `session-extractor/src/lib.rs`, `infrastructure/src/extraction/ollama.rs`, `infrastructure/src/extraction/claude.rs`.
-- **Disjoint:** no shared file. Both edit under `crates/infrastructure/` but in different subtrees (`events/` vs `extraction/`). No shared mutable state; T02's Redis publish and T05's extraction provider do not co-edit any module.
+- **Why singleton, not parallel with Batch 2:** T02 edits `retrieval/src/orchestrator.rs` (adds the `ArcSwap` swap path), and so does T03 (relabels health markers, `orchestrator.rs:168–186`). Two agents editing one file race → T02 runs sequentially after Batch 2 completes, building on T03's committed health-marker change.
+- T02 remains file-disjoint from T05 (the old pairing was safe); they are now simply sequential singletons after the re-batch.
 
-All other batches are singletons by the default-to-sequential rule (shared `lib.rs` / `orchestrator.rs` / `runtime.rs` / `tests/e2e/*` / `run-e2e-tests.sh` surfaces).
+**Batch 4 — T05 (singleton, was T02 ‖ T05):**
+- T05 files: `session-extractor/src/worker_pool.rs`, `session-extractor/src/lib.rs`, `infrastructure/src/extraction/ollama.rs`, `infrastructure/src/extraction/claude.rs`.
+- Disjoint from T02; separated only by the re-batch so the maintainer's "T02 next" direction is honored without bundling T05's heavier cloud-provider work into the same round.
+
+All other batches are singletons by the default-to-sequential rule (shared `lib.rs` / `orchestrator.rs` / `runtime.rs` / `persistence/rebuild.rs` / `tests/e2e/*` / `run-e2e-tests.sh` surfaces).
 
 ## Ticket Table
 
@@ -100,6 +107,7 @@ All other batches are singletons by the default-to-sequential rule (shared `lib.
   - T06 — `002_usage_fields.sql` migration (schema).
   - T07 — `003_processed_transcripts.sql` migration (schema).
   - T08 — `docker-compose.test.yml` / `scripts/run-e2e-tests.sh` env (infra-config).
+  - T09 — `004_skill_source_paths.sql` migration (schema) — **added 2026-05-31** to store real per-skill source paths and retire T01's scope-root stand-in (maintainer direction).
   - T10 — CI workflow + `run-e2e-tests.sh` CI stanza (infra-config).
 - **Gated cloud dependency (T05):** the opt-in `provider=claude` path calls the Anthropic API — a deliberate, human-vetoable local-first stretch. Ollama default needs no key.
 - **T10 is an integration gate:** must not start until T01, T02, T03, T05, T06, T08, T09 are each individually green.

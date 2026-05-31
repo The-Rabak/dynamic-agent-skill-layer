@@ -7,12 +7,12 @@ ticket_file: docs/tickets/2026-05-31-skill-layer-v1-5/01-production-server-retri
 source_packet_ref: "## Execution Slices > Slice 1.1: Production server retrieves from the live graph"
 brainstorm_ref: docs/brainstorms/2026-05-21-compiled-context-layer-skill-rae-brainstorm.md
 started: 2026-05-31T09:17:12Z
-status: completed
+status: in_progress
 execution_shape: vertical-slices
-batch: 1
-current_unit: 1
-total_units: 1
-completed: 2026-05-31T09:17:12Z
+batch: "2-3 (continuing same /workflows:work run; batch 1 = T01 completed)"
+current_unit: 2
+total_units: 4
+batch_1_completed: 2026-05-31T09:17:12Z
 session_id: work-2026-05-31-121712
 review_mode: bulk
 ---
@@ -81,6 +81,9 @@ no infra-config or schema change → **no human-gate checkpoint** in this ticket
 | # | Unit | Kind | Serves / Unlocks | Status | Attempts | Session File |
 |---|------|------|------------------|--------|----------|--------------|
 | 1 | T01 Production server retrieves from the live graph | tracer-bullet | SC-V1.5-A (boot-time half), SC-V1.5-F | completed | 4 | unit-01-production-server-retrieves-live-graph.md |
+| 2 | T03 Resolve Qdrant online role (Option A + CQRS + honest health) | hardening | SC-V1.5-F | completed (batch 2, ‖ T04) | 1 | unit-02-t03-resolve-qdrant-online-role.md |
+| 3 | T04 Wire full Claude Code session lifecycle | expansion | SC-V1.5-B | completed (batch 2, ‖ T03) | 1 | unit-03-t04-wire-claude-code-lifecycle.md |
+| 4 | T02 Live graph refreshes on graph.rebuilt | expansion | SC-V1.5-A (online-refresh half) | in_progress (batch 3, after T03) | -- | -- |
 
 ## Learnings Brief
 - **[retrieval/boot]** `seeded_skill_matches_scope` (`retrieval/src/dual_scope.rs:123`) requires a skill's `source_paths` to fall within the scope's configured paths; an empty `source_paths` silently drops the skill before scoring. Any PG-loaded graph MUST populate `source_paths` with a scope-matching value. **This is the real reason deployed retrieval returned `no_match` even with a populated graph** — not a threshold issue. T09 ranking tuning depends on this load fix.
@@ -89,4 +92,9 @@ no infra-config or schema change → **no human-gate checkpoint** in this ticket
 - **[infrastructure/factory]** The shared dependency factory is `DependencyFactory` in `crates/infrastructure/src/health.rs` (not a `dependency_factory.rs`). Keep retrieval/live-wiring logic in `mcp-server`, not the factory.
 - **[type naming]** Rename target is `RetrievalSnapshot` (NOT `SkillSnapshot` — collides with 3 types, R-4). T02 will wrap it as `GraphSnapshot { graph, version }` under `ArcSwap`; T01 left it `ArcSwap`-free.
 - **[env/containers]** Test containers: PG 15432, Qdrant HTTP 16333 / gRPC 16334, Redis 16379, Ollama 11444; live DB `skill_layer_test`. The connectivity/preflight check must use the **HTTP** Qdrant port (16333), not gRPC (16334) — the gRPC-port preflight was a known defect (T08 owns the `run-e2e-tests.sh` env fix).
-- **[repo/fmt]** Pre-existing `rustfmt` drift in `crates/graph-builder/src/graph/rebuild.rs` (unrelated to T01) — surface to whichever ticket owns that file or a cleanup pass; T01 left it untouched per scope fence.
+- **[repo/fmt]** Pre-existing `rustfmt` drift in `crates/graph-builder/src/graph/rebuild.rs` + several `infrastructure` files (qdrant.rs, extraction/*, health.rs lines 82/218/264/274) — unrelated to V1.5 edits; agents left them untouched per scope fence. Surface to a cleanup pass or T10's CI-purity gate.
+- **[retrieval/health — T03]** Read-path health markers now report `skill_snapshot_sync` and DROP `qdrant`/`postgres`/`redis` (none are read-path deps under Option A). The Qdrant infra probe is labelled `qdrant_write_side`. The named test `read_path_health_markers_do_not_claim_qdrant_or_postgres_as_live_dependencies` is the deletion guard. **DS-003 contract is defined in `docs/architecture/adr-0001-online-graph-source-v1-5.md`** — T10 must rewrite the dream-state test to it (Qdrant down ⇒ compile_context still Ok/NoMatch; only `qdrant_write_side` degrades).
+- **[retrieval — naming]** The in-memory cosine search fn is `search_qdrant` in `crates/retrieval/src/qdrant_search.rs` (name kept for call-site stability; doc comment clarifies it is in-memory only, NOT an online Qdrant query).
+- **[mcp-server/compile_context — T04]** `CompileContextRequest` now has optional `trigger: Option<String>` (`#[serde(default)]`); `trigger=="compact"` bypasses suppression for that single call (read-only, does not mutate suppression state — T08 owns global semantics). The MCP `inputSchema` in `protocol.rs` carries it. **Gotcha:** `CompileContextRequest` is constructed in 30+ sites; adding fields forces edits across 8 test/bench files — consider `Default`/`#[non_exhaustive]` later.
+- **[hooks/config — T04]** `config/claude-code/hooks.example.json` now wires SessionStart + PreCompact(trigger=compact) + UserPromptSubmit + SessionEnd. Hook facts: SessionStart/SessionEnd cannot block; UserPromptSubmit/PreCompact can; inject via `hookSpecificOutput.additionalContext` ≤~10,000 chars; SessionEnd doesn't fire on crash (T07 reconcile is the backstop). Contract documented in `capability-catalog.md` + `degraded-state.md`.
+- **[testing — T04]** Live e2e `extract_session_live_ref_payload` lives in the `test_live_data_plane_roundtrip` binary; the ticket's filter-only command needs `--test test_live_data_plane_roundtrip` to actually run it. T10/CI must use the explicit `--test`.
