@@ -7,12 +7,14 @@ ticket_file: docs/tickets/2026-05-31-skill-layer-v1-5/01-production-server-retri
 source_packet_ref: "## Execution Slices > Slice 1.1: Production server retrieves from the live graph"
 brainstorm_ref: docs/brainstorms/2026-05-21-compiled-context-layer-skill-rae-brainstorm.md
 started: 2026-05-31T09:17:12Z
-status: in_progress
+status: completed
 execution_shape: vertical-slices
-batch: "2-3 (continuing same /workflows:work run; batch 1 = T01 completed)"
-current_unit: 2
+batch: "1-3 complete (T01, T03, T04, T02); same /workflows:work run"
+current_unit: 4
 total_units: 4
 batch_1_completed: 2026-05-31T09:17:12Z
+batches_2_3_completed: 2026-05-31
+note: "Stopped after batch 3 (T02) per maintainer direction. Review deferred to whole-branch run. Next: batch 4 = T05."
 session_id: work-2026-05-31-121712
 review_mode: bulk
 ---
@@ -83,7 +85,7 @@ no infra-config or schema change → **no human-gate checkpoint** in this ticket
 | 1 | T01 Production server retrieves from the live graph | tracer-bullet | SC-V1.5-A (boot-time half), SC-V1.5-F | completed | 4 | unit-01-production-server-retrieves-live-graph.md |
 | 2 | T03 Resolve Qdrant online role (Option A + CQRS + honest health) | hardening | SC-V1.5-F | completed (batch 2, ‖ T04) | 1 | unit-02-t03-resolve-qdrant-online-role.md |
 | 3 | T04 Wire full Claude Code session lifecycle | expansion | SC-V1.5-B | completed (batch 2, ‖ T03) | 1 | unit-03-t04-wire-claude-code-lifecycle.md |
-| 4 | T02 Live graph refreshes on graph.rebuilt | expansion | SC-V1.5-A (online-refresh half) | in_progress (batch 3, after T03) | -- | -- |
+| 4 | T02 Live graph refreshes on graph.rebuilt | expansion | SC-V1.5-A (online-refresh half) | completed (batch 3) | 1 | unit-04-t02-live-graph-refresh.md |
 
 ## Learnings Brief
 - **[retrieval/boot]** `seeded_skill_matches_scope` (`retrieval/src/dual_scope.rs:123`) requires a skill's `source_paths` to fall within the scope's configured paths; an empty `source_paths` silently drops the skill before scoring. Any PG-loaded graph MUST populate `source_paths` with a scope-matching value. **This is the real reason deployed retrieval returned `no_match` even with a populated graph** — not a threshold issue. T09 ranking tuning depends on this load fix.

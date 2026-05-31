@@ -151,6 +151,16 @@ Canonical event set for V1.1:
 
 **Note:** There is no `skill.approved` event in V1.1. Approval is a filesystem operation (renaming `.pending` to `.md`).
 
+### Approval-to-retrievable latency (online refresh)
+
+A skill approved while the server is running becomes retrievable **without restarting any process** (SC-V1.5-A). This is **not instantaneous**: the path is
+
+1. human renames `.pending → .md` (approval),
+2. graph-builder detects the change on its **poll interval** (`GRAPH_BUILDER_POLL_INTERVAL_MS`, default **~15s**), rebuilds, and publishes `graph.rebuilt` to the shared Redis stream,
+3. the running `mcp-server` consumes `graph.rebuilt`, reloads the snapshot from Postgres, and atomically swaps the in-memory read model.
+
+The dominant term is the graph-builder poll interval, so the worst-case approval→retrievable window is bounded by roughly that interval (~15s by default) plus a small reload+swap delay. "No restart" therefore means "no restart, refreshed within one poll cycle" — not "instant". The subscriber coalesces bursts (multiple rebuilds collapse into one reload of the newest version) and can be disabled with the temporary rollback flag `MCP_GRAPH_REFRESH=off`, which falls back to boot-only graph loading.
+
 ## Lifecycle States
 
 ### Skill Status

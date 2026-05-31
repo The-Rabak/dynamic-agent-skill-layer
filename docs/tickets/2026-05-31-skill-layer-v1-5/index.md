@@ -3,7 +3,7 @@ plan_ref: docs/plans/2026-05-31-feat-skill-layer-v1-5-close-the-loop-plan.md
 architecture_ref: docs/architecture/2026-05-31-skill-layer-v1-5-close-the-loop-architecture.md
 execution_shape: vertical-slices
 ticket_set_status: in_progress # ready | in_progress | blocked | completed
-last_completed_batch: 2
+last_completed_batch: 3
 total_batches: 9 # re-batched 2026-05-31: T02 pulled forward into its own batch (was paired w/ T05); see Execution Batches note
 ---
 
@@ -56,7 +56,7 @@ Explicit `depends_on` edges:
 |---|---|---|---|
 | 1 | T01 | completed | Foundation. Sweeping cross-crate rename (`SeededGraph`→`RetrievalSnapshot`) + prod constructor. Must be alone — it edits files every downstream retrieval ticket also touches. |
 | 2 | T03, **‖** T04 | completed | Both depend only on T01. **Parallel-safe** — file-disjoint (see safety note). T04 hooks.example.json human-gate approved. |
-| 3 | T02 | in_progress | **Pulled forward 2026-05-31** (was paired with T05). Singleton — T02 and T03 both edit `retrieval/src/orchestrator.rs`, so T02 CANNOT run parallel with T03; it runs sequentially right after Batch 2. Dep T01 ✓. |
+| 3 | T02 | completed | **Pulled forward 2026-05-31** (was paired with T05). Singleton — T02 and T03 both edit `retrieval/src/orchestrator.rs`, so T02 CANNOT run parallel with T03; it runs sequentially right after Batch 2. Dep T01 ✓. |
 | 4 | T05 | pending | Singleton — was paired with T02; now solo. Dep T04 ✓ (done in B2). File-disjoint from T02 but separated by the re-batch; gated cloud dep on the opt-in `provider=claude` path. |
 | 5 | T06 | pending | Singleton — shares `mcp-server/lib.rs`, `retrieval/orchestrator.rs`, `maintenance/runtime.rs` with other tickets. |
 | 6 | T07 | pending | Singleton — shares `maintenance/runtime.rs` with T06. Deps T04+T05 satisfied. |

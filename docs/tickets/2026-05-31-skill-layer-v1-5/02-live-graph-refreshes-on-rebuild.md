@@ -2,7 +2,7 @@
 ticket_id: T02
 title: Live graph refreshes on graph.rebuilt without restart
 kind: expansion # tracer-bullet | expansion | hardening | infra-track | fix-batch
-status: ready # ready | in_progress | blocked | completed
+status: completed # ready | in_progress | blocked | completed (commit 8a65bf0)
 plan_ref: docs/plans/2026-05-31-feat-skill-layer-v1-5-close-the-loop-plan.md
 tickets_ref: docs/tickets/2026-05-31-skill-layer-v1-5/index.md
 architecture_ref: docs/architecture/2026-05-31-skill-layer-v1-5-close-the-loop-architecture.md
