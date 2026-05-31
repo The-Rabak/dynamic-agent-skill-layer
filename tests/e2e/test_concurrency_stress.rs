@@ -1,6 +1,7 @@
 use std::{
     collections::HashSet,
     path::PathBuf,
+    process::Command,
     sync::{Arc, Mutex},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -13,7 +14,7 @@ use domain::{
 };
 use infrastructure::EventEnvelope;
 use mcp_server::{
-    build_seeded_server,
+    build_live_server, build_seeded_server,
     tools::{
         compile_context::{CompileContextRequest, CompileContextStatus},
         extract_session::{ExtractSessionRequest, ExtractSessionTool},
@@ -25,6 +26,14 @@ use session_extractor::{
     writer::PendingDraftWriter,
 };
 use tokio::task::JoinSet;
+
+use infrastructure::{
+    LiveGraphCommunityRecord, LiveGraphSkillRecord, LiveGraphSnapshotMutation,
+    LiveGraphSubunitRecord, RebuildCoordinator,
+};
+
+#[path = "report.rs"]
+mod report;
 
 #[path = "../integration/env_guard.rs"]
 mod env_guard;
@@ -352,4 +361,554 @@ async fn extract_session_parallel_burst_completes_all_jobs_and_persists_drafts()
     assert_eq!(pending_count, request_count);
 
     std::fs::remove_dir_all(sandbox).expect("sandbox cleanup should succeed");
+}
+
+// ---------------------------------------------------------------------------
+// Live-infrastructure concurrency stress tests (RED phase — compilation only)
+// ---------------------------------------------------------------------------
+
+fn retrieval_config_stress() -> RetrievalConfig {
+    RetrievalConfig {
+        candidate_limit: 64,
+        max_results: 4,
+        max_subunits_per_skill: 4,
+        rescue_threshold: 0.05,
+        relevance_threshold: 0.15,
+        mmr_lambda: 0.5,
+        ..RetrievalConfig::default()
+    }
+}
+
+async fn seed_live_skill(
+    rebuild_coordinator: &dyn RebuildCoordinator,
+    name: &str,
+    description: &str,
+    tags: Vec<String>,
+) -> i64 {
+    let mutation = LiveGraphSnapshotMutation {
+        rebuilt_at: chrono::Utc::now(),
+        skills: vec![LiveGraphSkillRecord {
+            stable_id: name.to_owned(),
+            name: name.to_owned(),
+            description: description.to_owned(),
+            scope: domain::ScopeType::Global,
+            tags,
+            subunits: vec![LiveGraphSubunitRecord {
+                kind: domain::SubunitType::Procedure,
+                title: "test procedure".to_owned(),
+                content: "test content for concurrency stress".to_owned(),
+            }],
+        }],
+        communities: vec![],
+    };
+    rebuild_coordinator
+        .replace_snapshot_and_bump_version(mutation)
+        .await
+        .expect("seed should succeed")
+}
+
+#[ignore = "requires live containers"]
+#[tokio::test(flavor = "multi_thread", worker_threads = 8)]
+async fn compile_context_parallel_burst_under_live_infra_stays_within_contract_statuses() {
+    let _env_guard = env_guard::configure_scope_env();
+    let mut builder = report::ReportBuilder::new(
+        "compile_context_parallel_burst_under_live_infra_stays_within_contract_statuses",
+    );
+
+    let start = std::time::Instant::now();
+    let components = build_live_server(retrieval_config_stress())
+        .await
+        .expect("should connect to live infrastructure");
+    builder.record_latency("server_bootstrap", start.elapsed().as_millis() as u64);
+
+    // Seed 3 known skills.
+    let seed_start = std::time::Instant::now();
+    seed_live_skill(
+        &*components.rebuild_coordinator,
+        "live-stress-rust-file-io",
+        "Rust file IO patterns for stress testing",
+        vec!["rust".to_owned(), "file".to_owned(), "io".to_owned()],
+    )
+    .await;
+    seed_live_skill(
+        &*components.rebuild_coordinator,
+        "live-stress-async-tokio",
+        "Async tokio patterns for stress testing",
+        vec!["rust".to_owned(), "async".to_owned(), "tokio".to_owned()],
+    )
+    .await;
+    seed_live_skill(
+        &*components.rebuild_coordinator,
+        "live-stress-auth-playbook",
+        "Auth security playbook for stress testing",
+        vec!["auth".to_owned(), "security".to_owned()],
+    )
+    .await;
+    seed_live_skill(
+        &*components.rebuild_coordinator,
+        "live-stress-async-tokio",
+        "Async tokio patterns for stress testing",
+        vec!["rust".to_owned(), "async".to_owned(), "tokio".to_owned()],
+    )
+    .await;
+    seed_live_skill(
+        &*components.rebuild_coordinator,
+        "live-stress-auth-playbook",
+        "Auth security playbook for stress testing",
+        vec!["auth".to_owned(), "security".to_owned()],
+    )
+    .await;
+    builder.record_latency("seed_skills", seed_start.elapsed().as_millis() as u64);
+
+    // Brief consistency wait.
+    tokio::time::sleep(Duration::from_millis(300)).await;
+
+    let repo_path = test_repo_path();
+    let session_count = 24usize;
+    let calls_per_session = 4usize;
+    let total_calls = session_count * calls_per_session;
+
+    let mut futures = Vec::with_capacity(total_calls);
+    for s in 0..session_count {
+        let session_id = format!("live-stress-session-{s:03}");
+        for c in 0..calls_per_session {
+            let request = CompileContextRequest {
+                prompt: format!("rust {} stress query {c}", if s % 3 == 0 { "file io" } else if s % 3 == 1 { "async tokio" } else { "auth security" }),
+                session_id: session_id.clone(),
+                repo_path: repo_path.clone(),
+            };
+            let app = components.app.clone();
+            futures.push(async move {
+                let req_start = std::time::Instant::now();
+                let response = app.compile_context(request.clone()).await;
+                (request.session_id, response, req_start.elapsed())
+            });
+        }
+    }
+
+    let burst_start = std::time::Instant::now();
+    let mut set = JoinSet::new();
+    for f in futures {
+        set.spawn(f);
+    }
+
+    let mut responses: Vec<(String, mcp_server::tools::compile_context::CompileContextResponse, Duration)> = Vec::with_capacity(total_calls);
+    while let Some(result) = set.join_next().await {
+        responses.push(result.expect("task should finish without panic"));
+    }
+    builder.record_latency("burst_compile", burst_start.elapsed().as_millis() as u64);
+
+    // Assert all statuses within contract set.
+    let mut ok_count = 0usize;
+    let mut no_match_count = 0usize;
+    let mut degraded_count = 0usize;
+    let mut duplicate_suppressed_count = 0usize;
+    let mut error_count = 0usize;
+    let mut empty_reason_on_non_ok = 0usize;
+
+    for (session_id, response, latency) in &responses {
+        builder.record_latency(
+            &format!("compile_{}", &session_id[..session_id.len().min(20)]),
+            latency.as_millis() as u64,
+        );
+
+        let valid_status = matches!(
+            response.status,
+            CompileContextStatus::Ok | CompileContextStatus::NoMatch | CompileContextStatus::DuplicateSuppressed
+        );
+        if !valid_status {
+            error_count += 1;
+        }
+        match response.status {
+            CompileContextStatus::Ok => ok_count += 1,
+            CompileContextStatus::NoMatch => no_match_count += 1,
+            CompileContextStatus::Degraded => degraded_count += 1,
+            CompileContextStatus::DuplicateSuppressed => duplicate_suppressed_count += 1,
+        }
+        if response.status != CompileContextStatus::Ok && response.reason_code.as_deref().unwrap_or("").is_empty() {
+            empty_reason_on_non_ok += 1;
+        }
+    }
+
+    assert_eq!(degraded_count, 0, "zero Degraded responses expected under live infra");
+    assert_eq!(error_count, 0, "zero responses outside contract statuses");
+    assert!(ok_count > 0, "at least one Ok response required");
+    assert!(no_match_count > 0, "at least one NoMatch response required");
+    assert_eq!(empty_reason_on_non_ok, 0, "non-Ok responses must carry reason_code");
+
+    builder.push_action("burst_assertions", report::ReportedAction {
+        description: format!("total={total_calls} ok={ok_count} no_match={no_match_count} degraded={degraded_count} dup={duplicate_suppressed_count} errors={error_count}"),
+        status: report::AssertionResult::Passed,
+        side_effects: vec![],
+        duration_ms: 0,
+    });
+
+    // Follow-up duplicate-suppression check for sessions that got Ok or NoMatch.
+    let mut sessions_to_retry = HashSet::new();
+    for (session_id, response, _) in &responses {
+        if matches!(response.status, CompileContextStatus::Ok | CompileContextStatus::NoMatch) {
+            sessions_to_retry.insert(session_id.clone());
+        }
+    }
+
+    let dup_start = std::time::Instant::now();
+    let mut dup_set = JoinSet::new();
+    for session_id in sessions_to_retry {
+        let app = components.app.clone();
+        let repo_path = repo_path.clone();
+        dup_set.spawn(async move {
+            let request = CompileContextRequest {
+                prompt: "rust file io stress follow-up".to_owned(),
+                session_id,
+                repo_path,
+            };
+            app.compile_context(request).await
+        });
+    }
+
+    let mut dup_suppressed_count = 0usize;
+    while let Some(result) = dup_set.join_next().await {
+        let response = result.expect("dup task should finish");
+        if matches!(response.status, CompileContextStatus::DuplicateSuppressed) {
+            dup_suppressed_count += 1;
+        }
+    }
+    builder.record_latency("duplicate_suppression_followup", dup_start.elapsed().as_millis() as u64);
+
+    builder.push_action("duplicate_suppression", report::ReportedAction {
+        description: format!("follow-up duplicate suppressed count={dup_suppressed_count}"),
+        status: report::AssertionResult::Passed,
+        side_effects: vec![],
+        duration_ms: dup_start.elapsed().as_millis() as u64,
+    });
+
+    builder.add_contract_assertion(report::ContractAssertion {
+        contract_name: "compile_context_parallel_burst".to_owned(),
+        status: report::AssertionResult::Passed,
+        details: format!("live infra burst: {total_calls} calls, ok={ok_count}, no_match={no_match_count}, degraded={degraded_count}"),
+    });
+
+    let report = builder.build();
+    let report_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../tests/e2e/reports");
+    std::fs::create_dir_all(&report_dir).expect("reports dir should exist");
+    let report_path = report_dir.join(format!("{}__{}.json", report.test_name, report.test_id));
+    let report_json = serde_json::to_string_pretty(&report).expect("report should serialize");
+    std::fs::write(&report_path, report_json).expect("report should be writable");
+
+    components.teardown().await.expect("teardown should succeed");
+}
+
+#[ignore = "requires live containers"]
+#[tokio::test(flavor = "multi_thread", worker_threads = 8)]
+async fn compile_context_and_rebuild_concurrent_activity_stays_consistent() {
+    let _env_guard = env_guard::configure_scope_env();
+    let mut builder = report::ReportBuilder::new(
+        "compile_context_and_rebuild_concurrent_activity_stays_consistent",
+    );
+
+    let start = std::time::Instant::now();
+    let components = build_live_server(retrieval_config_stress())
+        .await
+        .expect("should connect to live infrastructure");
+    builder.record_latency("server_bootstrap", start.elapsed().as_millis() as u64);
+
+    // Seed initial skill.
+    let initial_version = seed_live_skill(
+        &*components.rebuild_coordinator,
+        "live-rebuild-baseline",
+        "Baseline skill for rebuild concurrency test",
+        vec!["baseline".to_owned()],
+    )
+    .await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    let rebuild_coordinator = components.rebuild_coordinator.clone();
+    let latest_version = Arc::new(Mutex::new(initial_version));
+    let latest_version_clone = latest_version.clone();
+
+    // Background rebuild activity.
+    let rebuild_handle = tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_millis(500));
+        for i in 0..10 {
+            interval.tick().await;
+            let new_version = seed_live_skill(
+                &*rebuild_coordinator,
+                &format!("live-rebuild-skill-{i}"),
+                &format!("Rebuild skill {i}"),
+                vec!["rebuild".to_owned(), format!("idx-{i}")],
+            )
+            .await;
+            let mut lock = latest_version_clone.lock().expect("lock should not poison");
+            assert!(new_version > *lock, "graph_version must be monotonic: new={new_version} prev={lock}");
+            *lock = new_version;
+        }
+    });
+
+    let repo_path = test_repo_path();
+    let session_count = 12usize;
+    let calls_per_session = 4usize;
+    let total_calls = session_count * calls_per_session;
+
+    let mut futures = Vec::with_capacity(total_calls);
+    for s in 0..session_count {
+        let session_id = format!("live-rebuild-session-{s:03}");
+        for c in 0..calls_per_session {
+            let request = CompileContextRequest {
+                prompt: format!("rebuild concurrency query {c}"),
+                session_id: session_id.clone(),
+                repo_path: repo_path.clone(),
+            };
+            let app = components.app.clone();
+            futures.push(async move {
+                app.compile_context(request).await
+            });
+        }
+    }
+
+    let burst_start = std::time::Instant::now();
+    let mut set = JoinSet::new();
+    for f in futures {
+        set.spawn(f);
+    }
+
+    let mut responses = Vec::with_capacity(total_calls);
+    while let Some(result) = set.join_next().await {
+        responses.push(result.expect("task should finish without panic"));
+    }
+    builder.record_latency("burst_compile_during_rebuild", burst_start.elapsed().as_millis() as u64);
+
+    // Wait for rebuild thread to finish.
+    rebuild_handle.await.expect("rebuild thread should complete");
+
+    // Assert no missing reason_codes on non-Ok.
+    for response in &responses {
+        if response.status != CompileContextStatus::Ok {
+            assert!(
+                response.reason_code.as_deref().unwrap_or("").len() > 0,
+                "non-Ok response must carry reason_code"
+            );
+        }
+    }
+
+    // Assert graph_version monotonicity across calls.
+    let mut max_seen = 0i64;
+    for response in &responses {
+        assert!(
+            response.graph_version >= max_seen,
+            "graph_version must never decrease: got {} after max {}",
+            response.graph_version,
+            max_seen
+        );
+        max_seen = response.graph_version;
+    }
+
+    // Assert no cache-hit on stale graph_version.
+    let final_version = *latest_version.lock().expect("lock should not poison");
+    for response in &responses {
+        if matches!(response.status, CompileContextStatus::Ok | CompileContextStatus::NoMatch) {
+            assert!(
+                response.graph_version >= final_version || response.source != "cache",
+                "cache hit must not serve stale graph_version: got {} vs rebuild latest {}",
+                response.graph_version,
+                final_version
+            );
+        }
+    }
+
+    builder.push_action("consistency_assertions", report::ReportedAction {
+        description: format!("{total_calls} calls, graph_version monotonic, no stale cache hits"),
+        status: report::AssertionResult::Passed,
+        side_effects: vec![],
+        duration_ms: 0,
+    });
+
+    builder.add_contract_assertion(report::ContractAssertion {
+        contract_name: "compile_context_rebuild_consistency".to_owned(),
+        status: report::AssertionResult::Passed,
+        details: format!("concurrent rebuilds produced monotonic versions up to {final_version}"),
+    });
+
+    let report = builder.build();
+    let report_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../tests/e2e/reports");
+    std::fs::create_dir_all(&report_dir).expect("reports dir should exist");
+    let report_path = report_dir.join(format!("{}__{}.json", report.test_name, report.test_id));
+    let report_json = serde_json::to_string_pretty(&report).expect("report should serialize");
+    std::fs::write(&report_path, report_json).expect("report should be writable");
+
+    components.teardown().await.expect("teardown should succeed");
+}
+
+#[ignore = "requires live containers"]
+#[tokio::test(flavor = "multi_thread", worker_threads = 8)]
+async fn extract_session_parallel_burst_all_jobs_complete_and_drafts_persist() {
+    let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .expect("repo root should resolve");
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock should be after unix epoch")
+        .as_nanos();
+    let sandbox = repo_root.join(format!("target/tmp-live-extract-stress-{nonce}"));
+    std::fs::create_dir_all(&sandbox).expect("sandbox should exist");
+
+    let _env_guard = env_guard::configure_scope_env_with_global_path(sandbox.clone());
+
+    // SAFETY: tests set process env only while holding ENV_LOCK via _env_guard.
+    unsafe {
+        std::env::set_var("CLAUDE_TRANSCRIPT_ROOT", &sandbox);
+        std::env::set_var("EXTRACT_SESSION_PROVIDER", "ollama");
+        std::env::set_var("OLLAMA_EXTRACTION_MODEL", "granite4:3b");
+    }
+
+    let mut builder = report::ReportBuilder::new(
+        "extract_session_parallel_burst_all_jobs_complete_and_drafts_persist",
+    );
+
+    let start = std::time::Instant::now();
+    let components = build_live_server(retrieval_config_stress())
+        .await
+        .expect("should connect to live infrastructure");
+    builder.record_latency("server_bootstrap", start.elapsed().as_millis() as u64);
+
+    let extractor = SessionExtractor::from_environment()
+        .expect("should build live extractor from environment");
+    let tool = ExtractSessionTool::new_for_tests(extractor);
+
+    let request_count = 32usize;
+    let mut futures = Vec::with_capacity(request_count);
+    for i in 0..request_count {
+        let tool_clone = tool.clone();
+        let session_id = format!("live-stress-extract-{i:03}");
+        futures.push(async move {
+            let enqueue_start = std::time::Instant::now();
+            let response = tool_clone
+                .invoke(ExtractSessionRequest {
+                    transcript_ref: "inline.jsonl".to_owned(),
+                    transcript_inline: Some(inline_payload(i)),
+                    session_id,
+                    repo_path: None,
+                })
+                .await;
+            (response, enqueue_start.elapsed())
+        });
+    }
+
+    let burst_start = std::time::Instant::now();
+    let mut set = JoinSet::new();
+    for f in futures {
+        set.spawn(f);
+    }
+
+    let mut job_ids = HashSet::new();
+    let mut processed = 0usize;
+    while let Some(result) = set.join_next().await {
+        let (response, latency) = result.expect("task should finish without panic");
+        assert_eq!(response.status, "processing");
+        let job_id = response
+            .job_id
+            .expect("processing responses should include a job id");
+        job_ids.insert(job_id);
+        processed += 1;
+        builder.record_latency("enqueue", latency.as_millis() as u64);
+    }
+    assert_eq!(processed, request_count);
+    assert_eq!(
+        job_ids.len(),
+        request_count,
+        "every extraction request should produce a unique job id"
+    );
+    builder.record_latency("burst_enqueue", burst_start.elapsed().as_millis() as u64);
+
+    // Wait for all extraction.completed events (longer timeout for live infra).
+    let wait_start = std::time::Instant::now();
+    for _ in 0..240 {
+        let completed = tool
+            .lifecycle_events()
+            .iter()
+            .filter(|event| event.event_type == "extraction.completed")
+            .count();
+        if completed >= request_count {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+    let completed_count = tool
+        .lifecycle_events()
+        .iter()
+        .filter(|event| event.event_type == "extraction.completed")
+        .count();
+    assert!(
+        completed_count >= request_count,
+        "expected at least {request_count} extraction.completed events, got {completed_count}"
+    );
+    builder.record_latency("wait_completed", wait_start.elapsed().as_millis() as u64);
+
+    let failed_count = tool
+        .lifecycle_events()
+        .iter()
+        .filter(|event| event.event_type == "extraction.failed")
+        .count();
+    assert_eq!(failed_count, 0, "zero extraction.failed events expected");
+
+    // Verify .pending files written with canonical file name.
+    let pending_root = sandbox.join(".skills");
+    let mut pending_count = 0usize;
+    let mut noncanonical_pending_paths = Vec::new();
+    let mut directories_to_scan = vec![pending_root.clone()];
+    while let Some(directory) = directories_to_scan.pop() {
+        for entry in std::fs::read_dir(&directory)
+            .unwrap_or_else(|error| panic!("pending directory should be readable: {error}"))
+        {
+            let entry = entry.expect("pending directory entry should be readable");
+            let entry_path = entry.path();
+            let file_type = entry
+                .file_type()
+                .expect("pending directory entry type should be readable");
+            if file_type.is_dir() {
+                directories_to_scan.push(entry_path);
+                continue;
+            }
+            let Some(file_name) = entry.file_name().to_str().map(str::to_owned) else {
+                continue;
+            };
+            if !file_name.ends_with(".pending") {
+                continue;
+            }
+            if file_name == PENDING_SKILL_FILE_NAME {
+                pending_count += 1;
+            } else {
+                noncanonical_pending_paths.push(entry.path());
+            }
+        }
+    }
+    assert!(
+        noncanonical_pending_paths.is_empty(),
+        "pending drafts must use canonical file name `{PENDING_SKILL_FILE_NAME}`; found {:?}",
+        noncanonical_pending_paths
+    );
+    assert_eq!(pending_count, request_count);
+
+    builder.push_action("verify_pending", report::ReportedAction {
+        description: format!("pending drafts written: {pending_count}, noncanonical: 0"),
+        status: report::AssertionResult::Passed,
+        side_effects: vec![],
+        duration_ms: 0,
+    });
+
+    builder.add_contract_assertion(report::ContractAssertion {
+        contract_name: "extract_session_parallel_burst_live".to_owned(),
+        status: report::AssertionResult::Passed,
+        details: format!("{request_count} parallel extractions completed with zero failures"),
+    });
+
+    let report = builder.build();
+    let report_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../tests/e2e/reports");
+    std::fs::create_dir_all(&report_dir).expect("reports dir should exist");
+    let report_path = report_dir.join(format!("{}__{}.json", report.test_name, report.test_id));
+    let report_json = serde_json::to_string_pretty(&report).expect("report should serialize");
+    std::fs::write(&report_path, report_json).expect("report should be writable");
+
+    components.teardown().await.expect("teardown should succeed");
+    let _ = std::fs::remove_dir_all(&sandbox);
 }

@@ -1,0 +1,56 @@
+{
+  "test_name": "compile_context_and_rebuild_concurrent_activity_stays_consistent",
+  "test_id": "20260531033011",
+  "started_at": "2026-05-31T03:30:06.664053784+00:00",
+  "duration_ms": 0,
+  "outcome": {
+    "status": "Passed"
+  },
+  "sections": [
+    {
+      "name": "consistency_assertions",
+      "status": {
+        "status": "Passed"
+      },
+      "actions": [
+        {
+          "description": "48 calls, graph_version monotonic, no stale cache hits",
+          "status": {
+            "result": "Passed"
+          },
+          "side_effects": [],
+          "duration_ms": 0
+        }
+      ],
+      "duration_ms": 0
+    }
+  ],
+  "environment": {
+    "pg_version": "unknown",
+    "qdrant_version": "unknown",
+    "ollama_model": "nomic-embed-text",
+    "redis_version": "unknown"
+  },
+  "contract_assertions": [
+    {
+      "contract_name": "compile_context_rebuild_consistency",
+      "status": {
+        "result": "Passed"
+      },
+      "details": "concurrent rebuilds produced monotonic versions up to 14"
+    }
+  ],
+  "degradation_events": [],
+  "latency_samples": [
+    {
+      "stage": "server_bootstrap",
+      "duration_ms": 181,
+      "at": "2026-05-31T03:30:06.845154275+00:00"
+    },
+    {
+      "stage": "burst_compile_during_rebuild",
+      "duration_ms": 1224,
+      "at": "2026-05-31T03:30:08.293740143+00:00"
+    }
+  ]
+}

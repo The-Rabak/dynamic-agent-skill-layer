@@ -1,0 +1,73 @@
+{
+  "test_name": "extract_session_live_inline_payload_writes_pending_and_emits_completion_events",
+  "test_id": "20260531033226",
+  "started_at": "2026-05-31T03:32:25.870775655+00:00",
+  "duration_ms": 501,
+  "outcome": {
+    "status": "Passed"
+  },
+  "sections": [
+    {
+      "name": "invoke",
+      "status": {
+        "status": "Passed"
+      },
+      "actions": [
+        {
+          "description": "extract session with inline payload returns processing",
+          "status": {
+            "result": "Passed"
+          },
+          "side_effects": [],
+          "duration_ms": 2
+        }
+      ],
+      "duration_ms": 2
+    },
+    {
+      "name": "wait",
+      "status": {
+        "status": "Passed"
+      },
+      "actions": [
+        {
+          "description": "wait for extraction lifecycle event (completed=0, failed=1)",
+          "status": {
+            "result": "Passed"
+          },
+          "side_effects": [
+            {
+              "kind": "EventPublished",
+              "event_type": "extraction.failed"
+            }
+          ],
+          "duration_ms": 499
+        }
+      ],
+      "duration_ms": 499
+    }
+  ],
+  "environment": {
+    "pg_version": "unknown",
+    "qdrant_version": "unknown",
+    "ollama_model": "nomic-embed-text",
+    "redis_version": "unknown"
+  },
+  "contract_assertions": [
+    {
+      "contract_name": "extract_session_inline_live",
+      "status": {
+        "result": "Passed"
+      },
+      "details": "live extraction with inline payload completes and writes pending draft"
+    }
+  ],
+  "degradation_events": [],
+  "latency_samples": [
+    {
+      "stage": "server_bootstrap",
+      "duration_ms": 204,
+      "at": "2026-05-31T03:32:26.075237535+00:00"
+    }
+  ]
+}

@@ -49,3 +49,5 @@ walkdir = "2.5.0"
 
 [dev-dependencies]
 async-trait = "0.1.89"
+mcp-server = { path = "../mcp-server", features = ["test-utils"] }
+retrieval = { path = "../retrieval" }
