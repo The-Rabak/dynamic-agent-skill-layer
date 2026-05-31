@@ -4,8 +4,7 @@ use admin::tools::{
     FilesystemGraphRebuildTrigger, GraphRebuildTrigger, GraphSnapshotReader,
     PostgresGraphSnapshotReader,
 };
-use domain::ScopeType;
-use graph_builder::ScopeRoot;
+use domain::{ScopeRoot, ScopeType};
 
 /// Runtime dependencies that wire admin tools into the MCP transport surface.
 ///

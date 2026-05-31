@@ -22,8 +22,8 @@ pub use traits::{
 };
 pub use types::{
     Community, DomainId, ExtractedSkillCandidate, ExtractionResult, LifecycleStatus,
-    ScopeDescriptor, ScopeType, ScoredSkill, SessionTranscript, Skill, SkillStatus, Subunit,
-    SubunitType, TranscriptEntry,
+    ScopeDescriptor, ScopeRoot, ScopeType, ScoredSkill, SessionTranscript, Skill, SkillStatus,
+    Subunit, SubunitType, TranscriptEntry,
 };
 
 #[cfg(test)]

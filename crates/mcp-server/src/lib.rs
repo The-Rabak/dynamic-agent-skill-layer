@@ -32,8 +32,9 @@ use infrastructure::{
 #[cfg(any(test, feature = "test-utils"))]
 use infrastructure::OutboxVectorStore;
 use retrieval::{
-    DualScopeResolver, RetrievalConfig, RetrievalOrchestrator, SeededGraph, SkillRetriever,
+    DualScopeResolver, RetrievalConfig, RetrievalOrchestrator, RetrievalSnapshot, SkillRetriever,
 };
+use tracing::warn;
 use tools::{
     compile_context::{CompileContextRequest, CompileContextResponse, CompileContextTool},
     extract_session::{ExtractSessionRequest, ExtractSessionTool},
@@ -87,6 +88,53 @@ impl McpServerApp {
             session_state: state,
             cache,
         }
+    }
+
+    /// Builds a server from an explicit in-memory [`RetrievalSnapshot`].
+    ///
+    /// This is the explicit-graph constructor used by tests and benches to wire a
+    /// deterministic graph without live infrastructure. Production boot uses
+    /// [`McpServerApp::from_environment`] instead.
+    pub fn with_explicit_graph<E>(
+        embedding_service: Arc<E>,
+        graph: RetrievalSnapshot,
+        config: RetrievalConfig,
+        redis_client: Option<RedisClient>,
+    ) -> McpServerApp
+    where
+        E: EmbeddingService + Send + Sync + 'static,
+    {
+        let admin_runtime_dependencies = admin_wiring::live_admin_runtime_dependencies();
+        let start_dir = std::env::current_dir().unwrap_or_else(|_| ".".into());
+        let project_resolver: Arc<dyn ScopeResolver> =
+            Arc::new(GitRootProjectResolver::new(start_dir));
+        let global_resolver: Arc<dyn ScopeResolver> = Arc::new(EnvPathGlobalResolver::default());
+        let scope_resolver = DualScopeResolver::new(project_resolver, global_resolver);
+
+        let retriever =
+            RetrievalOrchestrator::new_dual_scope(embedding_service, graph, config, scope_resolver);
+        McpServerApp::new_with_admin(
+            Arc::new(retriever),
+            admin_runtime_dependencies.rebuild_trigger,
+            admin_runtime_dependencies.graph_reader,
+            redis_client,
+        )
+    }
+
+    /// Builds the production server from the runtime environment.
+    ///
+    /// Connects to live PG/Qdrant/Redis/Ollama, loads the durable graph snapshot
+    /// (at its real `graph_version`), and wires the dual-scope retriever. This is
+    /// the production boot path — the deployed binary calls this so a clean
+    /// deployment retrieves the skills the graph already contains.
+    ///
+    /// Returns the full [`LiveServerComponents`] bundle (app + adapters) so that
+    /// callers can also drive seeding/teardown in tests; production only consumes
+    /// `.app`. Fails explicitly if any dependency cannot be reached.
+    pub async fn from_environment(
+        config: RetrievalConfig,
+    ) -> Result<LiveServerComponents, Box<dyn std::error::Error + Send + Sync>> {
+        build_live_server(config).await
     }
 
     pub fn registered_tools(&self) -> Vec<&'static str> {
@@ -145,36 +193,6 @@ impl McpServerApp {
     ) -> ListCommunitiesResponse {
         self.admin_tools.list_communities(request).await
     }
-}
-
-pub fn build_seeded_server<E>(
-    embedding_service: Arc<E>,
-    graph: SeededGraph,
-    config: RetrievalConfig,
-    redis_client: Option<RedisClient>,
-) -> McpServerApp
-where
-    E: EmbeddingService + Send + Sync + 'static,
-{
-    let graph_for_retrieval = graph.clone();
-    let admin_runtime_dependencies = admin_wiring::live_admin_runtime_dependencies();
-    let start_dir = std::env::current_dir().unwrap_or_else(|_| ".".into());
-    let project_resolver: Arc<dyn ScopeResolver> = Arc::new(GitRootProjectResolver::new(start_dir));
-    let global_resolver: Arc<dyn ScopeResolver> = Arc::new(EnvPathGlobalResolver::default());
-    let scope_resolver = DualScopeResolver::new(project_resolver, global_resolver);
-
-    let retriever = RetrievalOrchestrator::new_dual_scope(
-        embedding_service,
-        graph_for_retrieval,
-        config,
-        scope_resolver,
-    );
-    McpServerApp::new_with_admin(
-        Arc::new(retriever),
-        admin_runtime_dependencies.rebuild_trigger,
-        admin_runtime_dependencies.graph_reader,
-        redis_client,
-    )
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -236,7 +254,9 @@ impl LiveServerComponents {
     }
 }
 
-pub async fn build_live_server(
+/// Live-component assembly used exclusively by [`McpServerApp::from_environment`].
+/// Kept private so the public surface stays at exactly two constructors.
+async fn build_live_server(
     config: RetrievalConfig,
 ) -> Result<LiveServerComponents, Box<dyn std::error::Error + Send + Sync>> {
     let (pg_adapter, (qdrant_adapter, embedding_service), redis_streams, redis_client) = tokio::try_join!(
@@ -352,27 +372,55 @@ fn env_var(name: &str) -> Result<String, String> {
     std::env::var(name).map_err(|_| format!("{name} must be set"))
 }
 
+/// Reads a `PATH`-style env var into canonicalized scope-root paths.
+///
+/// Used to give live-loaded skills the scope provenance the persisted schema
+/// lacks. Paths are canonicalized to align with the scope resolver's own
+/// canonicalization so `starts_with` scope matching succeeds; unset or invalid
+/// entries are skipped (boot stays resilient).
+fn scope_paths_from_env(name: &str) -> Vec<std::path::PathBuf> {
+    let Ok(raw) = std::env::var(name) else {
+        return Vec::new();
+    };
+    raw.split([':', ';'])
+        .map(str::trim)
+        .filter(|entry| !entry.is_empty())
+        .filter_map(|entry| std::fs::canonicalize(entry).ok())
+        .collect()
+}
+
 #[tracing::instrument(skip(pool, embedding_service))]
 async fn build_graph_from_pg(
     pool: &PostgresPool,
     embedding_service: &dyn EmbeddingService,
-) -> Result<SeededGraph, Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<RetrievalSnapshot, Box<dyn std::error::Error + Send + Sync>> {
     let store = PostgresGraphSnapshotStore::new(pool.clone());
-    let skills = store.list_skills().await
+    // Read the real durable version so the snapshot (and the version-keyed cache)
+    // reflects the actual graph state, even on cold start with no skills.
+    let graph_version = store
+        .current_graph_version()
+        .await
+        .map_err(|e| format!("failed to read graph_version from graph_state: {e}"))?;
+    let mut skills = store
+        .list_skills()
+        .await
         .map_err(|e| format!("failed to list skills from PG: {e}"))?;
 
     if skills.is_empty() {
-        return Ok(SeededGraph::new(vec![], 0));
+        return Ok(RetrievalSnapshot::new(vec![], graph_version));
     }
 
-    // Safety guard against unbounded memory growth.
+    // Safety guard against unbounded memory growth. Truncating (rather than
+    // erroring) keeps boot resilient: a degraded-but-serving graph beats a panic
+    // on startup.
     const MAX_SKILLS_TO_LOAD: usize = 5000;
     if skills.len() > MAX_SKILLS_TO_LOAD {
-        return Err(format!(
-            "too many skills to load into memory: {} (max {})",
-            skills.len(),
-            MAX_SKILLS_TO_LOAD
-        ).into());
+        warn!(
+            skill_count = skills.len(),
+            max = MAX_SKILLS_TO_LOAD,
+            "too many skills for in-memory snapshot; truncating to cap"
+        );
+        skills.truncate(MAX_SKILLS_TO_LOAD);
     }
 
     let texts: Vec<String> = skills.iter().map(|s| {
@@ -380,6 +428,13 @@ async fn build_graph_from_pg(
     }).collect();
     let text_refs: Vec<&str> = texts.iter().map(String::as_str).collect();
     let embeddings = embedding_service.embed_batch(&text_refs).await?;
+
+    // Live-loaded skills have no per-file provenance (the `skills` table stores no
+    // source path), so their searchable scope is the configured scope root. Without
+    // this, `seeded_skill_matches_scope` rejects every live skill against a
+    // path-constrained scope and boot retrieval always returns `no_match`.
+    let global_scope_paths = scope_paths_from_env("SKILL_GLOBAL_PATHS");
+    let project_scope_paths = std::env::current_dir().map(|dir| vec![dir]).unwrap_or_default();
 
     let seeded_skills: Vec<retrieval::SeededSkill> = skills
         .into_iter()
@@ -416,14 +471,16 @@ async fn build_graph_from_pg(
                 }
             }).collect();
 
+            let (scope_id, source_paths) = match record.scope.as_str() {
+                "global" => ("global".to_owned(), global_scope_paths.clone()),
+                "team" => ("team".to_owned(), Vec::new()),
+                _ => ("project".to_owned(), project_scope_paths.clone()),
+            };
+
             retrieval::SeededSkill {
                 skill,
-                scope_id: match record.scope.as_str() {
-                    "global" => "global".to_owned(),
-                    "team" => "team".to_owned(),
-                    _ => "project".to_owned(),
-                },
-                source_paths: vec![],
+                scope_id,
+                source_paths,
                 embedding,
                 subunits,
                 prior: 0.1,
@@ -432,5 +489,5 @@ async fn build_graph_from_pg(
         })
         .collect();
 
-    Ok(SeededGraph::new(seeded_skills, 1))
+    Ok(RetrievalSnapshot::new(seeded_skills, graph_version))
 }

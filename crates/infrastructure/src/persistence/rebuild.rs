@@ -206,6 +206,25 @@ impl PostgresGraphSnapshotStore {
             })
             .collect()
     }
+
+    /// Reads the durable `graph_state.graph_version`.
+    ///
+    /// Returns `0` on cold start (before any rebuild has written the singleton
+    /// row) so callers can build an empty snapshot that still reports the true
+    /// version rather than a hardcoded placeholder.
+    pub async fn current_graph_version(&self) -> Result<i64, RebuildError> {
+        let row: Option<(i64,)> = sqlx::query_as(
+            r#"
+            SELECT graph_version
+            FROM graph_state
+            WHERE singleton = TRUE
+            "#,
+        )
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(row.map(|(version,)| version).unwrap_or(0))
+    }
 }
 
 #[async_trait]

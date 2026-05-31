@@ -12,7 +12,7 @@ use graph_builder::{
     SkillFileChangeKind, SkillWatcher, WatcherRecovery, watcher::build_snapshot,
 };
 use infrastructure::{EventEnvelope, OutboxVectorStore, PostgresGraphSnapshotStore, RebuildCoordinator};
-use mcp_server::build_live_server;
+use mcp_server::McpServerApp;
 use retrieval::RetrievalConfig;
 
 #[path = "report.rs"]
@@ -234,7 +234,7 @@ async fn watcher_churn_and_reconciliation_converges_to_correct_graph_state_under
     );
 
     let start = std::time::Instant::now();
-    let components = build_live_server(retrieval_config_for_watcher())
+    let components = McpServerApp::from_environment(retrieval_config_for_watcher())
         .await
         .expect("should connect to live infrastructure");
     builder.record_latency("server_bootstrap", start.elapsed().as_millis() as u64);

@@ -110,6 +110,30 @@ pub struct ScopeDescriptor {
     pub config: BTreeMap<String, String>,
 }
 
+/// A scope's filesystem root: the directory the graph builder, watcher, and
+/// maintenance workers treat as the boundary of a single scope.
+///
+/// Relocated to `domain` because its fields are pure domain values
+/// (`ScopeType` + identifiers/paths) shared across `graph-builder`,
+/// `maintenance`, and `mcp-server`. `graph_builder::ScopeRoot` remains as a
+/// transitional re-export alias.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScopeRoot {
+    pub scope_id: String,
+    pub scope_type: ScopeType,
+    pub root: PathBuf,
+}
+
+impl ScopeRoot {
+    pub fn new(scope_id: impl Into<String>, scope_type: ScopeType, root: PathBuf) -> Self {
+        Self {
+            scope_id: scope_id.into(),
+            scope_type,
+            root,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TranscriptEntry {
     pub speaker: String,

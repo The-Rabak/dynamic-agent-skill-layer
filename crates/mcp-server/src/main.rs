@@ -2,8 +2,8 @@ use infrastructure::{
     DependencyFactory,
     logging::{ServiceLoggingConfig, init_service_logging},
 };
-use mcp_server::{build_seeded_server, protocol::serve_http};
-use retrieval::{RetrievalConfig, SeededGraph};
+use mcp_server::{McpServerApp, protocol::serve_http};
+use retrieval::{RetrievalConfig, RetrievalSnapshot};
 use tracing::info;
 
 #[tokio::main]
@@ -18,18 +18,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "info",
     ))?;
 
-    let embedding_service = DependencyFactory::build_embedding_service_from_environment()?;
-    let graph = SeededGraph::new(Vec::new(), 0);
     let redis_client = DependencyFactory::build_redis_client_from_environment();
-    let app = build_seeded_server(embedding_service, graph, RetrievalConfig::default(), redis_client);
     let health_checker = DependencyFactory::build_health_checker_from_environment();
     let address = std::env::var("MCP_SERVER_ADDR")
         .unwrap_or_else(|_| "127.0.0.1:3001".to_owned())
         .parse()?;
 
+    // TODO(remove-after-v1.5-green): temporary rollback switch back to the empty
+    // seeded graph. Remove on first green CI on `main` once the live boot path
+    // is proven in deployment. Default is `live` so production boots the real graph.
+    let retrieval_mode = std::env::var("MCP_RETRIEVAL_MODE").unwrap_or_else(|_| "live".to_owned());
+
+    let app = if retrieval_mode == "seeded" {
+        let embedding_service = DependencyFactory::build_embedding_service_from_environment()?;
+        McpServerApp::with_explicit_graph(
+            embedding_service,
+            RetrievalSnapshot::new(Vec::new(), 0),
+            RetrievalConfig::default(),
+            redis_client,
+        )
+    } else {
+        McpServerApp::from_environment(RetrievalConfig::default())
+            .await
+            .map_err(|error| -> Box<dyn std::error::Error> { error.to_string().into() })?
+            .app
+    };
+
     info!(
         service = "mcp-server",
         address = %address,
+        retrieval_mode = %retrieval_mode,
         registered_tools = ?app.registered_tools(),
         "mcp server listening"
     );

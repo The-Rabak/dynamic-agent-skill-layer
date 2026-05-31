@@ -29,13 +29,22 @@ pub struct SeededSkill {
     pub community_boost: f32,
 }
 
+/// Immutable in-memory snapshot of the skill graph the read path retrieves from.
+///
+/// `graph_version` is the durable `graph_state.graph_version` the snapshot was
+/// built from; it keys the version-aware compiled-context cache so a rebuild
+/// invalidates stale entries. An empty `skills` vector is a valid cold-start
+/// snapshot and yields `no_match` rather than an error.
+///
+/// T02 wraps this type as `GraphSnapshot { graph, version }` under `ArcSwap` to
+/// support refresh-without-restart; keep it free of swap/refresh concerns here.
 #[derive(Debug, Clone)]
-pub struct SeededGraph {
+pub struct RetrievalSnapshot {
     pub graph_version: i64,
     pub skills: Vec<SeededSkill>,
 }
 
-impl SeededGraph {
+impl RetrievalSnapshot {
     pub fn new(skills: Vec<SeededSkill>, graph_version: i64) -> Self {
         Self {
             graph_version,
@@ -133,7 +142,7 @@ where
     E: EmbeddingService + Send + Sync + 'static,
 {
     embedding_service: Arc<E>,
-    graph: Arc<SeededGraph>,
+    graph: Arc<RetrievalSnapshot>,
     config: RetrievalConfig,
     scope_resolver: Option<DualScopeResolver>,
 }
@@ -142,7 +151,7 @@ impl<E> RetrievalOrchestrator<E>
 where
     E: EmbeddingService + Send + Sync + 'static,
 {
-    pub fn new(embedding_service: Arc<E>, graph: SeededGraph, config: RetrievalConfig) -> Self {
+    pub fn new(embedding_service: Arc<E>, graph: RetrievalSnapshot, config: RetrievalConfig) -> Self {
         Self {
             embedding_service,
             graph: Arc::new(graph),
@@ -153,7 +162,7 @@ where
 
     pub fn new_dual_scope(
         embedding_service: Arc<E>,
-        graph: SeededGraph,
+        graph: RetrievalSnapshot,
         config: RetrievalConfig,
         scope_resolver: DualScopeResolver,
     ) -> Self {

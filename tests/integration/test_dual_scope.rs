@@ -12,10 +12,10 @@ use domain::{
     Subunit, SubunitType,
 };
 use mcp_server::{
-    build_seeded_server,
+    McpServerApp,
     tools::compile_context::{CompileContextRequest, CompileContextStatus},
 };
-use retrieval::{RetrievalConfig, SeededGraph, SeededSkill};
+use retrieval::{RetrievalConfig, RetrievalSnapshot, SeededSkill};
 
 #[path = "env_guard.rs"]
 mod env_guard;
@@ -71,7 +71,7 @@ impl EmbeddingService for DeterministicEmbeddingService {
     }
 }
 
-fn seeded_dual_scope_graph() -> SeededGraph {
+fn seeded_dual_scope_graph() -> RetrievalSnapshot {
     let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
         .canonicalize()
@@ -102,7 +102,7 @@ fn seeded_dual_scope_graph() -> SeededGraph {
         community_id: None,
     };
 
-    SeededGraph::new(
+    RetrievalSnapshot::new(
         vec![
             SeededSkill {
                 skill: project_skill.clone(),
@@ -176,7 +176,7 @@ fn configure_scope_env_with_missing_global_path() -> env_guard::ScopeEnvGuard {
 async fn compile_context_searches_project_and_global_with_project_priority_bias() {
     let _env_guard = env_guard::configure_scope_env();
 
-    let server = build_seeded_server(
+    let server = McpServerApp::with_explicit_graph(
         Arc::new(DeterministicEmbeddingService::healthy()),
         seeded_dual_scope_graph(),
         retrieval_config(),
@@ -216,7 +216,7 @@ async fn suppression_is_scoped_by_session_and_repo_pair_and_degraded_does_not_co
 {
     let _env_guard = env_guard::configure_scope_env();
 
-    let server = build_seeded_server(
+    let server = McpServerApp::with_explicit_graph(
         Arc::new(DeterministicEmbeddingService::fail_first()),
         seeded_dual_scope_graph(),
         retrieval_config(),
@@ -259,7 +259,7 @@ async fn suppression_is_scoped_by_session_and_repo_pair_and_degraded_does_not_co
 #[tokio::test]
 async fn compile_context_uses_request_repo_path_for_scope_resolution() {
     let _env_guard = env_guard::configure_scope_env();
-    let server = build_seeded_server(
+    let server = McpServerApp::with_explicit_graph(
         Arc::new(DeterministicEmbeddingService::healthy()),
         seeded_dual_scope_graph(),
         retrieval_config(),
@@ -306,7 +306,7 @@ async fn compile_context_uses_request_repo_path_for_scope_resolution() {
 async fn partial_scope_failure_returns_degraded_with_available_context_and_no_suppression() {
     let _env_guard = configure_scope_env_with_missing_global_path();
 
-    let server = build_seeded_server(
+    let server = McpServerApp::with_explicit_graph(
         Arc::new(DeterministicEmbeddingService::healthy()),
         seeded_dual_scope_graph(),
         retrieval_config(),

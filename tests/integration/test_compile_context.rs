@@ -14,14 +14,14 @@ use domain::{
     Subunit, SubunitType,
 };
 use mcp_server::{
-    build_seeded_server,
+    McpServerApp,
     protocol::{JsonRpcRequest, registered_tool_descriptors},
     tools::{
         compile_context::{CompileContextRequest, CompileContextStatus},
         find_skill::FindSkillRequest,
     },
 };
-use retrieval::{RetrievalConfig, SeededGraph, SeededSkill};
+use retrieval::{RetrievalConfig, RetrievalSnapshot, SeededSkill};
 use serde_json::json;
 
 #[path = "env_guard.rs"]
@@ -119,7 +119,7 @@ impl EmbeddingService for DeterministicEmbeddingService {
     }
 }
 
-fn seeded_graph() -> SeededGraph {
+fn seeded_graph() -> RetrievalSnapshot {
     let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
         .canonicalize()
@@ -160,7 +160,7 @@ fn seeded_graph() -> SeededGraph {
         community_id: None,
     };
 
-    SeededGraph::new(
+    RetrievalSnapshot::new(
         vec![
             SeededSkill {
                 skill: rust_skill.clone(),
@@ -273,7 +273,7 @@ Reusable capability for {title}.
 #[tokio::test]
 async fn registers_compile_context_find_skill_and_extract_session_tools() {
     let _env_guard = env_guard::configure_scope_env();
-    let server = build_seeded_server(
+    let server = McpServerApp::with_explicit_graph(
         Arc::new(DeterministicEmbeddingService::healthy()),
         seeded_graph(),
         retrieval_config(),
@@ -308,7 +308,7 @@ async fn rebuild_graph_requires_live_graph_database_for_seeded_server() {
         Some(project_root),
         Some(global_root),
     );
-    let server = build_seeded_server(
+    let server = McpServerApp::with_explicit_graph(
         Arc::new(DeterministicEmbeddingService::healthy()),
         seeded_graph(),
         retrieval_config(),
@@ -348,7 +348,7 @@ async fn rebuild_graph_requires_live_graph_database_for_seeded_server() {
 #[tokio::test]
 async fn compile_context_returns_ok_then_duplicate_suppressed_after_healthy_result() {
     let _env_guard = env_guard::configure_scope_env();
-    let server = build_seeded_server(
+    let server = McpServerApp::with_explicit_graph(
         Arc::new(DeterministicEmbeddingService::healthy()),
         seeded_graph(),
         retrieval_config(),
@@ -380,7 +380,7 @@ async fn compile_context_returns_ok_then_duplicate_suppressed_after_healthy_resu
 #[tokio::test]
 async fn compile_context_returns_no_match_for_healthy_empty_and_suppresses_followups() {
     let _env_guard = env_guard::configure_scope_env();
-    let server = build_seeded_server(
+    let server = McpServerApp::with_explicit_graph(
         Arc::new(DeterministicEmbeddingService::healthy()),
         seeded_graph(),
         retrieval_config(),
@@ -408,7 +408,7 @@ async fn compile_context_returns_no_match_for_healthy_empty_and_suppresses_follo
 #[tokio::test]
 async fn degraded_first_attempt_does_not_set_suppression_state() {
     let _env_guard = env_guard::configure_scope_env();
-    let server = build_seeded_server(
+    let server = McpServerApp::with_explicit_graph(
         Arc::new(DeterministicEmbeddingService::fail_first()),
         seeded_graph(),
         retrieval_config(),
@@ -435,7 +435,7 @@ async fn degraded_first_attempt_does_not_set_suppression_state() {
 #[tokio::test]
 async fn find_skill_reports_top_matches_from_seeded_graph() {
     let _env_guard = env_guard::configure_scope_env();
-    let server = build_seeded_server(
+    let server = McpServerApp::with_explicit_graph(
         Arc::new(DeterministicEmbeddingService::healthy()),
         seeded_graph(),
         retrieval_config(),
@@ -456,7 +456,7 @@ async fn find_skill_reports_top_matches_from_seeded_graph() {
 #[tokio::test]
 async fn json_rpc_tools_list_and_call_compile_context() {
     let _env_guard = env_guard::configure_scope_env();
-    let server = build_seeded_server(
+    let server = McpServerApp::with_explicit_graph(
         Arc::new(DeterministicEmbeddingService::healthy()),
         seeded_graph(),
         retrieval_config(),

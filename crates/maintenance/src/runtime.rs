@@ -183,12 +183,11 @@ where
 fn load_skill_snapshots(
     scope_roots: &[std::path::PathBuf],
 ) -> Result<Vec<SkillSnapshot>, String> {
+    use domain::{ScopeRoot, ScopeType};
     use graph_builder::{
         graph::build::build_skills_from_scope_roots,
         graph::embeddings::DeterministicEmbeddingGenerator,
-        ScopeRoot,
     };
-    use domain::ScopeType;
 
     let roots: Vec<ScopeRoot> = scope_roots
         .iter()

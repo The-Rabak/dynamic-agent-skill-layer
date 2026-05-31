@@ -14,13 +14,13 @@ use domain::{
 };
 use infrastructure::EventEnvelope;
 use mcp_server::{
-    build_live_server, build_seeded_server,
+    McpServerApp,
     tools::{
         compile_context::{CompileContextRequest, CompileContextStatus},
         extract_session::{ExtractSessionRequest, ExtractSessionTool},
     },
 };
-use retrieval::{RetrievalConfig, SeededGraph, SeededSkill};
+use retrieval::{RetrievalConfig, RetrievalSnapshot, SeededSkill};
 use session_extractor::{
     ExtractionEventPublisher, ExtractionProvider, SessionExtractor, transcripts::TranscriptLoader,
     writer::PendingDraftWriter,
@@ -65,7 +65,7 @@ impl EmbeddingService for BurstEmbeddingService {
     }
 }
 
-fn seeded_graph() -> SeededGraph {
+fn seeded_graph() -> RetrievalSnapshot {
     let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
         .canonicalize()
@@ -95,7 +95,7 @@ fn seeded_graph() -> SeededGraph {
         community_id: None,
     };
 
-    SeededGraph::new(
+    RetrievalSnapshot::new(
         vec![
             SeededSkill {
                 skill: project_skill.clone(),
@@ -416,7 +416,7 @@ async fn compile_context_parallel_burst_under_live_infra_stays_within_contract_s
     );
 
     let start = std::time::Instant::now();
-    let components = build_live_server(retrieval_config_stress())
+    let components = McpServerApp::from_environment(retrieval_config_stress())
         .await
         .expect("should connect to live infrastructure");
     builder.record_latency("server_bootstrap", start.elapsed().as_millis() as u64);
@@ -607,7 +607,7 @@ async fn compile_context_and_rebuild_concurrent_activity_stays_consistent() {
     );
 
     let start = std::time::Instant::now();
-    let components = build_live_server(retrieval_config_stress())
+    let components = McpServerApp::from_environment(retrieval_config_stress())
         .await
         .expect("should connect to live infrastructure");
     builder.record_latency("server_bootstrap", start.elapsed().as_millis() as u64);
@@ -766,7 +766,7 @@ async fn extract_session_parallel_burst_all_jobs_complete_and_drafts_persist() {
     );
 
     let start = std::time::Instant::now();
-    let components = build_live_server(retrieval_config_stress())
+    let components = McpServerApp::from_environment(retrieval_config_stress())
         .await
         .expect("should connect to live infrastructure");
     builder.record_latency("server_bootstrap", start.elapsed().as_millis() as u64);

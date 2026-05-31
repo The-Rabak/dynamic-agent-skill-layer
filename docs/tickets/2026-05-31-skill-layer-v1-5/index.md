@@ -2,8 +2,8 @@
 plan_ref: docs/plans/2026-05-31-feat-skill-layer-v1-5-close-the-loop-plan.md
 architecture_ref: docs/architecture/2026-05-31-skill-layer-v1-5-close-the-loop-architecture.md
 execution_shape: vertical-slices
-ticket_set_status: ready # ready | in_progress | blocked | completed
-last_completed_batch: 0
+ticket_set_status: in_progress # ready | in_progress | blocked | completed
+last_completed_batch: 1
 total_batches: 8
 ---
 
@@ -54,7 +54,7 @@ Explicit `depends_on` edges:
 
 | Batch | Tickets | Status | Gating reason |
 |---|---|---|---|
-| 1 | T01 | pending | Foundation. Sweeping cross-crate rename (`SeededGraph`→`RetrievalSnapshot`) + prod constructor. Must be alone — it edits files every downstream retrieval ticket also touches. |
+| 1 | T01 | completed | Foundation. Sweeping cross-crate rename (`SeededGraph`→`RetrievalSnapshot`) + prod constructor. Must be alone — it edits files every downstream retrieval ticket also touches. |
 | 2 | T03, **‖** T04 | pending | Both depend only on T01. **Parallel-safe** — file-disjoint (see safety note). |
 | 3 | T02, **‖** T05 | pending | T02 dep T01 ✓; T05 dep T04 ✓ (done in B2). **Parallel-safe** — file-disjoint. |
 | 4 | T06 | pending | Singleton — shares `mcp-server/lib.rs`, `retrieval/orchestrator.rs`, `maintenance/runtime.rs` with other tickets. |

@@ -4,7 +4,7 @@
 // end-to-end contract that currently remains ignored until full capabilities exist.
 
 use std::path::PathBuf;
-use mcp_server::build_live_server;
+use mcp_server::McpServerApp;
 use retrieval::RetrievalConfig;
 use infrastructure::{LiveGraphSkillRecord, LiveGraphSubunitRecord, LiveGraphSnapshotMutation, RebuildCoordinator};
 use mcp_server::tools::compile_context::{CompileContextRequest, CompileContextStatus};
@@ -145,7 +145,7 @@ async fn dependency_chaos_matrix_preserves_degraded_semantics_and_fast_recovery(
         .join("../../docker-compose.test.yml")
         .canonicalize().expect("compose file");
 
-    let components = build_live_server(dream_retrieval_config()).await.expect("live");
+    let components = McpServerApp::from_environment(dream_retrieval_config()).await.expect("live");
     dream_seed_skills(components.rebuild_coordinator.as_ref(), &[
         ("dream-rust-001", "Rust async file IO patterns with error handling", &["rust", "file", "async"]),
         ("dream-security-001", "Authentication and authorization middleware patterns", &["auth", "security"]),
@@ -216,7 +216,7 @@ async fn outbox_backlog_replays_without_data_loss_after_multi_restart_sequence()
     let _env_guard = env_guard::configure_scope_env();
     let mut builder = report::ReportBuilder::new("DS-004_outbox_backlog_replay");
 
-    let components = build_live_server(dream_retrieval_config()).await.expect("live");
+    let components = McpServerApp::from_environment(dream_retrieval_config()).await.expect("live");
     let version_before = components.rebuild_coordinator.current_graph_version().await.expect("graph version");
 
     // Queue several mutations through outbox
@@ -230,7 +230,7 @@ async fn outbox_backlog_replays_without_data_loss_after_multi_restart_sequence()
     assert!(version_after > version_before);
 
     // Build a fresh server to simulate restart
-    let fresh = build_live_server(dream_retrieval_config()).await.expect("fresh live");
+    let fresh = McpServerApp::from_environment(dream_retrieval_config()).await.expect("fresh live");
     let fresh_version = fresh.rebuild_coordinator.current_graph_version().await.expect("graph version");
     assert!(fresh_version >= version_after);
 
@@ -263,7 +263,7 @@ async fn qdrant_pg_drift_detection_and_reconciliation_closes_all_gaps() {
     let _env_guard = env_guard::configure_scope_env();
     let mut builder = report::ReportBuilder::new("DS-005_qdrant_pg_drift");
 
-    let components = build_live_server(dream_retrieval_config()).await.expect("live");
+    let components = McpServerApp::from_environment(dream_retrieval_config()).await.expect("live");
     dream_seed_skills(components.rebuild_coordinator.as_ref(), &[
         ("ds005-drift-skill-1", "Drift detection skill one", &["drift", "one"]),
         ("ds005-drift-skill-2", "Drift detection skill two", &["drift", "two"]),
@@ -301,7 +301,7 @@ async fn sustained_watcher_and_extraction_saturation_keeps_eventual_consistency(
     let _env_guard = env_guard::configure_scope_env();
     let mut builder = report::ReportBuilder::new("DS-006_watcher_extraction_saturation");
 
-    let components = build_live_server(dream_retrieval_config()).await.expect("live");
+    let components = McpServerApp::from_environment(dream_retrieval_config()).await.expect("live");
     dream_seed_skills(components.rebuild_coordinator.as_ref(), &[
         ("ds006-sat-skill-1", "Saturation skill alpha", &["alpha"]),
         ("ds006-sat-skill-2", "Saturation skill beta", &["beta"]),
@@ -357,7 +357,7 @@ async fn high_qps_compile_context_load_meets_p95_and_error_budget_targets() {
     let _env_guard = env_guard::configure_scope_env();
     let mut builder = report::ReportBuilder::new("DS-007_high_qps_compile_context");
 
-    let components = build_live_server(dream_retrieval_config()).await.expect("live");
+    let components = McpServerApp::from_environment(dream_retrieval_config()).await.expect("live");
     dream_seed_skills(components.rebuild_coordinator.as_ref(), &[
         ("ds007-qps-skill-1", "QPS benchmark skill one", &["bench", "one"]),
         ("ds007-qps-skill-2", "QPS benchmark skill two", &["bench", "two"]),

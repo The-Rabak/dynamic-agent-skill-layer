@@ -6,7 +6,7 @@ use tokio::time::timeout;
 use crate::{
     fusion::{FusedCandidate, mmr_select},
     graph_search::{GraphHit, search_graph},
-    orchestrator::{RetrievalConfig, SeededGraph},
+    orchestrator::{RetrievalConfig, RetrievalSnapshot},
     qdrant_search::search_qdrant,
     scoring::{ScoreComponents, score_eq3},
 };
@@ -43,7 +43,7 @@ where
 pub async fn search_scopes_concurrently(
     prompt: &str,
     prompt_embedding: &[f32],
-    graph: Arc<SeededGraph>,
+    graph: Arc<RetrievalSnapshot>,
     config: &RetrievalConfig,
     scopes: &[ScopeDescriptor],
 ) -> (Vec<ScopedSearchResult>, Vec<ScopedSearchFailure>) {
@@ -151,7 +151,7 @@ fn seeded_skill_matches_scope(
 async fn search_scope(
     prompt: &str,
     prompt_embedding: &[f32],
-    graph: Arc<SeededGraph>,
+    graph: Arc<RetrievalSnapshot>,
     config: &RetrievalConfig,
     scope: ScopeDescriptor,
 ) -> Result<ScopedSearchResult, ScopedSearchFailure> {
@@ -194,7 +194,7 @@ where
 fn perform_scope_search(
     prompt: &str,
     prompt_embedding: &[f32],
-    graph: Arc<SeededGraph>,
+    graph: Arc<RetrievalSnapshot>,
     config: &RetrievalConfig,
     scope: ScopeDescriptor,
 ) -> ScopedSearchResult {
@@ -349,7 +349,7 @@ mod tests {
         }
     }
 
-    fn graph() -> SeededGraph {
+    fn graph() -> RetrievalSnapshot {
         let project = Skill {
             id: DomainId::new_unchecked("project-skill"),
             name: "project-rust-auth".to_owned(),
@@ -373,7 +373,7 @@ mod tests {
             community_id: None,
         };
 
-        SeededGraph::new(
+        RetrievalSnapshot::new(
             vec![
                 SeededSkill {
                     skill: project.clone(),
@@ -412,7 +412,7 @@ mod tests {
         )
     }
 
-    fn heavy_graph(skills_per_scope: usize) -> SeededGraph {
+    fn heavy_graph(skills_per_scope: usize) -> RetrievalSnapshot {
         let mut skills = Vec::with_capacity(skills_per_scope * 2);
 
         for index in 0..skills_per_scope {
@@ -478,7 +478,7 @@ mod tests {
             });
         }
 
-        SeededGraph::new(skills, 7)
+        RetrievalSnapshot::new(skills, 7)
     }
 
     #[tokio::test]
@@ -683,7 +683,7 @@ mod tests {
             subunit_ids: vec![DomainId::new_unchecked("project-sub")],
             community_id: None,
         };
-        let graph = SeededGraph::new(
+        let graph = RetrievalSnapshot::new(
             vec![
                 SeededSkill {
                     skill: project.clone(),

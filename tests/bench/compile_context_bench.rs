@@ -3,8 +3,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use criterion::{Criterion, criterion_group, criterion_main};
 use domain::{DomainId, EmbeddingError, EmbeddingService, LifecycleStatus, ScopeType, Skill, SkillStatus, Subunit, SubunitType};
-use mcp_server::{build_seeded_server, tools::compile_context::CompileContextRequest};
-use retrieval::{RetrievalConfig, SeededGraph, SeededSkill};
+use mcp_server::{McpServerApp, tools::compile_context::CompileContextRequest};
+use retrieval::{RetrievalConfig, RetrievalSnapshot, SeededSkill};
 
 /// Deterministic embedding service that returns fixed-dimension vectors instantly.
 /// No network calls — this isolates retrieval + compilation latency.
@@ -65,7 +65,7 @@ fn build_seeded_skill(id: &str, name: &str, scope: ScopeType, embedding: Vec<f32
     }
 }
 
-fn build_graph(skill_count: usize) -> SeededGraph {
+fn build_graph(skill_count: usize) -> RetrievalSnapshot {
     let mut skills = Vec::with_capacity(skill_count);
     for idx in 0..skill_count {
         let scope = if idx % 2 == 0 {
@@ -81,7 +81,7 @@ fn build_graph(skill_count: usize) -> SeededGraph {
             embedding,
         ));
     }
-    SeededGraph::new(skills, 1)
+    RetrievalSnapshot::new(skills, 1)
 }
 
 fn bench_compile_context(c: &mut Criterion) {
@@ -89,7 +89,7 @@ fn bench_compile_context(c: &mut Criterion) {
 
     for size in [100, 1_000, 5_000] {
         let graph = build_graph(size);
-        let app = build_seeded_server(
+        let app = McpServerApp::with_explicit_graph(
             Arc::new(MockEmbeddingService),
             graph,
             RetrievalConfig::default(),

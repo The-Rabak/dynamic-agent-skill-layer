@@ -65,6 +65,11 @@ path = "../../tests/e2e/test_concurrency_stress.rs"
 required-features = ["test-utils"]
 
 [[test]]
+name = "test_boot_time_live_retrieval"
+path = "../../tests/e2e/test_boot_time_live_retrieval.rs"
+required-features = ["test-utils"]
+
+[[test]]
 name = "test_dream_state_contract"
 path = "../../tests/e2e/test_dream_state_contract.rs"
 required-features = ["test-utils"]

@@ -2,7 +2,7 @@
 ticket_id: T01
 title: Production server retrieves from the live graph
 kind: tracer-bullet # tracer-bullet | expansion | hardening | infra-track | fix-batch
-status: ready # ready | in_progress | blocked | completed
+status: completed # ready | in_progress | blocked | completed
 plan_ref: docs/plans/2026-05-31-feat-skill-layer-v1-5-close-the-loop-plan.md
 tickets_ref: docs/tickets/2026-05-31-skill-layer-v1-5/index.md
 architecture_ref: docs/architecture/2026-05-31-skill-layer-v1-5-close-the-loop-architecture.md
@@ -83,3 +83,11 @@ Do not change the retrieval algorithm or schema here — only **where the graph 
 
 ## Coupling Notes
 One unit because the rename, the `main.rs` call-site swap, the constructor consolidation, and the `graph_version` read are a single atomic change to the production boot path — splitting them would leave a half-renamed type or a constructor count that violates the "exactly two" AC. It is a singleton batch because the cross-crate rename touches files every downstream retrieval ticket also edits.
+
+## Completion Note (2026-05-31, session work-2026-05-31-121712)
+All acceptance criteria met. Evidence: containerized `boot_time_live_retrieval` smoke PASS on live containers (independently re-verified by orchestrator); `cargo test --workspace --features test-utils --no-run` 0 errors; `grep -rn 'SeededGraph' crates/ tests/` = 0; `build_seeded_server` deleted.
+
+- **`ScopeRoot` relocation: COMPLETED (not deferred).** Diff ~31 ins / ~22 del across 5 files — under the ~50-line escape hatch. New home `domain::ScopeRoot`; `graph_builder::ScopeRoot` is a transitional `pub use` alias; `maintenance` + `mcp-server` imports updated.
+- **Constructor contract:** public graph-assembly constructors are exactly two — `McpServerApp::from_environment` (live) + `McpServerApp::with_explicit_graph` (explicit/test). `build_live_server` demoted to private helper; `build_seeded_server` deleted. (`McpServerApp::new`/`new_with_admin` inject an already-built retriever — a different abstraction level — and are out of scope of the "two constructors" deletion test.)
+- **In-scope discovery folded in (the actual loop-closer):** live-loaded skills had empty `source_paths`, so `seeded_skill_matches_scope` filtered every skill out before scoring → `no_match` even with a populated graph. Fixed in `build_graph_from_pg` by populating `source_paths` with the configured scope root. This is boot/snapshot wiring (where the graph comes from), not the ranking algorithm — within the scope fence. **Handoff to T09:** the persisted `skills` table has no source-path column, so only scope-root provenance is reconstructable at boot; T09 ranking/threshold tuning depends on this load fix and should confirm whether finer per-file path matching is needed.
+- **Out of scope, surfaced:** pre-existing `rustfmt` drift in `crates/graph-builder/src/graph/rebuild.rs` (a file T01 did not touch) left untouched.

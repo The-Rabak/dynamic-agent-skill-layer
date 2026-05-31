@@ -12,10 +12,10 @@ use domain::{
     Subunit, SubunitType,
 };
 use mcp_server::{
-    build_seeded_server,
+    McpServerApp,
     tools::compile_context::{CompileContextRequest, CompileContextStatus},
 };
-use retrieval::{RetrievalConfig, SeededGraph, SeededSkill};
+use retrieval::{RetrievalConfig, RetrievalSnapshot, SeededSkill};
 
 #[path = "env_guard.rs"]
 mod env_guard;
@@ -78,7 +78,7 @@ impl EmbeddingService for DeterministicEmbeddingService {
     }
 }
 
-fn seeded_graph() -> SeededGraph {
+fn seeded_graph() -> RetrievalSnapshot {
     let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
         .canonicalize()
@@ -119,7 +119,7 @@ fn seeded_graph() -> SeededGraph {
         community_id: None,
     };
 
-    SeededGraph::new(
+    RetrievalSnapshot::new(
         vec![
             SeededSkill {
                 skill: rust_skill.clone(),
@@ -198,7 +198,7 @@ fn test_repo_path() -> String {
 #[tokio::test]
 async fn repeated_prompt_returns_cached_context_without_rerunning_pipeline() {
     let _env_guard = env_guard::configure_scope_env();
-    let server = build_seeded_server(
+    let server = McpServerApp::with_explicit_graph(
         Arc::new(DeterministicEmbeddingService::healthy()),
         seeded_graph(),
         retrieval_config(),
@@ -236,7 +236,7 @@ async fn repeated_prompt_returns_cached_context_without_rerunning_pipeline() {
 async fn cache_invalidated_on_graph_version_mismatch() {
     let _env_guard = env_guard::configure_scope_env();
     let graph_v7 = seeded_graph();
-    let server_v7 = build_seeded_server(
+    let server_v7 = McpServerApp::with_explicit_graph(
         Arc::new(DeterministicEmbeddingService::healthy()),
         graph_v7,
         retrieval_config(),
@@ -270,7 +270,7 @@ async fn cache_invalidated_on_graph_version_mismatch() {
         community_id: None,
     };
 
-    let graph_v8 = SeededGraph::new(
+    let graph_v8 = RetrievalSnapshot::new(
         vec![SeededSkill {
             skill: rust_skill.clone(),
             scope_id: "global".to_owned(),
@@ -290,7 +290,7 @@ async fn cache_invalidated_on_graph_version_mismatch() {
         8,
     );
 
-    let server_v8 = build_seeded_server(
+    let server_v8 = McpServerApp::with_explicit_graph(
         Arc::new(DeterministicEmbeddingService::healthy()),
         graph_v8,
         retrieval_config(),
@@ -305,7 +305,7 @@ async fn cache_invalidated_on_graph_version_mismatch() {
 #[tokio::test]
 async fn degraded_outcome_does_not_populate_cache() {
     let _env_guard = env_guard::configure_scope_env();
-    let server = build_seeded_server(
+    let server = McpServerApp::with_explicit_graph(
         Arc::new(DeterministicEmbeddingService {
             fail_next: Arc::new(AtomicUsize::new(1)),
         }),
@@ -334,7 +334,7 @@ async fn degraded_outcome_does_not_populate_cache() {
 #[tokio::test]
 async fn healthy_no_match_populates_cache_and_returns_cached_on_repeat() {
     let _env_guard = env_guard::configure_scope_env();
-    let server = build_seeded_server(
+    let server = McpServerApp::with_explicit_graph(
         Arc::new(DeterministicEmbeddingService::healthy()),
         seeded_graph(),
         retrieval_config(),

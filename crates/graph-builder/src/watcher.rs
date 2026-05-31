@@ -41,22 +41,9 @@ pub struct SkillFileChange {
     pub idempotency_key: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ScopeRoot {
-    pub scope_id: String,
-    pub scope_type: ScopeType,
-    pub root: PathBuf,
-}
-
-impl ScopeRoot {
-    pub fn new(scope_id: impl Into<String>, scope_type: ScopeType, root: PathBuf) -> Self {
-        Self {
-            scope_id: scope_id.into(),
-            scope_type,
-            root,
-        }
-    }
-}
+/// Transitional re-export: `ScopeRoot` now lives in `domain` (V1.5 T01).
+/// Existing `graph_builder::ScopeRoot` callers continue to compile unchanged.
+pub use domain::ScopeRoot;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SkillFileFingerprint {

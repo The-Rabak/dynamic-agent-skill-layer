@@ -18,13 +18,13 @@ use infrastructure::{
     RebuildCoordinator,
 };
 use mcp_server::{
-    build_live_server, build_seeded_server,
+    McpServerApp,
     tools::{
         compile_context::{CompileContextRequest, CompileContextStatus},
         extract_session::{ExtractSessionRequest, ExtractSessionTool},
     },
 };
-use retrieval::{RetrievalConfig, SeededGraph, SeededSkill};
+use retrieval::{RetrievalConfig, RetrievalSnapshot, SeededSkill};
 use session_extractor::{
     ExtractionEventPublisher, ExtractionProvider, SessionExtractor, transcripts::TranscriptLoader,
     writer::PendingDraftWriter,
@@ -63,7 +63,7 @@ impl EmbeddingService for DeterministicEmbeddingService {
     }
 }
 
-fn seeded_graph() -> SeededGraph {
+fn seeded_graph() -> RetrievalSnapshot {
     let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
         .canonicalize()
@@ -93,7 +93,7 @@ fn seeded_graph() -> SeededGraph {
         community_id: None,
     };
 
-    SeededGraph::new(
+    RetrievalSnapshot::new(
         vec![
             SeededSkill {
                 skill: project_skill.clone(),
@@ -262,7 +262,7 @@ fn inline_transcript_jsonl() -> String {
 #[tokio::test]
 async fn roundtrip_compile_context_returns_context_then_duplicate_suppression() {
     let _env_guard = env_guard::configure_scope_env();
-    let server = build_seeded_server(
+    let server = McpServerApp::with_explicit_graph(
         Arc::new(DeterministicEmbeddingService),
         seeded_graph(),
         retrieval_config(),
@@ -293,7 +293,7 @@ async fn roundtrip_compile_context_returns_context_then_duplicate_suppression() 
 #[tokio::test]
 async fn invalid_repo_path_degrades_but_preserves_global_context_contract() {
     let _env_guard = env_guard::configure_scope_env();
-    let server = build_seeded_server(
+    let server = McpServerApp::with_explicit_graph(
         Arc::new(DeterministicEmbeddingService),
         seeded_graph(),
         retrieval_config(),
@@ -426,7 +426,7 @@ async fn test_live_data_plane_roundtrip() {
 
     let start = std::time::Instant::now();
 
-    let components = build_live_server(
+    let components = McpServerApp::from_environment(
         retrieval_config(),
     )
     .await
@@ -462,7 +462,7 @@ async fn test_live_data_plane_roundtrip() {
         duration_ms: seed_start.elapsed().as_millis() as u64,
     });
 
-    let components2 = build_live_server(
+    let components2 = McpServerApp::from_environment(
         retrieval_config(),
     )
     .await
@@ -566,7 +566,7 @@ async fn extract_session_live_inline_payload_writes_pending_and_emits_completion
     );
 
     let start = std::time::Instant::now();
-    let components = build_live_server(retrieval_config())
+    let components = McpServerApp::from_environment(retrieval_config())
         .await
         .expect("should connect to live infrastructure");
     builder.record_latency("server_bootstrap", start.elapsed().as_millis() as u64);
@@ -705,7 +705,7 @@ async fn extract_session_live_ref_payload_loads_from_transcript_volume() {
     );
 
     let start = std::time::Instant::now();
-    let components = build_live_server(retrieval_config())
+    let components = McpServerApp::from_environment(retrieval_config())
         .await
         .expect("should connect to live infrastructure");
     builder.record_latency("server_bootstrap", start.elapsed().as_millis() as u64);
@@ -803,7 +803,7 @@ async fn degraded_and_recovery_cycle_preserves_reason_codes_and_recovers_cleanly
     let repo_path = test_repo_path();
 
     let start = std::time::Instant::now();
-    let components = build_live_server(retrieval_config())
+    let components = McpServerApp::from_environment(retrieval_config())
         .await
         .expect("should connect to live infrastructure");
     builder.record_latency("server_bootstrap", start.elapsed().as_millis() as u64);
