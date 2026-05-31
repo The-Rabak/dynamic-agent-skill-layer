@@ -1,0 +1,100 @@
+{
+  "test_name": "watcher_churn_and_reconciliation_converges_to_correct_graph_state_under_live_pg_qdrant",
+  "test_id": "20260531033245",
+  "started_at": "2026-05-31T03:32:45.468592051+00:00",
+  "duration_ms": 185,
+  "outcome": {
+    "status": "Passed"
+  },
+  "sections": [
+    {
+      "name": "rebuild",
+      "status": {
+        "status": "Passed"
+      },
+      "actions": [
+        {
+          "description": "persist churn mutation to live PG via rebuild_coordinator",
+          "status": {
+            "result": "Passed"
+          },
+          "side_effects": [
+            {
+              "kind": "DbRowInserted",
+              "table": "graph_version 37"
+            }
+          ],
+          "duration_ms": 180
+        }
+      ],
+      "duration_ms": 180
+    },
+    {
+      "name": "pg_verify",
+      "status": {
+        "status": "Passed"
+      },
+      "actions": [
+        {
+          "description": "PG skills table contains 16 active skills",
+          "status": {
+            "result": "Passed"
+          },
+          "side_effects": [
+            {
+              "kind": "DbRowInserted",
+              "table": "16 skills"
+            }
+          ],
+          "duration_ms": 4
+        }
+      ],
+      "duration_ms": 4
+    },
+    {
+      "name": "qdrant_verify",
+      "status": {
+        "status": "Passed"
+      },
+      "actions": [
+        {
+          "description": "Qdrant contains 0 points",
+          "status": {
+            "result": "Passed"
+          },
+          "side_effects": [],
+          "duration_ms": 1
+        }
+      ],
+      "duration_ms": 1
+    }
+  ],
+  "environment": {
+    "pg_version": "unknown",
+    "qdrant_version": "unknown",
+    "ollama_model": "nomic-embed-text",
+    "redis_version": "unknown"
+  },
+  "contract_assertions": [
+    {
+      "contract_name": "watcher_churn_live_reconciliation",
+      "status": {
+        "result": "Passed"
+      },
+      "details": "live PG+Qdrant: 16 skills persisted, graph_version 36 -> 37, Qdrant points 0"
+    }
+  ],
+  "degradation_events": [],
+  "latency_samples": [
+    {
+      "stage": "server_bootstrap",
+      "duration_ms": 139,
+      "at": "2026-05-31T03:32:45.608597648+00:00"
+    },
+    {
+      "stage": "rebuild_and_persist",
+      "duration_ms": 180,
+      "at": "2026-05-31T03:32:45.821183366+00:00"
+    }
+  ]
+}

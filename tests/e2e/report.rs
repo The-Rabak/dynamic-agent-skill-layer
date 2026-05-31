@@ -49,8 +49,8 @@ pub enum AssertionResult {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind")]
 pub enum SideEffect {
-    DbRowInserted(String),
-    EventPublished(String),
+    DbRowInserted { table: String },
+    EventPublished { event_type: String },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

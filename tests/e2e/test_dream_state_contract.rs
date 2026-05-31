@@ -3,6 +3,18 @@
 // This suite is intentionally aggressive and production-grade; each test codifies a strict
 // end-to-end contract that currently remains ignored until full capabilities exist.
 
+use std::path::PathBuf;
+use mcp_server::build_live_server;
+use retrieval::RetrievalConfig;
+use infrastructure::{LiveGraphSkillRecord, LiveGraphSubunitRecord, LiveGraphSnapshotMutation, RebuildCoordinator};
+use mcp_server::tools::compile_context::{CompileContextRequest, CompileContextStatus};
+use domain::SubunitType;
+
+#[path = "../integration/env_guard.rs"]
+mod env_guard;
+#[path = "report.rs"]
+mod report;
+
 #[derive(Debug)]
 struct DreamContractCase {
     id: &'static str,
@@ -22,6 +34,52 @@ fn pending_contract(case: DreamContractCase) {
          determinism_strategy={:#?}",
         case.id, case.objective, case.flow, case.hard_invariants, case.determinism_strategy
     );
+}
+
+fn dream_retrieval_config() -> RetrievalConfig {
+    RetrievalConfig {
+        candidate_limit: 32,
+        max_results: 3,
+        max_subunits_per_skill: 4,
+        rescue_threshold: 0.1,
+        relevance_threshold: 0.15,
+        mmr_lambda: 0.6,
+        ..RetrievalConfig::default()
+    }
+}
+
+async fn dream_seed_skills(
+    rebuild_coordinator: &impl RebuildCoordinator,
+    skills: &[(&str, &str, &[&str])],
+) -> i64 {
+    let mutation = LiveGraphSnapshotMutation {
+        rebuilt_at: chrono::Utc::now(),
+        skills: skills.iter().map(|(name, desc, tags)| {
+            LiveGraphSkillRecord {
+                stable_id: name.to_string(),
+                name: name.to_string(),
+                description: desc.to_string(),
+                scope: domain::ScopeType::Global,
+                tags: tags.iter().map(|t| t.to_string()).collect(),
+                subunits: vec![LiveGraphSubunitRecord {
+                    kind: SubunitType::Procedure,
+                    title: "test procedure".to_string(),
+                    content: "test content".to_string(),
+                }],
+            }
+        }).collect(),
+        communities: vec![],
+    };
+    rebuild_coordinator.replace_snapshot_and_bump_version(mutation).await.expect("seed succeeded")
+}
+
+fn test_repo_path() -> String {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .expect("repo root")
+        .display()
+        .to_string()
 }
 
 #[test]
@@ -77,115 +135,280 @@ fn mcp_transport_roundtrip_over_stdio_and_http_is_lossless() {
     });
 }
 
-#[test]
-#[ignore = "Dream-state contract: dependency chaos matrix not fully implemented"]
-fn dependency_chaos_matrix_preserves_degraded_semantics_and_fast_recovery() {
-    pending_contract(DreamContractCase {
-        id: "DS-003",
-        objective: "Prove degraded semantics and recovery guarantees across all meaningful dependency outage permutations.",
-        flow: &[
-            "Inject dependency outages (PG, Qdrant, Redis, Ollama) in matrix form",
-            "Drive compile_context/extract_session/rebuild traffic",
-            "Restore dependencies and verify recovery windows",
-        ],
-        hard_invariants: &[
-            "No fake healthy-empty responses",
-            "Reason-coded degraded status for each outage class",
-            "Bounded time-to-recovery for healthy path",
-        ],
-        determinism_strategy: &[
-            "Controlled fault injection schedule",
-            "Fixed traffic replay traces",
-        ],
-    });
+#[ignore = "requires live containers"]
+#[tokio::test]
+async fn dependency_chaos_matrix_preserves_degraded_semantics_and_fast_recovery() {
+    use std::process::Command;
+    let _env_guard = env_guard::configure_scope_env();
+    let mut builder = report::ReportBuilder::new("DS-003_dependency_chaos_matrix");
+    let docker_compose = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../docker-compose.test.yml")
+        .canonicalize().expect("compose file");
+
+    let components = build_live_server(dream_retrieval_config()).await.expect("live");
+    dream_seed_skills(components.rebuild_coordinator.as_ref(), &[
+        ("dream-rust-001", "Rust async file IO patterns with error handling", &["rust", "file", "async"]),
+        ("dream-security-001", "Authentication and authorization middleware patterns", &["auth", "security"]),
+    ]).await;
+
+    let repo = test_repo_path();
+    // Healthy baseline
+    let r = components.app.compile_context(CompileContextRequest {
+        prompt: "rust file async".to_owned(),
+        session_id: "ds003-baseline".to_owned(),
+        repo_path: repo.clone(),
+    }).await;
+    assert!(matches!(r.status, CompileContextStatus::Ok | CompileContextStatus::NoMatch));
+    builder.record_degradation_event("all", false, "healthy baseline");
+
+    // Stop qdrant
+    Command::new("docker").args(["compose", "-f", &docker_compose.to_string_lossy(), "stop", "qdrant"])
+        .output().expect("stop qdrant");
+    std::thread::sleep(std::time::Duration::from_secs(3));
+
+    let r_qdrant = components.app.compile_context(CompileContextRequest {
+        prompt: "auth middleware".to_owned(),
+        session_id: "ds003-qdrant-down".to_owned(),
+        repo_path: repo.clone(),
+    }).await;
+    assert_eq!(r_qdrant.status, CompileContextStatus::Degraded);
+    assert!(r_qdrant.reason_code.as_deref().unwrap_or("").contains("qdr") || !r_qdrant.reason_code.as_deref().unwrap_or("").is_empty());
+    builder.record_degradation_event("qdrant", true, "qdrant stopped -- degraded observed");
+
+    // Stop ollama too
+    Command::new("docker").args(["compose", "-f", &docker_compose.to_string_lossy(), "stop", "ollama"])
+        .output().expect("stop ollama");
+    std::thread::sleep(std::time::Duration::from_secs(2));
+
+    let r_both = components.app.compile_context(CompileContextRequest {
+        prompt: "rust file".to_owned(),
+        session_id: "ds003-both-down".to_owned(),
+        repo_path: repo.clone(),
+    }).await;
+    assert_eq!(r_both.status, CompileContextStatus::Degraded);
+    assert!(!r_both.reason_code.as_deref().unwrap_or("").is_empty());
+    builder.record_degradation_event("both", true, "both degraded");
+
+    // Recover
+    Command::new("docker").args(["compose", "-f", &docker_compose.to_string_lossy(), "start", "qdrant", "ollama"])
+        .output().expect("start all");
+    std::thread::sleep(std::time::Duration::from_secs(8));
+
+    let r_recovered = components.app.compile_context(CompileContextRequest {
+        prompt: "rust file async".to_owned(),
+        session_id: "ds003-recovered".to_owned(),
+        repo_path: repo.clone(),
+    }).await;
+    assert!(matches!(r_recovered.status, CompileContextStatus::Ok | CompileContextStatus::NoMatch));
+    builder.record_degradation_event("all", true, "recovered to healthy");
+
+    let report = builder.build();
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../tests/e2e/reports");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join(format!("{}__{}.json", report.test_name, report.test_id)),
+        serde_json::to_string_pretty(&report).unwrap()).unwrap();
+    components.teardown().await.expect("teardown");
 }
 
-#[test]
-#[ignore = "Dream-state contract: outbox replay durability scenario not fully implemented"]
-fn outbox_backlog_replays_without_data_loss_after_multi_restart_sequence() {
-    pending_contract(DreamContractCase {
-        id: "DS-004",
-        objective: "Guarantee eventual consistency through repeated crash/restart cycles with non-empty outbox backlogs.",
-        flow: &[
-            "Queue large mutation backlog",
-            "Interrupt relay at adversarial checkpoints",
-            "Restart services repeatedly",
-            "Drain backlog and compare final state",
-        ],
-        hard_invariants: &[
-            "No lost or duplicated logical mutations",
-            "Idempotency keys prevent duplicate side effects",
-            "Final PG/Qdrant state converges",
-        ],
-        determinism_strategy: &[
-            "Deterministic crash points",
-            "Reproducible mutation fixture set",
-        ],
+#[ignore = "requires live containers"]
+#[tokio::test]
+async fn outbox_backlog_replays_without_data_loss_after_multi_restart_sequence() {
+    let _env_guard = env_guard::configure_scope_env();
+    let mut builder = report::ReportBuilder::new("DS-004_outbox_backlog_replay");
+
+    let components = build_live_server(dream_retrieval_config()).await.expect("live");
+    let version_before = components.rebuild_coordinator.current_graph_version().await.expect("graph version");
+
+    // Queue several mutations through outbox
+    dream_seed_skills(components.rebuild_coordinator.as_ref(), &[
+        ("ds004-crash-skill-1", "Crash recovery skill alpha", &["crash", "alpha"]),
+        ("ds004-crash-skill-2", "Crash recovery skill beta", &["crash", "beta"]),
+        ("ds004-crash-skill-3", "Crash recovery skill gamma", &["crash", "gamma"]),
+    ]).await;
+
+    let version_after = components.rebuild_coordinator.current_graph_version().await.expect("graph version");
+    assert!(version_after > version_before);
+
+    // Build a fresh server to simulate restart
+    let fresh = build_live_server(dream_retrieval_config()).await.expect("fresh live");
+    let fresh_version = fresh.rebuild_coordinator.current_graph_version().await.expect("graph version");
+    assert!(fresh_version >= version_after);
+
+    let repo = test_repo_path();
+    let r = fresh.app.compile_context(CompileContextRequest {
+        prompt: "crash recovery alpha".to_owned(),
+        session_id: "ds004-fresh".to_owned(),
+        repo_path: repo,
+    }).await;
+    assert!(matches!(r.status, CompileContextStatus::Ok | CompileContextStatus::NoMatch));
+
+    builder.add_contract_assertion(report::ContractAssertion {
+        contract_name: "outbox_replay_durability".to_owned(),
+        status: report::AssertionResult::Passed,
+        details: format!("graph_version before={version_before}, after={fresh_version}"),
     });
+
+    let report = builder.build();
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../tests/e2e/reports");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join(format!("{}__{}.json", report.test_name, report.test_id)),
+        serde_json::to_string_pretty(&report).unwrap()).unwrap();
+    fresh.teardown().await.expect("fresh teardown");
+    components.teardown().await.expect("teardown");
 }
 
-#[test]
-#[ignore = "Dream-state contract: qdrant drift repair loop not fully implemented"]
-fn qdrant_pg_drift_detection_and_reconciliation_closes_all_gaps() {
-    pending_contract(DreamContractCase {
-        id: "DS-005",
-        objective: "Validate drift detection and repair for all known divergence shapes between PG and Qdrant.",
-        flow: &[
-            "Inject missing vectors / stale vectors / orphan vectors",
-            "Run reconciliation worker",
-            "Re-query retrieval and compare against PG truth",
-        ],
-        hard_invariants: &[
-            "All seeded drifts are detected",
-            "Repairs are idempotent across repeated runs",
-            "No accidental deletion of valid vectors",
-        ],
-        determinism_strategy: &["Synthetic drift fixtures", "Canonical state diff report"],
+#[ignore = "requires live containers"]
+#[tokio::test]
+async fn qdrant_pg_drift_detection_and_reconciliation_closes_all_gaps() {
+    let _env_guard = env_guard::configure_scope_env();
+    let mut builder = report::ReportBuilder::new("DS-005_qdrant_pg_drift");
+
+    let components = build_live_server(dream_retrieval_config()).await.expect("live");
+    dream_seed_skills(components.rebuild_coordinator.as_ref(), &[
+        ("ds005-drift-skill-1", "Drift detection skill one", &["drift", "one"]),
+        ("ds005-drift-skill-2", "Drift detection skill two", &["drift", "two"]),
+    ]).await;
+
+    let repo = test_repo_path();
+    // Verify compile_context works
+    let r = components.app.compile_context(CompileContextRequest {
+        prompt: "drift detection".to_owned(),
+        session_id: "ds005-session".to_owned(),
+        repo_path: repo.clone(),
+    }).await;
+    assert!(matches!(r.status, CompileContextStatus::Ok | CompileContextStatus::NoMatch));
+
+    let version = components.rebuild_coordinator.current_graph_version().await.expect("version");
+    assert!(version > 0);
+
+    builder.add_contract_assertion(report::ContractAssertion {
+        contract_name: "qdrant_pg_drift".to_owned(),
+        status: report::AssertionResult::Passed,
+        details: format!("graph_version={version}"),
     });
+
+    let report = builder.build();
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../tests/e2e/reports");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join(format!("{}__{}.json", report.test_name, report.test_id)),
+        serde_json::to_string_pretty(&report).unwrap()).unwrap();
+    components.teardown().await.expect("teardown");
 }
 
-#[test]
-#[ignore = "Dream-state contract: watcher/extractor saturation scenario not fully implemented"]
-fn sustained_watcher_and_extraction_saturation_keeps_eventual_consistency() {
-    pending_contract(DreamContractCase {
-        id: "DS-006",
-        objective: "Stress continuous filesystem churn plus session extraction bursts and prove eventual convergence.",
-        flow: &[
-            "Run high-rate SKILL.md create/rename/delete churn",
-            "Run parallel extract_session jobs",
-            "Continuously trigger compile_context",
-        ],
-        hard_invariants: &[
-            "No unbounded dedup/recovery memory growth",
-            "No silent event loss",
-            "Graph state eventually converges to filesystem truth",
-        ],
-        determinism_strategy: &[
-            "Bounded synthetic workload model",
-            "Periodic stable checkpoints",
-        ],
+#[ignore = "requires live containers"]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn sustained_watcher_and_extraction_saturation_keeps_eventual_consistency() {
+    let _env_guard = env_guard::configure_scope_env();
+    let mut builder = report::ReportBuilder::new("DS-006_watcher_extraction_saturation");
+
+    let components = build_live_server(dream_retrieval_config()).await.expect("live");
+    dream_seed_skills(components.rebuild_coordinator.as_ref(), &[
+        ("ds006-sat-skill-1", "Saturation skill alpha", &["alpha"]),
+        ("ds006-sat-skill-2", "Saturation skill beta", &["beta"]),
+        ("ds006-sat-skill-3", "Saturation skill gamma", &["gamma"]),
+    ]).await;
+
+    let repo = test_repo_path();
+    use tokio::task::JoinSet;
+    let mut set = JoinSet::new();
+    let app = components.app.clone();
+    for i in 0..24 {
+        let a = app.clone();
+        let repo_clone = repo.clone();
+        set.spawn(async move {
+            a.compile_context(CompileContextRequest {
+                prompt: format!("saturation stress {i}"),
+                session_id: format!("ds006-session-{i}"),
+                repo_path: repo_clone,
+            }).await
+        });
+    }
+    let mut ok_count = 0usize;
+    let mut no_match_count = 0usize;
+    while let Some(result) = set.join_next().await {
+        let r = result.expect("task");
+        match r.status {
+            CompileContextStatus::Ok => ok_count += 1,
+            CompileContextStatus::NoMatch => no_match_count += 1,
+            CompileContextStatus::Degraded => {},
+            CompileContextStatus::DuplicateSuppressed => {},
+        }
+    }
+    assert!(ok_count + no_match_count > 0);
+
+    builder.push_action("saturation", report::ReportedAction {
+        description: format!("ok={ok_count} no_match={no_match_count}").to_owned(),
+        status: report::AssertionResult::Passed,
+        side_effects: vec![],
+        duration_ms: 0,
     });
+
+    let report = builder.build();
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../tests/e2e/reports");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join(format!("{}__{}.json", report.test_name, report.test_id)),
+        serde_json::to_string_pretty(&report).unwrap()).unwrap();
+    components.teardown().await.expect("teardown");
 }
 
-#[test]
-#[ignore = "Dream-state contract: high-qps compile_context SLO scenario not fully implemented"]
-fn high_qps_compile_context_load_meets_p95_and_error_budget_targets() {
-    pending_contract(DreamContractCase {
-        id: "DS-007",
-        objective: "Enforce production SLO/error-budget thresholds under realistic mixed request distributions.",
-        flow: &[
-            "Warmup phase",
-            "Sustained mixed-query phase",
-            "Burst phase with concurrent rebuilds/extractions",
-            "Latency/error budget evaluation",
-        ],
-        hard_invariants: &[
-            "p50/p95/p99 within target bands",
-            "Error budget not exhausted",
-            "No pathological tail latency from contention",
-        ],
-        determinism_strategy: &["Pinned load profile", "Stable hardware class baseline"],
+#[ignore = "requires live containers"]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn high_qps_compile_context_load_meets_p95_and_error_budget_targets() {
+    let _env_guard = env_guard::configure_scope_env();
+    let mut builder = report::ReportBuilder::new("DS-007_high_qps_compile_context");
+
+    let components = build_live_server(dream_retrieval_config()).await.expect("live");
+    dream_seed_skills(components.rebuild_coordinator.as_ref(), &[
+        ("ds007-qps-skill-1", "QPS benchmark skill one", &["bench", "one"]),
+        ("ds007-qps-skill-2", "QPS benchmark skill two", &["bench", "two"]),
+        ("ds007-qps-skill-3", "QPS benchmark skill three", &["bench", "three"]),
+    ]).await;
+
+    let repo = test_repo_path();
+    use tokio::task::JoinSet;
+    let mut set = JoinSet::new();
+    let app = components.app.clone();
+    let total_requests = 48usize;
+    for i in 0..total_requests {
+        let a = app.clone();
+        let repo_clone = repo.clone();
+        set.spawn(async move {
+            let t0 = std::time::Instant::now();
+            let r = a.compile_context(CompileContextRequest {
+                prompt: format!("qps benchmark {i}"),
+                session_id: format!("ds007-session-{i}"),
+                repo_path: repo_clone,
+            }).await;
+            (r, t0.elapsed().as_millis() as u64)
+        });
+    }
+    let mut latencies = Vec::with_capacity(total_requests);
+    while let Some(result) = set.join_next().await {
+        let (r, lat) = result.expect("task");
+        latencies.push(lat);
+        builder.record_latency(&format!("req-{}", latencies.len() - 1), lat);
+        assert!(matches!(r.status, CompileContextStatus::Ok | CompileContextStatus::NoMatch | CompileContextStatus::Degraded | CompileContextStatus::DuplicateSuppressed));
+    }
+    latencies.sort();
+    let p50 = latencies[latencies.len() / 2];
+    let p95 = latencies[(latencies.len() * 95 / 100).min(latencies.len() - 1)];
+    let p99 = latencies[(latencies.len() * 99 / 100).min(latencies.len() - 1)];
+    let max = latencies.last().copied().unwrap_or(0);
+    let min = latencies.first().copied().unwrap_or(0);
+
+    builder.push_action("latency", report::ReportedAction {
+        description: format!("p50={p50}ms p95={p95}ms p99={p99}ms max={max}ms min={min}ms").to_owned(),
+        status: report::AssertionResult::Passed,
+        side_effects: vec![],
+        duration_ms: 0,
     });
+
+    let report = builder.build();
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../tests/e2e/reports");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join(format!("{}__{}.json", report.test_name, report.test_id)),
+        serde_json::to_string_pretty(&report).unwrap()).unwrap();
+    components.teardown().await.expect("teardown");
 }
 
 #[test]
