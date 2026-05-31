@@ -4,6 +4,17 @@ pub struct QdrantHit {
     pub semantic_score: f32,
 }
 
+/// Ranks `skill_embeddings` against `prompt_embedding` by cosine similarity and
+/// returns the top-`limit` hits as `QdrantHit` values.
+///
+/// **This function is purely in-memory.** It does not contact Qdrant or any network
+/// service. The name reflects the historical source of the embeddings (they are built
+/// by the graph-builder and stored durably in Qdrant), but the retrieval step
+/// operates entirely on the pre-loaded `RetrievalSnapshot` (the CQRS read model).
+///
+/// Under Option A (ADR-0001) the read path never queries Qdrant at request time;
+/// Qdrant is the durable write-side store only. Option B (V2) would replace this
+/// call with a live Qdrant query behind the unchanged `SkillRetriever` trait.
 pub fn search_qdrant(
     prompt_embedding: &[f32],
     skill_embeddings: &[Vec<f32>],

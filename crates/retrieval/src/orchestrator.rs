@@ -151,7 +151,11 @@ impl<E> RetrievalOrchestrator<E>
 where
     E: EmbeddingService + Send + Sync + 'static,
 {
-    pub fn new(embedding_service: Arc<E>, graph: RetrievalSnapshot, config: RetrievalConfig) -> Self {
+    pub fn new(
+        embedding_service: Arc<E>,
+        graph: RetrievalSnapshot,
+        config: RetrievalConfig,
+    ) -> Self {
         Self {
             embedding_service,
             graph: Arc::new(graph),
@@ -174,22 +178,36 @@ where
         }
     }
 
+    /// Returns health markers for a fully operational read path.
+    ///
+    /// Keys reflect the actual read-path dependencies (Option A, ADR-0001):
+    /// - `ollama`: embedding provider used to vectorize the prompt at query time.
+    /// - `skill_snapshot_sync`: the in-memory CQRS read model; label reflects that
+    ///   retrieval results are only as fresh as the last snapshot rebuild.
+    /// - `filesystem_index`: lexical graph derived from the snapshot.
+    ///
+    /// Qdrant and Postgres are intentionally absent: Qdrant is a durable write-side
+    /// store (graph-builder → outbox → Qdrant); it is NOT consulted at read time.
+    /// Postgres is a write-side persistence layer. Listing either here would imply
+    /// Qdrant/Postgres down ⇒ retrieval degraded, which is false under Option A.
     fn healthy_markers() -> BTreeMap<String, String> {
         BTreeMap::from([
             ("ollama".to_owned(), "ok".to_owned()),
-            ("qdrant".to_owned(), "ok".to_owned()),
-            ("postgres".to_owned(), "ok".to_owned()),
-            ("redis".to_owned(), "ok".to_owned()),
+            ("skill_snapshot_sync".to_owned(), "ok".to_owned()),
             ("filesystem_index".to_owned(), "ok".to_owned()),
         ])
     }
 
+    /// Returns health markers for a degraded read path (e.g. embedding failure).
+    ///
+    /// Only the embedding provider is marked degraded; the CQRS read model
+    /// (`skill_snapshot_sync`) and filesystem index remain independent. Qdrant and
+    /// Postgres are excluded for the same reason as `healthy_markers`: they are
+    /// write-side concerns invisible to the read path under Option A (ADR-0001).
     fn degraded_marker(reason: &str) -> BTreeMap<String, String> {
         BTreeMap::from([
             ("ollama".to_owned(), "degraded".to_owned()),
-            ("qdrant".to_owned(), "ok".to_owned()),
-            ("postgres".to_owned(), "ok".to_owned()),
-            ("redis".to_owned(), "ok".to_owned()),
+            ("skill_snapshot_sync".to_owned(), "ok".to_owned()),
             ("filesystem_index".to_owned(), "ok".to_owned()),
             ("reason".to_owned(), reason.to_owned()),
         ])
@@ -451,5 +469,64 @@ where
         } else {
             vec![self.config.scope_id.clone()]
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use domain::{EmbeddingError, EmbeddingService};
+
+    use super::*;
+
+    /// Minimal test-only embedding stub. Used only to satisfy the generic bound on
+    /// `RetrievalOrchestrator<E>` so we can call its pure associated functions without
+    /// constructing a real embedding provider.
+    struct NoOpEmbeddingService;
+
+    #[async_trait::async_trait]
+    impl EmbeddingService for NoOpEmbeddingService {
+        async fn embed_text(&self, _text: &str) -> Result<Vec<f32>, EmbeddingError> {
+            Err(EmbeddingError::ProviderUnavailable("no-op stub".to_owned()))
+        }
+
+        async fn embed_batch(&self, _texts: &[&str]) -> Result<Vec<Vec<f32>>, EmbeddingError> {
+            Err(EmbeddingError::ProviderUnavailable("no-op stub".to_owned()))
+        }
+    }
+
+    /// Asserts that read-path health markers do NOT claim Qdrant or Postgres as live
+    /// read dependencies. Option A (ratified in ADR-0001): the read path operates
+    /// entirely on the in-memory `RetrievalSnapshot`; Qdrant is write-side only.
+    ///
+    /// DS-003 contract: stopping Qdrant must NOT degrade `compile_context` — only the
+    /// `qdrant_write_side` marker in the infrastructure health checker may change.
+    /// This test is the deletion guard that prevents the false `qdrant: "ok"` claim
+    /// from reappearing on the read path.
+    #[test]
+    fn read_path_health_markers_do_not_claim_qdrant_or_postgres_as_live_dependencies() {
+        let healthy = RetrievalOrchestrator::<NoOpEmbeddingService>::healthy_markers();
+        assert!(
+            !healthy.contains_key("qdrant"),
+            "healthy_markers must not include 'qdrant': Qdrant is write-side only (Option A, ADR-0001)"
+        );
+        assert!(
+            !healthy.contains_key("postgres"),
+            "healthy_markers must not include 'postgres': Postgres is not a read-path dependency"
+        );
+        assert!(
+            healthy.get("skill_snapshot_sync").map(String::as_str) == Some("ok"),
+            "healthy_markers must report skill_snapshot_sync: ok to represent the CQRS read model"
+        );
+
+        let degraded =
+            RetrievalOrchestrator::<NoOpEmbeddingService>::degraded_marker("embedding_timeout");
+        assert!(
+            !degraded.contains_key("qdrant"),
+            "degraded_marker must not include 'qdrant': Qdrant is write-side only (Option A, ADR-0001)"
+        );
+        assert!(
+            !degraded.contains_key("postgres"),
+            "degraded_marker must not include 'postgres': Postgres is not a read-path dependency"
+        );
     }
 }

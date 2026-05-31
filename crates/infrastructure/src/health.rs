@@ -205,9 +205,12 @@ impl DependencyFactory {
         if let Ok(qdrant_url) = std::env::var("QDRANT_URL")
             && !qdrant_url.trim().is_empty()
         {
+            // Label as "qdrant_write_side": Qdrant is the durable write-side vector
+            // store (outbox drain target). It is NOT queried at read time under
+            // Option A (ADR-0001). The label must not imply a read-path dependency.
             checker = checker.with_http_dependency(
                 http_client.clone(),
-                "qdrant",
+                "qdrant_write_side",
                 format!("{}/collections", qdrant_url.trim_end_matches('/')),
             );
         }
