@@ -13,8 +13,7 @@ use domain::{
     SubunitType, TranscriptSkillExtractionService,
 };
 use infrastructure::{
-    EventEnvelope,
-    LiveGraphSkillRecord, LiveGraphSnapshotMutation, LiveGraphSubunitRecord,
+    EventEnvelope, LiveGraphSkillRecord, LiveGraphSnapshotMutation, LiveGraphSubunitRecord,
     RebuildCoordinator,
 };
 use mcp_server::{
@@ -273,6 +272,7 @@ async fn roundtrip_compile_context_returns_context_then_duplicate_suppression() 
         prompt: "debug rust auth file access".to_owned(),
         session_id: "live-roundtrip".to_owned(),
         repo_path: test_repo_path(),
+        trigger: None,
     };
 
     let first = server.compile_context(request.clone()).await;
@@ -306,6 +306,7 @@ async fn invalid_repo_path_degrades_but_preserves_global_context_contract() {
             prompt: "rust file patterns".to_owned(),
             session_id: "live-roundtrip-invalid-repo".to_owned(),
             repo_path: sandbox.display().to_string(),
+            trigger: None,
         })
         .await;
     assert_eq!(response.status, CompileContextStatus::Degraded);
@@ -426,11 +427,9 @@ async fn test_live_data_plane_roundtrip() {
 
     let start = std::time::Instant::now();
 
-    let components = McpServerApp::from_environment(
-        retrieval_config(),
-    )
-    .await
-    .expect("should connect to live infrastructure");
+    let components = McpServerApp::from_environment(retrieval_config())
+        .await
+        .expect("should connect to live infrastructure");
     builder.record_latency("server_bootstrap", start.elapsed().as_millis() as u64);
 
     let mutation = LiveGraphSnapshotMutation {
@@ -438,35 +437,42 @@ async fn test_live_data_plane_roundtrip() {
         skills: vec![LiveGraphSkillRecord {
             stable_id: "roundtrip-rust-file-io".to_owned(),
             name: "roundtrip-rust-file-io".to_owned(),
-            description: "Live roundtrip file I/O patterns in Rust with async tokio and error boundaries".to_owned(),
+            description:
+                "Live roundtrip file I/O patterns in Rust with async tokio and error boundaries"
+                    .to_owned(),
             scope: ScopeType::Global,
             tags: vec!["rust".to_owned(), "file".to_owned(), "io".to_owned()],
             subunits: vec![LiveGraphSubunitRecord {
                 kind: SubunitType::Procedure,
                 title: "Read file async".to_owned(),
-                content: "Use tokio::fs::read_to_string for small files within async contexts".to_owned(),
+                content: "Use tokio::fs::read_to_string for small files within async contexts"
+                    .to_owned(),
             }],
         }],
         communities: vec![],
     };
     let seed_start = std::time::Instant::now();
-    components.rebuild_coordinator
+    components
+        .rebuild_coordinator
         .replace_snapshot_and_bump_version(mutation)
         .await
         .expect("should seed roundtrip skill into PG");
     builder.record_latency("seed_skill", seed_start.elapsed().as_millis() as u64);
-    builder.push_action("setup", report::ReportedAction {
-        description: "seed roundtrip skill into PG".to_owned(),
-        status: report::AssertionResult::Passed,
-        side_effects: vec![report::SideEffect::DbRowInserted { table: "roundtrip-rust-file-io".to_owned() }],
-        duration_ms: seed_start.elapsed().as_millis() as u64,
-    });
+    builder.push_action(
+        "setup",
+        report::ReportedAction {
+            description: "seed roundtrip skill into PG".to_owned(),
+            status: report::AssertionResult::Passed,
+            side_effects: vec![report::SideEffect::DbRowInserted {
+                table: "roundtrip-rust-file-io".to_owned(),
+            }],
+            duration_ms: seed_start.elapsed().as_millis() as u64,
+        },
+    );
 
-    let components2 = McpServerApp::from_environment(
-        retrieval_config(),
-    )
-    .await
-    .expect("should connect to live infrastructure after seeding");
+    let components2 = McpServerApp::from_environment(retrieval_config())
+        .await
+        .expect("should connect to live infrastructure after seeding");
 
     let compile_start = std::time::Instant::now();
     let repo_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -480,6 +486,7 @@ async fn test_live_data_plane_roundtrip() {
         prompt: "how to read files in rust with tokio async".to_owned(),
         session_id: "live-roundtrip-session".to_owned(),
         repo_path,
+        trigger: None,
     };
 
     let first = components2.app.compile_context(request.clone()).await;
@@ -488,16 +495,25 @@ async fn test_live_data_plane_roundtrip() {
 
     assert_eq!(first.status, CompileContextStatus::Ok);
     assert!(
-        first.additional_context.as_deref().unwrap_or("").contains("roundtrip-rust-file-io"),
+        first
+            .additional_context
+            .as_deref()
+            .unwrap_or("")
+            .contains("roundtrip-rust-file-io"),
         "compiled context must contain seeded skill name, got: '{:?}'",
         first.additional_context
     );
-    builder.push_action("compile_context", report::ReportedAction {
-        description: "compile context returns Ok with skill content".to_owned(),
-        status: report::AssertionResult::Passed,
-        side_effects: vec![report::SideEffect::EventPublished { event_type: "compile_context.Ok".to_owned() }],
-        duration_ms: first_latency,
-    });
+    builder.push_action(
+        "compile_context",
+        report::ReportedAction {
+            description: "compile context returns Ok with skill content".to_owned(),
+            status: report::AssertionResult::Passed,
+            side_effects: vec![report::SideEffect::EventPublished {
+                event_type: "compile_context.Ok".to_owned(),
+            }],
+            duration_ms: first_latency,
+        },
+    );
 
     let dup_start = std::time::Instant::now();
     let second = components2.app.compile_context(request).await;
@@ -509,12 +525,15 @@ async fn test_live_data_plane_roundtrip() {
         second.reason_code.as_deref(),
         Some("already_compiled_for_session")
     );
-    builder.push_action("compile_context", report::ReportedAction {
-        description: "duplicate compile returns DuplicateSuppressed".to_owned(),
-        status: report::AssertionResult::Passed,
-        side_effects: vec![],
-        duration_ms: dup_latency,
-    });
+    builder.push_action(
+        "compile_context",
+        report::ReportedAction {
+            description: "duplicate compile returns DuplicateSuppressed".to_owned(),
+            status: report::AssertionResult::Passed,
+            side_effects: vec![],
+            duration_ms: dup_latency,
+        },
+    );
 
     builder.add_contract_assertion(report::ContractAssertion {
         contract_name: "compile_context_roundtrip".to_owned(),
@@ -523,19 +542,20 @@ async fn test_live_data_plane_roundtrip() {
     });
 
     let report = builder.build();
-    let report_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../tests/e2e/reports");
+    let report_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../tests/e2e/reports");
     std::fs::create_dir_all(&report_dir).expect("reports dir should exist");
-    let report_path = report_dir.join(format!(
-        "{}__{}.json",
-        report.test_name, report.test_id
-    ));
-    let report_json = serde_json::to_string_pretty(&report)
-        .expect("report should serialize");
+    let report_path = report_dir.join(format!("{}__{}.json", report.test_name, report.test_id));
+    let report_json = serde_json::to_string_pretty(&report).expect("report should serialize");
     std::fs::write(&report_path, report_json).expect("report should be writable");
 
-    components2.teardown().await.expect("teardown should succeed");
-    components.teardown().await.expect("teardown should succeed");
+    components2
+        .teardown()
+        .await
+        .expect("teardown should succeed");
+    components
+        .teardown()
+        .await
+        .expect("teardown should succeed");
 }
 
 #[ignore = "requires live containers"]
@@ -571,8 +591,8 @@ async fn extract_session_live_inline_payload_writes_pending_and_emits_completion
         .expect("should connect to live infrastructure");
     builder.record_latency("server_bootstrap", start.elapsed().as_millis() as u64);
 
-    let extractor = SessionExtractor::from_environment()
-        .expect("should build live extractor from environment");
+    let extractor =
+        SessionExtractor::from_environment().expect("should build live extractor from environment");
     let tool = ExtractSessionTool::new_for_tests(extractor);
 
     let session_id = format!("live-extract-inline-{nonce}");
@@ -590,12 +610,15 @@ async fn extract_session_live_inline_payload_writes_pending_and_emits_completion
 
     assert_eq!(response.status, "processing");
     assert!(response.provider.is_some());
-    builder.push_action("invoke", report::ReportedAction {
-        description: "extract session with inline payload returns processing".to_owned(),
-        status: report::AssertionResult::Passed,
-        side_effects: vec![],
-        duration_ms: invoke_latency,
-    });
+    builder.push_action(
+        "invoke",
+        report::ReportedAction {
+            description: "extract session with inline payload returns processing".to_owned(),
+            status: report::AssertionResult::Passed,
+            side_effects: vec![],
+            duration_ms: invoke_latency,
+        },
+    );
 
     let wait_start = std::time::Instant::now();
     for iteration in 0..120 {
@@ -613,20 +636,46 @@ async fn extract_session_live_inline_payload_writes_pending_and_emits_completion
             break;
         }
         if iteration == 119 {
-            let events: Vec<_> = tool.lifecycle_events().iter().map(|e| e.event_type.clone()).collect();
-            panic!("expected at least one extraction.completed or extraction.failed event, got: {:?}", events);
+            let events: Vec<_> = tool
+                .lifecycle_events()
+                .iter()
+                .map(|e| e.event_type.clone())
+                .collect();
+            panic!(
+                "expected at least one extraction.completed or extraction.failed event, got: {:?}",
+                events
+            );
         }
         tokio::time::sleep(Duration::from_millis(25)).await;
     }
     let wait_latency = wait_start.elapsed().as_millis() as u64;
-    let completed = tool.lifecycle_events().iter().filter(|e| e.event_type == "extraction.completed").count();
-    let failed = tool.lifecycle_events().iter().filter(|e| e.event_type == "extraction.failed").count();
-    builder.push_action("wait", report::ReportedAction {
-        description: format!("wait for extraction lifecycle event (completed={completed}, failed={failed})"),
-        status: report::AssertionResult::Passed,
-        side_effects: vec![report::SideEffect::EventPublished { event_type: if completed > 0 { "extraction.completed".to_owned() } else { "extraction.failed".to_owned() } }],
-        duration_ms: wait_latency,
-    });
+    let completed = tool
+        .lifecycle_events()
+        .iter()
+        .filter(|e| e.event_type == "extraction.completed")
+        .count();
+    let failed = tool
+        .lifecycle_events()
+        .iter()
+        .filter(|e| e.event_type == "extraction.failed")
+        .count();
+    builder.push_action(
+        "wait",
+        report::ReportedAction {
+            description: format!(
+                "wait for extraction lifecycle event (completed={completed}, failed={failed})"
+            ),
+            status: report::AssertionResult::Passed,
+            side_effects: vec![report::SideEffect::EventPublished {
+                event_type: if completed > 0 {
+                    "extraction.completed".to_owned()
+                } else {
+                    "extraction.failed".to_owned()
+                },
+            }],
+            duration_ms: wait_latency,
+        },
+    );
 
     let pending_root = sandbox.join(".skills");
     let mut pending_files = Vec::new();
@@ -650,12 +699,15 @@ async fn extract_session_live_inline_payload_writes_pending_and_emits_completion
         let pending_body =
             std::fs::read_to_string(&pending_files[0]).expect("pending file readable");
         assert!(pending_body.contains("origin: session_extraction"));
-        builder.push_action("verify_pending", report::ReportedAction {
-            description: "pending draft contains origin: session_extraction".to_owned(),
-            status: report::AssertionResult::Passed,
-            side_effects: vec![],
-            duration_ms: 0,
-        });
+        builder.push_action(
+            "verify_pending",
+            report::ReportedAction {
+                description: "pending draft contains origin: session_extraction".to_owned(),
+                status: report::AssertionResult::Passed,
+                side_effects: vec![],
+                duration_ms: 0,
+            },
+        );
     }
 
     builder.add_contract_assertion(report::ContractAssertion {
@@ -672,7 +724,10 @@ async fn extract_session_live_inline_payload_writes_pending_and_emits_completion
     let report_json = serde_json::to_string_pretty(&report).expect("report should serialize");
     std::fs::write(&report_path, report_json).expect("report should be writable");
 
-    components.teardown().await.expect("teardown should succeed");
+    components
+        .teardown()
+        .await
+        .expect("teardown should succeed");
     let _ = std::fs::remove_dir_all(&sandbox);
 }
 
@@ -700,9 +755,8 @@ async fn extract_session_live_ref_payload_loads_from_transcript_volume() {
         std::env::set_var("OLLAMA_EXTRACTION_MODEL", "granite4:3b");
     }
 
-    let mut builder = report::ReportBuilder::new(
-        "extract_session_live_ref_payload_loads_from_transcript_volume",
-    );
+    let mut builder =
+        report::ReportBuilder::new("extract_session_live_ref_payload_loads_from_transcript_volume");
 
     let start = std::time::Instant::now();
     let components = McpServerApp::from_environment(retrieval_config())
@@ -710,8 +764,8 @@ async fn extract_session_live_ref_payload_loads_from_transcript_volume() {
         .expect("should connect to live infrastructure");
     builder.record_latency("server_bootstrap", start.elapsed().as_millis() as u64);
 
-    let extractor = SessionExtractor::from_environment()
-        .expect("should build live extractor from environment");
+    let extractor =
+        SessionExtractor::from_environment().expect("should build live extractor from environment");
     let tool = ExtractSessionTool::new_for_tests(extractor);
 
     let session_id = format!("live-extract-ref-{nonce}");
@@ -734,12 +788,15 @@ async fn extract_session_live_ref_payload_loads_from_transcript_volume() {
         response.status,
         response.reason_code
     );
-    builder.push_action("invoke", report::ReportedAction {
-        description: "extract session with ref payload returns processing".to_owned(),
-        status: report::AssertionResult::Passed,
-        side_effects: vec![],
-        duration_ms: invoke_latency,
-    });
+    builder.push_action(
+        "invoke",
+        report::ReportedAction {
+            description: "extract session with ref payload returns processing".to_owned(),
+            status: report::AssertionResult::Passed,
+            side_effects: vec![],
+            duration_ms: invoke_latency,
+        },
+    );
 
     let wait_start = std::time::Instant::now();
     for iteration in 0..120 {
@@ -762,13 +819,16 @@ async fn extract_session_live_ref_payload_loads_from_transcript_volume() {
         tokio::time::sleep(Duration::from_millis(25)).await;
     }
     let wait_latency = wait_start.elapsed().as_millis() as u64;
-    builder.push_action("wait", report::ReportedAction {
-        description: "wait for extraction.completed or extraction.failed lifecycle event"
-            .to_owned(),
-        status: report::AssertionResult::Passed,
-        side_effects: vec![],
-        duration_ms: wait_latency,
-    });
+    builder.push_action(
+        "wait",
+        report::ReportedAction {
+            description: "wait for extraction.completed or extraction.failed lifecycle event"
+                .to_owned(),
+            status: report::AssertionResult::Passed,
+            side_effects: vec![],
+            duration_ms: wait_latency,
+        },
+    );
 
     builder.add_contract_assertion(report::ContractAssertion {
         contract_name: "extract_session_ref_live".to_owned(),
@@ -783,7 +843,10 @@ async fn extract_session_live_ref_payload_loads_from_transcript_volume() {
     let report_json = serde_json::to_string_pretty(&report).expect("report should serialize");
     std::fs::write(&report_path, report_json).expect("report should be writable");
 
-    components.teardown().await.expect("teardown should succeed");
+    components
+        .teardown()
+        .await
+        .expect("teardown should succeed");
     let _ = std::fs::remove_dir_all(&sandbox);
 }
 
@@ -797,8 +860,9 @@ async fn degraded_and_recovery_cycle_preserves_reason_codes_and_recovers_cleanly
         .expect("compose file should resolve");
     let compose_file_path = compose_file.display().to_string();
 
-    let mut builder =
-        report::ReportBuilder::new("degraded_and_recovery_cycle_preserves_reason_codes_and_recovers_cleanly");
+    let mut builder = report::ReportBuilder::new(
+        "degraded_and_recovery_cycle_preserves_reason_codes_and_recovers_cleanly",
+    );
 
     let repo_path = test_repo_path();
 
@@ -813,33 +877,32 @@ async fn degraded_and_recovery_cycle_preserves_reason_codes_and_recovers_cleanly
         prompt: "rust file access patterns".to_owned(),
         session_id: "live-degraded-baseline".to_owned(),
         repo_path: repo_path.clone(),
+        trigger: None,
     };
     let baseline_start = std::time::Instant::now();
     let baseline = components.app.compile_context(baseline_req.clone()).await;
     let baseline_latency = baseline_start.elapsed().as_millis() as u64;
     builder.record_latency("baseline_compile", baseline_latency);
     assert!(
-        baseline.status == CompileContextStatus::Ok || baseline.status == CompileContextStatus::NoMatch,
+        baseline.status == CompileContextStatus::Ok
+            || baseline.status == CompileContextStatus::NoMatch,
         "expected healthy baseline (Ok or NoMatch), got {:?}",
         baseline.status
     );
-    builder.push_action("baseline", report::ReportedAction {
-        description: "baseline compile_context returns healthy status".to_owned(),
-        status: report::AssertionResult::Passed,
-        side_effects: vec![],
-        duration_ms: baseline_latency,
-    });
+    builder.push_action(
+        "baseline",
+        report::ReportedAction {
+            description: "baseline compile_context returns healthy status".to_owned(),
+            status: report::AssertionResult::Passed,
+            side_effects: vec![],
+            duration_ms: baseline_latency,
+        },
+    );
 
     // Phase 2: Stop qdrant, call compile_context.
     let qdrant_stop_start = std::time::Instant::now();
     let mut docker_stop = Command::new("docker");
-    docker_stop.args([
-        "compose",
-        "-f",
-        &compose_file_path,
-        "stop",
-        "qdrant",
-    ]);
+    docker_stop.args(["compose", "-f", &compose_file_path, "stop", "qdrant"]);
     let stop_qdrant = docker_stop
         .output()
         .expect("docker compose stop qdrant should execute");
@@ -856,31 +919,40 @@ async fn degraded_and_recovery_cycle_preserves_reason_codes_and_recovers_cleanly
         prompt: "rust auth middleware".to_owned(),
         session_id: "live-degraded-qdrant".to_owned(),
         repo_path: repo_path.clone(),
+        trigger: None,
     };
     let degraded1_start = std::time::Instant::now();
     let degraded1 = components.app.compile_context(degraded1_req).await;
     let degraded1_latency = degraded1_start.elapsed().as_millis() as u64;
     builder.record_latency("degraded_qdrant_compile", degraded1_latency);
-    assert_eq!(degraded1.status, CompileContextStatus::Degraded, "expected Degraded after qdrant stop, got {:?}", degraded1.status);
+    assert_eq!(
+        degraded1.status,
+        CompileContextStatus::Degraded,
+        "expected Degraded after qdrant stop, got {:?}",
+        degraded1.status
+    );
     let reason_qdrant = degraded1.reason_code.clone().unwrap_or_default();
-    assert!(!reason_qdrant.is_empty(), "reason_code must be non-empty when Degraded after qdrant stop");
-    builder.push_action("degraded_qdrant", report::ReportedAction {
-        description: format!("compile_context degraded after qdrant stop: reason={}", reason_qdrant),
-        status: report::AssertionResult::Passed,
-        side_effects: vec![],
-        duration_ms: degraded1_latency,
-    });
+    assert!(
+        !reason_qdrant.is_empty(),
+        "reason_code must be non-empty when Degraded after qdrant stop"
+    );
+    builder.push_action(
+        "degraded_qdrant",
+        report::ReportedAction {
+            description: format!(
+                "compile_context degraded after qdrant stop: reason={}",
+                reason_qdrant
+            ),
+            status: report::AssertionResult::Passed,
+            side_effects: vec![],
+            duration_ms: degraded1_latency,
+        },
+    );
 
     // Phase 3: Stop ollama, call compile_context.
     let ollama_stop_start = std::time::Instant::now();
     let mut docker_stop2 = Command::new("docker");
-    docker_stop2.args([
-        "compose",
-        "-f",
-        &compose_file_path,
-        "stop",
-        "ollama",
-    ]);
+    docker_stop2.args(["compose", "-f", &compose_file_path, "stop", "ollama"]);
     let stop_ollama = docker_stop2
         .output()
         .expect("docker compose stop ollama should execute");
@@ -897,12 +969,18 @@ async fn degraded_and_recovery_cycle_preserves_reason_codes_and_recovers_cleanly
         prompt: "rust file io patterns".to_owned(),
         session_id: "live-degraded-ollama".to_owned(),
         repo_path: repo_path.clone(),
+        trigger: None,
     };
     let degraded2_start = std::time::Instant::now();
     let degraded2 = components.app.compile_context(degraded2_req).await;
     let degraded2_latency = degraded2_start.elapsed().as_millis() as u64;
     builder.record_latency("degraded_ollama_compile", degraded2_latency);
-    assert_eq!(degraded2.status, CompileContextStatus::Degraded, "expected Degraded after ollama stop, got {:?}", degraded2.status);
+    assert_eq!(
+        degraded2.status,
+        CompileContextStatus::Degraded,
+        "expected Degraded after ollama stop, got {:?}",
+        degraded2.status
+    );
     let reason_ollama = degraded2.reason_code.clone().unwrap_or_default();
     assert!(
         !reason_ollama.is_empty(),
@@ -913,15 +991,18 @@ async fn degraded_and_recovery_cycle_preserves_reason_codes_and_recovers_cleanly
         "reason codes for qdrant vs ollama degradation should differ, got both={}",
         reason_qdrant
     );
-    builder.push_action("degraded_ollama", report::ReportedAction {
-        description: format!(
-            "compile_context degraded after ollama stop: reason={}",
-            reason_ollama
-        ),
-        status: report::AssertionResult::Passed,
-        side_effects: vec![],
-        duration_ms: degraded2_latency,
-    });
+    builder.push_action(
+        "degraded_ollama",
+        report::ReportedAction {
+            description: format!(
+                "compile_context degraded after ollama stop: reason={}",
+                reason_ollama
+            ),
+            status: report::AssertionResult::Passed,
+            side_effects: vec![],
+            duration_ms: degraded2_latency,
+        },
+    );
 
     // Verify no DuplicateSuppressed during degraded period.
     assert_ne!(
@@ -938,13 +1019,7 @@ async fn degraded_and_recovery_cycle_preserves_reason_codes_and_recovers_cleanly
     // Phase 4: Restore qdrant, then compile_context.
     let qdrant_start_start = std::time::Instant::now();
     let mut docker_start = Command::new("docker");
-    docker_start.args([
-        "compose",
-        "-f",
-        &compose_file_path,
-        "start",
-        "qdrant",
-    ]);
+    docker_start.args(["compose", "-f", &compose_file_path, "start", "qdrant"]);
     let start_qdrant = docker_start
         .output()
         .expect("docker compose start qdrant should execute");
@@ -961,33 +1036,32 @@ async fn degraded_and_recovery_cycle_preserves_reason_codes_and_recovers_cleanly
         prompt: "rust error handling".to_owned(),
         session_id: "live-recovered-qdrant".to_owned(),
         repo_path: repo_path.clone(),
+        trigger: None,
     };
     let recover1_start = std::time::Instant::now();
     let recover1 = components.app.compile_context(recover1_req).await;
     let recover1_latency = recover1_start.elapsed().as_millis() as u64;
     builder.record_latency("recover_qdrant_compile", recover1_latency);
     assert!(
-        recover1.status == CompileContextStatus::Ok || recover1.status == CompileContextStatus::NoMatch,
+        recover1.status == CompileContextStatus::Ok
+            || recover1.status == CompileContextStatus::NoMatch,
         "expected recovered status after qdrant restart, got {:?}",
         recover1.status
     );
-    builder.push_action("recover_qdrant", report::ReportedAction {
-        description: "compile_context recovers after qdrant restart".to_owned(),
-        status: report::AssertionResult::Passed,
-        side_effects: vec![],
-        duration_ms: recover1_latency,
-    });
+    builder.push_action(
+        "recover_qdrant",
+        report::ReportedAction {
+            description: "compile_context recovers after qdrant restart".to_owned(),
+            status: report::AssertionResult::Passed,
+            side_effects: vec![],
+            duration_ms: recover1_latency,
+        },
+    );
 
     // Phase 5: Restore ollama, then compile_context.
     let ollama_start_start = std::time::Instant::now();
     let mut docker_start2 = Command::new("docker");
-    docker_start2.args([
-        "compose",
-        "-f",
-        &compose_file_path,
-        "start",
-        "ollama",
-    ]);
+    docker_start2.args(["compose", "-f", &compose_file_path, "start", "ollama"]);
     let start_ollama = docker_start2
         .output()
         .expect("docker compose start ollama should execute");
@@ -1004,22 +1078,27 @@ async fn degraded_and_recovery_cycle_preserves_reason_codes_and_recovers_cleanly
         prompt: "rust async patterns".to_owned(),
         session_id: "live-recovered-ollama".to_owned(),
         repo_path: repo_path.clone(),
+        trigger: None,
     };
     let recover2_start = std::time::Instant::now();
     let recover2 = components.app.compile_context(recover2_req).await;
     let recover2_latency = recover2_start.elapsed().as_millis() as u64;
     builder.record_latency("recover_ollama_compile", recover2_latency);
     assert!(
-        recover2.status == CompileContextStatus::Ok || recover2.status == CompileContextStatus::NoMatch,
+        recover2.status == CompileContextStatus::Ok
+            || recover2.status == CompileContextStatus::NoMatch,
         "expected recovered status after ollama restart, got {:?}",
         recover2.status
     );
-    builder.push_action("recover_ollama", report::ReportedAction {
-        description: "compile_context recovers after ollama restart".to_owned(),
-        status: report::AssertionResult::Passed,
-        side_effects: vec![],
-        duration_ms: recover2_latency,
-    });
+    builder.push_action(
+        "recover_ollama",
+        report::ReportedAction {
+            description: "compile_context recovers after ollama restart".to_owned(),
+            status: report::AssertionResult::Passed,
+            side_effects: vec![],
+            duration_ms: recover2_latency,
+        },
+    );
 
     // Contract assertion.
     builder.add_contract_assertion(report::ContractAssertion {
@@ -1039,5 +1118,8 @@ async fn degraded_and_recovery_cycle_preserves_reason_codes_and_recovers_cleanly
     let report_json = serde_json::to_string_pretty(&report).expect("report should serialize");
     std::fs::write(&report_path, report_json).expect("report should be writable");
 
-    components.teardown().await.expect("teardown should succeed");
+    components
+        .teardown()
+        .await
+        .expect("teardown should succeed");
 }

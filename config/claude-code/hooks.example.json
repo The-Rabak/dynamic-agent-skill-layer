@@ -6,6 +6,43 @@
     }
   },
   "hooks": {
+    "SessionStart": [
+      {
+        "type": "mcp_tool",
+        "server": "skill-layer",
+        "tool_name": "compile_context",
+        "arguments": {
+          "prompt": "{{initial_prompt}}",
+          "session_id": "{{session_id}}",
+          "repo_path": "{{repo_path}}"
+        },
+        "result_policy": {
+          "inject_additional_context_on": ["ok", "degraded"],
+          "suppress_duplicate_on_healthy": ["ok", "no_match"],
+          "retry_on": [],
+          "ignore_on": ["duplicate_suppressed", "degraded"]
+        }
+      }
+    ],
+    "PreCompact": [
+      {
+        "type": "mcp_tool",
+        "server": "skill-layer",
+        "tool_name": "compile_context",
+        "arguments": {
+          "prompt": "{{summary}}",
+          "session_id": "{{session_id}}",
+          "repo_path": "{{repo_path}}",
+          "trigger": "compact"
+        },
+        "result_policy": {
+          "inject_additional_context_on": ["ok", "degraded"],
+          "suppress_duplicate_on_healthy": [],
+          "retry_on": [],
+          "ignore_on": ["no_match", "duplicate_suppressed", "degraded"]
+        }
+      }
+    ],
     "UserPromptSubmit": [
       {
         "type": "mcp_tool",
@@ -21,6 +58,24 @@
           "suppress_duplicate_on_healthy": ["ok", "no_match"],
           "retry_on": ["degraded"],
           "ignore_on": ["duplicate_suppressed"]
+        }
+      }
+    ],
+    "SessionEnd": [
+      {
+        "type": "mcp_tool",
+        "server": "skill-layer",
+        "tool_name": "extract_session",
+        "arguments": {
+          "transcript_ref": "{{transcript_path}}",
+          "session_id": "{{session_id}}",
+          "repo_path": "{{repo_path}}"
+        },
+        "result_policy": {
+          "inject_additional_context_on": [],
+          "suppress_duplicate_on_healthy": [],
+          "retry_on": [],
+          "ignore_on": ["processing", "failed"]
         }
       }
     ]

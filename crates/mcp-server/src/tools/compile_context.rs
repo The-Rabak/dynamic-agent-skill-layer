@@ -1,8 +1,4 @@
-use std::{
-    collections::BTreeMap,
-    sync::Arc,
-    time::Instant,
-};
+use std::{collections::BTreeMap, sync::Arc, time::Instant};
 
 use compiler::{
     CompilerHighlightInput, CompilerRescueCueInput, CompilerSkillInput, TemplateOnlyCompiler,
@@ -21,11 +17,22 @@ pub enum CompileContextStatus {
     DuplicateSuppressed,
 }
 
+/// Request to compile skill context for the current session.
+///
+/// The optional `trigger` hint identifies the lifecycle event that caused this
+/// call. When `trigger` is `"compact"` (a post-compaction re-inject), session
+/// suppression is bypassed for this single call so the agent receives fresh
+/// context after summarization. All other trigger values (or `None`) leave
+/// suppression semantics unchanged.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CompileContextRequest {
     pub prompt: String,
     pub session_id: String,
     pub repo_path: String,
+    /// Lifecycle event that triggered this call (e.g. `"compact"`).
+    /// `"compact"` bypasses session suppression for a single re-inject.
+    #[serde(default)]
+    pub trigger: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -68,9 +75,16 @@ impl CompileContextTool {
         let graph_version = self.retriever.current_graph_version();
         let scopes = self.retriever.configured_scopes();
 
-        if let Some(response) = self
-            .try_suppression_or_cache(&request, &scopes, graph_version, started_at)
-            .await
+        // A `compact`-triggered call re-injects context after Claude Code summarizes
+        // the conversation. Suppression would block it with `DuplicateSuppressed`,
+        // making the re-inject hook a silent no-op. Bypass suppression for this
+        // single call only — production suppression semantics remain unchanged (T08).
+        let compact_bypass = request.trigger.as_deref() == Some("compact");
+
+        if !compact_bypass
+            && let Some(response) = self
+                .try_suppression_or_cache(&request, &scopes, graph_version, started_at)
+                .await
         {
             return response;
         }
@@ -80,7 +94,8 @@ impl CompileContextTool {
             .retrieve(&request.prompt, Some(request.repo_path.as_str()))
             .await;
 
-        self.handle_retrieval_result(&request, outcome, &scopes).await
+        self.handle_retrieval_result(&request, outcome, &scopes)
+            .await
     }
 
     async fn try_suppression_or_cache(

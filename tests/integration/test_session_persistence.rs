@@ -209,6 +209,7 @@ async fn repeated_prompt_returns_cached_context_without_rerunning_pipeline() {
         prompt: "how do i read a file in rust".to_owned(),
         session_id: "session-cache".to_owned(),
         repo_path: test_repo_path(),
+        trigger: None,
     };
 
     let first = server.compile_context(request.clone()).await;
@@ -226,6 +227,7 @@ async fn repeated_prompt_returns_cached_context_without_rerunning_pipeline() {
         prompt: "how do i read a file in rust".to_owned(),
         session_id: "session-cache-b".to_owned(),
         repo_path: test_repo_path(),
+        trigger: None,
     };
     let third = server.compile_context(different_session).await;
     assert_eq!(third.status, CompileContextStatus::Ok);
@@ -247,6 +249,7 @@ async fn cache_invalidated_on_graph_version_mismatch() {
         prompt: "how do i read a file in rust".to_owned(),
         session_id: "session-version".to_owned(),
         repo_path: test_repo_path(),
+        trigger: None,
     };
 
     let first = server_v7.compile_context(request.clone()).await;
@@ -318,6 +321,7 @@ async fn degraded_outcome_does_not_populate_cache() {
         prompt: "how do i read a file in rust".to_owned(),
         session_id: "session-degraded-cache".to_owned(),
         repo_path: test_repo_path(),
+        trigger: None,
     };
 
     let first = server.compile_context(request.clone()).await;
@@ -345,6 +349,7 @@ async fn healthy_no_match_populates_cache_and_returns_cached_on_repeat() {
         prompt: "quantum banana".to_owned(),
         session_id: "session-nomatch-cache".to_owned(),
         repo_path: test_repo_path(),
+        trigger: None,
     };
 
     let first = server.compile_context(request.clone()).await;
@@ -358,6 +363,7 @@ async fn healthy_no_match_populates_cache_and_returns_cached_on_repeat() {
         prompt: "quantum banana".to_owned(),
         session_id: "session-nomatch-cache-b".to_owned(),
         repo_path: test_repo_path(),
+        trigger: None,
     };
     let third = server.compile_context(different_session).await;
     assert_eq!(third.status, CompileContextStatus::NoMatch);

@@ -2,7 +2,10 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use criterion::{Criterion, criterion_group, criterion_main};
-use domain::{DomainId, EmbeddingError, EmbeddingService, LifecycleStatus, ScopeType, Skill, SkillStatus, Subunit, SubunitType};
+use domain::{
+    DomainId, EmbeddingError, EmbeddingService, LifecycleStatus, ScopeType, Skill, SkillStatus,
+    Subunit, SubunitType,
+};
 use mcp_server::{McpServerApp, tools::compile_context::CompileContextRequest};
 use retrieval::{RetrievalConfig, RetrievalSnapshot, SeededSkill};
 
@@ -100,6 +103,7 @@ fn bench_compile_context(c: &mut Criterion) {
             prompt: "how do I read a file in rust".to_owned(),
             session_id: "bench-session".to_owned(),
             repo_path: "/tmp/bench-repo".to_owned(),
+            trigger: None,
         };
 
         c.bench_function(&format!("compile_context_{size}_skills"), |b| {

@@ -1,23 +1,70 @@
 # Capability Catalog
 
-Reference for all MCP tools, events, lifecycle states, and degraded reason codes in the Dynamic Agent Skill Layer V1.1.
+Reference for all MCP tools, events, lifecycle states, and degraded reason codes in the Dynamic Agent Skill Layer V1.5.
 
-Deep architecture reference: [`docs/architecture/2026-05-21-skill-layer-v1-1-architecture.md`](../architecture/2026-05-21-skill-layer-v1-1-architecture.md)
+Deep architecture reference: [`docs/architecture/2026-05-31-skill-layer-v1-5-close-the-loop-architecture.md`](../architecture/2026-05-31-skill-layer-v1-5-close-the-loop-architecture.md)
+
+## Claude Code Session Lifecycle Hook Contract
+
+The skill layer wires into four Claude Code session lifecycle events. The example config lives at `config/claude-code/hooks.example.json`.
+
+### Hook semantics
+
+| Hook | Can block Claude? | Inject context? | Payload available |
+|------|-----------------|-----------------|-----------------------------|
+| `SessionStart` | No (observe only) | Yes (via tool result) | `initial_prompt`, `session_id`, `repo_path` |
+| `PreCompact` | Yes (30s timeout) | Yes (via tool result) | `summary`, `session_id`, `repo_path` |
+| `UserPromptSubmit` | Yes (30s timeout) | Yes (via tool result) | `prompt`, `session_id`, `repo_path` |
+| `SessionEnd` | No (fire-and-forget) | No | `transcript_path`, `session_id`, `repo_path` |
+
+**`SessionEnd` matchers:** `clear`, `resume`, `logout`, `prompt_input_exit`, `other`.
+
+**Crash caveat:** `SessionEnd` does NOT fire on crash or SIGKILL. Any extraction triggered solely by `SessionEnd` will be lost if the process crashes. The level-triggered reconcile loop (T07) is the backstop — it reconciles sessions that did not produce a `SessionEnd` event on the next startup. Until T07 is deployed, crash-lost sessions require manual re-triggering.
+
+**Context injection limit:** `hookSpecificOutput.additionalContext` is capped at approximately 10,000 characters. Compiled context that exceeds this limit is truncated by the harness.
+
+### Lifecycle hook wiring
+
+```
+SessionStart → compile_context (inject)          [cold start or resume]
+PreCompact   → compile_context (trigger=compact) [survive summarization]
+UserPromptSubmit → compile_context (inject)      [subsequent prompts; suppressed after first Ok]
+SessionEnd   → extract_session (fire-and-forget) [self-growing loop trigger]
+```
+
+### Compaction re-injection
+
+When Claude Code compacts the conversation (summarizes history), context in the system prompt is lost. The `PreCompact` hook re-invokes `compile_context` with `trigger: "compact"` immediately before summarization so the summary includes fresh skill context. The `trigger` field bypasses session suppression for this single call — without it, suppression would return `DuplicateSuppressed` and the re-inject would be a silent no-op.
+
+### SessionEnd extraction and human gate
+
+`SessionEnd` triggers `extract_session`, which enqueues asynchronous extraction from the session transcript. Extraction produces `.pending` files under `.skills/` — never `.md` files. A human must rename `.pending → .md` to approve a skill. There is no auto-approval path.
+
+---
 
 ## MCP Tool Contracts
 
 ### `compile_context`
 
-**Purpose:** Compile task-relevant skill context at session start.
+**Purpose:** Compile task-relevant skill context for the current session.
 
 **Request:**
 ```json
 {
   "prompt": "how do I read a file in rust",
   "session_id": "uuid-v7",
-  "repo_path": "/absolute/path/to/repo"
+  "repo_path": "/absolute/path/to/repo",
+  "trigger": "compact"
 }
 ```
+
+The `trigger` field is optional. Omit it (or pass `null`) for all calls except post-compaction re-injection. Setting `trigger` to `"compact"` bypasses session suppression for that single call. Other values are logged and treated as ordinary calls.
+
+**Request fields:**
+- `prompt`: natural-language task description
+- `session_id`: stable session identifier (UUIDv7 recommended)
+- `repo_path`: absolute path to the current repository root
+- `trigger` (optional): lifecycle event identifier; `"compact"` bypasses session suppression
 
 **Response statuses (canonical):**
 
@@ -36,7 +83,7 @@ Deep architecture reference: [`docs/architecture/2026-05-21-skill-layer-v1-1-arc
 - `scopes_considered`: list of scope IDs searched
 - `graph_version`: current graph version at time of request
 - `latency_ms`: end-to-end latency in milliseconds
-- `source`: origin of the response — `"retrieval"` (fresh), `"cache"` (cached hit), or `"suppression"` (duplicate suppressed)
+- `source`: origin of the response — `"retrieval"` (fresh), `"cache"` (cached hit), or `"suppression"` (duplicate suppressed). Compaction-bypass calls always return `"retrieval"` regardless of prior suppression state.
 
 **Latency target:** <500ms p95 (verified by `cargo bench --bench compile_context_bench`)
 

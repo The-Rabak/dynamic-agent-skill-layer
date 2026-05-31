@@ -359,6 +359,7 @@ async fn compile_context_returns_ok_then_duplicate_suppressed_after_healthy_resu
         prompt: "how do i read a file in rust".to_owned(),
         session_id: "session-ok".to_owned(),
         repo_path: test_repo_path(),
+        trigger: None,
     };
 
     let first = server.compile_context(request.clone()).await;
@@ -391,6 +392,7 @@ async fn compile_context_returns_no_match_for_healthy_empty_and_suppresses_follo
         prompt: "quantum banana".to_owned(),
         session_id: "session-empty".to_owned(),
         repo_path: test_repo_path(),
+        trigger: None,
     };
 
     let first = server.compile_context(request.clone()).await;
@@ -400,7 +402,10 @@ async fn compile_context_returns_no_match_for_healthy_empty_and_suppresses_follo
 
     let second = server.compile_context(request).await;
     assert_eq!(second.status, CompileContextStatus::DuplicateSuppressed);
-    assert_eq!(second.reason_code.as_deref(), Some("already_compiled_for_session"));
+    assert_eq!(
+        second.reason_code.as_deref(),
+        Some("already_compiled_for_session")
+    );
     assert_eq!(second.graph_version, first.graph_version);
     assert_eq!(second.scopes_considered, first.scopes_considered);
 }
@@ -419,6 +424,7 @@ async fn degraded_first_attempt_does_not_set_suppression_state() {
         prompt: "how do i read a file in rust".to_owned(),
         session_id: "session-degraded".to_owned(),
         repo_path: test_repo_path(),
+        trigger: None,
     };
 
     let degraded = server.compile_context(request.clone()).await;
@@ -596,4 +602,70 @@ async fn json_rpc_tools_list_and_call_compile_context() {
         .and_then(|result| result.get("status"))
         .and_then(|value| value.as_str());
     assert_eq!(status, Some("ok"));
+}
+
+/// Proves that a `compact`-triggered request bypasses session suppression and returns
+/// fresh context instead of `DuplicateSuppressed`. This enables compaction re-injection:
+/// the first prompt compiles and suppresses; the compaction hook re-invokes with
+/// `trigger: "compact"` and must receive `Ok` (not `DuplicateSuppressed`).
+#[tokio::test]
+async fn compact_trigger_bypasses_suppression_and_returns_fresh_context() {
+    let _env_guard = env_guard::configure_scope_env();
+    let server = McpServerApp::with_explicit_graph(
+        Arc::new(DeterministicEmbeddingService::healthy()),
+        seeded_graph(),
+        retrieval_config(),
+        None,
+    );
+
+    let session_id = "session-compact-bypass";
+    let prompt = "how do i read a file in rust";
+    let repo_path = test_repo_path();
+
+    // First call: establishes suppression state (Ok response + suppressed flag set).
+    let first = server
+        .compile_context(CompileContextRequest {
+            prompt: prompt.to_owned(),
+            session_id: session_id.to_owned(),
+            repo_path: repo_path.clone(),
+            trigger: None,
+        })
+        .await;
+    assert_eq!(first.status, CompileContextStatus::Ok);
+
+    // Second call: ordinary re-call is suppressed as expected.
+    let suppressed = server
+        .compile_context(CompileContextRequest {
+            prompt: prompt.to_owned(),
+            session_id: session_id.to_owned(),
+            repo_path: repo_path.clone(),
+            trigger: None,
+        })
+        .await;
+    assert_eq!(suppressed.status, CompileContextStatus::DuplicateSuppressed);
+
+    // Third call: compaction re-inject with `trigger: "compact"` must bypass suppression
+    // and return fresh context so post-compaction context injection works.
+    let compact_reinject = server
+        .compile_context(CompileContextRequest {
+            prompt: prompt.to_owned(),
+            session_id: session_id.to_owned(),
+            repo_path: repo_path.clone(),
+            trigger: Some("compact".to_owned()),
+        })
+        .await;
+    assert_ne!(
+        compact_reinject.status,
+        CompileContextStatus::DuplicateSuppressed,
+        "compact trigger must not return DuplicateSuppressed"
+    );
+    assert_eq!(
+        compact_reinject.status,
+        CompileContextStatus::Ok,
+        "compact trigger must return fresh context"
+    );
+    assert!(
+        compact_reinject.additional_context.is_some(),
+        "compact trigger must include compiled context"
+    );
 }

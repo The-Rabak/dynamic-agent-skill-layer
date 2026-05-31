@@ -188,6 +188,7 @@ async fn compile_context_searches_project_and_global_with_project_priority_bias(
             prompt: "debug rust auth middleware".to_owned(),
             session_id: "dual-scope-session".to_owned(),
             repo_path: test_repo_path(),
+            trigger: None,
         })
         .await;
 
@@ -227,6 +228,7 @@ async fn suppression_is_scoped_by_session_and_repo_pair_and_degraded_does_not_co
         prompt: "debug rust auth middleware".to_owned(),
         session_id: "session-a".to_owned(),
         repo_path: test_repo_path(),
+        trigger: None,
     };
 
     let degraded = server.compile_context(base_request.clone()).await;
@@ -281,6 +283,7 @@ async fn compile_context_uses_request_repo_path_for_scope_resolution() {
             prompt: "debug rust auth middleware".to_owned(),
             session_id: "repo-scope-valid".to_owned(),
             repo_path: valid_repo,
+            trigger: None,
         })
         .await;
     assert_eq!(valid_response.status, CompileContextStatus::Ok);
@@ -291,6 +294,7 @@ async fn compile_context_uses_request_repo_path_for_scope_resolution() {
             prompt: "debug rust auth middleware".to_owned(),
             session_id: "repo-scope-invalid".to_owned(),
             repo_path: sandbox.display().to_string(),
+            trigger: None,
         })
         .await;
     assert_eq!(invalid_response.status, CompileContextStatus::Degraded);
@@ -317,6 +321,7 @@ async fn partial_scope_failure_returns_degraded_with_available_context_and_no_su
         prompt: "debug rust auth middleware".to_owned(),
         session_id: "partial-scope-failure".to_owned(),
         repo_path: test_repo_path(),
+        trigger: None,
     };
 
     let first = server.compile_context(request.clone()).await;

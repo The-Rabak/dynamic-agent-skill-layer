@@ -99,6 +99,7 @@ async fn boot_time_live_retrieval() {
                     .to_owned(),
             session_id: "boot-time-live-retrieval".to_owned(),
             repo_path: repo_root_path(),
+            trigger: None,
         })
         .await;
 

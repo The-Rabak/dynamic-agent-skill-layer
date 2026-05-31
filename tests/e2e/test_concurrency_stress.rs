@@ -473,9 +473,19 @@ async fn compile_context_parallel_burst_under_live_infra_stays_within_contract_s
         let session_id = format!("live-stress-session-{s:03}");
         for c in 0..calls_per_session {
             let request = CompileContextRequest {
-                prompt: format!("rust {} stress query {c}", if s % 3 == 0 { "file io" } else if s % 3 == 1 { "async tokio" } else { "auth security" }),
+                prompt: format!(
+                    "rust {} stress query {c}",
+                    if s % 3 == 0 {
+                        "file io"
+                    } else if s % 3 == 1 {
+                        "async tokio"
+                    } else {
+                        "auth security"
+                    }
+                ),
                 session_id: session_id.clone(),
                 repo_path: repo_path.clone(),
+                trigger: None,
             };
             let app = components.app.clone();
             futures.push(async move {
@@ -492,7 +502,11 @@ async fn compile_context_parallel_burst_under_live_infra_stays_within_contract_s
         set.spawn(f);
     }
 
-    let mut responses: Vec<(String, mcp_server::tools::compile_context::CompileContextResponse, Duration)> = Vec::with_capacity(total_calls);
+    let mut responses: Vec<(
+        String,
+        mcp_server::tools::compile_context::CompileContextResponse,
+        Duration,
+    )> = Vec::with_capacity(total_calls);
     while let Some(result) = set.join_next().await {
         responses.push(result.expect("task should finish without panic"));
     }
@@ -514,7 +528,9 @@ async fn compile_context_parallel_burst_under_live_infra_stays_within_contract_s
 
         let valid_status = matches!(
             response.status,
-            CompileContextStatus::Ok | CompileContextStatus::NoMatch | CompileContextStatus::DuplicateSuppressed
+            CompileContextStatus::Ok
+                | CompileContextStatus::NoMatch
+                | CompileContextStatus::DuplicateSuppressed
         );
         if !valid_status {
             error_count += 1;
@@ -525,16 +541,24 @@ async fn compile_context_parallel_burst_under_live_infra_stays_within_contract_s
             CompileContextStatus::Degraded => degraded_count += 1,
             CompileContextStatus::DuplicateSuppressed => duplicate_suppressed_count += 1,
         }
-        if response.status != CompileContextStatus::Ok && response.reason_code.as_deref().unwrap_or("").is_empty() {
+        if response.status != CompileContextStatus::Ok
+            && response.reason_code.as_deref().unwrap_or("").is_empty()
+        {
             empty_reason_on_non_ok += 1;
         }
     }
 
-    assert_eq!(degraded_count, 0, "zero Degraded responses expected under live infra");
+    assert_eq!(
+        degraded_count, 0,
+        "zero Degraded responses expected under live infra"
+    );
     assert_eq!(error_count, 0, "zero responses outside contract statuses");
     assert!(ok_count > 0, "at least one Ok response required");
     assert!(no_match_count > 0, "at least one NoMatch response required");
-    assert_eq!(empty_reason_on_non_ok, 0, "non-Ok responses must carry reason_code");
+    assert_eq!(
+        empty_reason_on_non_ok, 0,
+        "non-Ok responses must carry reason_code"
+    );
 
     builder.push_action("burst_assertions", report::ReportedAction {
         description: format!("total={total_calls} ok={ok_count} no_match={no_match_count} degraded={degraded_count} dup={duplicate_suppressed_count} errors={error_count}"),
@@ -546,7 +570,10 @@ async fn compile_context_parallel_burst_under_live_infra_stays_within_contract_s
     // Follow-up duplicate-suppression check for sessions that got Ok or NoMatch.
     let mut sessions_to_retry = HashSet::new();
     for (session_id, response, _) in &responses {
-        if matches!(response.status, CompileContextStatus::Ok | CompileContextStatus::NoMatch) {
+        if matches!(
+            response.status,
+            CompileContextStatus::Ok | CompileContextStatus::NoMatch
+        ) {
             sessions_to_retry.insert(session_id.clone());
         }
     }
@@ -561,6 +588,7 @@ async fn compile_context_parallel_burst_under_live_infra_stays_within_contract_s
                 prompt: "rust file io stress follow-up".to_owned(),
                 session_id,
                 repo_path,
+                trigger: None,
             };
             app.compile_context(request).await
         });
@@ -573,14 +601,20 @@ async fn compile_context_parallel_burst_under_live_infra_stays_within_contract_s
             dup_suppressed_count += 1;
         }
     }
-    builder.record_latency("duplicate_suppression_followup", dup_start.elapsed().as_millis() as u64);
+    builder.record_latency(
+        "duplicate_suppression_followup",
+        dup_start.elapsed().as_millis() as u64,
+    );
 
-    builder.push_action("duplicate_suppression", report::ReportedAction {
-        description: format!("follow-up duplicate suppressed count={dup_suppressed_count}"),
-        status: report::AssertionResult::Passed,
-        side_effects: vec![],
-        duration_ms: dup_start.elapsed().as_millis() as u64,
-    });
+    builder.push_action(
+        "duplicate_suppression",
+        report::ReportedAction {
+            description: format!("follow-up duplicate suppressed count={dup_suppressed_count}"),
+            status: report::AssertionResult::Passed,
+            side_effects: vec![],
+            duration_ms: dup_start.elapsed().as_millis() as u64,
+        },
+    );
 
     builder.add_contract_assertion(report::ContractAssertion {
         contract_name: "compile_context_parallel_burst".to_owned(),
@@ -595,7 +629,10 @@ async fn compile_context_parallel_burst_under_live_infra_stays_within_contract_s
     let report_json = serde_json::to_string_pretty(&report).expect("report should serialize");
     std::fs::write(&report_path, report_json).expect("report should be writable");
 
-    components.teardown().await.expect("teardown should succeed");
+    components
+        .teardown()
+        .await
+        .expect("teardown should succeed");
 }
 
 #[ignore = "requires live containers"]
@@ -639,7 +676,10 @@ async fn compile_context_and_rebuild_concurrent_activity_stays_consistent() {
             )
             .await;
             let mut lock = latest_version_clone.lock().expect("lock should not poison");
-            assert!(new_version > *lock, "graph_version must be monotonic: new={new_version} prev={lock}");
+            assert!(
+                new_version > *lock,
+                "graph_version must be monotonic: new={new_version} prev={lock}"
+            );
             *lock = new_version;
         }
     });
@@ -657,11 +697,10 @@ async fn compile_context_and_rebuild_concurrent_activity_stays_consistent() {
                 prompt: format!("rebuild concurrency query {c}"),
                 session_id: session_id.clone(),
                 repo_path: repo_path.clone(),
+                trigger: None,
             };
             let app = components.app.clone();
-            futures.push(async move {
-                app.compile_context(request).await
-            });
+            futures.push(async move { app.compile_context(request).await });
         }
     }
 
@@ -675,10 +714,15 @@ async fn compile_context_and_rebuild_concurrent_activity_stays_consistent() {
     while let Some(result) = set.join_next().await {
         responses.push(result.expect("task should finish without panic"));
     }
-    builder.record_latency("burst_compile_during_rebuild", burst_start.elapsed().as_millis() as u64);
+    builder.record_latency(
+        "burst_compile_during_rebuild",
+        burst_start.elapsed().as_millis() as u64,
+    );
 
     // Wait for rebuild thread to finish.
-    rebuild_handle.await.expect("rebuild thread should complete");
+    rebuild_handle
+        .await
+        .expect("rebuild thread should complete");
 
     // Assert no missing reason_codes on non-Ok.
     for response in &responses {
@@ -705,7 +749,10 @@ async fn compile_context_and_rebuild_concurrent_activity_stays_consistent() {
     // Assert no cache-hit on stale graph_version.
     let final_version = *latest_version.lock().expect("lock should not poison");
     for response in &responses {
-        if matches!(response.status, CompileContextStatus::Ok | CompileContextStatus::NoMatch) {
+        if matches!(
+            response.status,
+            CompileContextStatus::Ok | CompileContextStatus::NoMatch
+        ) {
             assert!(
                 response.graph_version >= final_version || response.source != "cache",
                 "cache hit must not serve stale graph_version: got {} vs rebuild latest {}",
@@ -715,12 +762,17 @@ async fn compile_context_and_rebuild_concurrent_activity_stays_consistent() {
         }
     }
 
-    builder.push_action("consistency_assertions", report::ReportedAction {
-        description: format!("{total_calls} calls, graph_version monotonic, no stale cache hits"),
-        status: report::AssertionResult::Passed,
-        side_effects: vec![],
-        duration_ms: 0,
-    });
+    builder.push_action(
+        "consistency_assertions",
+        report::ReportedAction {
+            description: format!(
+                "{total_calls} calls, graph_version monotonic, no stale cache hits"
+            ),
+            status: report::AssertionResult::Passed,
+            side_effects: vec![],
+            duration_ms: 0,
+        },
+    );
 
     builder.add_contract_assertion(report::ContractAssertion {
         contract_name: "compile_context_rebuild_consistency".to_owned(),
@@ -735,7 +787,10 @@ async fn compile_context_and_rebuild_concurrent_activity_stays_consistent() {
     let report_json = serde_json::to_string_pretty(&report).expect("report should serialize");
     std::fs::write(&report_path, report_json).expect("report should be writable");
 
-    components.teardown().await.expect("teardown should succeed");
+    components
+        .teardown()
+        .await
+        .expect("teardown should succeed");
 }
 
 #[ignore = "requires live containers"]
@@ -771,8 +826,8 @@ async fn extract_session_parallel_burst_all_jobs_complete_and_drafts_persist() {
         .expect("should connect to live infrastructure");
     builder.record_latency("server_bootstrap", start.elapsed().as_millis() as u64);
 
-    let extractor = SessionExtractor::from_environment()
-        .expect("should build live extractor from environment");
+    let extractor =
+        SessionExtractor::from_environment().expect("should build live extractor from environment");
     let tool = ExtractSessionTool::new_for_tests(extractor);
 
     let request_count = 32usize;
@@ -889,12 +944,15 @@ async fn extract_session_parallel_burst_all_jobs_complete_and_drafts_persist() {
     );
     assert_eq!(pending_count, request_count);
 
-    builder.push_action("verify_pending", report::ReportedAction {
-        description: format!("pending drafts written: {pending_count}, noncanonical: 0"),
-        status: report::AssertionResult::Passed,
-        side_effects: vec![],
-        duration_ms: 0,
-    });
+    builder.push_action(
+        "verify_pending",
+        report::ReportedAction {
+            description: format!("pending drafts written: {pending_count}, noncanonical: 0"),
+            status: report::AssertionResult::Passed,
+            side_effects: vec![],
+            duration_ms: 0,
+        },
+    );
 
     builder.add_contract_assertion(report::ContractAssertion {
         contract_name: "extract_session_parallel_burst_live".to_owned(),
@@ -909,6 +967,9 @@ async fn extract_session_parallel_burst_all_jobs_complete_and_drafts_persist() {
     let report_json = serde_json::to_string_pretty(&report).expect("report should serialize");
     std::fs::write(&report_path, report_json).expect("report should be writable");
 
-    components.teardown().await.expect("teardown should succeed");
+    components
+        .teardown()
+        .await
+        .expect("teardown should succeed");
     let _ = std::fs::remove_dir_all(&sandbox);
 }

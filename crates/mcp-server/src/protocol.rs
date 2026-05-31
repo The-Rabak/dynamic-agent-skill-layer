@@ -1,6 +1,4 @@
-use std::{
-    future::Future, net::SocketAddr, pin::Pin, sync::LazyLock,
-};
+use std::{future::Future, net::SocketAddr, pin::Pin, sync::LazyLock};
 
 use axum::{
     Json, Router,
@@ -49,7 +47,8 @@ static REGISTERED_TOOLS: LazyLock<[RegisteredTool; 7]> = LazyLock::new(|| {
                     "properties": {
                         "prompt": {"type": "string", "description": "Natural-language description of the task to compile skills for"},
                         "session_id": {"type": "string", "description": "Identifier for the current agent session"},
-                        "repo_path": {"type": "string", "description": "Absolute path to the current repository root"}
+                        "repo_path": {"type": "string", "description": "Absolute path to the current repository root"},
+                        "trigger": {"type": "string", "description": "Lifecycle event that caused this call (e.g. 'compact'). 'compact' bypasses session suppression for post-compaction re-injection."}
                     },
                     "required": ["prompt", "session_id", "repo_path"]
                 }),

@@ -163,6 +163,58 @@ When the circuit is **Open**:
 3. **Session suppression respected:** Degraded results are NOT written to session suppression state. Only `ok` and `no_match` trigger suppression.
 4. **Retry is bounded:** All retry policies have max attempts and backoff ceilings.
 
+## Session Lifecycle Degraded States
+
+### SessionEnd Does Not Fire on Crash (`session_end_skipped_on_crash`)
+
+**Symptom:** A session ends abruptly (crash, SIGKILL, or OOM) and no `.pending` files are produced for it.
+
+**Why:** Claude Code only fires `SessionEnd` on clean termination (`clear`, `resume`, `logout`, `prompt_input_exit`, `other`). Crash paths bypass the hook entirely.
+
+**Recovery:** T07 (level-triggered reconcile loop) reconciles sessions that lacked a `SessionEnd` event on the next startup by replaying extraction from the session transcript. **Until T07 is deployed, manual re-triggering is required:**
+
+```bash
+# Re-trigger extraction for a specific session via the MCP server
+curl -s -X POST http://localhost:3001/mcp \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "tools/call",
+    "params": {
+      "name": "extract_session",
+      "arguments": {
+        "transcript_ref": "<session-transcript-filename>.jsonl",
+        "session_id": "<session-id>",
+        "repo_path": "/path/to/repo"
+      }
+    }
+  }'
+```
+
+**Important:** `SessionEnd` extraction produces only `.pending` files. No auto-approval occurs. Human rename (`.pending` → `.md`) is required.
+
+### Compaction Re-Inject Suppressed (`compact_reinject_suppressed`)
+
+**Symptom:** Context disappears after conversation compaction and is not re-injected.
+
+**Why:** Without `trigger: "compact"` in the `PreCompact` hook arguments, the server treats the re-inject as a duplicate and returns `DuplicateSuppressed`. Claude Code's `ignore_on: ["duplicate_suppressed"]` policy discards the response silently.
+
+**Check:** Confirm the `PreCompact` hook in your `~/.claude/settings.json` includes `"trigger": "compact"` in its arguments:
+
+```json
+"PreCompact": [{
+  "type": "mcp_tool",
+  "tool_name": "compile_context",
+  "arguments": {
+    "trigger": "compact",
+    ...
+  }
+}]
+```
+
+**Recovery:** Copy `config/claude-code/hooks.example.json` to `~/.claude/settings.json` and restart the session.
+
 ## Monitoring Checklist
 
 - [ ] `docker compose ps` shows all services healthy
@@ -173,3 +225,5 @@ When the circuit is **Open**:
 - [ ] PostgreSQL responds to `pg_isready`
 - [ ] Qdrant responds to `/collections`
 - [ ] No `circuit_state: "Open"` in graph-builder health
+- [ ] `SessionEnd` hook configured in `~/.claude/settings.json`
+- [ ] `PreCompact` hook includes `"trigger": "compact"` argument
