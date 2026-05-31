@@ -1,5 +1,6 @@
 mod admin_wiring;
 mod context_cache;
+mod graph_refresh_subscriber;
 pub mod protocol;
 mod suppression_state;
 pub mod state;
@@ -16,6 +17,7 @@ use admin::tools::{
     ListCommunitiesResponse, RebuildGraphRequest, RebuildGraphResponse, RebuildGraphStatusRequest,
     RebuildGraphStatusResponse,
 };
+use async_trait::async_trait;
 use compiler::TemplateOnlyCompiler;
 use domain::{EmbeddingService, ScopeResolver};
 use infrastructure::{
@@ -34,13 +36,14 @@ use infrastructure::OutboxVectorStore;
 use retrieval::{
     DualScopeResolver, RetrievalConfig, RetrievalOrchestrator, RetrievalSnapshot, SkillRetriever,
 };
-use tracing::warn;
 use tools::{
     compile_context::{CompileContextRequest, CompileContextResponse, CompileContextTool},
     extract_session::{ExtractSessionRequest, ExtractSessionTool},
     find_skill::{FindSkillRequest, FindSkillResponse, FindSkillTool},
 };
+use tracing::warn;
 
+use crate::graph_refresh_subscriber::{GraphReloader, run_graph_refresh_loop};
 use crate::state::{CompiledContextCache, SessionSuppressionState};
 
 #[derive(Clone)]
@@ -288,17 +291,27 @@ async fn build_live_server(
             let global_resolver: Arc<dyn ScopeResolver> = Arc::new(EnvPathGlobalResolver::default());
             let scope_resolver = DualScopeResolver::new(project_resolver, global_resolver);
 
-            let retriever = RetrievalOrchestrator::new_dual_scope(
+            let retriever = Arc::new(RetrievalOrchestrator::new_dual_scope(
                 embedding_service.clone(),
                 graph,
                 config,
                 scope_resolver,
-            );
+            ));
             let app = McpServerApp::new_with_admin(
-                Arc::new(retriever),
+                retriever.clone(),
                 admin_runtime_dependencies.rebuild_trigger,
                 admin_runtime_dependencies.graph_reader,
                 Some(redis_client),
+            );
+
+            // Online refresh-without-restart (T02): subscribe to `graph.rebuilt`
+            // and atomically swap the in-memory read model. Spawned on its own
+            // task so it never blocks the HTTP server; gated by a rollback flag.
+            spawn_graph_refresh_if_enabled(
+                redis_streams.clone(),
+                pg_adapter.clone(),
+                embedding_service.clone(),
+                retriever,
             );
 
             Ok(LiveServerComponents {
@@ -387,6 +400,67 @@ fn scope_paths_from_env(name: &str) -> Vec<std::path::PathBuf> {
         .filter(|entry| !entry.is_empty())
         .filter_map(|entry| std::fs::canonicalize(entry).ok())
         .collect()
+}
+
+/// Rollback flag: set `MCP_GRAPH_REFRESH=off` to disable the online subscriber
+/// and fall back to boot-only graph loading.
+///
+// TODO(remove-after-v1.5-green): delete this flag and always-spawn the
+// subscriber once the online refresh path is proven. Removal criterion: first
+// green CI on `main`.
+const GRAPH_REFRESH_FLAG: &str = "MCP_GRAPH_REFRESH";
+
+/// Reloads the bounded PG snapshot and atomically swaps it into the live
+/// retriever, reusing the SAME [`build_graph_from_pg`] loader used at boot
+/// (caps at 5000, reads the real `graph_version`, populates `source_paths`).
+///
+/// This is the `mcp-server`-side bridge that keeps `retrieval` persistence- and
+/// transport-agnostic: the subscriber depends only on the [`GraphReloader`] seam.
+struct PostgresGraphReloader {
+    pg_adapter: Arc<PostgresAdapter>,
+    embedding_service: Arc<OllamaEmbeddingService>,
+    retriever: Arc<RetrievalOrchestrator<OllamaEmbeddingService>>,
+}
+
+#[async_trait]
+impl GraphReloader for PostgresGraphReloader {
+    async fn reload_and_swap(&self) -> Result<i64, String> {
+        let snapshot = build_graph_from_pg(self.pg_adapter.pool(), self.embedding_service.as_ref())
+            .await
+            .map_err(|error| format!("graph reload from PG failed: {error}"))?;
+        let target_version = snapshot.graph_version;
+        // `swap_graph` is idempotent: re-applying the current/older version is a
+        // no-op, so a coalesced burst that resolves to an already-applied version
+        // still lets the triggering event be ACKed.
+        self.retriever.swap_graph(snapshot);
+        Ok(target_version)
+    }
+}
+
+/// Spawns the graph-refresh subscriber unless rolled back via [`GRAPH_REFRESH_FLAG`].
+///
+/// Runs on a detached Tokio task so a slow/failed reload never blocks request
+/// handling. Returns immediately; the loop owns its own backoff/reconnect.
+fn spawn_graph_refresh_if_enabled(
+    redis_streams: Arc<RedisStreamsAdapter>,
+    pg_adapter: Arc<PostgresAdapter>,
+    embedding_service: Arc<OllamaEmbeddingService>,
+    retriever: Arc<RetrievalOrchestrator<OllamaEmbeddingService>>,
+) {
+    if std::env::var(GRAPH_REFRESH_FLAG).as_deref() == Ok("off") {
+        warn!(
+            flag = GRAPH_REFRESH_FLAG,
+            "graph refresh subscriber disabled by rollback flag; graph is boot-only"
+        );
+        return;
+    }
+
+    let reloader: Arc<dyn GraphReloader> = Arc::new(PostgresGraphReloader {
+        pg_adapter,
+        embedding_service,
+        retriever,
+    });
+    tokio::spawn(run_graph_refresh_loop(redis_streams, reloader));
 }
 
 #[tracing::instrument(skip(pool, embedding_service))]

@@ -8,7 +8,8 @@ use graph_builder::{
 use infrastructure::{
     CircuitState, DependencyFactory, EventEnvelope, HealthReport, InfrastructureHealthChecker,
     PostgresAdapter, PostgresConfig, PostgresGraphWriteCoordinator, PostgresRebuildCoordinator,
-    QdrantAdapter, QdrantConfig, logging::init_logging,
+    QdrantAdapter, QdrantConfig, RedisStreamError, RedisStreamsAdapter, RedisStreamsConfig,
+    logging::init_logging,
 };
 use serde::Serialize;
 use tokio::{
@@ -45,6 +46,55 @@ fn polling_interval() -> Duration {
         .and_then(|raw| raw.parse::<u64>().ok())
         .map(Duration::from_millis)
         .unwrap_or_else(|| Duration::from_secs(15))
+}
+
+/// Builds the Redis Streams adapter graph-builder publishes `graph.rebuilt` to.
+///
+/// This is the R-2 fix: before T02, `rebuild_from_changes` pushed each
+/// `graph.rebuilt` envelope into an in-memory `Vec` the rebuild loop never
+/// drained, so the online server never learned about rebuilds. The adapter must
+/// use the SAME stream/group the online subscriber reads (`skill-layer-events` /
+/// `skill-layer`) so the published event actually reaches it.
+fn build_redis_streams_adapter() -> Result<RedisStreamsAdapter, RedisStreamError> {
+    let redis_config = RedisStreamsConfig {
+        redis_url: std::env::var("REDIS_URL")
+            .unwrap_or_else(|_| RedisStreamsConfig::default().redis_url),
+        ..RedisStreamsConfig::default()
+    };
+    RedisStreamsAdapter::new(redis_config)
+}
+
+/// Drains the in-memory published-events buffer to Redis via `XADD`.
+///
+/// Each envelope is removed only after a successful publish, so a transient
+/// Redis failure leaves the unpublished envelope in the buffer to retry on the
+/// next cycle instead of silently dropping a `graph.rebuilt`. Failures are
+/// logged and surfaced (never panic) — the rebuild loop keeps running.
+async fn drain_published_events(
+    redis_streams: &RedisStreamsAdapter,
+    published_events: &mut Vec<EventEnvelope>,
+) {
+    while let Some(envelope) = published_events.first() {
+        match redis_streams.publish(envelope).await {
+            Ok(stream_id) => {
+                tracing::info!(
+                    event_type = %envelope.event_type,
+                    idempotency_key = %envelope.idempotency_key,
+                    %stream_id,
+                    "published graph event to redis stream"
+                );
+                published_events.remove(0);
+            }
+            Err(error) => {
+                tracing::error!(
+                    event_type = %envelope.event_type,
+                    %error,
+                    "failed to publish graph event to redis; will retry next cycle"
+                );
+                break;
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -190,7 +240,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         &qdrant_adapter,
     );
     let mut published_events: Vec<EventEnvelope> = Vec::new();
-    let mut orchestrator = GraphRebuildOrchestrator::new(&mut durable_state, &mut published_events);
+
+    let redis_streams = build_redis_streams_adapter()?;
+    redis_streams.ensure_consumer_group().await?;
 
     let runtime_health_state = Arc::new(RwLock::new(GraphBuilderHealthState::default()));
     let health_server_state = Arc::clone(&runtime_health_state);
@@ -206,7 +258,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     loop {
-        match run_rebuild_cycle(&mut watcher, &mut recovery, &mut orchestrator).await {
+        // Scope the orchestrator so its borrow of `published_events` ends before
+        // the drain below. A fresh orchestrator per cycle is cheap (it only
+        // borrows the durable state and the buffer) and lets the loop own the
+        // buffer it must publish from.
+        let cycle_result = {
+            let mut orchestrator =
+                GraphRebuildOrchestrator::new(&mut durable_state, &mut published_events);
+            run_rebuild_cycle(&mut watcher, &mut recovery, &mut orchestrator).await
+        };
+        match cycle_result {
             Ok(Some(_version)) => {
                 tracing::info!("rebuild cycle completed successfully");
             }
@@ -215,6 +276,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 tracing::error!(error = %error, "rebuild cycle failed");
             }
         }
+        // Publish the freshly-pushed `graph.rebuilt` envelope(s) to Redis so the
+        // online server's subscriber can refresh without a restart (R-2 fix).
+        drain_published_events(&redis_streams, &mut published_events).await;
 
         sleep(polling_interval()).await;
     }

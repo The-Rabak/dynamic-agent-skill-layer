@@ -6,6 +6,7 @@ license = "MIT"
 description = "Dual-scope retrieval pipeline for dynamic agent skill layer"
 
 [dependencies]
+arc-swap = "1.7.1"
 async-trait = "0.1.89"
 domain = { path = "../domain" }
 serde = { version = "1.0.228", features = ["derive"] }

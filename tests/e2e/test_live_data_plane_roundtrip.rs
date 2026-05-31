@@ -1123,3 +1123,148 @@ async fn degraded_and_recovery_cycle_preserves_reason_codes_and_recovers_cleanly
         .await
         .expect("teardown should succeed");
 }
+
+/// SC-V1.5-A online half: a skill that becomes available WHILE the server runs
+/// is retrievable WITHOUT rebuilding the server. The server is constructed once;
+/// we then seed a skill into PG, bump the graph version, publish `graph.rebuilt`
+/// to the shared Redis stream (exactly what graph-builder does after a rebuild),
+/// and assert that the SAME server's `compile_context` returns the new skill and
+/// reports an advanced `graph_version`.
+///
+/// Contrast with `test_live_data_plane_roundtrip`, which builds a SECOND server
+/// post-seed to retrieve — the regression this unit fixes is that the original,
+/// already-running server never refreshed. Setting `MCP_GRAPH_REFRESH=off`
+/// disables the subscriber and makes this test fail (the Red proof for the swap).
+#[ignore = "requires live containers"]
+#[tokio::test]
+async fn graph_rebuilt_event_refreshes_running_server_without_restart() {
+    let _env_guard = env_guard::configure_scope_env();
+
+    let components = McpServerApp::from_environment(retrieval_config())
+        .await
+        .expect("should connect to live infrastructure");
+
+    let repo_path = test_repo_path();
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock should be after unix epoch")
+        .as_nanos();
+    // Keep the skill name clean (no nonce digits) so it does not dilute the
+    // embedding text the retriever matches against; test isolation comes from the
+    // fresh DB + Redis-stream teardown, and per-call session uniqueness uses the
+    // nonce below.
+    let skill_name = "online-refresh-rust-file-io".to_owned();
+    let probe_prompt = "how to read files in rust with tokio async".to_owned();
+
+    let version_before = components
+        .rebuild_coordinator
+        .current_graph_version()
+        .await
+        .expect("should read graph version before rebuild");
+
+    // Baseline: the running server does not know the skill yet.
+    let baseline = components
+        .app
+        .compile_context(CompileContextRequest {
+            prompt: probe_prompt.clone(),
+            session_id: format!("online-refresh-baseline-{nonce}"),
+            repo_path: repo_path.clone(),
+            trigger: None,
+        })
+        .await;
+    assert!(
+        !baseline
+            .additional_context
+            .as_deref()
+            .unwrap_or("")
+            .contains(&skill_name),
+        "skill must NOT be retrievable before the rebuild is published"
+    );
+
+    // Seed the skill into PG and bump the durable version — what graph-builder's
+    // rebuild does before it emits `graph.rebuilt`.
+    let mutation = LiveGraphSnapshotMutation {
+        rebuilt_at: chrono::Utc::now(),
+        skills: vec![LiveGraphSkillRecord {
+            stable_id: skill_name.clone(),
+            name: skill_name.clone(),
+            description:
+                "Online-refresh file I/O patterns in Rust with async tokio and error boundaries"
+                    .to_owned(),
+            scope: ScopeType::Global,
+            tags: vec!["rust".to_owned(), "file".to_owned(), "io".to_owned()],
+            subunits: vec![LiveGraphSubunitRecord {
+                kind: SubunitType::Procedure,
+                title: "Read file async".to_owned(),
+                content: "Use tokio::fs::read_to_string for small files within async contexts"
+                    .to_owned(),
+            }],
+        }],
+        communities: vec![],
+    };
+    let new_version = components
+        .rebuild_coordinator
+        .replace_snapshot_and_bump_version(mutation)
+        .await
+        .expect("should seed online-refresh skill into PG");
+    assert!(
+        new_version > version_before,
+        "seeding must bump the durable graph version"
+    );
+
+    // Publish `graph.rebuilt` to the shared stream — the online subscriber that
+    // `from_environment` spawned should consume it and swap the read model.
+    components
+        .redis_adapter
+        .publish(&EventEnvelope::new(
+            "graph.rebuilt",
+            format!("graph.rebuilt:{new_version}"),
+            serde_json::json!({
+                "graph_version": new_version,
+                "skills_count": 1,
+                "communities_count": 0,
+            }),
+        ))
+        .await
+        .expect("should publish graph.rebuilt to redis");
+
+    // Poll the SAME server until the swap lands (bounded ~ a few seconds).
+    let mut refreshed = None;
+    for attempt in 0..60 {
+        let response = components
+            .app
+            .compile_context(CompileContextRequest {
+                prompt: probe_prompt.clone(),
+                session_id: format!("online-refresh-probe-{nonce}-{attempt}"),
+                repo_path: repo_path.clone(),
+                trigger: None,
+            })
+            .await;
+        let contains_skill = response
+            .additional_context
+            .as_deref()
+            .unwrap_or("")
+            .contains(&skill_name);
+        if contains_skill && response.graph_version >= new_version {
+            refreshed = Some(response);
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+
+    let refreshed = refreshed.expect(
+        "running server must retrieve the newly-available skill after graph.rebuilt without restart",
+    );
+    assert_eq!(refreshed.status, CompileContextStatus::Ok);
+    assert!(
+        refreshed.graph_version >= new_version,
+        "graph_version in responses must advance after the rebuild (got {}, expected >= {})",
+        refreshed.graph_version,
+        new_version
+    );
+
+    components
+        .teardown()
+        .await
+        .expect("teardown should succeed");
+}

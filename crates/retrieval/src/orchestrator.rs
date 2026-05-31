@@ -5,6 +5,7 @@ use std::{
     time::Instant,
 };
 
+use arc_swap::ArcSwap;
 use async_trait::async_trait;
 use domain::{
     EmbeddingError, EmbeddingService, ScopeDescriptor, ScopeType, ScoredSkill, Skill, Subunit,
@@ -49,6 +50,35 @@ impl RetrievalSnapshot {
         Self {
             graph_version,
             skills,
+        }
+    }
+}
+
+/// The atomically-swappable pair the read path consults.
+///
+/// `graph` and `version` are bound into one struct so a reader that takes a
+/// single [`ArcSwap::load`] snapshot can never observe a graph from one rebuild
+/// alongside the version from another. T02 (refresh-without-restart) swaps the
+/// whole struct in one store; readers `load()` once and hold the resulting
+/// [`arc_swap::Guard`] for the duration of a `retrieve` call, so an in-flight
+/// retrieval completes against the graph it started on (the documented
+/// in-flight safety invariant).
+///
+/// `version` mirrors `graph.graph_version`; it is duplicated here so the hot
+/// path reads the version without dereferencing the (larger) snapshot when the
+/// graph itself is not needed.
+#[derive(Debug)]
+pub struct GraphSnapshot {
+    pub graph: Arc<RetrievalSnapshot>,
+    pub version: i64,
+}
+
+impl GraphSnapshot {
+    fn new(snapshot: RetrievalSnapshot) -> Self {
+        let version = snapshot.graph_version;
+        Self {
+            graph: Arc::new(snapshot),
+            version,
         }
     }
 }
@@ -142,7 +172,7 @@ where
     E: EmbeddingService + Send + Sync + 'static,
 {
     embedding_service: Arc<E>,
-    graph: Arc<RetrievalSnapshot>,
+    current: ArcSwap<GraphSnapshot>,
     config: RetrievalConfig,
     scope_resolver: Option<DualScopeResolver>,
 }
@@ -158,7 +188,7 @@ where
     ) -> Self {
         Self {
             embedding_service,
-            graph: Arc::new(graph),
+            current: ArcSwap::from_pointee(GraphSnapshot::new(graph)),
             config,
             scope_resolver: None,
         }
@@ -172,10 +202,38 @@ where
     ) -> Self {
         Self {
             embedding_service,
-            graph: Arc::new(graph),
+            current: ArcSwap::from_pointee(GraphSnapshot::new(graph)),
             config,
             scope_resolver: Some(scope_resolver),
         }
+    }
+
+    /// Atomically replaces the in-memory read model with a freshly-loaded snapshot.
+    ///
+    /// This is the only refresh seam `retrieval` exposes (the Redis subscriber and
+    /// the bounded Postgres reload live in `mcp-server`, keeping `retrieval`
+    /// persistence- and transport-agnostic per ADR-0001).
+    ///
+    /// Concurrency contract:
+    /// - The swap is a single lock-free `ArcSwap::store`; concurrent `retrieve`
+    ///   readers either see the entire old [`GraphSnapshot`] or the entire new one,
+    ///   never a torn graph/version pair.
+    /// - A `retrieve` call already holding the previous snapshot completes against
+    ///   it (the in-flight safety invariant); only subsequent calls observe the new
+    ///   graph.
+    /// - Idempotent re-apply: replacing the current version with the same version is
+    ///   a no-op, so a coalesced burst of `graph.rebuilt` events that resolves to an
+    ///   already-applied version does not churn the read path.
+    ///
+    /// Returns `true` if the snapshot was applied, `false` if it was a no-op because
+    /// the incoming version was not newer than the current one.
+    pub fn swap_graph(&self, snapshot: RetrievalSnapshot) -> bool {
+        let incoming_version = snapshot.graph_version;
+        if incoming_version <= self.current.load().version {
+            return false;
+        }
+        self.current.store(Arc::new(GraphSnapshot::new(snapshot)));
+        true
     }
 
     /// Returns health markers for a fully operational read path.
@@ -265,6 +323,7 @@ where
     fn build_degraded_outcome(
         &self,
         started: Instant,
+        graph_version: i64,
         mut degraded_scopes: Vec<String>,
         mut reason_codes: Vec<String>,
         scopes_considered: Vec<String>,
@@ -288,7 +347,7 @@ where
             reason_codes,
             health: Self::degraded_marker(&reason),
             scopes_considered,
-            graph_version: self.graph.graph_version,
+            graph_version,
             latency_ms: started.elapsed().as_millis(),
         }
     }
@@ -301,12 +360,20 @@ where
 {
     async fn retrieve(&self, prompt: &str, repo_path: Option<&str>) -> RetrievalOutcome {
         let started = Instant::now();
+        // Load the swappable read model exactly once for this call so the graph
+        // and its version can never skew, even if a `swap_graph` lands mid-call
+        // (in-flight safety invariant, ADR-0001).
+        let snapshot = self.current.load_full();
+        let graph = snapshot.graph.clone();
+        let graph_version = snapshot.version;
+
         let (scopes, scopes_considered, mut degraded_scopes, mut reason_codes) =
             self.resolve_scopes(repo_path).await;
 
         if scopes.is_empty() {
             return self.build_degraded_outcome(
                 started,
+                graph_version,
                 degraded_scopes,
                 reason_codes,
                 scopes_considered,
@@ -319,6 +386,7 @@ where
                 reason_codes.push(Self::map_embedding_error_to_reason(&error));
                 return self.build_degraded_outcome(
                     started,
+                    graph_version,
                     scopes_considered.clone(),
                     reason_codes,
                     scopes_considered,
@@ -329,7 +397,7 @@ where
         let (scope_results, scope_failures) = search_scopes_concurrently(
             prompt,
             &prompt_embedding,
-            self.graph.clone(),
+            graph.clone(),
             &self.config,
             &scopes,
         )
@@ -343,6 +411,7 @@ where
         if scope_results.is_empty() {
             return self.build_degraded_outcome(
                 started,
+                graph_version,
                 degraded_scopes,
                 reason_codes,
                 scopes_considered,
@@ -380,7 +449,7 @@ where
         let selected_skills: Vec<RetrievedSkill> = selected_candidates
             .into_iter()
             .filter_map(|candidate| {
-                let seeded_skill = self.graph.skills.get(candidate.skill_index)?;
+                let seeded_skill = graph.skills.get(candidate.skill_index)?;
 
                 let highlights = candidate
                     .highlights
@@ -414,8 +483,7 @@ where
             .iter()
             .filter(|candidate| !selected_ids.contains(&candidate.skill_id))
             .flat_map(|candidate| {
-                let skill_name = self
-                    .graph
+                let skill_name = graph
                     .skills
                     .get(candidate.skill_index)
                     .map(|seeded| seeded.skill.name.clone())
@@ -454,13 +522,13 @@ where
             reason_codes,
             health,
             scopes_considered,
-            graph_version: self.graph.graph_version,
+            graph_version,
             latency_ms: started.elapsed().as_millis(),
         }
     }
 
     fn current_graph_version(&self) -> i64 {
-        self.graph.graph_version
+        self.current.load().version
     }
 
     fn configured_scopes(&self) -> Vec<String> {
@@ -528,5 +596,138 @@ mod tests {
             !degraded.contains_key("postgres"),
             "degraded_marker must not include 'postgres': Postgres is not a read-path dependency"
         );
+    }
+
+    /// Always-succeeds embedding stub so `retrieve` exercises the full read path
+    /// (not just the degraded short-circuit) during the concurrency test.
+    struct ConstantEmbeddingService;
+
+    #[async_trait::async_trait]
+    impl EmbeddingService for ConstantEmbeddingService {
+        async fn embed_text(&self, _text: &str) -> Result<Vec<f32>, EmbeddingError> {
+            Ok(vec![1.0, 0.0, 0.0, 0.0])
+        }
+
+        async fn embed_batch(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>, EmbeddingError> {
+            Ok(texts.iter().map(|_| vec![1.0, 0.0, 0.0, 0.0]).collect())
+        }
+    }
+
+    /// Builds a snapshot whose skill count equals its version, so a torn read
+    /// (graph from version A, reported version B) is directly detectable: the
+    /// number of skills must always equal the reported `graph_version`.
+    fn versioned_snapshot(version: i64) -> RetrievalSnapshot {
+        let skills = (0..version)
+            .map(|index| SeededSkill {
+                skill: Skill {
+                    id: domain::DomainId::new_unchecked(format!("skill-{version}-{index}")),
+                    name: format!("skill-{version}-{index}"),
+                    description: "concurrency probe skill".to_owned(),
+                    scope: ScopeType::Global,
+                    status: domain::SkillStatus::Ready,
+                    lifecycle: domain::LifecycleStatus::Active,
+                    tags: vec!["probe".to_owned()],
+                    subunit_ids: Vec::new(),
+                    community_id: None,
+                },
+                scope_id: "global".to_owned(),
+                source_paths: Vec::new(),
+                embedding: vec![1.0, 0.0, 0.0, 0.0],
+                subunits: Vec::new(),
+                prior: 0.1,
+                community_boost: 0.2,
+            })
+            .collect();
+        RetrievalSnapshot::new(skills, version)
+    }
+
+    /// Proves `swap_graph` gives no torn reads: a concurrent reader either sees the
+    /// whole old [`GraphSnapshot`] or the whole new one, so the reported version
+    /// always matches the graph it was loaded with. Before `ArcSwap`/`swap_graph`
+    /// existed the graph and version were independently mutable fields and could
+    /// skew under concurrency; this guards that regression.
+    #[tokio::test]
+    async fn swap_graph_never_yields_torn_graph_version_under_concurrent_readers() {
+        let orchestrator = Arc::new(RetrievalOrchestrator::new(
+            Arc::new(ConstantEmbeddingService),
+            versioned_snapshot(1),
+            RetrievalConfig::default(),
+        ));
+
+        let writer = {
+            let orchestrator = orchestrator.clone();
+            tokio::spawn(async move {
+                for version in 2..=200_i64 {
+                    let applied = orchestrator.swap_graph(versioned_snapshot(version));
+                    assert!(applied, "monotonic version {version} must apply");
+                    tokio::task::yield_now().await;
+                }
+            })
+        };
+
+        let mut readers = Vec::new();
+        for _ in 0..8 {
+            let orchestrator = orchestrator.clone();
+            readers.push(tokio::spawn(async move {
+                for _ in 0..400 {
+                    let snapshot = orchestrator.current.load_full();
+                    assert_eq!(
+                        snapshot.graph.skills.len() as i64,
+                        snapshot.version,
+                        "load() must return a consistent graph/version pair"
+                    );
+                    assert_eq!(
+                        snapshot.graph.graph_version, snapshot.version,
+                        "GraphSnapshot.version must mirror the inner snapshot version"
+                    );
+
+                    let outcome = orchestrator.retrieve("probe", None).await;
+                    let reported = outcome.graph_version;
+                    assert!(
+                        (1..=200).contains(&reported),
+                        "reported version must be a real applied version, got {reported}"
+                    );
+                    tokio::task::yield_now().await;
+                }
+            }));
+        }
+
+        writer.await.expect("writer task should not panic");
+        for reader in readers {
+            reader.await.expect("reader task should not panic");
+        }
+
+        assert_eq!(
+            orchestrator.current_graph_version(),
+            200,
+            "final version should be the last applied swap"
+        );
+    }
+
+    /// Idempotent re-apply: replaying an already-applied (or older) version is a
+    /// no-op, so a coalesced burst of `graph.rebuilt` never regresses the graph.
+    #[test]
+    fn swap_graph_is_idempotent_for_same_or_older_version() {
+        let orchestrator = RetrievalOrchestrator::new(
+            Arc::new(ConstantEmbeddingService),
+            versioned_snapshot(5),
+            RetrievalConfig::default(),
+        );
+
+        assert!(
+            !orchestrator.swap_graph(versioned_snapshot(5)),
+            "re-applying the same version must be a no-op"
+        );
+        assert!(
+            !orchestrator.swap_graph(versioned_snapshot(3)),
+            "applying an older version must be a no-op"
+        );
+        assert_eq!(orchestrator.current_graph_version(), 5);
+
+        assert!(
+            orchestrator.swap_graph(versioned_snapshot(6)),
+            "a strictly newer version must apply"
+        );
+        assert_eq!(orchestrator.current_graph_version(), 6);
     }
 }
