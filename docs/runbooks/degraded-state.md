@@ -23,14 +23,14 @@ When `compile_context` returns `status: "degraded"`, check the response fields:
   "additional_context": "...",
   "health": {
     "ollama": "degraded",
-    "qdrant": "ok",
-    "postgres": "ok",
-    "redis": "ok",
+    "skill_snapshot_sync": "ok",
     "filesystem_index": "ok",
     "reason": "embedding_provider_unavailable"
   }
 }
 ```
+
+The `health` map covers the compile_context **read path** only: `ollama` (embedding provider), `skill_snapshot_sync` (freshness of the in-memory snapshot), and `filesystem_index`. Qdrant, Postgres, and Redis are not read-path markers and do not appear here.
 
 ### 2. Health Endpoints
 
@@ -42,7 +42,20 @@ curl http://127.0.0.1:3001/health
 curl http://127.0.0.1:8080/health
 ```
 
-Both return dependency-level status:
+**MCP server** (`/health`) returns `HealthReport`:
+```json
+{
+  "healthy": false,
+  "checked_at": "2026-05-31T12:00:00Z",
+  "components": [
+    {"name": "postgres", "healthy": true, "detail": "ok"},
+    {"name": "redis", "healthy": true, "detail": "ok"},
+    {"name": "qdrant_write_side", "healthy": false, "detail": "connection refused"}
+  ]
+}
+```
+
+**Graph builder** (`/health`) returns its own circuit-breaker-aware shape:
 ```json
 {
   "healthy": false,

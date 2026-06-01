@@ -48,7 +48,7 @@ static REGISTERED_TOOLS: LazyLock<[RegisteredTool; 7]> = LazyLock::new(|| {
                         "prompt": {"type": "string", "description": "Natural-language description of the task to compile skills for"},
                         "session_id": {"type": "string", "description": "Identifier for the current agent session"},
                         "repo_path": {"type": "string", "description": "Absolute path to the current repository root"},
-                        "trigger": {"type": "string", "description": "Lifecycle event that caused this call (e.g. 'compact'). 'compact' bypasses session suppression for post-compaction re-injection."}
+                        "trigger": {"type": "string", "maxLength": 64, "description": "Lifecycle event that caused this call (e.g. 'compact'). 'compact' bypasses session suppression for post-compaction re-injection. Unknown values are treated as ordinary calls."}
                     },
                     "required": ["prompt", "session_id", "repo_path"]
                 }),

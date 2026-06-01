@@ -13,12 +13,9 @@ dependency_type: hard # none | hard | soft | parallel-safe
 serves:
   - SC-V1.5-F (no production stub paths remain)
 files:
+  - crates/retrieval/src/cosine_rank.rs
   - crates/retrieval/src/orchestrator.rs
-  - crates/retrieval/src/dual_scope.rs
-  - crates/infrastructure/src/vector/qdrant.rs
   - crates/infrastructure/src/health.rs
-  - docs/architecture/adr-0001-online-graph-source-v1-5.md
-  - docs/reference/online-retrieval-cqrs.md
 test_command: cargo test -p retrieval
 tdd_mode: inherit
 ---

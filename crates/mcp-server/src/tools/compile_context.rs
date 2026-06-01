@@ -17,22 +17,39 @@ pub enum CompileContextStatus {
     DuplicateSuppressed,
 }
 
+/// The lifecycle event that caused a `compile_context` call.
+///
+/// Bounded to a fixed set of meaningful variants so callers cannot pass
+/// arbitrary strings. Unknown string values from JSON deserialize to `Other`,
+/// which preserves the "unknown = no bypass" behavior safely.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TriggerKind {
+    /// Post-compaction re-inject: bypasses session suppression for this single call
+    /// so the agent receives fresh context after Claude Code summarizes the conversation.
+    Compact,
+    /// Any unrecognized trigger value. Treated as an ordinary call — no bypass.
+    #[serde(other)]
+    Other,
+}
+
 /// Request to compile skill context for the current session.
 ///
 /// The optional `trigger` hint identifies the lifecycle event that caused this
-/// call. When `trigger` is `"compact"` (a post-compaction re-inject), session
-/// suppression is bypassed for this single call so the agent receives fresh
-/// context after summarization. All other trigger values (or `None`) leave
+/// call. When `trigger` is `TriggerKind::Compact` (a post-compaction re-inject),
+/// session suppression is bypassed for this single call so the agent receives
+/// fresh context after summarization. All other trigger values (or `None`) leave
 /// suppression semantics unchanged.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CompileContextRequest {
     pub prompt: String,
     pub session_id: String,
     pub repo_path: String,
-    /// Lifecycle event that triggered this call (e.g. `"compact"`).
-    /// `"compact"` bypasses session suppression for a single re-inject.
+    /// Lifecycle event that triggered this call.
+    /// `TriggerKind::Compact` bypasses session suppression for a single re-inject.
+    /// Unknown string values deserialize to `TriggerKind::Other` (no bypass).
     #[serde(default)]
-    pub trigger: Option<String>,
+    pub trigger: Option<TriggerKind>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -79,7 +96,7 @@ impl CompileContextTool {
         // the conversation. Suppression would block it with `DuplicateSuppressed`,
         // making the re-inject hook a silent no-op. Bypass suppression for this
         // single call only — production suppression semantics remain unchanged (T08).
-        let compact_bypass = request.trigger.as_deref() == Some("compact");
+        let compact_bypass = matches!(request.trigger, Some(TriggerKind::Compact));
 
         if !compact_bypass
             && let Some(response) = self

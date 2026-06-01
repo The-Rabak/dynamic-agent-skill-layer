@@ -32,6 +32,19 @@ UserPromptSubmit → compile_context (inject)      [subsequent prompts; suppress
 SessionEnd   → extract_session (fire-and-forget) [self-growing loop trigger]
 ```
 
+### `result_policy` key semantics
+
+Each hook entry in `config/claude-code/hooks.example.json` carries a `result_policy` object that controls how the Claude Code harness interprets the tool result. The harness — not Claude — enforces this policy.
+
+| Policy key | Status values listed | Harness action |
+|------------|---------------------|---------------|
+| `inject_additional_context_on` | `ok`, `degraded` | Inject `additional_context` from the tool response into the conversation as additional context before Claude's next turn |
+| `suppress_duplicate_on_healthy` | `ok`, `no_match` | Mark the session as already compiled; subsequent calls to the same hook within the same session return `duplicate_suppressed` without re-running retrieval |
+| `retry_on` | `degraded` | Re-invoke the tool (once, immediately) when the listed status is returned — used on `UserPromptSubmit` to retry on transient degradation |
+| `ignore_on` | `duplicate_suppressed`, `no_match`, `processing`, `failed`, `degraded` (hook-dependent) | Silently discard the tool result — no context injection, no retry, no error surfaced to Claude |
+
+Canonical status values: `ok`, `no_match`, `degraded`, `duplicate_suppressed`, `processing`, `failed`.
+
 ### Compaction re-injection
 
 When Claude Code compacts the conversation (summarizes history), context in the system prompt is lost. The `PreCompact` hook re-invokes `compile_context` with `trigger: "compact"` immediately before summarization so the summary includes fresh skill context. The `trigger` field bypasses session suppression for this single call — without it, suppression would return `DuplicateSuppressed` and the re-inject would be a silent no-op.
@@ -79,7 +92,7 @@ The `trigger` field is optional. Omit it (or pass `null`) for all calls except p
 - `status`: one of the four statuses above
 - `reason_code`: machine-readable reason (e.g., `no_relevant_skills`, `embedding_provider_unavailable`)
 - `additional_context`: compiled markdown (present for `ok` and `degraded` with partial results)
-- `health`: per-dependency status map (`ollama`, `qdrant`, `postgres`, `redis`, `filesystem_index`)
+- `health`: per-dependency status map for the compile_context read path — keys are `ollama`, `skill_snapshot_sync`, `filesystem_index`. Note: `qdrant_write_side` appears only on the infrastructure `/health` endpoint (it is the durable write-side store, not a read-path dependency).
 - `scopes_considered`: list of scope IDs searched
 - `graph_version`: current graph version at time of request
 - `latency_ms`: end-to-end latency in milliseconds
@@ -160,6 +173,12 @@ A skill approved while the server is running becomes retrievable **without resta
 3. the running `mcp-server` consumes `graph.rebuilt`, reloads the snapshot from Postgres, and atomically swaps the in-memory read model.
 
 The dominant term is the graph-builder poll interval, so the worst-case approval→retrievable window is bounded by roughly that interval (~15s by default) plus a small reload+swap delay. "No restart" therefore means "no restart, refreshed within one poll cycle" — not "instant". The subscriber coalesces bursts (multiple rebuilds collapse into one reload of the newest version) and can be disabled with the temporary rollback flag `MCP_GRAPH_REFRESH=off`, which falls back to boot-only graph loading.
+
+### Graph-refresh subscriber liveness
+
+There is no dedicated health field for the `graph_refresh_subscriber` component (the goroutine inside `mcp-server` that watches the Redis stream for `graph.rebuilt` events). Agents infer liveness indirectly: if `graph_version` in `compile_context` responses advances after a known `graph.rebuilt` event, the subscriber is alive. A stall — `graph_version` does not advance even after a confirmed rebuild — implies the subscriber is dead or in an exponential-backoff reconnect loop.
+
+A dedicated `graph_refresh_subscriber` component in the `/health` response is a possible future enhancement (post-V1.5).
 
 ## Lifecycle States
 

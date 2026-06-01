@@ -17,7 +17,7 @@ files:
   - docs/reference/capability-catalog.md
   - docs/runbooks/degraded-state.md
   - crates/mcp-server/src/tools/compile_context.rs
-test_command: cargo test -p mcp-server --features test-utils -- --ignored extract_session_live_ref_payload
+test_command: cargo test -p mcp-server --features test-utils --test test_live_data_plane_roundtrip -- --ignored extract_session_live_ref_payload
 tdd_mode: inherit
 ---
 

@@ -13,13 +13,13 @@ dependency_type: hard # none | hard | soft | parallel-safe
 serves:
   - SC-V1.5-A (loop closes in the body)
 files:
-  - crates/retrieval/src/orchestrator.rs
-  - crates/mcp-server/src/lib.rs
-  - crates/mcp-server/src/graph_refresh_subscriber.rs
-  - crates/infrastructure/src/events/mod.rs
-  - crates/graph-builder/src/rebuild.rs
   - crates/graph-builder/src/main.rs
-test_command: cargo test -p graph-builder --features test-utils -- --ignored watcher_churn_and_reconciliation
+  - crates/mcp-server/src/graph_refresh_subscriber.rs
+  - crates/mcp-server/src/lib.rs
+  - crates/retrieval/Cargo.toml
+  - crates/retrieval/src/orchestrator.rs
+  - tests/e2e/test_live_data_plane_roundtrip.rs
+test_command: cargo test -p mcp-server --features test-utils --test test_live_data_plane_roundtrip -- --ignored graph_rebuilt_event_refreshes_running_server_without_restart
 tdd_mode: inherit
 ---
 

@@ -17,7 +17,7 @@ use mcp_server::{
     McpServerApp,
     protocol::{JsonRpcRequest, registered_tool_descriptors},
     tools::{
-        compile_context::{CompileContextRequest, CompileContextStatus},
+        compile_context::{CompileContextRequest, CompileContextStatus, TriggerKind},
         find_skill::FindSkillRequest,
     },
 };
@@ -607,7 +607,7 @@ async fn json_rpc_tools_list_and_call_compile_context() {
 /// Proves that a `compact`-triggered request bypasses session suppression and returns
 /// fresh context instead of `DuplicateSuppressed`. This enables compaction re-injection:
 /// the first prompt compiles and suppresses; the compaction hook re-invokes with
-/// `trigger: "compact"` and must receive `Ok` (not `DuplicateSuppressed`).
+/// `trigger: TriggerKind::Compact` and must receive `Ok` (not `DuplicateSuppressed`).
 #[tokio::test]
 async fn compact_trigger_bypasses_suppression_and_returns_fresh_context() {
     let _env_guard = env_guard::configure_scope_env();
@@ -644,14 +644,14 @@ async fn compact_trigger_bypasses_suppression_and_returns_fresh_context() {
         .await;
     assert_eq!(suppressed.status, CompileContextStatus::DuplicateSuppressed);
 
-    // Third call: compaction re-inject with `trigger: "compact"` must bypass suppression
-    // and return fresh context so post-compaction context injection works.
+    // Third call: compaction re-inject with `trigger: TriggerKind::Compact` must bypass
+    // suppression and return fresh context so post-compaction context injection works.
     let compact_reinject = server
         .compile_context(CompileContextRequest {
             prompt: prompt.to_owned(),
             session_id: session_id.to_owned(),
             repo_path: repo_path.clone(),
-            trigger: Some("compact".to_owned()),
+            trigger: Some(TriggerKind::Compact),
         })
         .await;
     assert_ne!(
