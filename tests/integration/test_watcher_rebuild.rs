@@ -134,7 +134,12 @@ async fn watcher_detects_pending_approval_and_rebuild_respects_invalidation_orde
         .await
         .expect("rebuild should succeed");
     assert_eq!(outcome.graph_version, 1);
-    assert_eq!(outcome.skills_count, 2);
+    // `rebuild_from_changes` performs a FULL rebuild from the scope roots (the
+    // change set only feeds the audit trail), so the count is every active
+    // SKILL.md after the mutations, not just the changed files. Surviving skills:
+    // project/rust-file-io, project/approved-skill (renamed from .pending),
+    // global/auth-playbook, global/rust-file-io — global/async-tokio was deleted.
+    assert_eq!(outcome.skills_count, 4);
     assert!(outcome.communities_count > 0);
     assert_eq!(
         durable_state.operation_log,

@@ -55,7 +55,11 @@ services:
     volumes:
       - ollama_data:/root/.ollama
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:11434/api/tags"]
+      # The ollama/ollama image ships neither wget nor curl — only the `ollama`
+      # binary. `ollama ps` returns 0 once the server is serving, so it is the
+      # correct in-image liveness probe (the old wget probe always failed → the
+      # container reported unhealthy despite a healthy server).
+      test: ["CMD", "ollama", "ps"]
       interval: 15s
       timeout: 5s
       retries: 10
