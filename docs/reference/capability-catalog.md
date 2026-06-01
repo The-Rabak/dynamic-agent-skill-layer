@@ -204,13 +204,16 @@ subscription-based CLI path and an API-key path.
 | `EXTRACT_SESSION_PROVIDER` value | Provider | Auth requirement |
 |----------------------------------|----------|-----------------|
 | unset / blank / `ollama` | Ollama (local default) | None |
-| `claude` | Claude Code CLI (`ClaudeCodeExtractor`) — subscription-based | Claude Code subscription on host; **no API key** |
+| `claude` | Claude Code CLI (`ClaudeCodeExtractor`) — subscription-based | An already-logged-in `claude` CLI in the run environment; **no API key, no credential handling** |
 | `claude-api` | Anthropic Messages API (`ClaudeExtractor`) — direct API call | `ANTHROPIC_API_KEY` |
 
-**Host-only constraint for `claude` (CLI path):** The `claude` CLI authenticates via
-the user's Claude Code subscription on the host machine. This path is NOT suitable
-for Docker/container deployments where the host CLI binary is not mounted into the
-container. The compose default remains `ollama`. For containerised deployments use
+**Environment constraint for `claude` (CLI path):** This provider does **not** read,
+store, or pass any credentials. It simply shells out to the `claude` binary, which
+uses whatever login already exists in its environment (`~/.claude`). The only
+requirement is that the `claude` CLI is installed and already authenticated where the
+extractor process runs. That holds on a host where you've run `claude` interactively,
+but **not** in the stock compose container, which ships neither the CLI nor a login.
+The compose default therefore remains `ollama`. For containerised deployments use
 `claude-api` (API key) or leave unset for Ollama.
 
 | Variable | Purpose | Default |

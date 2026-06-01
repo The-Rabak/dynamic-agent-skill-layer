@@ -26,11 +26,14 @@ use crate::extraction::{
 // follow the same text-in/JSON-out pattern, so the shared prompt is the correct
 // owner rather than the forced `tool_use` strategy of `ClaudeExtractor`.
 //
-// **Host-only constraint:** The `claude` CLI binary authenticates via the user's
-// Claude Code subscription on the host. This provider is NOT suitable for
-// Docker/container deployments where the host CLI is not mounted. In containerised
-// deployments continue to use `EXTRACT_SESSION_PROVIDER=claude-api` (API key) or
-// `EXTRACT_SESSION_PROVIDER=ollama` (local). The compose default remains `ollama`.
+// **Environment constraint:** This adapter does NOT read, store, or pass any
+// credentials. It only spawns the `claude` binary, which uses whatever login
+// already exists in its environment (`~/.claude`). The requirement is simply that
+// the `claude` CLI is installed and already authenticated where this process runs —
+// true on a host where `claude` has been used interactively, but NOT in the stock
+// compose container (no CLI, no login). In containerised deployments use
+// `EXTRACT_SESSION_PROVIDER=claude-api` (API key) or `=ollama` (local). The compose
+// default remains `ollama`.
 //
 // See `extraction/mod.rs` for the full prompt strategy rationale.
 

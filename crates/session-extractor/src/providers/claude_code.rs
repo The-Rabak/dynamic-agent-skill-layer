@@ -10,11 +10,13 @@ use infrastructure::{ClaudeCodeExtractionConfig, ClaudeCodeExtractor};
 /// - `EXTRACT_SESSION_MODEL` (default `claude-sonnet-4-6`)
 /// - `CLAUDE_CODE_EXTRACTION_TIMEOUT_MS` (optional inner timeout override; default 120 000 ms)
 ///
-/// **Host-only constraint:** The `claude` CLI authenticates via the user's Claude Code
-/// subscription on the host machine. This provider is NOT suitable for Docker/container
-/// deployments where the host CLI binary is unavailable. In containerised environments use
-/// `EXTRACT_SESSION_PROVIDER=claude-api` (Anthropic Messages API + API key) or
-/// `EXTRACT_SESSION_PROVIDER=ollama` (local; the compose default).
+/// **Environment constraint:** This builder/provider does not read, store, or pass any
+/// credentials. It just invokes the `claude` binary, which uses whatever login already
+/// exists in its environment (`~/.claude`). The only requirement is that the `claude` CLI
+/// is installed and already authenticated where the extractor runs — true on a host where
+/// `claude` has been used interactively, but NOT in the stock compose container (no CLI, no
+/// login). In containerised environments use `EXTRACT_SESSION_PROVIDER=claude-api`
+/// (Anthropic Messages API + API key) or `=ollama` (local; the compose default).
 ///
 /// No `ANTHROPIC_API_KEY` is read or required for this provider.
 pub fn build_extractor() -> Result<Arc<dyn TranscriptSkillExtractionService>, ExtractionError> {
