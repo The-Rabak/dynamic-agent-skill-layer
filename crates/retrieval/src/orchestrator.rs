@@ -215,9 +215,11 @@ where
     /// persistence- and transport-agnostic per ADR-0001).
     ///
     /// Concurrency contract:
-    /// - The swap is a single lock-free `ArcSwap::store`; concurrent `retrieve`
-    ///   readers either see the entire old [`GraphSnapshot`] or the entire new one,
-    ///   never a torn graph/version pair.
+    /// - The swap is a single lock-free `ArcSwap::rcu`; the closure may re-run under
+    ///   contention, so `applied` is derived from the RETURNED previous Arc, not from
+    ///   any closure-mutated state (which would be unsafe under re-execution).
+    /// - Concurrent `retrieve` readers either see the entire old [`GraphSnapshot`] or
+    ///   the entire new one, never a torn graph/version pair.
     /// - A `retrieve` call already holding the previous snapshot completes against
     ///   it (the in-flight safety invariant); only subsequent calls observe the new
     ///   graph.
@@ -225,15 +227,19 @@ where
     ///   a no-op, so a coalesced burst of `graph.rebuilt` events that resolves to an
     ///   already-applied version does not churn the read path.
     ///
-    /// Returns `true` if the snapshot was applied, `false` if it was a no-op because
-    /// the incoming version was not newer than the current one.
+    /// Returns `true` if the snapshot was applied (incoming version strictly newer),
+    /// `false` if it was a no-op because the incoming version was not newer.
     pub fn swap_graph(&self, snapshot: RetrievalSnapshot) -> bool {
         let incoming_version = snapshot.graph_version;
-        if incoming_version <= self.current.load().version {
-            return false;
-        }
-        self.current.store(Arc::new(GraphSnapshot::new(snapshot)));
-        true
+        let new_snap = Arc::new(GraphSnapshot::new(snapshot));
+        let prev = self.current.rcu(|current| {
+            if incoming_version > current.version {
+                Arc::clone(&new_snap)
+            } else {
+                Arc::clone(current)
+            }
+        });
+        incoming_version > prev.version
     }
 
     /// Returns health markers for a fully operational read path.
@@ -562,16 +568,17 @@ mod tests {
         }
     }
 
-    /// Asserts that read-path health markers do NOT claim Qdrant or Postgres as live
-    /// read dependencies. Option A (ratified in ADR-0001): the read path operates
-    /// entirely on the in-memory `RetrievalSnapshot`; Qdrant is write-side only.
+    /// Asserts that read-path health markers do NOT claim Qdrant, Postgres, or Redis
+    /// as live read dependencies. Option A (ratified in ADR-0001): the read path
+    /// operates entirely on the in-memory `RetrievalSnapshot`; Qdrant is write-side
+    /// only; Postgres and Redis are not consulted at query time.
     ///
     /// DS-003 contract: stopping Qdrant must NOT degrade `compile_context` — only the
     /// `qdrant_write_side` marker in the infrastructure health checker may change.
-    /// This test is the deletion guard that prevents the false `qdrant: "ok"` claim
-    /// from reappearing on the read path.
+    /// This test is the deletion guard that prevents false write-side markers from
+    /// reappearing on the read path.
     #[test]
-    fn read_path_health_markers_do_not_claim_qdrant_or_postgres_as_live_dependencies() {
+    fn read_path_health_markers_do_not_claim_qdrant_postgres_or_redis_as_live_dependencies() {
         let healthy = RetrievalOrchestrator::<NoOpEmbeddingService>::healthy_markers();
         assert!(
             !healthy.contains_key("qdrant"),
@@ -580,6 +587,10 @@ mod tests {
         assert!(
             !healthy.contains_key("postgres"),
             "healthy_markers must not include 'postgres': Postgres is not a read-path dependency"
+        );
+        assert!(
+            !healthy.contains_key("redis"),
+            "healthy_markers must not include 'redis': Redis is not a read-path dependency"
         );
         assert!(
             healthy.get("skill_snapshot_sync").map(String::as_str) == Some("ok"),
@@ -595,6 +606,10 @@ mod tests {
         assert!(
             !degraded.contains_key("postgres"),
             "degraded_marker must not include 'postgres': Postgres is not a read-path dependency"
+        );
+        assert!(
+            !degraded.contains_key("redis"),
+            "degraded_marker must not include 'redis': Redis is not a read-path dependency"
         );
     }
 
@@ -701,6 +716,37 @@ mod tests {
             orchestrator.current_graph_version(),
             200,
             "final version should be the last applied swap"
+        );
+    }
+
+    /// Proves concurrent writers converge: N tasks writing monotonically-increasing
+    /// versions 1..=N result in the final stored version == N, which is the only
+    /// guaranteed property regardless of scheduling (the rcu closure may re-run under
+    /// contention but the monotonic guard ensures it always picks the highest seen).
+    #[tokio::test]
+    async fn concurrent_writers_converge_to_highest_version() {
+        const N: i64 = 64;
+        let orchestrator = Arc::new(RetrievalOrchestrator::new(
+            Arc::new(ConstantEmbeddingService),
+            versioned_snapshot(0),
+            RetrievalConfig::default(),
+        ));
+
+        let mut writers = Vec::new();
+        for version in 1..=N {
+            let orchestrator = orchestrator.clone();
+            writers.push(tokio::spawn(async move {
+                orchestrator.swap_graph(versioned_snapshot(version))
+            }));
+        }
+        for writer in writers {
+            writer.await.expect("writer task should not panic");
+        }
+
+        assert_eq!(
+            orchestrator.current_graph_version(),
+            N,
+            "after N concurrent writers with versions 1..=N the final version must be N"
         );
     }
 

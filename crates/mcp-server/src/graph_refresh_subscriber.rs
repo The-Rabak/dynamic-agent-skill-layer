@@ -56,6 +56,23 @@ pub(crate) trait GraphReloader: Send + Sync {
     async fn reload_and_swap(&self) -> Result<i64, String>;
 }
 
+/// The outcome of processing one batch of stream messages.
+///
+/// Carries enough information to drive the ACK loop: whether `graph.rebuilt`
+/// messages appeared in the batch (`has_rebuilt`) and whether the coalesced
+/// reload succeeded (`reload_succeeded`). A `graph.rebuilt` message is skipped
+/// in the ACK loop when `has_rebuilt && !reload_succeeded` — it must replay.
+struct BatchOutcome {
+    /// Whether at least one `graph.rebuilt` event was present in the batch.
+    /// Used in tests to verify coalescing decisions; `process_batch` derives the
+    /// same information per-message from `is_rebuilt` so this field is not
+    /// re-read there.
+    #[allow(dead_code)]
+    has_rebuilt: bool,
+    /// Whether the coalesced `reload_and_swap` call succeeded (or was not needed).
+    reload_succeeded: bool,
+}
+
 /// Runs the refresh loop forever (until the task is dropped/aborted).
 ///
 /// Each iteration: read a batch via the consumer group, coalesce any
@@ -99,52 +116,19 @@ pub(crate) async fn run_graph_refresh_loop(
 /// Coalesces the batch and ACKs each message only after the reload+swap step it
 /// depends on has succeeded.
 ///
-/// If the batch contains at least one `graph.rebuilt`, a single `reload_and_swap`
-/// is performed for the whole batch (coalescing). Messages are ACKed only when:
-/// - they are not `graph.rebuilt` (nothing to reload for them), or
-/// - the coalesced reload succeeded.
-///
-/// A failed reload leaves the `graph.rebuilt` messages un-ACKed so they replay on
-/// the next pending read — preserving the "ACK only after successful swap"
-/// invariant.
+/// Delegates the coalescing decision and the single reload to [`coalesced_reload`]
+/// (Redis-free, unit-testable). Uses the returned [`BatchOutcome`] to decide
+/// which messages to ACK.
 async fn process_batch(
     redis_streams: &RedisStreamsAdapter,
     reloader: &dyn GraphReloader,
     messages: &[StreamMessage],
 ) {
-    let has_rebuilt = messages
-        .iter()
-        .any(|message| message.envelope.event_type == GRAPH_REBUILT_EVENT_TYPE);
-
-    let reload_succeeded = if has_rebuilt {
-        let rebuilt_count = messages
-            .iter()
-            .filter(|m| m.envelope.event_type == GRAPH_REBUILT_EVENT_TYPE)
-            .count();
-        match reloader.reload_and_swap().await {
-            Ok(applied_version) => {
-                info!(
-                    coalesced_events = rebuilt_count,
-                    applied_version, "graph refresh applied after graph.rebuilt"
-                );
-                true
-            }
-            Err(reload_error) => {
-                warn!(
-                    %reload_error,
-                    coalesced_events = rebuilt_count,
-                    "graph refresh reload failed; leaving graph.rebuilt unacked for replay"
-                );
-                false
-            }
-        }
-    } else {
-        true
-    };
+    let outcome = coalesced_reload(reloader, messages).await;
 
     for message in messages {
         let is_rebuilt = message.envelope.event_type == GRAPH_REBUILT_EVENT_TYPE;
-        if is_rebuilt && !reload_succeeded {
+        if is_rebuilt && !outcome.reload_succeeded {
             // Do not ACK: this event must replay until a reload succeeds.
             continue;
         }
@@ -155,6 +139,61 @@ async fn process_batch(
                 event_type = %message.envelope.event_type,
                 "failed to ack stream message after processing"
             );
+        }
+    }
+}
+
+/// Performs the coalesced reload for a batch of stream messages.
+///
+/// If the batch contains at least one `graph.rebuilt` event, a single
+/// `reload_and_swap` is performed for the whole batch (N→1 coalescing). If no
+/// `graph.rebuilt` events are present, `reload_succeeded` is `true` (no reload
+/// is needed, so non-rebuilt messages are always ackable).
+///
+/// A failed reload sets `reload_succeeded = false` so the ACK loop withholds
+/// ACKs for `graph.rebuilt` messages, causing them to replay on the next pending
+/// read.
+async fn coalesced_reload(
+    reloader: &dyn GraphReloader,
+    messages: &[StreamMessage],
+) -> BatchOutcome {
+    let has_rebuilt = messages
+        .iter()
+        .any(|message| message.envelope.event_type == GRAPH_REBUILT_EVENT_TYPE);
+
+    if !has_rebuilt {
+        return BatchOutcome {
+            has_rebuilt: false,
+            reload_succeeded: true,
+        };
+    }
+
+    let rebuilt_count = messages
+        .iter()
+        .filter(|m| m.envelope.event_type == GRAPH_REBUILT_EVENT_TYPE)
+        .count();
+
+    match reloader.reload_and_swap().await {
+        Ok(applied_version) => {
+            info!(
+                coalesced_events = rebuilt_count,
+                applied_version, "graph refresh applied after graph.rebuilt"
+            );
+            BatchOutcome {
+                has_rebuilt: true,
+                reload_succeeded: true,
+            }
+        }
+        Err(reload_error) => {
+            warn!(
+                %reload_error,
+                coalesced_events = rebuilt_count,
+                "graph refresh reload failed; leaving graph.rebuilt unacked for replay"
+            );
+            BatchOutcome {
+                has_rebuilt: true,
+                reload_succeeded: false,
+            }
         }
     }
 }
@@ -184,6 +223,21 @@ mod tests {
         }
     }
 
+    fn other_message(stream_id: &str) -> StreamMessage {
+        StreamMessage {
+            stream_id: stream_id.to_owned(),
+            envelope: EventEnvelope {
+                event_id: Uuid::now_v7(),
+                event_type: "skill.approved".to_owned(),
+                correlation_id: Uuid::now_v7(),
+                idempotency_key: format!("skill.approved:{stream_id}"),
+                schema_version: 1,
+                timestamp: Utc::now(),
+                payload: serde_json::json!({}),
+            },
+        }
+    }
+
     struct CountingReloader {
         calls: AtomicUsize,
         succeed: bool,
@@ -201,7 +255,8 @@ mod tests {
         }
     }
 
-    /// A burst of `graph.rebuilt` events coalesces into exactly one reload.
+    /// A burst of `graph.rebuilt` events coalesces into exactly one reload (true N→1).
+    /// Drives `coalesced_reload` directly — no Redis adapter needed.
     #[tokio::test]
     async fn batch_of_rebuilt_events_triggers_single_coalesced_reload() {
         let reloader = CountingReloader {
@@ -214,31 +269,78 @@ mod tests {
             rebuilt_message("3-0", 12),
         ];
 
-        // We cannot ACK without a live Redis adapter, so assert the coalescing
-        // decision directly via the reloader call count.
-        let has_rebuilt = batch
-            .iter()
-            .any(|m| m.envelope.event_type == GRAPH_REBUILT_EVENT_TYPE);
-        assert!(has_rebuilt);
-        let _ = reloader.reload_and_swap().await;
+        let outcome = coalesced_reload(&reloader, &batch).await;
+
+        assert!(
+            outcome.reload_succeeded,
+            "a succeeding reloader must yield reload_succeeded=true"
+        );
+        assert!(
+            outcome.has_rebuilt,
+            "batch with rebuilt events must have has_rebuilt=true"
+        );
         assert_eq!(
             reloader.calls.load(Ordering::SeqCst),
             1,
-            "a coalesced batch must reload exactly once"
+            "a coalesced batch of 3 graph.rebuilt events must reload exactly once"
         );
     }
 
-    /// A failed reload must NOT mark the work as succeeded (so callers skip ACK).
+    /// A failed reload must NOT mark the batch as succeeded, so `graph.rebuilt`
+    /// messages are withheld from ACK and will replay.
     #[tokio::test]
-    async fn failed_reload_reports_error_so_event_is_not_acked() {
+    async fn failing_reload_marks_batch_outcome_as_not_succeeded() {
         let reloader = CountingReloader {
             calls: AtomicUsize::new(0),
             succeed: false,
         };
-        let result = reloader.reload_and_swap().await;
+        let batch = vec![rebuilt_message("1-0", 10), rebuilt_message("2-0", 11)];
+
+        let outcome = coalesced_reload(&reloader, &batch).await;
+
         assert!(
-            result.is_err(),
-            "a failed reload must surface an error so the event replays"
+            !outcome.reload_succeeded,
+            "a failing reloader must yield reload_succeeded=false so events replay"
+        );
+        assert!(
+            outcome.has_rebuilt,
+            "batch with rebuilt events must have has_rebuilt=true"
+        );
+        assert_eq!(
+            reloader.calls.load(Ordering::SeqCst),
+            1,
+            "even a failing reload must be attempted exactly once per batch"
+        );
+    }
+
+    /// A batch with no `graph.rebuilt` events must never trigger a reload and must
+    /// always be considered ackable (non-rebuilt events are always safe to ACK).
+    #[tokio::test]
+    async fn mixed_batch_non_rebuilt_events_are_always_ackable() {
+        let reloader = CountingReloader {
+            calls: AtomicUsize::new(0),
+            succeed: true,
+        };
+        let batch = vec![
+            other_message("1-0"),
+            other_message("2-0"),
+            other_message("3-0"),
+        ];
+
+        let outcome = coalesced_reload(&reloader, &batch).await;
+
+        assert!(
+            outcome.reload_succeeded,
+            "a batch with no rebuilt events should have reload_succeeded=true (no reload needed)"
+        );
+        assert!(
+            !outcome.has_rebuilt,
+            "a batch with no rebuilt events must have has_rebuilt=false"
+        );
+        assert_eq!(
+            reloader.calls.load(Ordering::SeqCst),
+            0,
+            "a batch with no graph.rebuilt events must not trigger any reload"
         );
     }
 }

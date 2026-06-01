@@ -2,8 +2,8 @@ mod admin_wiring;
 mod context_cache;
 mod graph_refresh_subscriber;
 pub mod protocol;
-mod suppression_state;
 pub mod state;
+mod suppression_state;
 pub mod tools {
     pub mod compile_context;
     pub mod extract_session;
@@ -20,19 +20,14 @@ use admin::tools::{
 use async_trait::async_trait;
 use compiler::TemplateOnlyCompiler;
 use domain::{EmbeddingService, ScopeResolver};
-use infrastructure::{
-    EnvPathGlobalResolver, GitRootProjectResolver, OllamaEmbeddingConfig, OllamaEmbeddingService,
-    PostgresAdapter, PostgresConfig,
-    PostgresGraphSnapshotStore,
-    PostgresGraphWriteCoordinator,
-    PostgresPool,
-    PostgresRebuildCoordinator,
-    QdrantAdapter, QdrantConfig,
-    RedisClient,
-    RedisStreamsAdapter, RedisStreamsConfig,
-};
 #[cfg(any(test, feature = "test-utils"))]
 use infrastructure::OutboxVectorStore;
+use infrastructure::{
+    EnvPathGlobalResolver, GitRootProjectResolver, OllamaEmbeddingConfig, OllamaEmbeddingService,
+    PostgresAdapter, PostgresConfig, PostgresGraphSnapshotStore, PostgresGraphWriteCoordinator,
+    PostgresPool, PostgresRebuildCoordinator, QdrantAdapter, QdrantConfig, RedisClient,
+    RedisStreamsAdapter, RedisStreamsConfig,
+};
 use retrieval::{
     DualScopeResolver, RetrievalConfig, RetrievalOrchestrator, RetrievalSnapshot, SkillRetriever,
 };
@@ -41,7 +36,7 @@ use tools::{
     extract_session::{ExtractSessionRequest, ExtractSessionTool},
     find_skill::{FindSkillRequest, FindSkillResponse, FindSkillTool},
 };
-use tracing::warn;
+use tracing::{debug, info, warn};
 
 use crate::graph_refresh_subscriber::{GraphReloader, run_graph_refresh_loop};
 use crate::state::{CompiledContextCache, SessionSuppressionState};
@@ -73,7 +68,10 @@ impl McpServerApp {
         graph_reader: Arc<dyn GraphSnapshotReader>,
         redis_client: Option<RedisClient>,
     ) -> Self {
-        let state = SessionSuppressionState::new(redis_client.clone(), SessionSuppressionState::DEFAULT_TTL_SECS);
+        let state = SessionSuppressionState::new(
+            redis_client.clone(),
+            SessionSuppressionState::DEFAULT_TTL_SECS,
+        );
         let cache = CompiledContextCache::new(redis_client, CompiledContextCache::DEFAULT_TTL_SECS);
         let compiler = TemplateOnlyCompiler::default();
         let admin_tools = AdminTools::new(rebuild_trigger, graph_reader);
@@ -198,11 +196,6 @@ impl McpServerApp {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ServerMode {
-    Live,
-}
-
 /// LiveServerComponents bundles the fully-wired live server graph.
 /// The `teardown()` method is gated to test builds only to prevent
 /// accidental destructive operations in production.
@@ -263,69 +256,66 @@ async fn build_live_server(
     config: RetrievalConfig,
 ) -> Result<LiveServerComponents, Box<dyn std::error::Error + Send + Sync>> {
     let (pg_adapter, (qdrant_adapter, embedding_service), redis_streams, redis_client) = tokio::try_join!(
-                build_pg_adapter(),
-                async {
-                    let q = build_qdrant_adapter().await?;
-                    let e = build_embedding_service()?;
-                    Ok::<_, Box<dyn std::error::Error + Send + Sync>>((q, e))
-                },
-                build_redis_streams_adapter(),
-                async {
-                    let c = build_redis_client()?;
-                    Ok::<_, Box<dyn std::error::Error + Send + Sync>>(c)
-                },
-            )?;
+        build_pg_adapter(),
+        async {
+            let q = build_qdrant_adapter().await?;
+            let e = build_embedding_service()?;
+            Ok::<_, Box<dyn std::error::Error + Send + Sync>>((q, e))
+        },
+        build_redis_streams_adapter(),
+        async {
+            let c = build_redis_client()?;
+            Ok::<_, Box<dyn std::error::Error + Send + Sync>>(c)
+        },
+    )?;
 
-            let write_coordinator = PostgresGraphWriteCoordinator::new(
-                pg_adapter.pool().clone(),
-            );
-            let rebuild_coordinator = PostgresRebuildCoordinator::new(
-                pg_adapter.pool().clone(),
-            );
+    let write_coordinator = PostgresGraphWriteCoordinator::new(pg_adapter.pool().clone());
+    let rebuild_coordinator = PostgresRebuildCoordinator::new(pg_adapter.pool().clone());
 
-            let graph = self::build_graph_from_pg(pg_adapter.pool(), embedding_service.as_ref()).await?;
+    let graph = self::build_graph_from_pg(pg_adapter.pool(), embedding_service.as_ref()).await?;
 
-            let admin_runtime_dependencies = admin_wiring::live_admin_runtime_dependencies();
-            let start_dir = std::env::current_dir().unwrap_or_else(|_| ".".into());
-            let project_resolver: Arc<dyn ScopeResolver> = Arc::new(GitRootProjectResolver::new(start_dir));
-            let global_resolver: Arc<dyn ScopeResolver> = Arc::new(EnvPathGlobalResolver::default());
-            let scope_resolver = DualScopeResolver::new(project_resolver, global_resolver);
+    let admin_runtime_dependencies = admin_wiring::live_admin_runtime_dependencies();
+    let start_dir = std::env::current_dir().unwrap_or_else(|_| ".".into());
+    let project_resolver: Arc<dyn ScopeResolver> = Arc::new(GitRootProjectResolver::new(start_dir));
+    let global_resolver: Arc<dyn ScopeResolver> = Arc::new(EnvPathGlobalResolver::default());
+    let scope_resolver = DualScopeResolver::new(project_resolver, global_resolver);
 
-            let retriever = Arc::new(RetrievalOrchestrator::new_dual_scope(
-                embedding_service.clone(),
-                graph,
-                config,
-                scope_resolver,
-            ));
-            let app = McpServerApp::new_with_admin(
-                retriever.clone(),
-                admin_runtime_dependencies.rebuild_trigger,
-                admin_runtime_dependencies.graph_reader,
-                Some(redis_client),
-            );
+    let retriever = Arc::new(RetrievalOrchestrator::new_dual_scope(
+        embedding_service.clone(),
+        graph,
+        config,
+        scope_resolver,
+    ));
+    let app = McpServerApp::new_with_admin(
+        retriever.clone(),
+        admin_runtime_dependencies.rebuild_trigger,
+        admin_runtime_dependencies.graph_reader,
+        Some(redis_client),
+    );
 
-            // Online refresh-without-restart (T02): subscribe to `graph.rebuilt`
-            // and atomically swap the in-memory read model. Spawned on its own
-            // task so it never blocks the HTTP server; gated by a rollback flag.
-            spawn_graph_refresh_if_enabled(
-                redis_streams.clone(),
-                pg_adapter.clone(),
-                embedding_service.clone(),
-                retriever,
-            );
+    // Online refresh-without-restart (T02): subscribe to `graph.rebuilt`
+    // and atomically swap the in-memory read model. Spawned on its own
+    // task so it never blocks the HTTP server; gated by a rollback flag.
+    spawn_graph_refresh_if_enabled(
+        redis_streams.clone(),
+        pg_adapter.clone(),
+        embedding_service.clone(),
+        retriever,
+    );
 
-            Ok(LiveServerComponents {
-                app,
-                embedding_service,
-                write_coordinator: Arc::new(write_coordinator),
-                qdrant_adapter,
-                redis_adapter: redis_streams,
-                pg_adapter,
-                rebuild_coordinator: Arc::new(rebuild_coordinator),
-            })
+    Ok(LiveServerComponents {
+        app,
+        embedding_service,
+        write_coordinator: Arc::new(write_coordinator),
+        qdrant_adapter,
+        redis_adapter: redis_streams,
+        pg_adapter,
+        rebuild_coordinator: Arc::new(rebuild_coordinator),
+    })
 }
 
-async fn build_pg_adapter() -> Result<Arc<PostgresAdapter>, Box<dyn std::error::Error + Send + Sync>> {
+async fn build_pg_adapter() -> Result<Arc<PostgresAdapter>, Box<dyn std::error::Error + Send + Sync>>
+{
     let pg_config = PostgresConfig {
         database_url: env_var("DATABASE_URL")?,
         connect_timeout_secs: 5,
@@ -338,7 +328,8 @@ async fn build_pg_adapter() -> Result<Arc<PostgresAdapter>, Box<dyn std::error::
     Ok(Arc::new(pg_adapter))
 }
 
-async fn build_qdrant_adapter() -> Result<Arc<QdrantAdapter>, Box<dyn std::error::Error + Send + Sync>> {
+async fn build_qdrant_adapter()
+-> Result<Arc<QdrantAdapter>, Box<dyn std::error::Error + Send + Sync>> {
     let qdrant_config = QdrantConfig {
         endpoint: env_var("QDRANT_URL")?,
         timeout_ms: 3_000,
@@ -350,7 +341,8 @@ async fn build_qdrant_adapter() -> Result<Arc<QdrantAdapter>, Box<dyn std::error
     Ok(Arc::new(qdrant_adapter))
 }
 
-fn build_embedding_service() -> Result<Arc<OllamaEmbeddingService>, Box<dyn std::error::Error + Send + Sync>> {
+fn build_embedding_service()
+-> Result<Arc<OllamaEmbeddingService>, Box<dyn std::error::Error + Send + Sync>> {
     let ollama_config = OllamaEmbeddingConfig {
         base_url: env_var("OLLAMA_URL")?,
         model: "nomic-embed-text".to_owned(),
@@ -363,7 +355,8 @@ fn build_embedding_service() -> Result<Arc<OllamaEmbeddingService>, Box<dyn std:
     Ok(Arc::new(embedding_service))
 }
 
-async fn build_redis_streams_adapter() -> Result<Arc<RedisStreamsAdapter>, Box<dyn std::error::Error + Send + Sync>> {
+async fn build_redis_streams_adapter()
+-> Result<Arc<RedisStreamsAdapter>, Box<dyn std::error::Error + Send + Sync>> {
     let redis_config = RedisStreamsConfig {
         redis_url: env_var("REDIS_URL")?,
         stream_key: "skill-layer-events".to_owned(),
@@ -432,7 +425,12 @@ impl GraphReloader for PostgresGraphReloader {
         // `swap_graph` is idempotent: re-applying the current/older version is a
         // no-op, so a coalesced burst that resolves to an already-applied version
         // still lets the triggering event be ACKed.
-        self.retriever.swap_graph(snapshot);
+        let applied = self.retriever.swap_graph(snapshot);
+        if applied {
+            info!(target_version, "graph refresh applied");
+        } else {
+            debug!(target_version, "graph refresh no-op (already current)");
+        }
         Ok(target_version)
     }
 }
@@ -497,29 +495,57 @@ async fn build_graph_from_pg(
         skills.truncate(MAX_SKILLS_TO_LOAD);
     }
 
-    let texts: Vec<String> = skills.iter().map(|s| {
-        format!("{} {} {}", s.name, s.description, s.tags.join(" "))
-    }).collect();
+    let texts: Vec<String> = skills
+        .iter()
+        .map(|s| format!("{} {} {}", s.name, s.description, s.tags.join(" ")))
+        .collect();
     let text_refs: Vec<&str> = texts.iter().map(String::as_str).collect();
     let embeddings = embedding_service.embed_batch(&text_refs).await?;
+
+    // Fail loudly if the embedding provider returned a mismatched batch. A shorter
+    // vector would cause silent zip truncation, loading a graph with fewer skills
+    // than PG contains and no diagnostic. Crashing the reload is preferable.
+    if embeddings.len() != skills.len() {
+        return Err(format!(
+            "embed_batch returned {} vectors for {} skills",
+            embeddings.len(),
+            skills.len()
+        )
+        .into());
+    }
 
     // Live-loaded skills have no per-file provenance (the `skills` table stores no
     // source path), so their searchable scope is the configured scope root. Without
     // this, `seeded_skill_matches_scope` rejects every live skill against a
     // path-constrained scope and boot retrieval always returns `no_match`.
     let global_scope_paths = scope_paths_from_env("SKILL_GLOBAL_PATHS");
-    let project_scope_paths = std::env::current_dir().map(|dir| vec![dir]).unwrap_or_default();
+    // Canonicalize the project scope path to align with the scope resolver's own
+    // canonicalization so `starts_with` scope matching succeeds at query time.
+    let project_scope_paths = std::env::current_dir()
+        .ok()
+        .and_then(|p| std::fs::canonicalize(p).ok())
+        .map(|p| vec![p])
+        .unwrap_or_default();
 
     let seeded_skills: Vec<retrieval::SeededSkill> = skills
         .into_iter()
         .zip(embeddings.into_iter())
         .map(|(record, embedding)| {
-            // Scope is derived from the skills.scope column persisted during graph rebuild.
-            // The previous community_id-based heuristic is replaced by direct scope reading for correctness.
-            let scope = match record.scope.as_str() {
-                "global" => domain::ScopeType::Global,
-                "team" => domain::ScopeType::Team,
-                _ => domain::ScopeType::Project,
+            // Derive scope type, scope_id, and source_paths from the single
+            // `skills.scope` column in one match to prevent the two arms drifting
+            // apart (previously two separate match blocks could disagree).
+            let (scope, scope_id, source_paths) = match record.scope.as_str() {
+                "global" => (
+                    domain::ScopeType::Global,
+                    "global".to_owned(),
+                    global_scope_paths.clone(),
+                ),
+                "team" => (domain::ScopeType::Team, "team".to_owned(), Vec::new()),
+                _ => (
+                    domain::ScopeType::Project,
+                    "project".to_owned(),
+                    project_scope_paths.clone(),
+                ),
             };
             let skill = domain::Skill {
                 id: domain::DomainId::new_unchecked(&record.skill_id),
@@ -529,27 +555,27 @@ async fn build_graph_from_pg(
                 status: domain::SkillStatus::Ready,
                 lifecycle: domain::LifecycleStatus::Active,
                 tags: record.tags,
-                subunit_ids: record.subunits.iter()
+                subunit_ids: record
+                    .subunits
+                    .iter()
                     .map(|s| domain::DomainId::new_unchecked(&s.subunit_id))
                     .collect(),
-                community_id: record.community_id.map(|id| domain::DomainId::new_unchecked(id)),
+                community_id: record
+                    .community_id
+                    .map(|id| domain::DomainId::new_unchecked(id)),
             };
-            let subunits: Vec<domain::Subunit> = record.subunits.into_iter().map(|s| {
-                domain::Subunit {
+            let subunits: Vec<domain::Subunit> = record
+                .subunits
+                .into_iter()
+                .map(|s| domain::Subunit {
                     id: domain::DomainId::new_unchecked(&s.subunit_id),
                     skill_id: skill.id.clone(),
-                    kind: domain::SubunitType::Procedure,
+                    kind: subunit_kind_from_db(&s.kind),
                     title: s.title,
                     content: s.content,
                     lifecycle: domain::LifecycleStatus::Active,
-                }
-            }).collect();
-
-            let (scope_id, source_paths) = match record.scope.as_str() {
-                "global" => ("global".to_owned(), global_scope_paths.clone()),
-                "team" => ("team".to_owned(), Vec::new()),
-                _ => ("project".to_owned(), project_scope_paths.clone()),
-            };
+                })
+                .collect();
 
             retrieval::SeededSkill {
                 skill,
@@ -564,4 +590,21 @@ async fn build_graph_from_pg(
         .collect();
 
     Ok(RetrievalSnapshot::new(seeded_skills, graph_version))
+}
+
+/// Maps a DB subunit kind string to the domain [`domain::SubunitType`].
+///
+/// This is the inverse of `infrastructure::persistence::rebuild::subunit_kind_to_db_value`.
+/// String values must match exactly what that function writes to avoid silent mismatches.
+/// Unknown strings default to `Procedure` so unrecognized future variants degrade
+/// gracefully rather than causing a boot failure.
+fn subunit_kind_from_db(raw: &str) -> domain::SubunitType {
+    match raw {
+        "procedure" => domain::SubunitType::Procedure,
+        "convention" => domain::SubunitType::Convention,
+        "asset" => domain::SubunitType::Asset,
+        "evidence" => domain::SubunitType::Evidence,
+        "summary" => domain::SubunitType::Summary,
+        _ => domain::SubunitType::Procedure,
+    }
 }
