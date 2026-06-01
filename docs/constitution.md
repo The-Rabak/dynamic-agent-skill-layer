@@ -1,9 +1,9 @@
 ---
 artifact: project-constitution
 status: active
-version: 1.0.0
+version: 2.0.0
 ratified: 2026-05-21
-last_amended: 2026-05-21
+last_amended: 2026-06-01
 owners:
   - rabak
 review_cycle: monthly
@@ -38,8 +38,10 @@ This repository builds **Dynamic Agent Skill Layer** — a local-first, self-gro
 ### 1. Local-First Execution
 
 - All services MUST run entirely on the developer's machine via Docker Compose.
-- Zero cloud dependencies in V1. Embeddings MUST use local Ollama. Vector search MUST use local Qdrant. Relational storage MUST use local PostgreSQL.
-- V2 team scope MAY add remote PG + Qdrant, but local-first path MUST remain the default.
+- **The data plane MUST remain local.** Embeddings MUST use local Ollama. Vector search MUST use local Qdrant. Relational storage MUST use local PostgreSQL. These have no cloud option in V1.
+- **Local-first is the default.** A default `docker compose up` with no extra configuration MUST NOT reach any cloud service.
+- **The skill-extraction LLM provider is user-selectable.** Ollama (local) is the default; a cloud provider (Claude / Anthropic) is a **first-class, fully supported** alternative when the user explicitly opts in via `EXTRACT_SESSION_PROVIDER`. Opting into a cloud extraction provider is the user's informed choice and is NOT a constitution violation. Selecting a cloud provider without its credential (e.g. `provider=claude` and no `ANTHROPIC_API_KEY`) MUST fail loudly at construction — never a silent cloud attempt and never a silent fallback.
+- V2 team scope MAY add remote PG + Qdrant, but the local-first default path MUST remain available.
 
 ### 2. Zero-Touch Session Start
 
@@ -126,3 +128,4 @@ This repository builds **Dynamic Agent Skill Layer** — a local-first, self-gro
 ## Amendment Log
 
 - v1.0.0 (2026-05-21) — Initial ratification. Derived from `docs/brainstorms/2026-05-21-compiled-context-layer-skill-rae-brainstorm.md` and subsequent grill-with-docs session.
+- v2.0.0 (2026-06-01) — **Principle 1 (Local-First Execution) redefined.** The skill-extraction LLM provider is now user-selectable: Ollama stays the default and a default `docker compose up` still reaches no cloud service, but Claude (Anthropic) extraction is promoted from "documented transport stub / human-vetoable exception" to a **first-class, opt-in** provider (`EXTRACT_SESSION_PROVIDER=claude`). Data-plane locality (Ollama embeddings, Qdrant, PostgreSQL) is unchanged and still mandatory, with no cloud option. Cloud extraction must fail loudly without its credential. **Rationale:** extraction quality benefits materially from a strong cloud LLM when the user chooses it; forcing Ollama-only added no safety (opt-in is explicit and fails loudly) while blocking a wanted capability. This resolves the empty-`constitution_waivers` concern (todo 105) by removing the underlying violation rather than waiving it. **Authorized by:** repository owner (rabak), 2026-06-01.

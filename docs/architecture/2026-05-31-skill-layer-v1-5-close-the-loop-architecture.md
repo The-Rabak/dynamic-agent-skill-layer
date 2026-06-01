@@ -90,7 +90,7 @@ handoff:
 | Live Qdrant online query (Option B) | **Delay to V2** | Adds an inward `retrieval → infrastructure/qdrant` dependency for scale we don't need at local-first sizes (≤5000). The V2 team-scope migration is the right time. |
 | New Redis event for refresh | **Delete (don't add)** | `graph.rebuilt` already exists in the frozen catalog; subscribe to it. |
 | `_retry_policy` param + the second hardcoded `RetryPolicy` in `extract_with_retry` | **Delete one, unify** | Two retry sites for one operation silently override operator config. One policy, one source. |
-| Claude extraction provider as default → `:8080/extract` | **Delete as default** | Points at a non-existent service; every default deployment fails. Make Ollama the default; keep Claude as a documented transport stub. |
+| Claude extraction provider as default → `:8080/extract` | **Delete as default** | Points at a non-existent service; every default deployment fails. Make Ollama the default; Claude becomes a **first-class, opt-in** provider (real Anthropic Messages API) per constitution v2.0.0 — not a stub. |
 | `ScopeRoot` in `graph-builder` public surface | **Delay/relocate** | Move to `domain`/`infrastructure`. Not strictly required for SC-A..F, but cheap and prevents calcifying coupling; defer only if it expands the slice. |
 | Env rollback flags (`MCP_RETRIEVAL_MODE`, `MCP_GRAPH_REFRESH`, `MCP_USAGE_LOGGING`) | **Keep with expiry** | Permissible as deployment-day safety valves ONLY with a removal criterion ("after first green CI on main"). Otherwise they ship two permanent half-paths and re-introduce the empty-graph bug behind a flag. |
 
@@ -123,7 +123,7 @@ handoff:
 - **Seam: online graph source.** Adapter: the `RetrievalSnapshot` loaded by `build_graph_from_pg`. Contract: `SkillRetriever` trait stays the only thing `mcp-server` depends on — a future `QdrantScopedRetriever` (V2) satisfies the same trait with no interface change.
 - **Seam: graph freshness.** Adapter: `mcp-server` Redis `graph.rebuilt` subscriber → `swap_graph`. Contract: graph + version swap atomically; cache (version-keyed) invalidates the one-cycle skew naturally.
 - **Seam: usage persistence.** Adapter: `PostgresUsageWriter`/`PostgresUsageSampleStore` impl the ports. Contract: write is async/off-the-response-path AND its failure is observable (warn log + `health["usage_write"]="failed"`), never silently swallowed.
-- **Seam: extraction provider.** Adapter: `OllamaExtractor` (default, owns prompt) / `ClaudeExtractor` (documented transport stub). Contract: provider switch never changes the candidate output shape (existing `prompt_contract`).
+- **Seam: extraction provider.** Adapter: `OllamaExtractor` (default, owns prompt) / `ClaudeExtractor` (first-class opt-in, real Anthropic Messages API). Contract: provider switch never changes the candidate output shape (existing `prompt_contract`).
 - **Seam: extraction dispatch.** Contract: the dispatch layer (worker pool path AND no-pool path) owns terminal-event emission for all three outcomes; `execute_job` returns an outcome rather than publishing `completed` itself (removes split ownership).
 - **Seam: Qdrant transport.** Adapter: the Qdrant adapter derives REST (`:6333`/host `:16333`) and gRPC (`:6334`/host `:16334`) from one configured base so preflight and operational client never disagree. Contract: `run-e2e-tests.sh` exports the base the adapter expects.
 
