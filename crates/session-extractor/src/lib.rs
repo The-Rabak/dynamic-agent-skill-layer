@@ -1,5 +1,6 @@
 pub mod providers {
     pub mod claude;
+    pub mod claude_code;
     pub mod ollama;
 }
 pub mod transcripts;
@@ -151,8 +152,19 @@ impl ExtractionEventPublisher for NoopExtractionEventPublisher {
     }
 }
 
+/// Selects the extraction provider backend.
+///
+/// The `EXTRACT_SESSION_PROVIDER` env variable controls which variant is chosen:
+/// - unset / blank / `"ollama"` → `Ollama` (local default; constitution v2.0.0)
+/// - `"claude"` → `ClaudeCode` (Claude Code CLI subscription, host-only)
+/// - `"claude-api"` → `Claude` (Anthropic Messages API, requires `ANTHROPIC_API_KEY`)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExtractionProvider {
+    /// Claude Code CLI subscription path (`EXTRACT_SESSION_PROVIDER=claude`).
+    /// Host-only — not suitable for containerised deployments without CLI mount.
+    ClaudeCode,
+    /// Anthropic Messages API path (`EXTRACT_SESSION_PROVIDER=claude-api`).
+    /// Requires `ANTHROPIC_API_KEY`.
     Claude,
     Ollama,
 }
@@ -160,6 +172,7 @@ pub enum ExtractionProvider {
 impl ExtractionProvider {
     fn as_str(self) -> &'static str {
         match self {
+            Self::ClaudeCode => "claude-code",
             Self::Claude => "claude",
             Self::Ollama => "ollama",
         }
@@ -171,10 +184,13 @@ impl std::str::FromStr for ExtractionProvider {
 
     fn from_str(raw: &str) -> Result<Self, Self::Err> {
         // Ollama is the default local provider (constitution v2.0.0): an unset or
-        // blank `EXTRACT_SESSION_PROVIDER` selects Ollama, never the cloud path.
+        // blank `EXTRACT_SESSION_PROVIDER` selects Ollama, never a cloud path.
         match raw.trim().to_ascii_lowercase().as_str() {
             "" | "ollama" => Ok(Self::Ollama),
-            "claude" => Ok(Self::Claude),
+            // "claude" → Claude Code CLI subscription (host-only, no API key).
+            "claude" => Ok(Self::ClaudeCode),
+            // "claude-api" → Anthropic Messages API (requires ANTHROPIC_API_KEY).
+            "claude-api" => Ok(Self::Claude),
             other => Err(SessionExtractorInitError::InvalidProvider(other.to_owned())),
         }
     }
@@ -227,9 +243,13 @@ impl SessionExtractor {
             .unwrap_or_default()
             .parse::<ExtractionProvider>()?;
         let extractor = match provider {
+            // Claude Code CLI subscription path: host-only, no API key.
+            ExtractionProvider::ClaudeCode => providers::claude_code::build_extractor()?,
+            // Anthropic Messages API path: requires ANTHROPIC_API_KEY.
             ExtractionProvider::Claude => {
                 providers::claude::build_extractor(reqwest::Client::new())?
             }
+            // Local default (constitution v2.0.0).
             ExtractionProvider::Ollama => {
                 providers::ollama::build_extractor(reqwest::Client::new())?
             }
@@ -714,8 +734,14 @@ mod tests {
             ExtractionProvider::from_str("ollama").expect("ollama parses"),
             ExtractionProvider::Ollama,
         );
+        // "claude" now routes to the CLI subscription path (ClaudeCode), not the API path.
         assert_eq!(
             ExtractionProvider::from_str("claude").expect("claude parses"),
+            ExtractionProvider::ClaudeCode,
+        );
+        // "claude-api" routes to the Anthropic Messages API path.
+        assert_eq!(
+            ExtractionProvider::from_str("claude-api").expect("claude-api parses"),
             ExtractionProvider::Claude,
         );
         assert!(

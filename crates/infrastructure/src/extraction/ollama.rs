@@ -32,8 +32,9 @@ impl Default for OllamaExtractionConfig {
     fn default() -> Self {
         Self {
             endpoint: "http://127.0.0.1:11434/api/generate".to_owned(),
-            // granite4:3b is the V1.5 target local model (small, CPU-friendly).
-            model: "granite4:3b".to_owned(),
+            // gemma4:e4b is the default local extraction model (Gemma 4, E4B
+            // effective-params variant). Override via OLLAMA_EXTRACTION_MODEL.
+            model: "gemma4:e4b".to_owned(),
             // 120s inner timeout for CPU inference. NOTE: this is an UNMEASURED
             // placeholder — single-job p50/p95 on the target host has not been
             // measured in this environment. The operator must confirm/adjust
@@ -200,11 +201,11 @@ mod tests {
     use domain::{DomainId, TranscriptEntry};
 
     #[test]
-    fn default_config_targets_granite_with_cpu_inference_timeout() {
+    fn default_config_targets_gemma_with_cpu_inference_timeout() {
         let config = OllamaExtractionConfig::default();
         assert_eq!(
-            config.model, "granite4:3b",
-            "default Ollama model must be granite4:3b"
+            config.model, "gemma4:e4b",
+            "default Ollama model must be gemma4:e4b"
         );
         assert!(
             config.timeout_ms >= 60_000,

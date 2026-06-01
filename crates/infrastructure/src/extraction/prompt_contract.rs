@@ -169,14 +169,20 @@ fn escape_transcript_delimiters(content: &str) -> String {
     content.replace("</transcript>", "<\\/transcript>")
 }
 
-/// Builds the extraction prompt for OllamaExtractor.
+/// Builds the text-in/JSON-out extraction prompt shared by `OllamaExtractor` and
+/// `ClaudeCodeExtractor`.
+///
+/// Both providers use the same text→JSON strategy: the full extraction prompt
+/// (instructions + schema + transcript) is fed in as plain text, and the model
+/// is expected to return a JSON object matching `{ "candidates": [...] }`. This
+/// contrasts with `ClaudeExtractor` (API path), which uses a forced `tool_use`
+/// for schema conformance.
 ///
 /// This prompt conforms to the canonical extraction contract. It instructs the
-/// local LLM to extract structured skill candidates from a session transcript,
+/// LLM to extract structured skill candidates from a session transcript,
 /// applying quality criteria and avoiding known anti-patterns.
 ///
-/// The Claude extraction endpoint owns its own prompting; this function is only
-/// used by OllamaExtractor. See `mod.rs` for the full prompt strategy rationale.
+/// See `mod.rs` for the full prompt strategy rationale.
 pub fn build_ollama_extraction_prompt(transcript_lines: &str) -> String {
     let contract = canonical_extraction_contract();
     let targets = contract

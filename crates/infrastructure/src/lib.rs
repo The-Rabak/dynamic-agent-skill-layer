@@ -25,6 +25,7 @@ pub mod vector {
 
 pub use embeddings::ollama::{OllamaEmbeddingConfig, OllamaEmbeddingService};
 pub use extraction::claude::{ClaudeExtractionConfig, ClaudeExtractor};
+pub use extraction::claude_code::{ClaudeCodeExtractionConfig, ClaudeCodeExtractor};
 pub use extraction::ollama::{OllamaExtractionConfig, OllamaExtractor};
 pub use health::{DependencyFactory, HealthComponent, HealthReport, InfrastructureHealthChecker};
 pub use persistence::outbox::{

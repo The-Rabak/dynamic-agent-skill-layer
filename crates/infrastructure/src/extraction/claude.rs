@@ -28,7 +28,7 @@ use crate::extraction::{
 /// Default Anthropic API base URL. Overridable via `ANTHROPIC_BASE_URL`.
 const DEFAULT_ANTHROPIC_BASE_URL: &str = "https://api.anthropic.com";
 /// Default extraction model. Overridable via `EXTRACT_SESSION_MODEL`.
-const DEFAULT_CLAUDE_MODEL: &str = "claude-haiku-4-5";
+const DEFAULT_CLAUDE_MODEL: &str = "claude-sonnet-4-6";
 /// Anthropic API version header value (the API is version-pinned).
 const ANTHROPIC_VERSION: &str = "2023-06-01";
 /// Maximum response tokens for one extraction call.
@@ -313,7 +313,7 @@ mod tests {
     fn default_config_targets_anthropic_api() {
         let config = ClaudeExtractionConfig::default();
         assert_eq!(config.base_url, "https://api.anthropic.com");
-        assert_eq!(config.model, "claude-haiku-4-5");
+        assert_eq!(config.model, "claude-sonnet-4-6");
         assert!(
             !config.base_url.contains("8080"),
             "the :8080 graph-builder admin endpoint must be gone"

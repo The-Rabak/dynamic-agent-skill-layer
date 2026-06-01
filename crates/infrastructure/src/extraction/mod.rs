@@ -1,4 +1,5 @@
 pub mod claude;
+pub mod claude_code;
 pub(crate) mod http;
 pub(crate) mod limits;
 pub mod ollama;
@@ -17,7 +18,8 @@ pub mod prompt_contract;
 //
 // | Provider | Prompt Ownership | Transport | Prompt Content |
 // |----------|-----------------|-----------|----------------|
-// | Claude   | `ClaudeExtractor` (this crate) | HTTPS POST to the Anthropic Messages API (`{ANTHROPIC_BASE_URL}/v1/messages`) with a forced `emit_candidates` `tool_use` | Static instruction block as the cacheable `system` prompt (`cache_control: ephemeral`) + transcript as the user message; tool `input_schema` is the candidate schema. Keyed by `ANTHROPIC_API_KEY`. |
+// | Claude (API) | `ClaudeExtractor` (this crate) | HTTPS POST to the Anthropic Messages API (`{ANTHROPIC_BASE_URL}/v1/messages`) with a forced `emit_candidates` `tool_use` | Static instruction block as the cacheable `system` prompt (`cache_control: ephemeral`) + transcript as the user message; tool `input_schema` is the candidate schema. Keyed by `ANTHROPIC_API_KEY`. Selected by `EXTRACT_SESSION_PROVIDER=claude-api`. |
+// | Claude Code (CLI) | `ClaudeCodeExtractor` (this crate) | Local `claude -p --output-format json` subprocess; prompt fed via stdin | Full text→JSON prompt from `build_ollama_extraction_prompt` (same as Ollama). Subscription-based; no API key. **Host-only** (CLI must be on the host). Selected by `EXTRACT_SESSION_PROVIDER=claude`. |
 // | Ollama   | `OllamaExtractor` (this crate) | HTTP POST to Ollama `/api/generate` with `{model, stream: false, format: "json", prompt}` | A full natural-language prompt instructing the local model to produce structured JSON matching `ExtractedSkillCandidate`. |
 //
 // ### Provider Symmetry

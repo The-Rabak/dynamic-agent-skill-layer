@@ -198,25 +198,48 @@ The `trigger` field is optional. Omit it (or pass `null`) for all calls except p
 #### Extraction provider selection
 
 Extraction is provider-selectable (constitution v2.0.0). **Ollama is the default
-local path and needs no cloud key.** Claude is a first-class opt-in that calls the
-Anthropic Messages API directly with a forced `tool_use` for schema-conformant
-candidates.
+local path and needs no cloud key.** Two Claude paths are available: a
+subscription-based CLI path and an API-key path.
+
+| `EXTRACT_SESSION_PROVIDER` value | Provider | Auth requirement |
+|----------------------------------|----------|-----------------|
+| unset / blank / `ollama` | Ollama (local default) | None |
+| `claude` | Claude Code CLI (`ClaudeCodeExtractor`) — subscription-based | Claude Code subscription on host; **no API key** |
+| `claude-api` | Anthropic Messages API (`ClaudeExtractor`) — direct API call | `ANTHROPIC_API_KEY` |
+
+**Host-only constraint for `claude` (CLI path):** The `claude` CLI authenticates via
+the user's Claude Code subscription on the host machine. This path is NOT suitable
+for Docker/container deployments where the host CLI binary is not mounted into the
+container. The compose default remains `ollama`. For containerised deployments use
+`claude-api` (API key) or leave unset for Ollama.
 
 | Variable | Purpose | Default |
 |----------|---------|---------|
-| `EXTRACT_SESSION_PROVIDER` | Extraction provider: `ollama` or `claude`. Unset or blank ⇒ `ollama`. Unknown ⇒ loud startup error. | `ollama` |
-| `EXTRACT_SESSION_MODEL` | Model id for the Claude provider | `claude-haiku-4-5` |
-| `ANTHROPIC_API_KEY` | Anthropic API key. **Required** when `EXTRACT_SESSION_PROVIDER=claude` — a missing key fails loudly at startup (no silent fallback). Read from the environment, never committed. | _(unset)_ |
+| `EXTRACT_SESSION_PROVIDER` | Extraction provider: `ollama`, `claude` (CLI), or `claude-api` (API key). Unset or blank ⇒ `ollama`. Unknown ⇒ loud startup error. | `ollama` |
+| `EXTRACT_SESSION_MODEL` | Model id for Claude CLI and API providers | `claude-sonnet-4-6` |
+| `CLAUDE_CLI_PATH` | Path to the `claude` CLI binary (CLI path only) | `claude` (from `$PATH`) |
+| `CLAUDE_CODE_EXTRACTION_TIMEOUT_MS` | Inner per-call timeout for the CLI path | `120000` |
+| `ANTHROPIC_API_KEY` | Anthropic API key. **Required** when `EXTRACT_SESSION_PROVIDER=claude-api` — a missing key fails loudly at startup (no silent fallback). Read from the environment, never committed. | _(unset)_ |
 | `ANTHROPIC_BASE_URL` | Anthropic API base URL (no `/v1/messages` suffix) | `https://api.anthropic.com` |
-| `OLLAMA_EXTRACTION_MODEL` | Local extraction model for the Ollama provider | `granite4:3b` |
+| `CLAUDE_EXTRACTION_TIMEOUT_MS` | Inner per-call timeout for the API path | `30000` |
+| `OLLAMA_EXTRACTION_MODEL` | Local extraction model for the Ollama provider | `gemma4:e4b` |
 | `OLLAMA_EXTRACTION_TIMEOUT_MS` | Inner per-call timeout for Ollama CPU inference. The default (`120000`) is an **unmeasured placeholder** — confirm single-job p50/p95 against the target host. The worker-pool (outer) timeout stays ≥ 1.5× this value. | `120000` |
 
-**Opt into Claude:**
+**Opt into Claude CLI (subscription, host-only):**
 
 ```bash
 EXTRACT_SESSION_PROVIDER=claude
-ANTHROPIC_API_KEY=sk-ant-...          # required; never commit
-EXTRACT_SESSION_MODEL=claude-haiku-4-5 # optional override
+# No API key needed — uses your Claude Code subscription via the local CLI.
+EXTRACT_SESSION_MODEL=claude-sonnet-4-6  # optional override
+CLAUDE_CLI_PATH=/home/user/.local/bin/claude  # optional: explicit path to claude binary
+```
+
+**Opt into Claude API (API key, containerised-compatible):**
+
+```bash
+EXTRACT_SESSION_PROVIDER=claude-api
+ANTHROPIC_API_KEY=sk-ant-...           # required; never commit
+EXTRACT_SESSION_MODEL=claude-sonnet-4-6  # optional override
 ANTHROPIC_BASE_URL=https://api.anthropic.com  # optional override
 ```
 

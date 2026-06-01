@@ -5,9 +5,13 @@ use infrastructure::{ClaudeExtractionConfig, ClaudeExtractor};
 
 /// Builds the Claude-backed extraction adapter (direct Anthropic Messages API).
 ///
+/// Selected via `EXTRACT_SESSION_PROVIDER=claude-api`. Requires `ANTHROPIC_API_KEY`.
+/// For subscription-based extraction without an API key, use
+/// `EXTRACT_SESSION_PROVIDER=claude` (the `claude_code` provider).
+///
 /// Reads opt-in provider configuration from the environment:
 /// - `ANTHROPIC_API_KEY` (required — missing key fails loudly at construct time)
-/// - `EXTRACT_SESSION_MODEL` (default `claude-haiku-4-5`)
+/// - `EXTRACT_SESSION_MODEL` (default `claude-sonnet-4-6`)
 /// - `ANTHROPIC_BASE_URL` (default `https://api.anthropic.com`)
 /// - `CLAUDE_EXTRACTION_TIMEOUT_MS` (optional inner timeout override)
 ///
