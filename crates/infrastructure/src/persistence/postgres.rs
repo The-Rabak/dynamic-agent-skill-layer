@@ -94,6 +94,7 @@ impl PostgresAdapter {
     }
 
     /// Truncates all application tables. Intended for test teardown only.
+    #[cfg(any(test, feature = "test-utils"))]
     pub async fn truncate_all_tables(&self) -> Result<(), PostgresError> {
         sqlx::query(
             "TRUNCATE TABLE community_skills, skill_subunits, communities, subunits, skills, outbox_events, rebuild_locks CASCADE"

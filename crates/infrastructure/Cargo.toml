@@ -21,5 +21,8 @@ tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.20", features = ["env-filter", "fmt", "json"] }
 uuid = { version = "1.18.1", features = ["serde", "v7"] }
 
+[features]
+test-utils = []
+
 [dev-dependencies]
 tokio = { version = "1.48.0", features = ["macros", "rt-multi-thread"] }

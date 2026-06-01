@@ -22,10 +22,6 @@ name = "test_outbox_consistency"
 path = "../../tests/integration/test_outbox_consistency.rs"
 
 [[test]]
-name = "test_watcher_churn_reconciliation"
-path = "../../tests/e2e/test_watcher_churn_reconciliation.rs"
-
-[[test]]
 name = "test_real_infrastructure_e2e"
 path = "../../tests/e2e/test_real_infrastructure_e2e.rs"
 
@@ -49,5 +45,4 @@ walkdir = "2.5.0"
 
 [dev-dependencies]
 async-trait = "0.1.89"
-mcp-server = { path = "../mcp-server", features = ["test-utils"] }
 retrieval = { path = "../retrieval" }

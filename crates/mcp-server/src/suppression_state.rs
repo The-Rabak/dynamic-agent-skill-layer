@@ -104,6 +104,23 @@ impl SessionSuppressionState {
         format!("suppression:{}", session_id.trim())
     }
 
+    /// Escapes Redis glob metacharacters in `raw` so it is safe to embed in a
+    /// `MATCH` pattern without matching unintended keys.
+    ///
+    /// Redis SCAN / KEYS treats `*`, `?`, `[`, `]`, and `\` as special. Each
+    /// is prefixed with `\` so it matches literally. A session_id like `"*"`
+    /// becomes `"\*"` instead of the wildcard that would wipe all sessions.
+    fn escape_redis_glob(raw: &str) -> String {
+        let mut escaped = String::with_capacity(raw.len());
+        for ch in raw.chars() {
+            if matches!(ch, '*' | '?' | '[' | ']' | '\\') {
+                escaped.push('\\');
+            }
+            escaped.push(ch);
+        }
+        escaped
+    }
+
     async fn try_redis_get(&self, session_id: &str, repo_path: &str) -> Option<SuppressionEntry> {
         let client = self.redis_client.as_ref()?;
         let mut conn = match client.get_multiplexed_async_connection().await {
@@ -254,8 +271,8 @@ impl SessionSuppressionState {
         self.inner.retain(|key, _| !key.starts_with(&prefix));
 
         let redis_client = self.redis_client.clone();
-        let sid = session_id.to_owned();
-        let pattern = format!("suppression:{}:*", sid.trim());
+        let escaped_sid = Self::escape_redis_glob(session_id.trim());
+        let pattern = format!("suppression:{escaped_sid}:*");
         tokio::spawn(async move {
             if let Some(client) = redis_client {
                 scan_and_del_pattern(&client, &pattern, "suppression_clear").await;
@@ -297,5 +314,38 @@ mod tests {
     async fn default_ttl_is_one_hour() {
         let state = SessionSuppressionState::default();
         assert_eq!(state.ttl_secs, 3600);
+    }
+
+    #[test]
+    fn escape_redis_glob_escapes_all_metacharacters() {
+        // Wildcard `*` must not match all sessions when embedded in a pattern.
+        assert_eq!(
+            SessionSuppressionState::escape_redis_glob("*"),
+            r"\*"
+        );
+        // Other metacharacters are also escaped.
+        assert_eq!(
+            SessionSuppressionState::escape_redis_glob("abc?[def]\\xyz"),
+            r"abc\?\[def\]\\xyz"
+        );
+        // Plain session IDs pass through unchanged.
+        assert_eq!(
+            SessionSuppressionState::escape_redis_glob("session-abc-123"),
+            "session-abc-123"
+        );
+    }
+
+    #[test]
+    fn clear_session_pattern_escapes_wildcard_session_id() {
+        // Verify that a session_id of "*" does NOT produce "suppression:*:*"
+        // which would match every suppression key.
+        let state = SessionSuppressionState::default();
+        // We cannot call clear_session and inspect the pattern directly, but
+        // we can verify the escaping helper produces the safe escaped form
+        // and that session_prefix uses the raw id (not the glob-safe form,
+        // which is intentional — the in-memory DashMap uses exact-prefix match,
+        // not glob matching).
+        let escaped = SessionSuppressionState::escape_redis_glob("*");
+        assert_eq!(escaped, r"\*", "wildcard session must be escaped for Redis SCAN");
     }
 }

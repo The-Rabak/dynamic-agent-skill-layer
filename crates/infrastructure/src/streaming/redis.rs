@@ -270,6 +270,7 @@ impl RedisStreamsAdapter {
 
     /// Deletes the configured stream key from Redis.
     /// Intended for test teardown only.
+    #[cfg(any(test, feature = "test-utils"))]
     pub async fn delete_stream(&self) -> Result<(), RedisStreamError> {
         let mut conn = self.connection().await?;
         redis::cmd("DEL")

@@ -793,7 +793,6 @@ dependencies = [
  "chrono",
  "domain",
  "infrastructure",
- "mcp-server",
  "notify",
  "notify-debouncer-full",
  "reqwest",
@@ -1377,7 +1376,6 @@ dependencies = [
  "domain",
  "graph-builder",
  "infrastructure",
- "redis",
  "reqwest",
  "retrieval",
  "serde",
@@ -1388,6 +1386,7 @@ dependencies = [
  "tokio",
  "tracing",
  "uuid",
+ "walkdir",
 ]
 
 [[package]]

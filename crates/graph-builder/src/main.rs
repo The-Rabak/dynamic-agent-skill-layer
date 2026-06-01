@@ -1,8 +1,8 @@
 use std::{path::PathBuf, sync::Arc, time::Duration};
 
-use domain::ScopeType;
+use domain::{ScopeRoot, ScopeType};
 use graph_builder::{
-    GraphRebuildOrchestrator, PostgresDurableGraphState, ScopeRoot, SkillFileChange, SkillWatcher,
+    GraphRebuildOrchestrator, PostgresDurableGraphState, SkillFileChange, SkillWatcher,
     WatcherRecovery,
 };
 use infrastructure::{
@@ -66,15 +66,16 @@ fn build_redis_streams_adapter() -> Result<RedisStreamsAdapter, RedisStreamError
 
 /// Drains the in-memory published-events buffer to Redis via `XADD`.
 ///
-/// Each envelope is removed only after a successful publish, so a transient
-/// Redis failure leaves the unpublished envelope in the buffer to retry on the
-/// next cycle instead of silently dropping a `graph.rebuilt`. Failures are
-/// logged and surfaced (never panic) — the rebuild loop keeps running.
+/// Publishes envelopes in order. On the first failure, the successfully
+/// published prefix is drained in one shot (`drain(..published_count)`) and
+/// the failed envelope is left at the front so the next cycle retries it.
+/// Failures are logged but never panic — the rebuild loop keeps running.
 async fn drain_published_events(
     redis_streams: &RedisStreamsAdapter,
     published_events: &mut Vec<EventEnvelope>,
 ) {
-    while let Some(envelope) = published_events.first() {
+    let mut published_count = 0;
+    for envelope in published_events.iter() {
         match redis_streams.publish(envelope).await {
             Ok(stream_id) => {
                 tracing::info!(
@@ -83,7 +84,7 @@ async fn drain_published_events(
                     %stream_id,
                     "published graph event to redis stream"
                 );
-                published_events.remove(0);
+                published_count += 1;
             }
             Err(error) => {
                 tracing::error!(
@@ -95,6 +96,8 @@ async fn drain_published_events(
             }
         }
     }
+    // Remove the successfully published prefix in one allocation-free drain.
+    published_events.drain(..published_count);
 }
 
 #[derive(Debug, Clone, Default)]

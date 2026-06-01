@@ -7,6 +7,14 @@ use domain::{DomainId, SessionTranscript, TranscriptEntry};
 use serde_json::Value;
 use thiserror::Error;
 
+/// Maximum allowed size for an inline transcript payload.
+///
+/// Enforced in [`TranscriptLoader::load`] before any parsing occurs, so
+/// callers that pass gigantic strings fail fast instead of consuming unbounded
+/// memory. The ingest path can reference this constant to apply the same limit
+/// at validation time.
+pub const MAX_INLINE_BYTES: usize = 10 * 1024 * 1024;
+
 /// Validates transcript references and parses Claude-compatible JSONL payloads.
 #[derive(Clone)]
 pub struct TranscriptLoader {
@@ -97,6 +105,11 @@ impl TranscriptLoader {
         transcript_inline: Option<&str>,
     ) -> Result<SessionTranscript, TranscriptError> {
         let transcript_payload = if let Some(inline_payload) = transcript_inline {
+            if inline_payload.len() > MAX_INLINE_BYTES {
+                return Err(TranscriptError::InvalidReference(format!(
+                    "transcript_inline exceeds {MAX_INLINE_BYTES} bytes"
+                )));
+            }
             inline_payload.to_owned()
         } else {
             let path = self.validate_ref(transcript_ref)?;
@@ -272,6 +285,28 @@ mod tests {
         TranscriptRootEnvGuard {
             _lock: lock,
             _transcript_root: EnvVarGuard::remove("CLAUDE_TRANSCRIPT_ROOT"),
+        }
+    }
+
+    #[test]
+    fn load_rejects_inline_payload_exceeding_max_bytes() {
+        let dir = std::env::temp_dir();
+        let loader = TranscriptLoader::new(dir).expect("temp dir should be valid");
+
+        // Build a string that is one byte over the limit.
+        let oversized = "x".repeat(super::MAX_INLINE_BYTES + 1);
+        let error = loader
+            .load("00000000-0000-0000-0000-000000000000", "", Some(&oversized))
+            .expect_err("oversize inline should be rejected");
+
+        match error {
+            TranscriptError::InvalidReference(msg) => {
+                assert!(
+                    msg.contains("transcript_inline exceeds"),
+                    "error message should name the limit, got: {msg}"
+                );
+            }
+            other => panic!("expected InvalidReference, got {other:?}"),
         }
     }
 
