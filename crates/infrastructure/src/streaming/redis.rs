@@ -64,6 +64,18 @@ impl From<EventEnvelope> for OutboxEvent {
     }
 }
 
+/// Canonical Redis stream key for the shared `skill-layer` event bus.
+///
+/// The publisher (graph-builder) and the subscriber (mcp-server) MUST agree on
+/// this value or events silently never arrive. It is defined once here and flows
+/// to both sides via [`RedisStreamsConfig::default`] — do not hardcode it elsewhere.
+pub const SKILL_LAYER_STREAM_KEY: &str = "skill-layer-events";
+
+/// Canonical Redis consumer-group name for the shared `skill-layer` event bus.
+/// Single source of truth shared by publisher and subscriber (see
+/// [`SKILL_LAYER_STREAM_KEY`]).
+pub const SKILL_LAYER_CONSUMER_GROUP: &str = "skill-layer";
+
 #[derive(Debug, Clone)]
 pub struct RedisStreamsConfig {
     pub redis_url: String,
@@ -78,8 +90,8 @@ impl Default for RedisStreamsConfig {
     fn default() -> Self {
         Self {
             redis_url: "redis://127.0.0.1/".to_owned(),
-            stream_key: "skill-layer-events".to_owned(),
-            consumer_group: "skill-layer".to_owned(),
+            stream_key: SKILL_LAYER_STREAM_KEY.to_owned(),
+            consumer_group: SKILL_LAYER_CONSUMER_GROUP.to_owned(),
             consumer_name: "worker-1".to_owned(),
             idempotency_ttl_secs: 86_400,
             max_stream_len: 100_000,

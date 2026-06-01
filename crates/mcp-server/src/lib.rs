@@ -357,13 +357,13 @@ fn build_embedding_service()
 
 async fn build_redis_streams_adapter()
 -> Result<Arc<RedisStreamsAdapter>, Box<dyn std::error::Error + Send + Sync>> {
+    // Stream key / consumer group / tuning come from the single canonical source
+    // (`RedisStreamsConfig::default`, which uses `SKILL_LAYER_STREAM_KEY` /
+    // `SKILL_LAYER_CONSUMER_GROUP`). Only the URL is environment-driven here — this
+    // guarantees the subscriber can never drift from the publisher's stream/group.
     let redis_config = RedisStreamsConfig {
         redis_url: env_var("REDIS_URL")?,
-        stream_key: "skill-layer-events".to_owned(),
-        consumer_group: "skill-layer".to_owned(),
-        consumer_name: "worker-1".to_owned(),
-        idempotency_ttl_secs: 86_400,
-        max_stream_len: 100_000,
+        ..RedisStreamsConfig::default()
     };
     let redis_streams = RedisStreamsAdapter::new(redis_config)?;
     redis_streams.ensure_consumer_group().await?;

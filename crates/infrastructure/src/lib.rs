@@ -46,6 +46,7 @@ pub use resilience::{
 pub use scope::{EnvPathGlobalResolver, GitRootProjectResolver};
 pub use streaming::redis::{
     EventEnvelope, RedisStreamError, RedisStreamsAdapter, RedisStreamsConfig, StreamMessage,
+    SKILL_LAYER_CONSUMER_GROUP, SKILL_LAYER_STREAM_KEY,
 };
 pub use vector::qdrant::{QdrantAdapter, QdrantConfig, QdrantError};
 
