@@ -3,16 +3,19 @@ use std::{future::Future, net::SocketAddr, pin::Pin, sync::LazyLock};
 use axum::{
     Json, Router,
     extract::State,
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::IntoResponse,
     routing::{get, post},
 };
-use infrastructure::InfrastructureHealthChecker;
+use infrastructure::{EnqueueOutcome, InfrastructureHealthChecker, TranscriptQueueError};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
 
 use crate::tools::{extract_session::ExtractSessionRequest, find_skill::FindSkillRequest};
-use crate::{McpServerApp, tools::compile_context::CompileContextRequest};
+use crate::{
+    McpServerApp, TranscriptIngestHttpRequest, TranscriptIngestOutcome,
+    tools::compile_context::CompileContextRequest,
+};
 use admin::tools::{
     InspectSkillRequest, ListCommunitiesRequest, RebuildGraphRequest, RebuildGraphStatusRequest,
 };
@@ -406,10 +409,112 @@ async fn mcp_handler(
     Json(state.app.handle_json_rpc(request).await)
 }
 
+/// HTTP header carrying the transcript-ingest shared secret (todo 103 / 099).
+const INGEST_SECRET_HEADER: &str = "x-ingest-secret";
+
+/// Env var holding the transcript-ingest shared secret.
+///
+/// When set, `/ingest/transcript` requires a matching `X-Ingest-Secret` header.
+/// When unset, the endpoint relies solely on the localhost port binding
+/// (constitution §Deferred-risk guard) and logs a warning at first use — the
+/// surface is still loopback-only, but the secret is the defense-in-depth layer
+/// coordinated with todo 099.
+const INGEST_SECRET_ENV: &str = "TRANSCRIPT_INGEST_SECRET";
+
 #[derive(Clone)]
 struct HttpAppState {
     app: McpServerApp,
     health_checker: InfrastructureHealthChecker,
+    ingest_secret: Option<String>,
+}
+
+/// Verifies the shared secret for a transcript-ingest request.
+///
+/// Returns `Ok(())` when no secret is configured (loopback-only guard) or when
+/// the supplied header matches; otherwise an explicit `401`.
+fn check_ingest_secret(
+    configured: Option<&str>,
+    headers: &HeaderMap,
+) -> Result<(), (StatusCode, Json<Value>)> {
+    let Some(expected) = configured else {
+        tracing::warn!(
+            "transcript ingest received without {INGEST_SECRET_ENV} configured; \
+             relying on localhost binding only"
+        );
+        return Ok(());
+    };
+
+    let provided = headers
+        .get(INGEST_SECRET_HEADER)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default();
+
+    // Length-then-bytes compare keeps the check simple; the endpoint is
+    // loopback-only so this is defense-in-depth, not the primary boundary.
+    if provided.as_bytes() == expected.as_bytes() {
+        Ok(())
+    } else {
+        Err((
+            StatusCode::UNAUTHORIZED,
+            Json(json!({ "status": "unauthorized", "reason_code": "ingest_secret_mismatch" })),
+        ))
+    }
+}
+
+async fn ingest_transcript_handler(
+    State(state): State<HttpAppState>,
+    headers: HeaderMap,
+    Json(request): Json<TranscriptIngestHttpRequest>,
+) -> impl IntoResponse {
+    if let Err(rejection) = check_ingest_secret(state.ingest_secret.as_deref(), &headers) {
+        return rejection;
+    }
+
+    match state.app.ingest_transcript(request).await {
+        TranscriptIngestOutcome::Accepted(EnqueueOutcome::Enqueued { id, content_hash }) => (
+            StatusCode::ACCEPTED,
+            Json(json!({
+                "status": "enqueued",
+                "id": id.to_string(),
+                "content_hash": content_hash,
+            })),
+        ),
+        TranscriptIngestOutcome::Accepted(EnqueueOutcome::Duplicate { content_hash }) => (
+            StatusCode::OK,
+            Json(json!({
+                "status": "duplicate",
+                "content_hash": content_hash,
+            })),
+        ),
+        TranscriptIngestOutcome::InvalidContract(error) => {
+            let status = match error {
+                TranscriptQueueError::ContentTooLarge { .. } => StatusCode::PAYLOAD_TOO_LARGE,
+                _ => StatusCode::BAD_REQUEST,
+            };
+            (
+                status,
+                Json(json!({
+                    "status": "rejected",
+                    "reason_code": error.reason_code(),
+                    "detail": error.to_string(),
+                })),
+            )
+        }
+        TranscriptIngestOutcome::PersistenceError(error) => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({
+                "status": "error",
+                "reason_code": error.reason_code(),
+            })),
+        ),
+        TranscriptIngestOutcome::Unavailable => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({
+                "status": "unavailable",
+                "reason_code": "transcript_ingest_not_configured",
+            })),
+        ),
+    }
 }
 
 async fn health_handler(State(state): State<HttpAppState>) -> impl IntoResponse {
@@ -424,12 +529,19 @@ async fn health_handler(State(state): State<HttpAppState>) -> impl IntoResponse 
 }
 
 pub fn router(app: McpServerApp, health_checker: InfrastructureHealthChecker) -> Router {
+    let ingest_secret = std::env::var(INGEST_SECRET_ENV)
+        .ok()
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty());
+
     Router::new()
         .route("/mcp", post(mcp_handler))
         .route("/health", get(health_handler))
+        .route("/ingest/transcript", post(ingest_transcript_handler))
         .with_state(HttpAppState {
             app,
             health_checker,
+            ingest_secret,
         })
 }
 

@@ -26,7 +26,7 @@ use infrastructure::{
     EnvPathGlobalResolver, GitRootProjectResolver, OllamaEmbeddingConfig, OllamaEmbeddingService,
     PostgresAdapter, PostgresConfig, PostgresGraphSnapshotStore, PostgresGraphWriteCoordinator,
     PostgresPool, PostgresRebuildCoordinator, QdrantAdapter, QdrantConfig, RedisClient,
-    RedisStreamsAdapter, RedisStreamsConfig,
+    RedisStreamsAdapter, RedisStreamsConfig, TranscriptIngestQueue,
 };
 use retrieval::{
     DualScopeResolver, RetrievalConfig, RetrievalOrchestrator, RetrievalSnapshot, SkillRetriever,
@@ -49,6 +49,10 @@ pub struct McpServerApp {
     admin_tools: AdminTools,
     session_state: SessionSuppressionState,
     cache: CompiledContextCache,
+    /// Durable transcript-ingest queue backing the localhost `/ingest/transcript`
+    /// endpoint (todo 103). `None` for in-memory/test constructors that have no
+    /// Postgres pool; wired in [`build_live_server`] from the live PG adapter.
+    transcript_ingest: Option<TranscriptIngestQueue>,
 }
 
 impl McpServerApp {
@@ -88,7 +92,16 @@ impl McpServerApp {
             admin_tools,
             session_state: state,
             cache,
+            transcript_ingest: None,
         }
+    }
+
+    /// Attaches the durable transcript-ingest queue used by the localhost
+    /// `/ingest/transcript` endpoint. Builder-style so test/in-memory
+    /// constructors stay free of a Postgres dependency.
+    pub fn with_transcript_ingest(mut self, queue: TranscriptIngestQueue) -> Self {
+        self.transcript_ingest = Some(queue);
+        self
     }
 
     /// Builds a server from an explicit in-memory [`RetrievalSnapshot`].
@@ -170,6 +183,47 @@ impl McpServerApp {
         response
     }
 
+    /// Ingests transcript content into the durable queue (todo 103).
+    ///
+    /// Called by the localhost `/ingest/transcript` HTTP handler after the
+    /// shared-secret check. Returns [`TranscriptIngestOutcome`] describing
+    /// whether a new row was written, the payload was a duplicate, the queue is
+    /// not configured, or the contract was violated (empty/oversize/bad source).
+    pub async fn ingest_transcript(
+        &self,
+        request: TranscriptIngestHttpRequest,
+    ) -> TranscriptIngestOutcome {
+        let Some(queue) = self.transcript_ingest.as_ref() else {
+            return TranscriptIngestOutcome::Unavailable;
+        };
+
+        let source = match infrastructure::TranscriptSource::parse(&request.source) {
+            Ok(source) => source,
+            Err(error) => return TranscriptIngestOutcome::InvalidContract(error),
+        };
+
+        let ingest_request = infrastructure::TranscriptIngestRequest {
+            session_id: request.session_id,
+            repo_path: request.repo_path,
+            source,
+            content: request.content,
+        };
+
+        match queue.enqueue(&ingest_request).await {
+            Ok(outcome) => TranscriptIngestOutcome::Accepted(outcome),
+            Err(error) => match error {
+                infrastructure::TranscriptQueueError::EmptyContent
+                | infrastructure::TranscriptQueueError::ContentTooLarge { .. }
+                | infrastructure::TranscriptQueueError::InvalidContract(_) => {
+                    TranscriptIngestOutcome::InvalidContract(error)
+                }
+                infrastructure::TranscriptQueueError::Persistence(_) => {
+                    TranscriptIngestOutcome::PersistenceError(error)
+                }
+            },
+        }
+    }
+
     pub async fn rebuild_graph(&self, request: RebuildGraphRequest) -> RebuildGraphResponse {
         self.admin_tools.rebuild_graph(request).await
     }
@@ -194,6 +248,33 @@ impl McpServerApp {
     ) -> ListCommunitiesResponse {
         self.admin_tools.list_communities(request).await
     }
+}
+
+/// HTTP-facing transcript-ingest request (todo 103).
+///
+/// Shipped by the host `command` capture hooks (`SessionEnd` / `PreCompact`):
+/// they read the transcript file where its path is natively valid and POST its
+/// content here, so the server never sees a host path it cannot resolve.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct TranscriptIngestHttpRequest {
+    pub session_id: String,
+    #[serde(default)]
+    pub repo_path: Option<String>,
+    pub source: String,
+    pub content: String,
+}
+
+/// Result of an ingest attempt, mapped to HTTP status by the protocol layer.
+#[derive(Debug)]
+pub enum TranscriptIngestOutcome {
+    /// Row written or deduped.
+    Accepted(infrastructure::EnqueueOutcome),
+    /// Contract violation (empty/oversize content, unknown source). -> 4xx.
+    InvalidContract(infrastructure::TranscriptQueueError),
+    /// Database failure. -> 503.
+    PersistenceError(infrastructure::TranscriptQueueError),
+    /// Queue not configured on this server instance. -> 503.
+    Unavailable,
 }
 
 /// LiveServerComponents bundles the fully-wired live server graph.
@@ -291,7 +372,10 @@ async fn build_live_server(
         admin_runtime_dependencies.rebuild_trigger,
         admin_runtime_dependencies.graph_reader,
         Some(redis_client),
-    );
+    )
+    // Back the localhost `/ingest/transcript` endpoint with the live PG pool so
+    // host capture hooks can push transcript content into the durable queue.
+    .with_transcript_ingest(TranscriptIngestQueue::new(pg_adapter.pool().clone()));
 
     // Online refresh-without-restart (T02): subscribe to `graph.rebuilt`
     // and atomically swap the in-memory read model. Spawned on its own

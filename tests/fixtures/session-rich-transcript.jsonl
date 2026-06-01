@@ -1,0 +1,6 @@
+{"type":"message","message":{"role":"user","content":"I keep repeating the same Rust file I/O setup in every new repo and it wastes time. Can we make it reusable?"}}
+{"type":"message","message":{"role":"assistant","content":"Let's capture a reusable skill. Always wrap std::fs reads in a helper that returns Result<String, io::Error>, and never use unwrap() in library code."}}
+{"type":"message","message":{"role":"user","content":"Right, and we should create the parent directory before writing a file."}}
+{"type":"message","message":{"role":"assistant","content":"Yes. The procedure is: 1) call fs::create_dir_all(parent) before fs::write; 2) propagate errors with the ? operator; 3) add a unit test that writes to a tempdir and asserts the bytes round-trip. Convention: name IO helpers read_to_string_safe and write_atomic."}}
+{"type":"message","message":{"role":"user","content":"And when a write fails midway through?"}}
+{"type":"message","message":{"role":"assistant","content":"Write to a .tmp sibling file then fs::rename onto the target so partial writes never corrupt the file. Failure mode: if rename fails, clean up the .tmp file. Never run rm -rf on the repo root to clean up."}}

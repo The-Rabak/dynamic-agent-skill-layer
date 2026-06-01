@@ -41,6 +41,16 @@
           "retry_on": [],
           "ignore_on": ["no_match", "duplicate_suppressed", "degraded"]
         }
+      },
+      {
+        "type": "command",
+        "command": "config/claude-code/capture-transcript.sh",
+        "args": ["pre_compact"],
+        "description": "Capture the full pre-summarization transcript into the durable ingest queue (todo 103). Reads {{transcript_path}} on the host and POSTs its content to the localhost ingest endpoint; the maintenance worker drains it into .pending drafts. PreCompact is the correct snapshot point because it fires before context is summarized away.",
+        "env": {
+          "SKILL_LAYER_INGEST_URL": "http://127.0.0.1:3001/ingest/transcript",
+          "SKILL_LAYER_INGEST_SECRET": "${TRANSCRIPT_INGEST_SECRET}"
+        }
       }
     ],
     "UserPromptSubmit": [
@@ -63,19 +73,13 @@
     ],
     "SessionEnd": [
       {
-        "type": "mcp_tool",
-        "server": "skill-layer",
-        "tool_name": "extract_session",
-        "arguments": {
-          "transcript_ref": "{{transcript_path}}",
-          "session_id": "{{session_id}}",
-          "repo_path": "{{repo_path}}"
-        },
-        "result_policy": {
-          "inject_additional_context_on": [],
-          "suppress_duplicate_on_healthy": [],
-          "retry_on": [],
-          "ignore_on": ["processing", "failed"]
+        "type": "command",
+        "command": "config/claude-code/capture-transcript.sh",
+        "args": ["session_end"],
+        "description": "Capture the final session transcript into the durable ingest queue (todo 103). SUPERSEDES the prior mcp_tool/extract_session wiring that shipped an absolute {{transcript_path}} the validator rejected. The host script reads {{transcript_path}} where it is valid and POSTs the content to the localhost ingest endpoint; the maintenance worker drains it into .pending drafts via transcript_inline (the path validator is never exercised). Fire-and-forget: always exits 0, so it never blocks session shutdown.",
+        "env": {
+          "SKILL_LAYER_INGEST_URL": "http://127.0.0.1:3001/ingest/transcript",
+          "SKILL_LAYER_INGEST_SECRET": "${TRANSCRIPT_INGEST_SECRET}"
         }
       }
     ]

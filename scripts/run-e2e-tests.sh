@@ -76,7 +76,14 @@ if [[ "${SKIP_INFRA}" -eq 0 ]]; then
     export QDRANT_URL="http://localhost:${QDRANT_GRPC_PORT}"
     export DATABASE_URL="postgres://skill_layer:skill_layer@localhost:${POSTGRES_PORT}/skill_layer_test"
     export REDIS_URL="redis://localhost:${REDIS_PORT}"
+    # The extraction provider reads OLLAMA_EXTRACTION_ENDPOINT (not OLLAMA_URL) and
+    # defaults to :11434, which nothing serves in this topology. Point it at the
+    # real Ollama so live extraction actually runs (todo 103).
+    export OLLAMA_EXTRACTION_ENDPOINT="http://localhost:${OLLAMA_PORT}/api/generate"
     cargo test -p mcp-server --test test_live_data_plane_roundtrip -- --ignored
+
+    echo "==> Running transcript ingest queue E2E test (todo 103: shipped hook → queue → drain → .pending)"
+    cargo test -p mcp-server --features test-utils --test test_transcript_ingest_queue_e2e -- --ignored
 
     echo "==> Tearing down service containers"
     docker compose --ansi never -f "${REPO_ROOT}/${COMPOSE_FILE}" rm -sf mcp-server graph-builder

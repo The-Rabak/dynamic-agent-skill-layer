@@ -59,7 +59,7 @@ Explicit `depends_on` edges:
 | 3 | T02 | completed | **Pulled forward 2026-05-31** (was paired with T05). Singleton — T02 and T03 both edit `retrieval/src/orchestrator.rs`, so T02 CANNOT run parallel with T03; it runs sequentially right after Batch 2. Dep T01 ✓. |
 | 4 | T05 | pending | Singleton — was paired with T02; now solo. Dep T04 ✓ (done in B2). File-disjoint from T02 but separated by the re-batch; gated cloud dep on the opt-in `provider=claude` path. |
 | 5 | T06 | pending | Singleton — shares `mcp-server/lib.rs`, `retrieval/orchestrator.rs`, `maintenance/runtime.rs` with other tickets. |
-| 6 | T07 | pending | Singleton — shares `maintenance/runtime.rs` with T06. Deps T04+T05 satisfied. |
+| 6 | ~~T07~~ | **superseded → todo 103** | **Folded into todo 103's durable PG transcript-ingest queue (2026-06-01).** The marker table + `reconcile_transcripts()` FS-scan are replaced by `transcript_ingest_queue` (migration `002`) + the maintenance queue drain. SessionEnd's broken absolute-`{{transcript_path}}` wiring is fixed at the same time. See `todos/103-...md`. |
 | 7 | T08 | pending | Singleton — shares `tests/e2e/*` with T09/T10 and `run-e2e-tests.sh` with T10 (line-ownership fence). Deps T01–T03 satisfied. |
 | 8 | T09 | pending | Singleton — shares `orchestrator.rs`/`dual_scope.rs` with T02/T03/T06, `persistence/rebuild.rs` with T01, and `tests/e2e/*` with neighbors. **Now also owns the `skills.source_paths` column + human-gated migration `004` (replaces T01's scope-root stand-in).** Deps T01,T02,T03 satisfied. |
 | 9 | T10 | pending | Terminal integration gate. Deps T01,T02,T03,T05,T06,T08,T09 all satisfied. Retires all V1.5 rollback flags. |

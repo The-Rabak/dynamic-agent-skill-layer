@@ -42,6 +42,7 @@ chrono = { version = "0.4.42", features = ["clock"] }
 criterion = { version = "0.5.1", features = ["async_tokio"] }
 graph-builder = { path = "../graph-builder" }
 infrastructure = { path = "../infrastructure", features = ["test-utils"] }
+maintenance = { path = "../maintenance" }
 serde_yaml = "0.9.34"
 sqlx = { version = "0.8.6", default-features = false, features = ["runtime-tokio-rustls", "postgres"] }
 uuid = { version = "1.18.1", features = ["v7"] }
@@ -58,6 +59,11 @@ path = "../../tests/integration/test_extract_session.rs"
 [[test]]
 name = "test_live_data_plane_roundtrip"
 path = "../../tests/e2e/test_live_data_plane_roundtrip.rs"
+required-features = ["test-utils"]
+
+[[test]]
+name = "test_transcript_ingest_queue_e2e"
+path = "../../tests/e2e/test_transcript_ingest_queue_e2e.rs"
 required-features = ["test-utils"]
 
 [[test]]

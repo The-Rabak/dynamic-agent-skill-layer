@@ -19,18 +19,28 @@ The skill layer wires into four Claude Code session lifecycle events. The exampl
 
 **`SessionEnd` matchers:** `clear`, `resume`, `logout`, `prompt_input_exit`, `other`.
 
-**Crash caveat:** `SessionEnd` does NOT fire on crash or SIGKILL. Any extraction triggered solely by `SessionEnd` will be lost if the process crashes. The level-triggered reconcile loop (T07) is the backstop — it reconciles sessions that did not produce a `SessionEnd` event on the next startup. Until T07 is deployed, crash-lost sessions require manual re-triggering.
+**Crash caveat:** `SessionEnd` does NOT fire on crash or SIGKILL. To narrow that hole, transcript capture runs at **two** points — `PreCompact` (full pre-summarization snapshot) and `SessionEnd` — and both push into a **durable Postgres queue** (`transcript_ingest_queue`) that survives worker restarts. A session that fires *neither* hook (host killed before any capture point) is the residual gap; for V1.5 that gap is **accepted** (dual capture mitigates it) rather than re-introducing a host-filesystem scan. See *Transcript ingest queue (self-growth loop)* below.
 
 **Context injection limit:** `hookSpecificOutput.additionalContext` is capped at approximately 10,000 characters. Compiled context that exceeds this limit is truncated by the harness.
 
 ### Lifecycle hook wiring
 
 ```
-SessionStart → compile_context (inject)          [cold start or resume]
-PreCompact   → compile_context (trigger=compact) [survive summarization]
-UserPromptSubmit → compile_context (inject)      [subsequent prompts; suppressed after first Ok]
-SessionEnd   → extract_session (fire-and-forget) [self-growing loop trigger]
+SessionStart → compile_context (inject)            [cold start or resume]
+PreCompact   → compile_context (trigger=compact)   [survive summarization]
+             + capture-transcript.sh (pre_compact) [snapshot transcript → ingest queue]
+UserPromptSubmit → compile_context (inject)        [subsequent prompts; suppressed after first Ok]
+SessionEnd   → capture-transcript.sh (session_end) [self-growing loop trigger → ingest queue]
 ```
+
+> **SessionEnd changed in v1.5 (todo 103).** It previously called the `extract_session`
+> MCP tool with `transcript_ref: "{{transcript_path}}"`. `{{transcript_path}}` is an
+> **absolute host path** that `validate_ref` rejects and the container cannot resolve, so
+> every real `SessionEnd` silently `failed` — the self-growth loop never ran. It is now a
+> host `command` hook (`config/claude-code/capture-transcript.sh`) that reads the transcript
+> where the path is valid and POSTs its **content** to the localhost ingest endpoint. The
+> maintenance worker drains the queue through `transcript_inline`, so the path validator is
+> never exercised.
 
 ### `result_policy` key semantics
 
@@ -51,7 +61,56 @@ When Claude Code compacts the conversation (summarizes history), context in the 
 
 ### SessionEnd extraction and human gate
 
-`SessionEnd` triggers `extract_session`, which enqueues asynchronous extraction from the session transcript. Extraction produces `.pending` files under `.skills/` — never `.md` files. A human must rename `.pending → .md` to approve a skill. There is no auto-approval path.
+`SessionEnd` (and `PreCompact`) capture the transcript into the durable ingest queue; the maintenance worker drains it and produces `.pending` files under `.skills/` — never `.md` files. A human must rename `.pending → .md` to approve a skill. There is no auto-approval path.
+
+---
+
+## Transcript Ingest Queue (self-growth loop)
+
+The self-growth trigger (SC-V1.5-B) flows through a durable Postgres queue rather than
+shipping a transcript path across the container boundary. This **folds T07** (crash-safe
+reconciliation): the queue row is both the work item and the dedup marker, and the drain
+replaces T07's filesystem-scan reconcile.
+
+```
+host command hook (SessionEnd / PreCompact)
+  → capture-transcript.sh reads {{transcript_path}} (valid on host)
+  → POST {session_id, repo_path, source, content} to 127.0.0.1:3001/ingest/transcript
+  → server inserts a row into transcript_ingest_queue (dedup on content_hash)
+  → maintenance worker claims pending rows (FOR UPDATE SKIP LOCKED)
+  → feeds content via transcript_inline to the extractor (path validator never runs)
+  → writes .pending drafts, marks the row processed
+```
+
+### Ingest endpoint — `POST /ingest/transcript`
+
+Localhost-bound (`127.0.0.1`) HTTP endpoint on the MCP server (not an MCP tool).
+
+**Request:**
+```json
+{ "session_id": "uuid", "repo_path": "/abs/repo", "source": "session_end", "content": "<jsonl>" }
+```
+- `source`: `session_end` | `pre_compact` | `reconcile`
+- `content`: raw transcript JSONL (capped at 10 MiB; oversize → `413`)
+
+**Auth:** shared-secret header `X-Ingest-Secret` matched against `TRANSCRIPT_INGEST_SECRET`
+when that env var is set (coordinated with todo 099). When unset, the endpoint relies on the
+loopback binding alone and logs a warning. A mismatched secret returns `401`.
+
+**Responses:** `202 enqueued` (new row) · `200 duplicate` (same `content_hash`) · `400/413` (contract) · `401` (secret) · `503` (queue unconfigured or DB error).
+
+### Queue states (`transcript_ingest_queue.status`)
+
+| Status | Meaning |
+|--------|---------|
+| `pending` | Captured, awaiting drain |
+| `processing` | Claimed by a drain sweep |
+| `processed` | Drafts written (or extraction yielded zero candidates); terminal success |
+| `failed` | Retried `MAX_TRANSCRIPT_DRAIN_ATTEMPTS` (3) times; parked with `error` |
+
+Dedup is keyed on `content_hash` (blake3 of content), so a `SessionEnd` capture that repeats
+a `PreCompact` tail is an idempotent no-op. The drain marks a row `processed` only after the
+draft write returns, so a crash mid-drain leaves the row reclaimable.
 
 ---
 
@@ -230,6 +289,11 @@ A dedicated `graph_refresh_subscriber` component in the `/health` response is a 
 | `pending_draft_write_failed` | Cannot write `.pending` file | Check directory permissions |
 | `event_publication_failed` | Redis Streams publish failed | Check Redis health |
 | `rebuild_blocked_by_circuit_breaker` | Too many rebuild failures | Wait for circuit breaker cooldown |
+| `transcript_content_empty` | Ingest payload had blank content | Capture hook found an empty transcript; no-op |
+| `transcript_content_too_large` | Ingest content exceeded 10 MiB cap | Returned `413`; transcript too large to enqueue |
+| `transcript_ingest_invalid_contract` | Bad `source` or blank `session_id` | Returned `400`; check capture hook payload |
+| `transcript_queue_persistence_failed` | DB error enqueuing/draining | Returned `503`; check Postgres health |
+| `ingest_secret_mismatch` | `X-Ingest-Secret` did not match | Returned `401`; align hook + server secret |
 
 ## Scope Configuration
 
@@ -241,6 +305,9 @@ A dedicated `graph_refresh_subscriber` component in the `/health` response is a 
 | `SKILL_GLOBAL_PATHS` | Container path for global skills | `/skills/global` |
 | `SKILL_GLOBAL_ALLOWED_ROOTS` | Absolute allowlist for path validation | `/skills/project,/skills/global` |
 | `CLAUDE_TRANSCRIPT_ROOT` | Host path to transcript directory | `./tests/fixtures` |
+| `TRANSCRIPT_INGEST_SECRET` | Shared secret for `POST /ingest/transcript` (`X-Ingest-Secret`) | _(unset → loopback-only)_ |
+| `MAINTENANCE_TRANSCRIPT_DRAIN` | Set `off` to disable the transcript queue drain (rollback) | _(on)_ |
+| `OLLAMA_EXTRACTION_ENDPOINT` | Ollama `/api/generate` URL for skill extraction (distinct from `OLLAMA_URL`) | `http://127.0.0.1:11434/api/generate` |
 
 ## Redis Event Envelope Schema
 

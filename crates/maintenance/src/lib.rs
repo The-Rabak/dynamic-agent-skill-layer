@@ -6,6 +6,7 @@ pub mod merge;
 pub mod merge_verifier;
 pub mod retire;
 pub mod runtime;
+pub mod transcript_drain;
 
 pub use audit::{
     MaintenanceAuditError, MaintenanceAuditEvent, MaintenanceAuditSink, MergeProposalAuditEvent,
@@ -30,4 +31,8 @@ pub use runtime::{
     LiveMergePassRunner, LiveRetirementPassRunner, MaintenanceRuntimeError,
     MaintenanceWorkerConfig, NoopMergePassRunner, NoopRetirementPassRunner,
     run_maintenance_worker, run_maintenance_worker_from_environment,
+};
+pub use transcript_drain::{
+    DEFAULT_TRANSCRIPT_DRAIN_BATCH, TranscriptDrainError, TranscriptDrainReport,
+    TranscriptQueueDrain,
 };

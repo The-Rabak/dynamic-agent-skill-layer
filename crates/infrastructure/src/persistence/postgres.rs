@@ -4,6 +4,13 @@ use sqlx::{PgPool, postgres::PgPoolOptions};
 use thiserror::Error;
 
 const MIGRATION_001: &str = include_str!("../../migrations/001_initial_schema.sql");
+const MIGRATION_002: &str = include_str!("../../migrations/002_transcript_ingest_queue.sql");
+
+/// Ordered migration set applied on every boot. Each entry is idempotent
+/// (`IF NOT EXISTS` / `DROP ... IF EXISTS`) so re-running is safe; ordering
+/// matters because later migrations depend on objects created by earlier ones
+/// (e.g. 002 reuses the `set_updated_at_timestamp()` function from 001).
+const MIGRATIONS: &[&str] = &[MIGRATION_001, MIGRATION_002];
 
 #[derive(Debug, Clone)]
 pub struct PostgresConfig {
@@ -86,10 +93,12 @@ impl PostgresAdapter {
     }
 
     pub async fn run_migrations(&self) -> Result<(), PostgresError> {
-        sqlx::raw_sql(MIGRATION_001)
-            .execute(&self.pool)
-            .await
-            .map_err(|error| PostgresError::Migration(error.to_string()))?;
+        for migration in MIGRATIONS {
+            sqlx::raw_sql(migration)
+                .execute(&self.pool)
+                .await
+                .map_err(|error| PostgresError::Migration(error.to_string()))?;
+        }
         Ok(())
     }
 
@@ -97,7 +106,7 @@ impl PostgresAdapter {
     #[cfg(any(test, feature = "test-utils"))]
     pub async fn truncate_all_tables(&self) -> Result<(), PostgresError> {
         sqlx::query(
-            "TRUNCATE TABLE community_skills, skill_subunits, communities, subunits, skills, outbox_events, rebuild_locks CASCADE"
+            "TRUNCATE TABLE community_skills, skill_subunits, communities, subunits, skills, outbox_events, rebuild_locks, transcript_ingest_queue CASCADE"
         )
         .execute(&self.pool)
         .await?;
@@ -128,5 +137,22 @@ mod tests {
                 "migration should declare {table}"
             );
         }
+    }
+
+    #[test]
+    fn migration_002_declares_transcript_ingest_queue() {
+        assert!(
+            MIGRATION_002.contains("transcript_ingest_queue"),
+            "migration 002 should declare the transcript ingest queue table"
+        );
+        assert!(
+            MIGRATION_002.contains("content_hash TEXT NOT NULL UNIQUE"),
+            "dedup is keyed on a UNIQUE content_hash"
+        );
+    }
+
+    #[test]
+    fn migration_set_is_ordered_001_then_002() {
+        assert_eq!(MIGRATIONS, &[MIGRATION_001, MIGRATION_002]);
     }
 }

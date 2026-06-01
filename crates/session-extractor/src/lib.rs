@@ -371,7 +371,7 @@ impl SessionExtractor {
         &self,
         job_id: &str,
         request: &ExtractSessionRequest,
-    ) -> Result<(), SessionExtractionError> {
+    ) -> Result<Vec<std::path::PathBuf>, SessionExtractionError> {
         let transcript = self.transcript_loader.load(
             &request.session_id,
             &request.transcript_ref,
@@ -397,7 +397,61 @@ impl SessionExtractor {
         ))
         .await?;
 
-        Ok(())
+        Ok(draft_paths)
+    }
+
+    /// Runs one extraction synchronously and returns the written `.pending`
+    /// paths, awaiting completion instead of dispatching to the worker pool.
+    ///
+    /// This is the entry point for the durable transcript-ingest queue drain
+    /// (todo 103): the maintenance worker feeds queued transcript *content* via
+    /// `transcript_inline` and marks the queue row `processed` only after this
+    /// returns `Ok` — so a draft is durably written before the work is acked.
+    /// The path validator is never exercised on the inline path, which is why
+    /// the absolute-`{{transcript_path}}` bug is moot for this flow.
+    ///
+    /// Errors are returned as stable reason-code strings suitable for the
+    /// queue's `error` column.
+    pub async fn extract_blocking(
+        &self,
+        request: &ExtractSessionRequest,
+    ) -> Result<Vec<std::path::PathBuf>, String> {
+        if request.transcript_inline.is_none()
+            && let Err(error) = self.transcript_loader.validate_ref(&request.transcript_ref)
+        {
+            return Err(error.reason_code());
+        }
+        self.draft_writer
+            .validate_scope_root(request)
+            .map_err(|error| error.reason_code())?;
+
+        let job_id = Uuid::now_v7().to_string();
+        match self.execute_job(&job_id, request).await {
+            Ok(paths) => Ok(paths),
+            Err(error) => {
+                if let Err(publish_error) = self
+                    .publish_lifecycle_event(EventEnvelope::new(
+                        "extraction.failed",
+                        format!("extraction.failed:{job_id}"),
+                        json!({
+                            "job_id": job_id.as_str(),
+                            "provider": self.provider.as_str(),
+                            "error": error.to_string(),
+                        }),
+                    ))
+                    .await
+                {
+                    tracing::error!(
+                        ?publish_error,
+                        "failed to publish extraction.failed lifecycle event from blocking drain"
+                    );
+                }
+                // Carry the reason code AND the underlying detail so the queue's
+                // `error` column is actionable for operators, not just a bare
+                // category. Format: `<reason_code>: <detail>`.
+                Err(format!("{}: {error}", error.reason_code()))
+            }
+        }
     }
 
     async fn extract_with_retry(

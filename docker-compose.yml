@@ -99,6 +99,10 @@ services:
       SKILL_GLOBAL_ALLOWED_ROOTS: ${SKILL_GLOBAL_ALLOWED_ROOTS:-/skills/project,/skills/global}
       GRAPH_BUILDER_PROJECT_ROOT: ${GRAPH_BUILDER_PROJECT_ROOT:-/skills/project}
       CLAUDE_TRANSCRIPT_ROOT: ${CLAUDE_TRANSCRIPT_ROOT:-/transcripts}
+      # Shared secret for the localhost /ingest/transcript endpoint (todo 103/099).
+      # When set, host capture hooks must send a matching X-Ingest-Secret header.
+      # When empty, the endpoint relies on the 127.0.0.1 port binding alone.
+      TRANSCRIPT_INGEST_SECRET: ${TRANSCRIPT_INGEST_SECRET:-}
     volumes:
       - ${GRAPH_BUILDER_PROJECT_ROOT:-.}:/skills/project:ro
       - ${SKILL_GLOBAL_HOST_PATH:-./docs}:/skills/global
@@ -172,6 +176,20 @@ services:
       REDIS_URL: redis://redis:6379
       QDRANT_URL: http://qdrant:6333
       OLLAMA_URL: http://ollama:11434
+      # Transcript-ingest queue drain (todo 103). The drain feeds queued content
+      # via transcript_inline, so CLAUDE_TRANSCRIPT_ROOT is never read for IO —
+      # it is required only by SessionExtractor::from_environment's construction
+      # contract. SKILL_GLOBAL_* + the writable project mount let the drain emit
+      # .pending drafts. Set MAINTENANCE_TRANSCRIPT_DRAIN=off to roll back.
+      CLAUDE_TRANSCRIPT_ROOT: /skills/global
+      SKILL_GLOBAL_PATHS: /skills/global
+      SKILL_GLOBAL_ALLOWED_ROOTS: ${SKILL_GLOBAL_ALLOWED_ROOTS:-/skills/project,/skills/global}
+      GRAPH_BUILDER_PROJECT_ROOT: ${GRAPH_BUILDER_PROJECT_ROOT:-/skills/project}
+      EXTRACT_SESSION_PROVIDER: ${EXTRACT_SESSION_PROVIDER:-ollama}
+    volumes:
+      # Writable (not :ro): the drain writes .pending drafts into <repo>/.skills.
+      - ${GRAPH_BUILDER_PROJECT_ROOT:-.}:/skills/project
+      - ${SKILL_GLOBAL_HOST_PATH:-./docs}:/skills/global
     restart: unless-stopped
 
 volumes:

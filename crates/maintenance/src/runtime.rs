@@ -2,12 +2,13 @@ use std::time::Duration;
 
 use chrono::Utc;
 use infrastructure::{
-    PostgresAdapter, PostgresConfig, PostgresGraphSnapshotStore,
+    PostgresAdapter, PostgresConfig, PostgresGraphSnapshotStore, TranscriptIngestQueue,
     logging::{ServiceLoggingConfig, init_service_logging},
 };
+use session_extractor::SessionExtractor;
 use thiserror::Error;
 use tokio::time::MissedTickBehavior;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use crate::audit::MaintenanceAuditSink;
 use crate::audit_sink::PostgresMaintenanceAuditSink;
@@ -19,10 +20,19 @@ use crate::merge::{
 };
 use crate::merge_verifier::TextOverlapMergeSemanticVerifier;
 use crate::retire::{RetirementConfig, RetirementProposal, RetirementProposalWriter};
+use crate::transcript_drain::{DEFAULT_TRANSCRIPT_DRAIN_BATCH, TranscriptQueueDrain};
 
 pub const DEFAULT_CRON_INTERVAL_SECS: u64 = 60;
 pub const CRON_INTERVAL_ENV: &str = "MAINTENANCE_CRON_INTERVAL_SECS";
 pub const RUN_ONCE_ENV: &str = "MAINTENANCE_RUN_ONCE";
+
+/// Rollback flag: set `MAINTENANCE_TRANSCRIPT_DRAIN=off` to disable the durable
+/// transcript-ingest queue drain (folds the T07 reconcile flag).
+///
+// TODO(remove-after-v1.5-green): delete this flag and always run the drain once
+// the queue path is proven in deployment. Removal criterion: first green CI on
+// `main` with the self-growth loop (SC-B) exercised end-to-end through the queue.
+pub const TRANSCRIPT_DRAIN_FLAG: &str = "MAINTENANCE_TRANSCRIPT_DRAIN";
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct MaintenanceWorkerConfig {
@@ -253,7 +263,12 @@ pub async fn run_maintenance_worker(
     cron: &mut MaintenanceCron,
     merge_runner: &mut impl MergePassRunner,
     retirement_runner: &mut impl RetirementPassRunner,
+    transcript_drain: Option<&TranscriptQueueDrain>,
 ) -> Result<(), MaintenanceRuntimeError> {
+    // Startup catch-up sweep: a laptop that was closed (no hook fired cleanly)
+    // still gets its queued transcripts drained as soon as the worker boots.
+    drain_transcripts(transcript_drain).await;
+
     if config.run_once {
         run_one_tick(cron, merge_runner, retirement_runner)?;
         return Ok(());
@@ -270,6 +285,32 @@ pub async fn run_maintenance_worker(
                 "maintenance cron tick failed"
             );
             return Err(error);
+        }
+        // The drain shares the cron cadence but never aborts the worker: a
+        // transient PG/extractor error is logged and retried next sweep (rows
+        // stay `pending`), so steady-state maintenance keeps running.
+        drain_transcripts(transcript_drain).await;
+    }
+}
+
+/// Runs one transcript-queue drain sweep, logging (never propagating) failures.
+async fn drain_transcripts(transcript_drain: Option<&TranscriptQueueDrain>) {
+    let Some(drain) = transcript_drain else {
+        return;
+    };
+    match drain.drain_once().await {
+        Ok(report) => {
+            if report.claimed > 0 {
+                info!(
+                    claimed = report.claimed,
+                    processed = report.processed,
+                    failed = report.failed,
+                    "transcript ingest queue drained"
+                );
+            }
+        }
+        Err(error) => {
+            error!(error = %error, "transcript ingest queue drain failed; will retry next sweep");
         }
     }
 }
@@ -313,7 +354,54 @@ pub async fn run_maintenance_worker_from_environment() -> Result<(), Maintenance
         &pg_adapter,
     );
 
-    run_maintenance_worker(config, &mut cron, &mut merge_runner, &mut retirement_runner).await
+    let transcript_drain = build_transcript_drain(&pg_adapter);
+
+    run_maintenance_worker(
+        config,
+        &mut cron,
+        &mut merge_runner,
+        &mut retirement_runner,
+        transcript_drain.as_ref(),
+    )
+    .await
+}
+
+/// Builds the transcript-queue drain, or `None` when disabled or unconstructable.
+///
+/// Returns `None` (degraded, but the worker still runs merge/retire) when the
+/// rollback flag is `off` or when the extractor cannot be built from the
+/// environment — e.g. `CLAUDE_TRANSCRIPT_ROOT` / `SKILL_GLOBAL_PATHS` not
+/// configured on the maintenance container. The drain only ever uses
+/// `transcript_inline`, so the transcript root is never read; it is required
+/// solely by `SessionExtractor::from_environment`'s construction contract.
+fn build_transcript_drain(pg_adapter: &PostgresAdapter) -> Option<TranscriptQueueDrain> {
+    if std::env::var(TRANSCRIPT_DRAIN_FLAG).as_deref() == Ok("off") {
+        warn!(
+            flag = TRANSCRIPT_DRAIN_FLAG,
+            "transcript ingest queue drain disabled by rollback flag"
+        );
+        return None;
+    }
+
+    let extractor = match SessionExtractor::from_environment() {
+        Ok(extractor) => extractor,
+        Err(error) => {
+            warn!(
+                error = %error,
+                "transcript queue drain unavailable: could not build session extractor \
+                 from environment; SessionEnd hook path still functions"
+            );
+            return None;
+        }
+    };
+
+    let queue = TranscriptIngestQueue::new(pg_adapter.pool().clone());
+    info!("transcript ingest queue drain enabled");
+    Some(TranscriptQueueDrain::new(
+        queue,
+        extractor,
+        DEFAULT_TRANSCRIPT_DRAIN_BATCH,
+    ))
 }
 
 fn build_scope_roots_from_environment() -> Vec<std::path::PathBuf> {
@@ -456,9 +544,15 @@ mod tests {
         let mut merge_runner = CountingMergeRunner::default();
         let mut retirement_runner = CountingRetirementRunner::default();
 
-        run_maintenance_worker(config, &mut cron, &mut merge_runner, &mut retirement_runner)
-            .await
-            .expect("runtime should execute once");
+        run_maintenance_worker(
+            config,
+            &mut cron,
+            &mut merge_runner,
+            &mut retirement_runner,
+            None,
+        )
+        .await
+        .expect("runtime should execute once");
 
         assert_eq!(merge_runner.invocations, 1);
         assert_eq!(retirement_runner.invocations, 1);

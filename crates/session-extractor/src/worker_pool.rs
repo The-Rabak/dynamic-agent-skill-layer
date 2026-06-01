@@ -143,7 +143,7 @@ async fn worker_loop(
         let result = tokio::time::timeout(timeout, extractor.execute_job(&job_id, &request)).await;
 
         let response = match result {
-            Ok(Ok(())) => ExtractSessionResponse {
+            Ok(Ok(_draft_paths)) => ExtractSessionResponse {
                 status: "completed".to_owned(),
                 reason_code: None,
                 job_id: Some(job_id),

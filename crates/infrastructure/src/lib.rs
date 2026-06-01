@@ -11,6 +11,7 @@ pub mod persistence {
     pub mod outbox_reconciler;
     pub mod postgres;
     pub mod rebuild;
+    pub mod transcript_queue;
 }
 pub mod resilience;
 pub mod scope;
@@ -38,6 +39,11 @@ pub use persistence::rebuild::{
     LiveGraphSubunitRecord, PersistedGraphCommunityRecord, PersistedGraphSkillRecord,
     PersistedGraphSubunitRecord, PostgresGraphSnapshotStore, PostgresRebuildCoordinator,
     RebuildCoordinator, RebuildError,
+};
+pub use persistence::transcript_queue::{
+    EnqueueOutcome, MAX_TRANSCRIPT_DRAIN_ATTEMPTS, MAX_TRANSCRIPT_INGEST_BYTES,
+    TranscriptIngestQueue, TranscriptIngestRequest, TranscriptQueueError, TranscriptQueueRecord,
+    TranscriptSource,
 };
 pub use resilience::{
     CircuitBreaker, CircuitState, ResilienceError, RetryPolicy, execute_with_resilience,
