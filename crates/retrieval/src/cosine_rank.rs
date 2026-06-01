@@ -1,11 +1,15 @@
+/// A single ranked result from an in-memory cosine similarity pass.
+///
+/// Embeddings originate from the graph-builder→Qdrant write-side pipeline
+/// but this ranking is purely in-memory against the pre-loaded `RetrievalSnapshot`.
 #[derive(Debug, Clone, PartialEq)]
-pub struct QdrantHit {
+pub struct CosineHit {
     pub skill_index: usize,
     pub semantic_score: f32,
 }
 
 /// Ranks `skill_embeddings` against `prompt_embedding` by cosine similarity and
-/// returns the top-`limit` hits as `QdrantHit` values.
+/// returns the top-`limit` hits as `CosineHit` values.
 ///
 /// **This function is purely in-memory.** It does not contact Qdrant or any network
 /// service. The name reflects the historical source of the embeddings (they are built
@@ -15,15 +19,15 @@ pub struct QdrantHit {
 /// Under Option A (ADR-0001) the read path never queries Qdrant at request time;
 /// Qdrant is the durable write-side store only. Option B (V2) would replace this
 /// call with a live Qdrant query behind the unchanged `SkillRetriever` trait.
-pub fn search_qdrant(
+pub fn rank_by_cosine(
     prompt_embedding: &[f32],
     skill_embeddings: &[Vec<f32>],
     limit: usize,
-) -> Vec<QdrantHit> {
-    let mut hits: Vec<QdrantHit> = skill_embeddings
+) -> Vec<CosineHit> {
+    let mut hits: Vec<CosineHit> = skill_embeddings
         .iter()
         .enumerate()
-        .map(|(skill_index, embedding)| QdrantHit {
+        .map(|(skill_index, embedding)| CosineHit {
             skill_index,
             semantic_score: cosine_similarity(prompt_embedding, embedding).max(0.0),
         })
@@ -55,11 +59,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn search_qdrant_orders_by_semantic_score() {
+    fn rank_by_cosine_orders_by_semantic_score() {
         let prompt = vec![1.0, 0.0];
         let embeddings = vec![vec![0.9, 0.0], vec![0.2, 0.8], vec![1.0, 0.0]];
 
-        let hits = search_qdrant(&prompt, &embeddings, 2);
+        let hits = rank_by_cosine(&prompt, &embeddings, 2);
         assert_eq!(hits.len(), 2);
         assert!(hits.iter().any(|hit| hit.skill_index == 0));
         assert!(hits.iter().any(|hit| hit.skill_index == 2));

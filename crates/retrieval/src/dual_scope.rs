@@ -7,7 +7,7 @@ use crate::{
     fusion::{FusedCandidate, mmr_select},
     graph_search::{GraphHit, search_graph},
     orchestrator::{RetrievalConfig, RetrievalSnapshot},
-    qdrant_search::search_qdrant,
+    cosine_rank::rank_by_cosine,
     scoring::{ScoreComponents, score_eq3},
 };
 
@@ -224,8 +224,8 @@ fn perform_scope_search(
         })
         .collect();
 
-    let qdrant_hits = search_qdrant(prompt_embedding, &scoped_embeddings, config.candidate_limit);
-    let candidate_indices: Vec<usize> = qdrant_hits
+    let cosine_hits = rank_by_cosine(prompt_embedding, &scoped_embeddings, config.candidate_limit);
+    let candidate_indices: Vec<usize> = cosine_hits
         .iter()
         .filter_map(|hit| scoped_indices.get(hit.skill_index).copied())
         .collect();
@@ -261,16 +261,16 @@ fn perform_scope_search(
         .map(|hit| (hit.skill_index, hit))
         .collect();
 
-    let mut fused_candidates: Vec<FusedCandidate> = qdrant_hits
+    let mut fused_candidates: Vec<FusedCandidate> = cosine_hits
         .iter()
-        .filter_map(|qdrant_hit| {
-            let scoped_skill_index = *scoped_indices.get(qdrant_hit.skill_index)?;
+        .filter_map(|cosine_hit| {
+            let scoped_skill_index = *scoped_indices.get(cosine_hit.skill_index)?;
             let seeded_skill = graph.skills.get(scoped_skill_index)?;
             let graph_hit = graph_hits_by_skill.get(&scoped_skill_index);
             let lexical_score = graph_hit.map_or(0.0, |hit| hit.lexical_score);
             let score = score_eq3(
                 ScoreComponents {
-                    l1_semantic: qdrant_hit.semantic_score,
+                    l1_semantic: cosine_hit.semantic_score,
                     l0_lexical: lexical_score,
                     prior: seeded_skill.prior,
                     community_boost: seeded_skill.community_boost,
@@ -283,7 +283,7 @@ fn perform_scope_search(
                 skill_id: seeded_skill.skill.id.as_str().to_owned(),
                 matched_scope: scope.scope_type,
                 score,
-                semantic_score: qdrant_hit.semantic_score,
+                semantic_score: cosine_hit.semantic_score,
                 lexical_score,
                 embedding: seeded_skill.embedding.clone(),
                 highlights: graph_hit

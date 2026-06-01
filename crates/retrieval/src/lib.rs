@@ -2,7 +2,7 @@ pub mod dual_scope;
 pub mod fusion;
 pub mod graph_search;
 pub mod orchestrator;
-pub mod qdrant_search;
+pub mod cosine_rank;
 pub mod scope_resolution;
 pub mod scoring;
 
@@ -16,6 +16,6 @@ pub use orchestrator::{
     RescueCue, RetrievalConfig, RetrievalOrchestrator, RetrievalOutcome, RetrievalSnapshot,
     RetrievedSkill, RetrievedSubunit, SeededSkill, SkillRetriever,
 };
-pub use qdrant_search::{QdrantHit, search_qdrant};
+pub use cosine_rank::{CosineHit, rank_by_cosine};
 pub use scope_resolution::{DualScopeResolver, ScopeResolutionOutcome};
 pub use scoring::{ScoreComponents, ScoringWeights, score_eq3};

@@ -3,3 +3,4 @@
 .github/
 docs/plans/
 todos/
+crates/tests/e2e/reports/

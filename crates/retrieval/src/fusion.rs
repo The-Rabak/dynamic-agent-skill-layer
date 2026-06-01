@@ -1,6 +1,6 @@
 use std::{cmp::Ordering, collections::HashMap};
 
-use crate::{graph_search::SubunitProjection, qdrant_search::cosine_similarity};
+use crate::{cosine_rank::cosine_similarity, graph_search::SubunitProjection};
 use domain::ScopeType;
 
 #[derive(Debug, Clone, PartialEq)]
