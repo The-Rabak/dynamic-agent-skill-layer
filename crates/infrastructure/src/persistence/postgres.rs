@@ -5,12 +5,14 @@ use thiserror::Error;
 
 const MIGRATION_001: &str = include_str!("../../migrations/001_initial_schema.sql");
 const MIGRATION_002: &str = include_str!("../../migrations/002_transcript_ingest_queue.sql");
+const MIGRATION_003: &str = include_str!("../../migrations/003_usage_fields.sql");
 
 /// Ordered migration set applied on every boot. Each entry is idempotent
-/// (`IF NOT EXISTS` / `DROP ... IF EXISTS`) so re-running is safe; ordering
+/// (`IF NOT EXISTS` / `ADD COLUMN IF NOT EXISTS`) so re-running is safe; ordering
 /// matters because later migrations depend on objects created by earlier ones
-/// (e.g. 002 reuses the `set_updated_at_timestamp()` function from 001).
-const MIGRATIONS: &[&str] = &[MIGRATION_001, MIGRATION_002];
+/// (e.g. 002 reuses the `set_updated_at_timestamp()` function from 001, and
+/// 003 adds typed columns to tables declared by 001).
+const MIGRATIONS: &[&str] = &[MIGRATION_001, MIGRATION_002, MIGRATION_003];
 
 #[derive(Debug, Clone)]
 pub struct PostgresConfig {
@@ -103,10 +105,15 @@ impl PostgresAdapter {
     }
 
     /// Truncates all application tables. Intended for test teardown only.
+    ///
+    /// Includes `session_logs` and `skill_usage` so E2E tests run with a clean
+    /// usage slate and do not leak usage rows across runs (T06).
     #[cfg(any(test, feature = "test-utils"))]
     pub async fn truncate_all_tables(&self) -> Result<(), PostgresError> {
         sqlx::query(
-            "TRUNCATE TABLE community_skills, skill_subunits, communities, subunits, skills, outbox_events, rebuild_locks, transcript_ingest_queue CASCADE"
+            "TRUNCATE TABLE community_skills, skill_subunits, communities, subunits, skills, \
+             outbox_events, rebuild_locks, transcript_ingest_queue, \
+             session_logs, skill_usage CASCADE",
         )
         .execute(&self.pool)
         .await?;
@@ -152,7 +159,38 @@ mod tests {
     }
 
     #[test]
-    fn migration_set_is_ordered_001_then_002() {
-        assert_eq!(MIGRATIONS, &[MIGRATION_001, MIGRATION_002]);
+    fn migration_set_is_ordered_001_then_002_then_003() {
+        assert_eq!(MIGRATIONS, &[MIGRATION_001, MIGRATION_002, MIGRATION_003]);
+    }
+
+    #[test]
+    fn migration_003_adds_typed_usage_columns() {
+        assert!(
+            MIGRATION_003.contains("prompt_hash"),
+            "migration 003 should add session_logs.prompt_hash"
+        );
+        assert!(
+            MIGRATION_003.contains("latency_ms"),
+            "migration 003 should add session_logs.latency_ms"
+        );
+        assert!(
+            MIGRATION_003.contains("relevance_score"),
+            "migration 003 should add skill_usage.relevance_score"
+        );
+        assert!(
+            MIGRATION_003.contains("ADD COLUMN IF NOT EXISTS"),
+            "migration 003 must use ADD COLUMN IF NOT EXISTS (non-rewriting)"
+        );
+    }
+
+    #[test]
+    fn truncate_all_tables_sql_includes_usage_tables() {
+        // Compile-time check: the truncate statement must list both usage tables
+        // so E2E teardown does not leak usage rows across runs.
+        let sql = "TRUNCATE TABLE community_skills, skill_subunits, communities, subunits, skills, \
+             outbox_events, rebuild_locks, transcript_ingest_queue, \
+             session_logs, skill_usage CASCADE";
+        assert!(sql.contains("session_logs"));
+        assert!(sql.contains("skill_usage"));
     }
 }

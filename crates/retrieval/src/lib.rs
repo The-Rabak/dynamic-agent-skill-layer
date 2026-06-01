@@ -18,4 +18,4 @@ pub use orchestrator::{
     RetrievedSkill, RetrievedSubunit, SeededSkill, SkillRetriever,
 };
 pub use scope_resolution::{DualScopeResolver, ScopeResolutionOutcome};
-pub use scoring::{ScoreComponents, ScoringWeights, score_eq3};
+pub use scoring::{ScoreComponents, ScoringWeights, UsagePriorInputs, score_eq3, usage_prior};

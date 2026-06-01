@@ -1,8 +1,9 @@
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 use chrono::Utc;
 use infrastructure::{
-    PostgresAdapter, PostgresConfig, PostgresGraphSnapshotStore, TranscriptIngestQueue,
+    PostgresAdapter, PostgresConfig, PostgresGraphSnapshotStore, PostgresUsageSampleStore,
+    TranscriptIngestQueue, UsageSampleStore,
     logging::{ServiceLoggingConfig, init_service_logging},
 };
 use session_extractor::SessionExtractor;
@@ -17,7 +18,7 @@ use crate::cron::{
 };
 use crate::merge::{MergeConfig, MergeProposal, MergeProposalWriter, SkillSnapshot};
 use crate::merge_verifier::TextOverlapMergeSemanticVerifier;
-use crate::retire::{RetirementConfig, RetirementProposal, RetirementProposalWriter};
+use crate::retire::{RetirementConfig, RetirementProposal, RetirementProposalWriter, UsageSample};
 use crate::transcript_drain::{DEFAULT_TRANSCRIPT_DRAIN_BATCH, TranscriptQueueDrain};
 
 pub const DEFAULT_CRON_INTERVAL_SECS: u64 = 60;
@@ -128,6 +129,13 @@ where
     pub scope_roots: Vec<std::path::PathBuf>,
     pub retirement_config: RetirementConfig,
     audit_sink: A,
+    /// Optional usage store for real retirement scoring (T06).
+    ///
+    /// When `Some`, `run_retirement_pass` queries real usage aggregates so
+    /// recently-used skills are not propose-retired. When `None` (offline tests,
+    /// no PG pool), every skill scores zero usage and all are eligible —
+    /// the pre-T06 behaviour preserved for deterministic test isolation.
+    usage_store: Option<Arc<dyn UsageSampleStore>>,
 }
 
 impl LiveRetirementPassRunner<PostgresMaintenanceAuditSink> {
@@ -142,6 +150,25 @@ impl LiveRetirementPassRunner<PostgresMaintenanceAuditSink> {
             scope_roots,
             retirement_config,
             audit_sink: PostgresMaintenanceAuditSink::from_pool(audit_adapter.pool().clone()),
+            usage_store: None,
+        }
+    }
+
+    /// Creates a runner with a live usage store so retirement scoring is based
+    /// on real usage data (T06).
+    pub fn new_with_usage_store(
+        snapshot_store: PostgresGraphSnapshotStore,
+        scope_roots: Vec<std::path::PathBuf>,
+        retirement_config: RetirementConfig,
+        audit_adapter: &PostgresAdapter,
+        usage_store: Arc<dyn UsageSampleStore>,
+    ) -> Self {
+        Self {
+            snapshot_store,
+            scope_roots,
+            retirement_config,
+            audit_sink: PostgresMaintenanceAuditSink::from_pool(audit_adapter.pool().clone()),
+            usage_store: Some(usage_store),
         }
     }
 }
@@ -161,6 +188,7 @@ where
             scope_roots,
             retirement_config,
             audit_sink,
+            usage_store: None,
         }
     }
 }
@@ -178,12 +206,51 @@ where
         if skills.is_empty() {
             return Ok(Vec::new());
         }
+
+        // Fetch real usage samples when a store is wired (T06). Uses
+        // block_in_place so the sync trait impl can drive the async query
+        // without spawning a separate thread.
+        let usage_samples = if let Some(store) = &self.usage_store {
+            let skill_ids: Vec<String> = skills.iter().map(|s| s.id.clone()).collect();
+            let window_days = self.retirement_config.scoring_window_days;
+            let summaries = tokio::task::block_in_place(|| {
+                tokio::runtime::Handle::current()
+                    .block_on(store.recent_usage(&skill_ids, window_days))
+            })
+            .map_err(|e| CronError::RetirementPass(format!("usage query failed: {e}")))?;
+
+            summaries
+                .into_iter()
+                .flat_map(|summary| {
+                    // Emit one UsageSample per usage count unit so the retirement
+                    // scorer's recency-weighted sum is accurate. Each sample
+                    // represents a single historical selection anchored to
+                    // `last_used_at` (best available without the per-event log).
+                    // For V1.5 accuracy this is sufficient — the scorer sees
+                    // `windowed_count` usages at the last-seen timestamp.
+                    if summary.windowed_count == 0 {
+                        return Vec::new();
+                    }
+                    let used_at = summary.last_used_at.unwrap_or(now);
+                    (0..summary.windowed_count)
+                        .map(|_| UsageSample {
+                            skill_id: summary.skill_id.clone(),
+                            used_at,
+                            usage_count: 1,
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<UsageSample>>()
+        } else {
+            Vec::new()
+        };
+
         let writer = RetirementProposalWriter::with_audit_sink(
             self.retirement_config.clone(),
             &self.audit_sink,
         );
         writer
-            .propose(&skills, &[], now)
+            .propose(&skills, &usage_samples, now)
             .map_err(|e| CronError::RetirementPass(e.to_string()))
     }
 }
@@ -336,13 +403,17 @@ pub async fn run_maintenance_worker_from_environment() -> Result<(), Maintenance
 
     let scope_roots = build_scope_roots_from_environment();
 
+    let usage_store: Arc<dyn UsageSampleStore> =
+        Arc::new(PostgresUsageSampleStore::new(pg_adapter.pool().clone()));
+
     let mut merge_runner =
         LiveMergePassRunner::new(snapshot_store.clone(), scope_roots.clone(), &pg_adapter);
-    let mut retirement_runner = LiveRetirementPassRunner::new(
+    let mut retirement_runner = LiveRetirementPassRunner::new_with_usage_store(
         snapshot_store,
         scope_roots,
         RetirementConfig::default(),
         &pg_adapter,
+        usage_store,
     );
 
     let transcript_drain = build_transcript_drain(&pg_adapter);

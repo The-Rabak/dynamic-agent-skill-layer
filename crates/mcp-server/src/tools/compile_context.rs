@@ -88,6 +88,21 @@ impl CompileContextTool {
     }
 
     pub async fn invoke(&self, request: CompileContextRequest) -> CompileContextResponse {
+        self.invoke_and_capture_outcome(request).await.0
+    }
+
+    /// Invokes `compile_context` and returns both the response and the retrieval
+    /// outcome (if a live retrieval was performed).
+    ///
+    /// The second element is `Some` only when a real retrieval ran (not when the
+    /// response was served from cache or suppression). Callers at the coordination
+    /// layer (`McpServerApp::compile_context`) use this to extract selected skill
+    /// IDs and scores for the async usage write — without adding persistence into
+    /// this pure query-compile unit.
+    pub async fn invoke_and_capture_outcome(
+        &self,
+        request: CompileContextRequest,
+    ) -> (CompileContextResponse, Option<RetrievalOutcome>) {
         let started_at = Instant::now();
         let graph_version = self.retriever.current_graph_version();
         let scopes = self.retriever.configured_scopes();
@@ -103,7 +118,7 @@ impl CompileContextTool {
                 .try_suppression_or_cache(&request, &scopes, graph_version, started_at)
                 .await
         {
-            return response;
+            return (response, None);
         }
 
         let outcome = self
@@ -111,8 +126,10 @@ impl CompileContextTool {
             .retrieve(&request.prompt, Some(request.repo_path.as_str()))
             .await;
 
-        self.handle_retrieval_result(&request, outcome, &scopes)
-            .await
+        let response = self
+            .handle_retrieval_result(&request, outcome.clone(), &scopes)
+            .await;
+        (response, Some(outcome))
     }
 
     async fn try_suppression_or_cache(

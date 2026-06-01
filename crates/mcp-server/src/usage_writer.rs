@@ -1,0 +1,255 @@
+//! Background usage writer for the `compile_context` hot path.
+//!
+//! Usage writes are async and off the response path so they never contribute to
+//! `compile_context` latency. Failures are observable (warn log +
+//! `health["usage_write"]="failed"`) but are never propagated to the caller.
+//!
+//! # Design
+//!
+//! A dedicated task reads from a bounded `mpsc` channel (capacity ~128) and calls
+//! [`UsagePersistencePort::write_session_usage`]. `McpServerApp::compile_context`
+//! posts to the channel with `try_send` — if the channel is full the record is
+//! dropped and the health marker is set to `"failed"`. Raw `tokio::spawn` is
+//! intentionally avoided: panics inside a raw spawn vanish silently; the
+//! background task here catches all `Result::Err` paths explicitly.
+//!
+//! # Feature gate
+//!
+//! The `MCP_USAGE_LOGGING` environment variable controls whether usage is
+//! recorded. When set to `"off"` the writer is not spawned and no usage rows
+//! are written. The observability seam (warn + health marker on failure) is
+//! always active regardless of this flag.
+
+use std::sync::Arc;
+
+use infrastructure::{SessionUsageRecord, UsagePersistencePort};
+use tokio::sync::mpsc;
+use tracing::warn;
+
+/// Health-marker key set when a usage write fails or the channel is full.
+pub const USAGE_WRITE_HEALTH_KEY: &str = "usage_write";
+
+/// Channel capacity for the bounded usage-write queue.
+///
+/// 128 is chosen to absorb short bursts during graph refresh while keeping
+/// memory overhead negligible (each `SessionUsageRecord` is O(skills) small).
+pub const USAGE_WRITE_CHANNEL_CAPACITY: usize = 128;
+
+/// Rollback flag: set `MCP_USAGE_LOGGING=off` to disable usage recording.
+///
+// TODO(remove-after-v1.5-green): delete this flag once usage recording is
+// proven stable in production. Removal criterion: first green CI on `main`
+// with usage rows confirmed in the live DB.
+pub const USAGE_LOGGING_FLAG: &str = "MCP_USAGE_LOGGING";
+
+/// Shared health-marker cell for the usage writer observability seam.
+///
+/// `Arc<std::sync::Mutex<String>>` so both the writer task and the caller side
+/// can inspect/set it without async overhead.
+pub type UsageWriteHealth = Arc<std::sync::Mutex<String>>;
+
+/// Creates a new health cell initialized to `"ok"`.
+pub fn new_usage_write_health() -> UsageWriteHealth {
+    Arc::new(std::sync::Mutex::new("ok".to_owned()))
+}
+
+/// Returns the current value of the usage-write health marker.
+///
+/// Called by `McpServerApp::compile_context` to include in `health` on each
+/// response, satisfying the observability seam requirement.
+pub fn read_usage_write_health(health: &UsageWriteHealth) -> String {
+    health
+        .lock()
+        .map(|guard| guard.clone())
+        .unwrap_or_else(|_| "unknown".to_owned())
+}
+
+/// Marks the health cell as failed and emits a structured warn log.
+///
+/// Called both by the background writer (on DB error) and by `try_send` on the
+/// hot path (on channel-full backpressure). Both count as an observable failure;
+/// neither propagates to the caller.
+fn set_failed(health: &UsageWriteHealth, reason: &str) {
+    if let Ok(mut guard) = health.lock() {
+        *guard = "failed".to_owned();
+    }
+    warn!(
+        health_key = USAGE_WRITE_HEALTH_KEY,
+        reason, "usage write failed; latency and caller response unaffected"
+    );
+}
+
+/// Resets the health cell to `"ok"` after a successful write.
+fn set_ok(health: &UsageWriteHealth) {
+    if let Ok(mut guard) = health.lock() {
+        *guard = "ok".to_owned();
+    }
+}
+
+/// Spawns the background usage-writer task and returns the channel sender.
+///
+/// Returns `None` when usage logging is disabled via [`USAGE_LOGGING_FLAG`].
+/// The caller (`McpServerApp`) stores the sender as `Option<mpsc::Sender<…>>`
+/// and uses `try_send` on the hot path; a `None` means no write is attempted.
+///
+/// The background task runs until the sender side is dropped (server shutdown).
+/// All failures are logged and update the shared health cell — they are never
+/// re-panicked or propagated.
+pub fn spawn_usage_writer(
+    writer: Arc<dyn UsagePersistencePort>,
+    health: UsageWriteHealth,
+) -> Option<mpsc::Sender<SessionUsageRecord>> {
+    if std::env::var(USAGE_LOGGING_FLAG).as_deref() == Ok("off") {
+        warn!(
+            flag = USAGE_LOGGING_FLAG,
+            "usage logging disabled by rollback flag; no usage rows will be written"
+        );
+        return None;
+    }
+
+    let (tx, mut rx) = mpsc::channel::<SessionUsageRecord>(USAGE_WRITE_CHANNEL_CAPACITY);
+    let health_clone = health.clone();
+
+    tokio::spawn(async move {
+        while let Some(record) = rx.recv().await {
+            match writer.write_session_usage(record).await {
+                Ok(()) => set_ok(&health_clone),
+                Err(error) => {
+                    set_failed(&health_clone, &error.to_string());
+                }
+            }
+        }
+    });
+
+    Some(tx)
+}
+
+/// Posts a usage record to the background writer channel.
+///
+/// Uses `try_send` so the hot path is never blocked. If the channel is full
+/// (backpressure) the record is dropped and the health marker is set to
+/// `"failed"` with a warn log. Both DB errors (inside the task) and channel-full
+/// drops (here) are observable through the same `health["usage_write"]` key.
+pub fn post_usage_record(
+    sender: &mpsc::Sender<SessionUsageRecord>,
+    record: SessionUsageRecord,
+    health: &UsageWriteHealth,
+) {
+    if let Err(_dropped) = sender.try_send(record) {
+        set_failed(health, "usage_write_channel_full");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{Arc, Mutex};
+
+    use async_trait::async_trait;
+    use infrastructure::{SessionUsageRecord, UsagePersistenceError, UsagePersistencePort};
+    use tokio::sync::mpsc;
+
+    use super::*;
+
+    struct CapturingUsageWriter {
+        records: Arc<Mutex<Vec<SessionUsageRecord>>>,
+    }
+
+    #[async_trait]
+    impl UsagePersistencePort for CapturingUsageWriter {
+        async fn write_session_usage(
+            &self,
+            record: SessionUsageRecord,
+        ) -> Result<(), UsagePersistenceError> {
+            self.records.lock().expect("lock").push(record);
+            Ok(())
+        }
+    }
+
+    struct FailingUsageWriter;
+
+    #[async_trait]
+    impl UsagePersistencePort for FailingUsageWriter {
+        async fn write_session_usage(
+            &self,
+            _record: SessionUsageRecord,
+        ) -> Result<(), UsagePersistenceError> {
+            Err(UsagePersistenceError::InvalidContract(
+                "simulated write failure".to_owned(),
+            ))
+        }
+    }
+
+    fn sample_record() -> SessionUsageRecord {
+        SessionUsageRecord {
+            session_id: "test-session".to_owned(),
+            prompt_hash: "abc123".to_owned(),
+            scope: "project".to_owned(),
+            latency_ms: 10,
+            status: "ok".to_owned(),
+            selected_skills: vec![],
+        }
+    }
+
+    /// Proves the observability seam: a simulated write failure sets
+    /// `health["usage_write"]="failed"`, emits a warn log, and never propagates
+    /// to the caller. The test checks both the health marker value and that no
+    /// panic or error is returned to the calling side.
+    #[tokio::test]
+    async fn write_failure_sets_health_marker_to_failed_and_never_propagates() {
+        let health = new_usage_write_health();
+        let writer = Arc::new(FailingUsageWriter);
+        let sender = spawn_usage_writer(writer, health.clone());
+        let sender = sender.expect("writer should be spawned when flag is not off");
+
+        post_usage_record(&sender, sample_record(), &health);
+
+        // Drain the channel so the task has time to process.
+        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+
+        let status = read_usage_write_health(&health);
+        assert_eq!(
+            status, "failed",
+            "health should be 'failed' after a write error; got '{status}'"
+        );
+    }
+
+    /// Proves backpressure: when the channel is full, `post_usage_record` drops
+    /// the record and sets the health marker to `"failed"` — it never blocks.
+    #[test]
+    fn channel_full_sets_health_marker_to_failed_without_blocking() {
+        let health = new_usage_write_health();
+        // Create a channel with capacity 1 and fill it manually so try_send fails.
+        let (_tx, _rx) = mpsc::channel::<SessionUsageRecord>(1);
+        // Use a real zero-capacity-like scenario: create with capacity 1, send 1, then try again.
+        let (tx, _rx) = mpsc::channel::<SessionUsageRecord>(1);
+        tx.try_send(sample_record())
+            .expect("first send should succeed");
+
+        // Second send overflows the capacity-1 channel.
+        post_usage_record(&tx, sample_record(), &health);
+
+        let status = read_usage_write_health(&health);
+        assert_eq!(
+            status, "failed",
+            "health should be 'failed' after channel-full drop; got '{status}'"
+        );
+    }
+
+    /// Proves that a successful write resets health to "ok".
+    #[tokio::test]
+    async fn successful_write_keeps_health_ok() {
+        let records = Arc::new(Mutex::new(Vec::new()));
+        let health = new_usage_write_health();
+        let writer = Arc::new(CapturingUsageWriter {
+            records: records.clone(),
+        });
+        let sender = spawn_usage_writer(writer, health.clone());
+        let sender = sender.expect("writer should be spawned");
+
+        post_usage_record(&sender, sample_record(), &health);
+        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+
+        assert_eq!(read_usage_write_health(&health), "ok");
+        assert_eq!(records.lock().expect("lock").len(), 1);
+    }
+}

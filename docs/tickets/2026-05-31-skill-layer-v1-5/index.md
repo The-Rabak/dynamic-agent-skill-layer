@@ -3,7 +3,7 @@ plan_ref: docs/plans/2026-05-31-feat-skill-layer-v1-5-close-the-loop-plan.md
 architecture_ref: docs/architecture/2026-05-31-skill-layer-v1-5-close-the-loop-architecture.md
 execution_shape: vertical-slices
 ticket_set_status: in_progress # ready | in_progress | blocked | completed
-last_completed_batch: 4
+last_completed_batch: 5
 total_batches: 9 # re-batched 2026-05-31: T02 pulled forward into its own batch (was paired w/ T05); see Execution Batches note
 ---
 
@@ -58,7 +58,7 @@ Explicit `depends_on` edges:
 | 2 | T03, **‖** T04 | completed | Both depend only on T01. **Parallel-safe** — file-disjoint (see safety note). T04 hooks.example.json human-gate approved. |
 | 3 | T02 | completed | **Pulled forward 2026-05-31** (was paired with T05). Singleton — T02 and T03 both edit `retrieval/src/orchestrator.rs`, so T02 CANNOT run parallel with T03; it runs sequentially right after Batch 2. Dep T01 ✓. |
 | 4 | T05 | completed | Singleton — was paired with T02; now solo. Dep T04 ✓ (done in B2). File-disjoint from T02 but separated by the re-batch; gated cloud dep on the opt-in `provider=claude` path. |
-| 5 | T06 | pending | Singleton — shares `mcp-server/lib.rs`, `retrieval/orchestrator.rs`, `maintenance/runtime.rs` with other tickets. |
+| 5 | T06 | completed | Singleton — shares `mcp-server/lib.rs`, `retrieval/orchestrator.rs`, `maintenance/runtime.rs` with other tickets. Done 2026-06-01: usage write (bounded-mpsc bg writer) + `UsagePersistencePort`/`UsageSampleStore` ports + deterministic `usage_prior` + retirement read + migration `003_usage_fields.sql` (renumbered from `002`; `002` taken by transcript-ingest queue). |
 | 6 | ~~T07~~ | **superseded → todo 103** | **Folded into todo 103's durable PG transcript-ingest queue (2026-06-01).** The marker table + `reconcile_transcripts()` FS-scan are replaced by `transcript_ingest_queue` (migration `002`) + the maintenance queue drain. SessionEnd's broken absolute-`{{transcript_path}}` wiring is fixed at the same time. See `todos/103-...md`. |
 | 7 | T08 | pending | Singleton — shares `tests/e2e/*` with T09/T10 and `run-e2e-tests.sh` with T10 (line-ownership fence). Deps T01–T03 satisfied. |
 | 8 | T09 | pending | Singleton — shares `orchestrator.rs`/`dual_scope.rs` with T02/T03/T06, `persistence/rebuild.rs` with T01, and `tests/e2e/*` with neighbors. **Now also owns the `skills.source_paths` column + human-gated migration `004` (replaces T01's scope-root stand-in).** Deps T01,T02,T03 satisfied. |
@@ -104,7 +104,7 @@ All other batches are singletons by the default-to-sequential rule (shared `lib.
 - **T02 confirmed prerequisite (R-2):** graph-builder does NOT publish `graph.rebuilt` to Redis today (pushes to an un-drained in-memory `Vec`). T02 must add the publish path via `infrastructure::RedisStreamsAdapter` — net-new work folded into the ticket.
 - **Human-gate checkpoints (stop and confirm before commit/apply):**
   - T04 — edits `config/claude-code/hooks.example.json` (infra-config).
-  - T06 — `002_usage_fields.sql` migration (schema).
+  - T06 — `003_usage_fields.sql` migration (schema) — **applied 2026-06-01** (renumbered from `002`; that slot is held by `002_transcript_ingest_queue.sql`).
   - T07 — `003_processed_transcripts.sql` migration (schema).
   - T08 — `docker-compose.test.yml` / `scripts/run-e2e-tests.sh` env (infra-config).
   - T09 — `004_skill_source_paths.sql` migration (schema) — **added 2026-05-31** to store real per-skill source paths and retire T01's scope-root stand-in (maintainer direction).

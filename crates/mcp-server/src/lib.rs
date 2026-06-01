@@ -4,6 +4,7 @@ mod graph_refresh_subscriber;
 pub mod protocol;
 pub mod state;
 mod suppression_state;
+mod usage_writer;
 pub mod tools {
     pub mod compile_context;
     pub mod extract_session;
@@ -25,14 +26,19 @@ use infrastructure::OutboxVectorStore;
 use infrastructure::{
     EnvPathGlobalResolver, GitRootProjectResolver, OllamaEmbeddingConfig, OllamaEmbeddingService,
     PostgresAdapter, PostgresConfig, PostgresGraphSnapshotStore, PostgresGraphWriteCoordinator,
-    PostgresPool, PostgresRebuildCoordinator, QdrantAdapter, QdrantConfig, RedisClient,
-    RedisStreamsAdapter, RedisStreamsConfig, TranscriptIngestQueue,
+    PostgresPool, PostgresRebuildCoordinator, PostgresUsageSampleStore, PostgresUsageWriter,
+    QdrantAdapter, QdrantConfig, RedisClient, RedisStreamsAdapter, RedisStreamsConfig,
+    SessionUsageRecord, SkillSelectionRecord, TranscriptIngestQueue, UsagePersistencePort,
+    UsageSampleStore,
 };
 use retrieval::{
     DualScopeResolver, RetrievalConfig, RetrievalOrchestrator, RetrievalSnapshot, SkillRetriever,
 };
+use tokio::sync::mpsc;
 use tools::{
-    compile_context::{CompileContextRequest, CompileContextResponse, CompileContextTool},
+    compile_context::{
+        CompileContextRequest, CompileContextResponse, CompileContextStatus, CompileContextTool,
+    },
     extract_session::{ExtractSessionRequest, ExtractSessionTool},
     find_skill::{FindSkillRequest, FindSkillResponse, FindSkillTool},
 };
@@ -40,6 +46,10 @@ use tracing::{debug, info, warn};
 
 use crate::graph_refresh_subscriber::{GraphReloader, run_graph_refresh_loop};
 use crate::state::{CompiledContextCache, SessionSuppressionState};
+use crate::usage_writer::{
+    UsageWriteHealth, new_usage_write_health, post_usage_record, read_usage_write_health,
+    spawn_usage_writer,
+};
 
 #[derive(Clone)]
 pub struct McpServerApp {
@@ -53,6 +63,18 @@ pub struct McpServerApp {
     /// endpoint (todo 103). `None` for in-memory/test constructors that have no
     /// Postgres pool; wired in [`build_live_server`] from the live PG adapter.
     transcript_ingest: Option<TranscriptIngestQueue>,
+    /// Sender side of the bounded channel feeding the background usage writer (T06).
+    ///
+    /// `None` when usage logging is disabled (`MCP_USAGE_LOGGING=off`) or when the
+    /// server was constructed without a Postgres pool (test/in-memory constructors).
+    /// When `None`, no usage rows are written and the health marker stays `"ok"`.
+    usage_sender: Option<mpsc::Sender<SessionUsageRecord>>,
+    /// Shared health cell for the usage-write observability seam (T06).
+    ///
+    /// Set to `"failed"` on DB error or channel-full backpressure, reset to `"ok"`
+    /// after the next successful write. Injected into every `compile_context`
+    /// response under `health["usage_write"]`.
+    usage_write_health: UsageWriteHealth,
 }
 
 impl McpServerApp {
@@ -93,6 +115,8 @@ impl McpServerApp {
             session_state: state,
             cache,
             transcript_ingest: None,
+            usage_sender: None,
+            usage_write_health: new_usage_write_health(),
         }
     }
 
@@ -101,6 +125,19 @@ impl McpServerApp {
     /// constructors stay free of a Postgres dependency.
     pub fn with_transcript_ingest(mut self, queue: TranscriptIngestQueue) -> Self {
         self.transcript_ingest = Some(queue);
+        self
+    }
+
+    /// Wires the background usage writer (T06).
+    ///
+    /// Spawns the bounded-channel writer task and stores the sender so every
+    /// `compile_context` call can post usage records off the hot path. Builder-style
+    /// so test/in-memory constructors stay free of Postgres. When not called (or when
+    /// `MCP_USAGE_LOGGING=off`), usage writes are silently skipped and the health
+    /// marker stays `"ok"`.
+    pub fn with_usage_writer(mut self, writer: Arc<dyn UsagePersistencePort>) -> Self {
+        let health = self.usage_write_health.clone();
+        self.usage_sender = spawn_usage_writer(writer, health);
         self
     }
 
@@ -158,8 +195,40 @@ impl McpServerApp {
             .collect::<Vec<&'static str>>()
     }
 
+    /// Compiles skill context for the current session.
+    ///
+    /// Coordination layer: delegates retrieval + compilation to [`CompileContextTool`]
+    /// (pure query-compile unit, T04), then asynchronously records usage via the
+    /// background writer (T06). Usage writes are off the response path — failures
+    /// set `health["usage_write"]="failed"` and emit a `warn` log but never affect
+    /// latency or the returned response.
     pub async fn compile_context(&self, request: CompileContextRequest) -> CompileContextResponse {
-        self.compile_context.invoke(request).await
+        let prompt_hash = compute_prompt_hash(&request.prompt);
+        let (mut response, outcome) = self
+            .compile_context
+            .invoke_and_capture_outcome(request.clone())
+            .await;
+
+        // Post usage record to the background writer if a live retrieval ran.
+        if let Some(outcome) = outcome {
+            if let Some(sender) = &self.usage_sender {
+                let record =
+                    build_session_usage_record(&request, &response, &outcome, &prompt_hash);
+                post_usage_record(sender, record, &self.usage_write_health);
+            }
+        }
+
+        // Inject the usage-write health marker into the response so the
+        // observability seam is visible to callers.
+        let usage_health = read_usage_write_health(&self.usage_write_health);
+        if usage_health != "ok" {
+            response.health.insert(
+                usage_writer::USAGE_WRITE_HEALTH_KEY.to_owned(),
+                usage_health,
+            );
+        }
+
+        response
     }
 
     pub async fn find_skill(&self, request: FindSkillRequest) -> FindSkillResponse {
@@ -353,7 +422,13 @@ async fn build_live_server(
     let write_coordinator = PostgresGraphWriteCoordinator::new(pg_adapter.pool().clone());
     let rebuild_coordinator = PostgresRebuildCoordinator::new(pg_adapter.pool().clone());
 
-    let graph = self::build_graph_from_pg(pg_adapter.pool(), embedding_service.as_ref()).await?;
+    let usage_sample_store = Arc::new(PostgresUsageSampleStore::new(pg_adapter.pool().clone()));
+    let graph = self::build_graph_from_pg(
+        pg_adapter.pool(),
+        embedding_service.as_ref(),
+        usage_sample_store.as_ref(),
+    )
+    .await?;
 
     let admin_runtime_dependencies = admin_wiring::live_admin_runtime_dependencies();
     let start_dir = std::env::current_dir().unwrap_or_else(|_| ".".into());
@@ -367,6 +442,10 @@ async fn build_live_server(
         config,
         scope_resolver,
     ));
+
+    let usage_writer: Arc<dyn UsagePersistencePort> =
+        Arc::new(PostgresUsageWriter::new(pg_adapter.pool().clone()));
+
     let app = McpServerApp::new_with_admin(
         retriever.clone(),
         admin_runtime_dependencies.rebuild_trigger,
@@ -375,16 +454,21 @@ async fn build_live_server(
     )
     // Back the localhost `/ingest/transcript` endpoint with the live PG pool so
     // host capture hooks can push transcript content into the durable queue.
-    .with_transcript_ingest(TranscriptIngestQueue::new(pg_adapter.pool().clone()));
+    .with_transcript_ingest(TranscriptIngestQueue::new(pg_adapter.pool().clone()))
+    // Wire the background usage writer so compile_context records usage (T06).
+    .with_usage_writer(usage_writer);
 
     // Online refresh-without-restart (T02): subscribe to `graph.rebuilt`
     // and atomically swap the in-memory read model. Spawned on its own
     // task so it never blocks the HTTP server; gated by a rollback flag.
+    // T06: pass the usage_sample_store so graph refreshes also populate
+    // the deterministic usage prior.
     spawn_graph_refresh_if_enabled(
         redis_streams.clone(),
         pg_adapter.clone(),
         embedding_service.clone(),
         retriever,
+        usage_sample_store.clone(),
     );
 
     Ok(LiveServerComponents {
@@ -497,14 +581,19 @@ struct PostgresGraphReloader {
     pg_adapter: Arc<PostgresAdapter>,
     embedding_service: Arc<OllamaEmbeddingService>,
     retriever: Arc<RetrievalOrchestrator<OllamaEmbeddingService>>,
+    usage_sample_store: Arc<PostgresUsageSampleStore>,
 }
 
 #[async_trait]
 impl GraphReloader for PostgresGraphReloader {
     async fn reload_and_swap(&self) -> Result<i64, String> {
-        let snapshot = build_graph_from_pg(self.pg_adapter.pool(), self.embedding_service.as_ref())
-            .await
-            .map_err(|error| format!("graph reload from PG failed: {error}"))?;
+        let snapshot = build_graph_from_pg(
+            self.pg_adapter.pool(),
+            self.embedding_service.as_ref(),
+            self.usage_sample_store.as_ref(),
+        )
+        .await
+        .map_err(|error| format!("graph reload from PG failed: {error}"))?;
         let target_version = snapshot.graph_version;
         // `swap_graph` is idempotent: re-applying the current/older version is a
         // no-op, so a coalesced burst that resolves to an already-applied version
@@ -528,6 +617,7 @@ fn spawn_graph_refresh_if_enabled(
     pg_adapter: Arc<PostgresAdapter>,
     embedding_service: Arc<OllamaEmbeddingService>,
     retriever: Arc<RetrievalOrchestrator<OllamaEmbeddingService>>,
+    usage_sample_store: Arc<PostgresUsageSampleStore>,
 ) {
     if std::env::var(GRAPH_REFRESH_FLAG).as_deref() == Ok("off") {
         warn!(
@@ -541,14 +631,23 @@ fn spawn_graph_refresh_if_enabled(
         pg_adapter,
         embedding_service,
         retriever,
+        usage_sample_store,
     });
     tokio::spawn(run_graph_refresh_loop(redis_streams, reloader));
 }
 
-#[tracing::instrument(skip(pool, embedding_service))]
+/// Loads the full skill graph from Postgres and populates each skill's
+/// deterministic usage prior from the live `skill_usage` aggregates.
+///
+/// The `usage_sample_store` is queried once per graph load with all skill IDs
+/// in a single batched query (no N+1). Skills with zero usage rows receive
+/// `prior=0.0` (honest cold-start). The prior is a pure function of
+/// `usage_count` and `age_days` — it is never written back to the DB.
+#[tracing::instrument(skip(pool, embedding_service, usage_sample_store))]
 async fn build_graph_from_pg(
     pool: &PostgresPool,
     embedding_service: &dyn EmbeddingService,
+    usage_sample_store: &dyn UsageSampleStore,
 ) -> Result<RetrievalSnapshot, Box<dyn std::error::Error + Send + Sync>> {
     let store = PostgresGraphSnapshotStore::new(pool.clone());
     // Read the real durable version so the snapshot (and the version-keyed cache)
@@ -611,6 +710,34 @@ async fn build_graph_from_pg(
         .map(|p| vec![p])
         .unwrap_or_default();
 
+    // Batch-query usage for all skills in one round trip so the prior is
+    // populated at load time without N+1 queries. Skills with no rows get
+    // total_count=0 → prior=0.0 (honest cold-start).
+    // Window of 90 days matches RetirementConfig::default().scoring_window_days.
+    let skill_ids: Vec<String> = skills.iter().map(|s| s.skill_id.clone()).collect();
+    let usage_by_skill: std::collections::HashMap<String, retrieval::UsagePriorInputs> =
+        match usage_sample_store.recent_usage(&skill_ids, 90).await {
+            Ok(summaries) => summaries
+                .into_iter()
+                .map(|s| {
+                    (
+                        s.skill_id.clone(),
+                        retrieval::UsagePriorInputs {
+                            usage_count: s.total_count,
+                            age_days: s.age_days.unwrap_or(u32::MAX),
+                        },
+                    )
+                })
+                .collect(),
+            Err(error) => {
+                warn!(
+                    error = %error,
+                    "failed to load usage priors at graph load time; cold-start priors (0.0) used"
+                );
+                std::collections::HashMap::new()
+            }
+        };
+
     let seeded_skills: Vec<retrieval::SeededSkill> = skills
         .into_iter()
         .zip(embeddings.into_iter())
@@ -631,6 +758,18 @@ async fn build_graph_from_pg(
                     project_scope_paths.clone(),
                 ),
             };
+            // Deterministic prior from real usage: ln(1+count)·e^(-age/30),
+            // clamped at 0.15. Zero for cold-start (no usage rows) so unseen
+            // skills never receive a phantom boost. V1.5 fixed formula — see
+            // `retrieval::scoring::usage_prior` for the sealed constants.
+            let prior_inputs = usage_by_skill.get(&record.skill_id).copied().unwrap_or(
+                retrieval::UsagePriorInputs {
+                    usage_count: 0,
+                    age_days: 0,
+                },
+            );
+            let prior = retrieval::usage_prior(prior_inputs.usage_count, prior_inputs.age_days);
+
             let skill = domain::Skill {
                 id: domain::DomainId::new_unchecked(&record.skill_id),
                 name: record.name,
@@ -647,6 +786,11 @@ async fn build_graph_from_pg(
                 community_id: record
                     .community_id
                     .map(|id| domain::DomainId::new_unchecked(id)),
+            };
+            let community_boost = if skill.community_id.is_some() {
+                0.2
+            } else {
+                0.0
             };
             let subunits: Vec<domain::Subunit> = record
                 .subunits
@@ -667,13 +811,84 @@ async fn build_graph_from_pg(
                 source_paths,
                 embedding,
                 subunits,
-                prior: 0.1,
-                community_boost: 0.2,
+                prior,
+                community_boost,
             }
         })
         .collect();
 
     Ok(RetrievalSnapshot::new(seeded_skills, graph_version))
+}
+
+/// Computes the BLAKE3 hash of a raw prompt string for safe storage.
+///
+/// Security P3 (T06): `session_logs.prompt_hash` stores this hash, never the
+/// raw prompt text. Matches the cache-key hash pattern used elsewhere in the
+/// server so cache and usage rows share the same key space.
+fn compute_prompt_hash(prompt: &str) -> String {
+    blake3::hash(prompt.as_bytes()).to_hex().to_string()
+}
+
+/// Builds a [`SessionUsageRecord`] from the compile_context call's request,
+/// response, and retrieval outcome.
+///
+/// Called at the coordination layer in `McpServerApp::compile_context` AFTER
+/// the tool returns so this function never touches `CompileContextTool`'s
+/// internal state. Skills with no UUID-format IDs are silently skipped rather
+/// than aborting the entire write — an invalid ID in the graph is a data
+/// hygiene issue, not a reason to drop the whole session's usage.
+fn build_session_usage_record(
+    request: &CompileContextRequest,
+    response: &CompileContextResponse,
+    outcome: &retrieval::RetrievalOutcome,
+    prompt_hash: &str,
+) -> SessionUsageRecord {
+    let context_status = match response.status {
+        CompileContextStatus::Ok => "ok",
+        CompileContextStatus::NoMatch => "no_match",
+        CompileContextStatus::Degraded => "degraded",
+        CompileContextStatus::DuplicateSuppressed => "duplicate_suppressed",
+    };
+
+    // Determine the scope string from the first resolved scope, falling back to
+    // "project" so the DB CHECK constraint is always satisfied.
+    let scope = request
+        .repo_path
+        .is_empty()
+        .then_some("global")
+        .unwrap_or("project");
+
+    let selected_skills: Vec<SkillSelectionRecord> = outcome
+        .skills
+        .iter()
+        .filter_map(|retrieved| {
+            let raw_id = retrieved.scored_skill.skill.id.as_str();
+            // Only skills whose IDs parse as UUIDs can be persisted in skill_usage
+            // (foreign key to skills.id which is UUID). Log non-UUID IDs at debug
+            // level rather than dropping the whole write.
+            if raw_id.parse::<uuid::Uuid>().is_err() {
+                debug!(
+                    skill_id = raw_id,
+                    "skill_id is not a UUID; skipping usage row for this skill"
+                );
+                return None;
+            }
+            Some(SkillSelectionRecord {
+                skill_id: raw_id.to_owned(),
+                relevance_score: retrieved.scored_skill.score,
+                context_status: context_status.to_owned(),
+            })
+        })
+        .collect();
+
+    SessionUsageRecord {
+        session_id: request.session_id.clone(),
+        prompt_hash: prompt_hash.to_owned(),
+        scope: scope.to_owned(),
+        latency_ms: response.latency_ms as i64,
+        status: context_status.to_owned(),
+        selected_skills,
+    }
 }
 
 /// Maps a DB subunit kind string to the domain [`domain::SubunitType`].

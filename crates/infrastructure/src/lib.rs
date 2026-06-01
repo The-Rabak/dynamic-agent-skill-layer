@@ -12,6 +12,7 @@ pub mod persistence {
     pub mod postgres;
     pub mod rebuild;
     pub mod transcript_queue;
+    pub mod usage;
 }
 pub mod resilience;
 pub mod scope;
@@ -44,6 +45,10 @@ pub use persistence::transcript_queue::{
     EnqueueOutcome, MAX_TRANSCRIPT_DRAIN_ATTEMPTS, MAX_TRANSCRIPT_INGEST_BYTES,
     TranscriptIngestQueue, TranscriptIngestRequest, TranscriptQueueError, TranscriptQueueRecord,
     TranscriptSource,
+};
+pub use persistence::usage::{
+    PostgresUsageSampleStore, PostgresUsageWriter, SessionUsageRecord, SkillSelectionRecord,
+    SkillUsageSummary, UsagePersistenceError, UsagePersistencePort, UsageSampleStore,
 };
 pub use resilience::{
     CircuitBreaker, CircuitState, ResilienceError, RetryPolicy, execute_with_resilience,
