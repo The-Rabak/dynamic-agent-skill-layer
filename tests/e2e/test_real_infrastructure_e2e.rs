@@ -89,6 +89,7 @@ async fn setup_qdrant() -> QdrantAdapter {
 }
 
 #[tokio::test]
+#[ignore = "requires live containers"]
 async fn graph_builder_rebuild_persists_to_pg_and_enqueues_outbox_events_then_drains_to_qdrant() {
     let pg = setup_pg().await;
     let qdrant = setup_qdrant().await;
@@ -169,6 +170,7 @@ async fn graph_builder_rebuild_persists_to_pg_and_enqueues_outbox_events_then_dr
 }
 
 #[tokio::test]
+#[ignore = "requires live containers"]
 async fn full_roundtrip_filesystem_to_graph_builder_to_pg_and_qdrant() {
     let pg = setup_pg().await;
     let qdrant = setup_qdrant().await;
