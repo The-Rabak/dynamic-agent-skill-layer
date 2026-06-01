@@ -2,9 +2,9 @@ use async_trait::async_trait;
 use chrono::Utc;
 use infrastructure::{
     EventEnvelope, GraphWriteCoordinator, LiveGraphCommunityRecord, LiveGraphSkillRecord,
-    LiveGraphSnapshotMutation, LiveGraphSubunitRecord, OutboxEvent, OutboxRelay,
-    OutboxVectorStore, PostgresGraphWriteCoordinator, PostgresRebuildCoordinator,
-    RebuildCoordinator, VECTOR_UPSERT_EVENT_TYPE,
+    LiveGraphSnapshotMutation, LiveGraphSubunitRecord, OutboxEvent, OutboxRelay, OutboxVectorStore,
+    PostgresGraphWriteCoordinator, PostgresRebuildCoordinator, RebuildCoordinator,
+    VECTOR_UPSERT_EVENT_TYPE,
 };
 use serde_json::json;
 use thiserror::Error;
@@ -108,9 +108,7 @@ where
             audits,
         };
 
-        self.durable_state
-            .persist_graph_mutation(mutation)
-            .await?;
+        self.durable_state.persist_graph_mutation(mutation).await?;
         self.durable_state.mark_outbox_drained().await?;
         let graph_version = self.durable_state.bump_graph_version().await?;
 
@@ -305,11 +303,7 @@ where
         let relay = OutboxRelay::new(self.outbox_coordinator, self.vector_store, 10, 0)
             .map_err(|error| GraphRebuildError::DurableWrite(error.to_string()))?;
         relay
-            .drain_correlation_outbox(
-                self.outbox_coordinator,
-                self.rebuild_correlation_id,
-                5,
-            )
+            .drain_correlation_outbox(self.outbox_coordinator, self.rebuild_correlation_id, 5)
             .await
             .map_err(|error| GraphRebuildError::DurableWrite(error.to_string()))
     }

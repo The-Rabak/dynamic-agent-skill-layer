@@ -154,19 +154,17 @@ impl PostgresGraphSnapshotStore {
 
         Ok(skill_rows
             .into_iter()
-            .map(
-                |(skill_id, name, description, tags, community_id, scope)| {
-                    PersistedGraphSkillRecord {
-                        subunits: subunits_by_skill.remove(&skill_id).unwrap_or_default(),
-                        skill_id,
-                        name,
-                        description,
-                        scope,
-                        tags,
-                        community_id,
-                    }
-                },
-            )
+            .map(|(skill_id, name, description, tags, community_id, scope)| {
+                PersistedGraphSkillRecord {
+                    subunits: subunits_by_skill.remove(&skill_id).unwrap_or_default(),
+                    skill_id,
+                    name,
+                    description,
+                    scope,
+                    tags,
+                    community_id,
+                }
+            })
             .collect())
     }
 

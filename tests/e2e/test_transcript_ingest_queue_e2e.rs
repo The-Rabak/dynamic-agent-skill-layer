@@ -29,10 +29,10 @@ use std::{
 };
 
 use infrastructure::{DependencyFactory, TranscriptIngestQueue};
+use maintenance::{DEFAULT_TRANSCRIPT_DRAIN_BATCH, TranscriptQueueDrain};
 use mcp_server::{McpServerApp, protocol};
 use retrieval::RetrievalConfig;
 use session_extractor::SessionExtractor;
-use maintenance::{DEFAULT_TRANSCRIPT_DRAIN_BATCH, TranscriptQueueDrain};
 
 #[path = "report.rs"]
 mod report;
@@ -151,8 +151,9 @@ async fn shipped_command_hook_payload_round_trips_through_queue_to_pending() {
         std::env::set_var("TRANSCRIPT_INGEST_SECRET", INGEST_SECRET);
     }
 
-    let mut builder =
-        report::ReportBuilder::new("shipped_command_hook_payload_round_trips_through_queue_to_pending");
+    let mut builder = report::ReportBuilder::new(
+        "shipped_command_hook_payload_round_trips_through_queue_to_pending",
+    );
 
     // --- Boot the live server (wires the durable queue from the PG pool) ---
     let boot_start = std::time::Instant::now();
@@ -171,7 +172,9 @@ async fn shipped_command_hook_payload_round_trips_through_queue_to_pending() {
         .expect("ephemeral port should bind");
     let local_addr: SocketAddr = listener.local_addr().expect("listener has local addr");
     let server = tokio::spawn(async move {
-        axum::serve(listener, app_router).await.expect("server runs");
+        axum::serve(listener, app_router)
+            .await
+            .expect("server runs");
     });
     let ingest_url = format!("http://{local_addr}/ingest/transcript");
     let health_url = format!("http://{local_addr}/health");
@@ -202,13 +205,11 @@ async fn shipped_command_hook_payload_round_trips_through_queue_to_pending() {
         sandbox.to_str().expect("sandbox path utf8"),
     );
     let invoke_start = std::time::Instant::now();
-    let status = run_capture_script(
-        "session_end",
-        &ingest_url,
-        INGEST_SECRET,
-        &hook_payload,
+    let status = run_capture_script("session_end", &ingest_url, INGEST_SECRET, &hook_payload);
+    assert!(
+        status.success(),
+        "capture script must exit 0 (fire-and-forget)"
     );
-    assert!(status.success(), "capture script must exit 0 (fire-and-forget)");
 
     // The script detaches its POST so the hook returns immediately (non-blocking),
     // so the row appears asynchronously — poll for it rather than asserting at once.
@@ -382,7 +383,10 @@ async fn shipped_command_hook_payload_round_trips_through_queue_to_pending() {
             .await
             .expect("retry ingest sends");
         assert_eq!(retry_response.status(), reqwest::StatusCode::ACCEPTED);
-        drain.drain_once().await.expect("retry drain sweep succeeds");
+        drain
+            .drain_once()
+            .await
+            .expect("retry drain sweep succeeds");
         pending_files = gather(&pending_root);
     }
 
@@ -392,8 +396,7 @@ async fn shipped_command_hook_payload_round_trips_through_queue_to_pending() {
          (after {attempt} extra extraction attempt(s))",
         pending_root.display()
     );
-    let pending_body =
-        std::fs::read_to_string(&pending_files[0]).expect("pending draft readable");
+    let pending_body = std::fs::read_to_string(&pending_files[0]).expect("pending draft readable");
     assert!(
         pending_body.contains("origin: session_extraction"),
         "pending draft should carry the session_extraction origin frontmatter"
@@ -409,8 +412,10 @@ async fn shipped_command_hook_payload_round_trips_through_queue_to_pending() {
     let report_doc = builder.build();
     let report_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../tests/e2e/reports");
     std::fs::create_dir_all(&report_dir).expect("reports dir should exist");
-    let report_path =
-        report_dir.join(format!("{}__{}.json", report_doc.test_name, report_doc.test_id));
+    let report_path = report_dir.join(format!(
+        "{}__{}.json",
+        report_doc.test_name, report_doc.test_id
+    ));
     std::fs::write(
         &report_path,
         serde_json::to_string_pretty(&report_doc).expect("report serializes"),
@@ -418,6 +423,9 @@ async fn shipped_command_hook_payload_round_trips_through_queue_to_pending() {
     .expect("report writes");
 
     server.abort();
-    components.teardown().await.expect("teardown should succeed");
+    components
+        .teardown()
+        .await
+        .expect("teardown should succeed");
     let _ = std::fs::remove_dir_all(&sandbox);
 }

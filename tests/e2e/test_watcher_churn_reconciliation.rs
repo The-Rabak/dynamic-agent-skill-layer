@@ -8,10 +8,12 @@ use std::{
 
 use domain::ScopeType;
 use graph_builder::{
-    GraphRebuildOrchestrator, InMemoryDurableGraphState, ScopeRoot,
-    SkillFileChangeKind, SkillWatcher, WatcherRecovery, watcher::build_snapshot,
+    GraphRebuildOrchestrator, InMemoryDurableGraphState, ScopeRoot, SkillFileChangeKind,
+    SkillWatcher, WatcherRecovery, watcher::build_snapshot,
 };
-use infrastructure::{EventEnvelope, OutboxVectorStore, PostgresGraphSnapshotStore, RebuildCoordinator};
+use infrastructure::{
+    EventEnvelope, OutboxVectorStore, PostgresGraphSnapshotStore, RebuildCoordinator,
+};
 use mcp_server::McpServerApp;
 use retrieval::RetrievalConfig;
 
@@ -397,13 +399,21 @@ async fn watcher_churn_and_reconciliation_converges_to_correct_graph_state_under
         .await
         .expect("should persist mutation to live PG");
 
-    builder.record_latency("rebuild_and_persist", rebuild_start.elapsed().as_millis() as u64);
-    builder.push_action("rebuild", report::ReportedAction {
-        description: "persist churn mutation to live PG via rebuild_coordinator".to_owned(),
-        status: report::AssertionResult::Passed,
-        side_effects: vec![report::SideEffect::DbRowInserted { table: format!("graph_version {new_version}") }],
-        duration_ms: rebuild_start.elapsed().as_millis() as u64,
-    });
+    builder.record_latency(
+        "rebuild_and_persist",
+        rebuild_start.elapsed().as_millis() as u64,
+    );
+    builder.push_action(
+        "rebuild",
+        report::ReportedAction {
+            description: "persist churn mutation to live PG via rebuild_coordinator".to_owned(),
+            status: report::AssertionResult::Passed,
+            side_effects: vec![report::SideEffect::DbRowInserted {
+                table: format!("graph_version {new_version}"),
+            }],
+            duration_ms: rebuild_start.elapsed().as_millis() as u64,
+        },
+    );
 
     assert!(
         new_version > version_before,
@@ -430,14 +440,17 @@ async fn watcher_churn_and_reconciliation_converges_to_correct_graph_state_under
         "all persisted skills should have non-empty subunits"
     );
 
-    builder.push_action("pg_verify", report::ReportedAction {
-        description: format!(
-            "PG skills table contains {active_skill_count} active skills"
-        ),
-        status: report::AssertionResult::Passed,
-        side_effects: vec![report::SideEffect::DbRowInserted { table: format!("{active_skill_count} skills") }],
-        duration_ms: pg_verify_start.elapsed().as_millis() as u64,
-    });
+    builder.push_action(
+        "pg_verify",
+        report::ReportedAction {
+            description: format!("PG skills table contains {active_skill_count} active skills"),
+            status: report::AssertionResult::Passed,
+            side_effects: vec![report::SideEffect::DbRowInserted {
+                table: format!("{active_skill_count} skills"),
+            }],
+            duration_ms: pg_verify_start.elapsed().as_millis() as u64,
+        },
+    );
 
     let qdrant_verify_start = std::time::Instant::now();
     let point_ids = components
@@ -446,12 +459,15 @@ async fn watcher_churn_and_reconciliation_converges_to_correct_graph_state_under
         .await
         .expect("should list Qdrant points");
 
-    builder.push_action("qdrant_verify", report::ReportedAction {
-        description: format!("Qdrant contains {} points", point_ids.point_ids.len()),
-        status: report::AssertionResult::Passed,
-        side_effects: vec![],
-        duration_ms: qdrant_verify_start.elapsed().as_millis() as u64,
-    });
+    builder.push_action(
+        "qdrant_verify",
+        report::ReportedAction {
+            description: format!("Qdrant contains {} points", point_ids.point_ids.len()),
+            status: report::AssertionResult::Passed,
+            side_effects: vec![],
+            duration_ms: qdrant_verify_start.elapsed().as_millis() as u64,
+        },
+    );
 
     builder.add_contract_assertion(report::ContractAssertion {
         contract_name: "watcher_churn_live_reconciliation".to_owned(),
@@ -472,6 +488,9 @@ async fn watcher_churn_and_reconciliation_converges_to_correct_graph_state_under
     let report_json = serde_json::to_string_pretty(&report).expect("report should serialize");
     fs::write(&report_path, report_json).expect("report should be writable");
 
-    components.teardown().await.expect("teardown should succeed");
+    components
+        .teardown()
+        .await
+        .expect("teardown should succeed");
     fs::remove_dir_all(&sandbox).expect("sandbox should clean up");
 }

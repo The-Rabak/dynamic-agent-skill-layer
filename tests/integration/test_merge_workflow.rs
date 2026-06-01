@@ -510,8 +510,8 @@ fn merge_workflow_rejects_symlinked_pending_root_that_escapes_scope_root() {
 
 #[test]
 fn live_merge_runner_exists_and_implements_merge_pass_runner_trait() {
-    use maintenance::cron::MergePassRunner;
     use maintenance::LiveMergePassRunner;
+    use maintenance::cron::MergePassRunner;
 
     fn assert_merge_runner(_r: &impl MergePassRunner) {}
     fn assert_merge_runner_object_safe(_r: &dyn MergePassRunner) {}
@@ -519,8 +519,8 @@ fn live_merge_runner_exists_and_implements_merge_pass_runner_trait() {
 
 #[test]
 fn live_retirement_runner_exists_and_implements_retirement_pass_runner_trait() {
-    use maintenance::cron::RetirementPassRunner;
     use maintenance::LiveRetirementPassRunner;
+    use maintenance::cron::RetirementPassRunner;
 
     fn assert_retirement_runner(_r: &impl RetirementPassRunner) {}
     fn assert_retirement_runner_object_safe(_r: &dyn RetirementPassRunner) {}

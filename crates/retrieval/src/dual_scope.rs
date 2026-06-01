@@ -4,10 +4,10 @@ use domain::ScopeDescriptor;
 use tokio::time::timeout;
 
 use crate::{
+    cosine_rank::rank_by_cosine,
     fusion::{FusedCandidate, mmr_select},
     graph_search::{GraphHit, search_graph},
     orchestrator::{RetrievalConfig, RetrievalSnapshot},
-    cosine_rank::rank_by_cosine,
     scoring::{ScoreComponents, score_eq3},
 };
 

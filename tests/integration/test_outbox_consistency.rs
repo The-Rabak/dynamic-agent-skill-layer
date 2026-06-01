@@ -684,7 +684,9 @@ async fn graph_rebuilt_is_not_emitted_when_outbox_drain_fails() {
     let mut published_events = Vec::new();
     let mut orchestrator = GraphRebuildOrchestrator::new(&mut durable_state, &mut published_events);
 
-    let result = orchestrator.rebuild_from_changes(&[scope], &[file_change]).await;
+    let result = orchestrator
+        .rebuild_from_changes(&[scope], &[file_change])
+        .await;
     assert!(result.is_err());
     assert!(
         published_events.is_empty(),

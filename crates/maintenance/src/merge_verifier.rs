@@ -22,10 +22,8 @@ impl MergeSemanticVerifier for TextOverlapMergeSemanticVerifier {
         if left_text.trim().is_empty() || right_text.trim().is_empty() {
             return Ok(false);
         }
-        let left_tokens: std::collections::HashSet<&str> =
-            left_text.split_whitespace().collect();
-        let right_tokens: std::collections::HashSet<&str> =
-            right_text.split_whitespace().collect();
+        let left_tokens: std::collections::HashSet<&str> = left_text.split_whitespace().collect();
+        let right_tokens: std::collections::HashSet<&str> = right_text.split_whitespace().collect();
         if left_tokens.is_empty() || right_tokens.is_empty() {
             return Ok(false);
         }
@@ -57,7 +55,11 @@ mod tests {
     #[test]
     fn identical_snapshots_pass() {
         let verifier = TextOverlapMergeSemanticVerifier::new(0.7);
-        let s = snapshot("rust-auth", "Rust authentication flow", vec!["verify JWT", "check scope"]);
+        let s = snapshot(
+            "rust-auth",
+            "Rust authentication flow",
+            vec!["verify JWT", "check scope"],
+        );
         assert!(verifier.are_equivalent(&s, &s).unwrap());
     }
 
@@ -65,7 +67,11 @@ mod tests {
     fn disjoint_snapshots_fail() {
         let verifier = TextOverlapMergeSemanticVerifier::new(0.7);
         let a = snapshot("rust-auth", "Rust authentication flow", vec!["verify JWT"]);
-        let b = snapshot("py-http", "Python HTTP client patterns", vec!["use requests"]);
+        let b = snapshot(
+            "py-http",
+            "Python HTTP client patterns",
+            vec!["use requests"],
+        );
         assert!(!verifier.are_equivalent(&a, &b).unwrap());
     }
 

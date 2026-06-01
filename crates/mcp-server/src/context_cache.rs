@@ -102,11 +102,7 @@ impl CompiledContextCache {
         }
     }
 
-    async fn try_redis_setex(
-        &self,
-        redis_key: &str,
-        entry: &CachedContext,
-    ) {
+    async fn try_redis_setex(&self, redis_key: &str, entry: &CachedContext) {
         let Some(client) = &self.redis_client else {
             return;
         };
@@ -132,7 +128,10 @@ impl CompiledContextCache {
                 return;
             }
         };
-        if let Err(error) = conn.set_ex::<_, _, ()>(redis_key, &value, self.ttl_secs).await {
+        if let Err(error) = conn
+            .set_ex::<_, _, ()>(redis_key, &value, self.ttl_secs)
+            .await
+        {
             tracing::warn!(
                 ?error,
                 %redis_key,
@@ -160,10 +159,7 @@ impl CompiledContextCache {
             }
         }
 
-        if let Some(redis_entry) = self
-            .try_redis_get(&key)
-            .await
-        {
+        if let Some(redis_entry) = self.try_redis_get(&key).await {
             if redis_entry.graph_version == graph_version {
                 self.inner.insert(key.clone(), redis_entry.clone());
                 return Some(redis_entry);
@@ -248,9 +244,7 @@ mod tests {
             health: BTreeMap::new(),
         };
 
-        cache
-            .set("session-a", "prompt", &scopes, entry)
-            .await;
+        cache.set("session-a", "prompt", &scopes, entry).await;
 
         assert!(cache.get("session-a", "prompt", &scopes, 8).await.is_none());
     }
@@ -280,8 +274,18 @@ mod tests {
 
         cache.clear_session("session-b");
 
-        assert!(cache.get("session-b", "prompt-1", &scopes, 7).await.is_none());
-        assert!(cache.get("session-b", "prompt-2", &scopes, 7).await.is_none());
+        assert!(
+            cache
+                .get("session-b", "prompt-1", &scopes, 7)
+                .await
+                .is_none()
+        );
+        assert!(
+            cache
+                .get("session-b", "prompt-2", &scopes, 7)
+                .await
+                .is_none()
+        );
         assert_eq!(
             cache.get("session-c", "prompt-1", &scopes, 7).await,
             Some(entry)

@@ -178,11 +178,18 @@ async fn serve_health_endpoint(
 
         let dependencies = health_checker.check().await;
         let state = runtime_health_state.read().await.clone();
-        let circuit_state = state.circuit_state.map(|value| format!("{value:?}")).unwrap_or_else(|| "Closed".to_owned());
+        let circuit_state = state
+            .circuit_state
+            .map(|value| format!("{value:?}"))
+            .unwrap_or_else(|| "Closed".to_owned());
         let healthy = dependencies.healthy
             && state.last_rebuild_error.is_none()
             && state.circuit_state != Some(CircuitState::Open);
-        let detail = if healthy { "ok".to_owned() } else { "degraded (graph_builder_runtime)".to_owned() };
+        let detail = if healthy {
+            "ok".to_owned()
+        } else {
+            "degraded (graph_builder_runtime)".to_owned()
+        };
         let payload = serde_json::to_string(&GraphBuilderHealthResponse {
             healthy,
             detail,
@@ -191,7 +198,11 @@ async fn serve_health_endpoint(
             dependencies,
         })
         .map_err(std::io::Error::other)?;
-        let status_line = if healthy { "HTTP/1.1 200 OK" } else { "HTTP/1.1 503 Service Unavailable" };
+        let status_line = if healthy {
+            "HTTP/1.1 200 OK"
+        } else {
+            "HTTP/1.1 503 Service Unavailable"
+        };
         let response = format!(
             "{status_line}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
             payload.len(),
@@ -209,10 +220,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut watcher = SkillWatcher::new(scopes)?;
     let mut recovery = WatcherRecovery::default();
 
-    let db_url = std::env::var("DATABASE_URL")
-        .unwrap_or_else(|_| "postgres://skill_layer:skill_layer@localhost:15432/skill_layer".to_owned());
-    let qdrant_url = std::env::var("QDRANT_URL")
-        .unwrap_or_else(|_| "http://localhost:16333".to_owned());
+    let db_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
+        "postgres://skill_layer:skill_layer@localhost:15432/skill_layer".to_owned()
+    });
+    let qdrant_url =
+        std::env::var("QDRANT_URL").unwrap_or_else(|_| "http://localhost:16333".to_owned());
 
     let pg_adapter = PostgresAdapter::connect(&PostgresConfig {
         database_url: db_url,
@@ -237,11 +249,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await
         .map_err(|error| format!("qdrant collection setup: {error}"))?;
 
-    let mut durable_state = PostgresDurableGraphState::new(
-        &rebuild_coordinator,
-        &outbox_coordinator,
-        &qdrant_adapter,
-    );
+    let mut durable_state =
+        PostgresDurableGraphState::new(&rebuild_coordinator, &outbox_coordinator, &qdrant_adapter);
     let mut published_events: Vec<EventEnvelope> = Vec::new();
 
     let redis_streams = build_redis_streams_adapter()?;

@@ -43,7 +43,11 @@ pub struct TranscriptQueueDrain {
 impl TranscriptQueueDrain {
     /// Builds a drain over `queue`, extracting with `extractor`, processing at
     /// most `batch_limit` rows per sweep.
-    pub fn new(queue: TranscriptIngestQueue, extractor: SessionExtractor, batch_limit: i64) -> Self {
+    pub fn new(
+        queue: TranscriptIngestQueue,
+        extractor: SessionExtractor,
+        batch_limit: i64,
+    ) -> Self {
         Self {
             queue,
             extractor,

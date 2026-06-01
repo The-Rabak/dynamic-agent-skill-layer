@@ -82,7 +82,11 @@ impl InfrastructureHealthChecker {
 
     /// Register a dependency whose configuration was invalid at startup.
     /// The component is always unhealthy, surfaced alongside runtime-probed components.
-    pub fn with_config_invalid(mut self, name: impl Into<String>, reason: impl Into<String>) -> Self {
+    pub fn with_config_invalid(
+        mut self,
+        name: impl Into<String>,
+        reason: impl Into<String>,
+    ) -> Self {
         self.config_invalid_components.push(HealthComponent {
             name: name.into(),
             healthy: false,
@@ -218,8 +222,8 @@ impl DependencyFactory {
         checker
     }
 
-    pub fn build_embedding_service_from_environment(
-    ) -> Result<Arc<impl EmbeddingService>, Box<dyn std::error::Error>> {
+    pub fn build_embedding_service_from_environment()
+    -> Result<Arc<impl EmbeddingService>, Box<dyn std::error::Error>> {
         let service =
             OllamaEmbeddingService::new(reqwest::Client::new(), OllamaEmbeddingConfig::default())
                 .map_err(|error| std::io::Error::other(error.to_string()))?;
@@ -264,15 +268,26 @@ mod tests {
 
         let report = checker.check().await;
 
-        assert!(!report.healthy, "report should be unhealthy with config-invalid components");
+        assert!(
+            !report.healthy,
+            "report should be unhealthy with config-invalid components"
+        );
         assert_eq!(report.components.len(), 2);
 
-        let pg = report.components.iter().find(|c| c.name == "postgres").expect("postgres component missing");
+        let pg = report
+            .components
+            .iter()
+            .find(|c| c.name == "postgres")
+            .expect("postgres component missing");
         assert!(!pg.healthy);
         assert!(pg.detail.contains("config_invalid"));
         assert!(pg.detail.contains("invalid connection string"));
 
-        let redis_component = report.components.iter().find(|c| c.name == "redis").expect("redis component missing");
+        let redis_component = report
+            .components
+            .iter()
+            .find(|c| c.name == "redis")
+            .expect("redis component missing");
         assert!(!redis_component.healthy);
         assert!(redis_component.detail.contains("config_invalid"));
         assert!(redis_component.detail.contains("unresolvable host"));

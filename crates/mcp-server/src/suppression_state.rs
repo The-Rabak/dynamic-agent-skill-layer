@@ -18,11 +18,7 @@ pub struct SessionSuppressionState {
     ttl_secs: u64,
 }
 
-pub(crate) async fn scan_and_del_pattern(
-    client: &RedisClient,
-    pattern: &str,
-    context: &str,
-) {
+pub(crate) async fn scan_and_del_pattern(client: &RedisClient, pattern: &str, context: &str) {
     let mut conn = match client.get_multiplexed_async_connection().await {
         Ok(conn) => conn,
         Err(error) => {
@@ -89,11 +85,7 @@ impl SessionSuppressionState {
     }
 
     fn redis_key(session_id: &str, repo_path: &str) -> String {
-        format!(
-            "suppression:{}::{}",
-            session_id.trim(),
-            repo_path.trim()
-        )
+        format!("suppression:{}::{}", session_id.trim(), repo_path.trim())
     }
 
     fn local_key(session_id: &str, repo_path: &str) -> String {
@@ -163,12 +155,7 @@ impl SessionSuppressionState {
         }
     }
 
-    async fn try_redis_setex(
-        &self,
-        session_id: &str,
-        repo_path: &str,
-        entry: &SuppressionEntry,
-    ) {
+    async fn try_redis_setex(&self, session_id: &str, repo_path: &str, entry: &SuppressionEntry) {
         let Some(client) = &self.redis_client else {
             return;
         };
@@ -319,10 +306,7 @@ mod tests {
     #[test]
     fn escape_redis_glob_escapes_all_metacharacters() {
         // Wildcard `*` must not match all sessions when embedded in a pattern.
-        assert_eq!(
-            SessionSuppressionState::escape_redis_glob("*"),
-            r"\*"
-        );
+        assert_eq!(SessionSuppressionState::escape_redis_glob("*"), r"\*");
         // Other metacharacters are also escaped.
         assert_eq!(
             SessionSuppressionState::escape_redis_glob("abc?[def]\\xyz"),
@@ -346,6 +330,9 @@ mod tests {
         // which is intentional — the in-memory DashMap uses exact-prefix match,
         // not glob matching).
         let escaped = SessionSuppressionState::escape_redis_glob("*");
-        assert_eq!(escaped, r"\*", "wildcard session must be escaped for Redis SCAN");
+        assert_eq!(
+            escaped, r"\*",
+            "wildcard session must be escaped for Redis SCAN"
+        );
     }
 }

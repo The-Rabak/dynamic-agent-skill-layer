@@ -7,8 +7,7 @@ use std::{
 use domain::ScopeType;
 use graph_builder::{ScopeRoot, graph::build::build_skills_from_scope_roots};
 use maintenance::{
-    MergeProposalWriter, SkillSnapshot,
-    merge_verifier::TextOverlapMergeSemanticVerifier,
+    MergeProposalWriter, SkillSnapshot, merge_verifier::TextOverlapMergeSemanticVerifier,
 };
 
 fn _requires_docker_services() -> bool {

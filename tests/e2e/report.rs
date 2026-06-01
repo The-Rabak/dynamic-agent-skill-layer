@@ -136,12 +136,7 @@ impl ReportBuilder {
         }
     }
 
-    pub fn record_degradation_event(
-        &mut self,
-        service: &str,
-        recovered: bool,
-        reason: &str,
-    ) {
+    pub fn record_degradation_event(&mut self, service: &str, recovered: bool, reason: &str) {
         self.degradation_events.push(DegradationEvent {
             service: service.to_owned(),
             at: chrono::Utc::now().to_rfc3339(),
@@ -178,9 +173,7 @@ impl ReportBuilder {
 
         E2EReport {
             test_name: self.test_name,
-            test_id: chrono::Utc::now()
-                .format("%Y%m%d%H%M%S")
-                .to_string(),
+            test_id: chrono::Utc::now().format("%Y%m%d%H%M%S").to_string(),
             started_at: self.started_at,
             duration_ms,
             outcome: overall_outcome,

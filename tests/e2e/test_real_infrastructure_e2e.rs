@@ -6,10 +6,8 @@ use std::{
 
 use domain::ScopeType;
 use graph_builder::{
-    GraphRebuildOrchestrator, PostgresDurableGraphState, ScopeRoot,
-    SkillFileChangeKind,
-    graph::build::build_skills_from_scope_roots,
-    watcher::FileChangeSource,
+    GraphRebuildOrchestrator, PostgresDurableGraphState, ScopeRoot, SkillFileChangeKind,
+    graph::build::build_skills_from_scope_roots, watcher::FileChangeSource,
 };
 use infrastructure::{
     EventEnvelope, OutboxVectorStore, PostgresAdapter, PostgresConfig,
@@ -61,8 +59,7 @@ fn db_url() -> String {
 }
 
 fn qdrant_url() -> String {
-    std::env::var("QDRANT_URL")
-        .unwrap_or_else(|_| "http://localhost:16333".to_owned())
+    std::env::var("QDRANT_URL").unwrap_or_else(|_| "http://localhost:16333".to_owned())
 }
 
 async fn setup_pg() -> PostgresAdapter {
@@ -84,7 +81,9 @@ async fn setup_qdrant() -> QdrantAdapter {
         },
     )
     .expect("Qdrant should be reachable");
-    let _ = qdrant.ensure_collection(&qdrant.config.collection_name, 8).await;
+    let _ = qdrant
+        .ensure_collection(&qdrant.config.collection_name, 8)
+        .await;
     qdrant
 }
 
@@ -107,11 +106,8 @@ async fn graph_builder_rebuild_persists_to_pg_and_enqueues_outbox_events_then_dr
 
     let rebuild_coordinator = PostgresRebuildCoordinator::new(pg.pool().clone());
     let outbox_coordinator = PostgresGraphWriteCoordinator::new(pg.pool().clone());
-    let mut durable_state = PostgresDurableGraphState::new(
-        &rebuild_coordinator,
-        &outbox_coordinator,
-        &qdrant,
-    );
+    let mut durable_state =
+        PostgresDurableGraphState::new(&rebuild_coordinator, &outbox_coordinator, &qdrant);
     let mut published_events: Vec<EventEnvelope> = Vec::new();
     let mut orchestrator = GraphRebuildOrchestrator::new(&mut durable_state, &mut published_events);
 
@@ -188,11 +184,8 @@ async fn full_roundtrip_filesystem_to_graph_builder_to_pg_and_qdrant() {
 
     let rebuild_coordinator = PostgresRebuildCoordinator::new(pg.pool().clone());
     let outbox_coordinator = PostgresGraphWriteCoordinator::new(pg.pool().clone());
-    let mut durable_state = PostgresDurableGraphState::new(
-        &rebuild_coordinator,
-        &outbox_coordinator,
-        &qdrant,
-    );
+    let mut durable_state =
+        PostgresDurableGraphState::new(&rebuild_coordinator, &outbox_coordinator, &qdrant);
     let mut published_events: Vec<EventEnvelope> = Vec::new();
     let mut orchestrator = GraphRebuildOrchestrator::new(&mut durable_state, &mut published_events);
     let skills = build_skills_from_scope_roots(

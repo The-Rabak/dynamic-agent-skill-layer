@@ -318,11 +318,10 @@ impl TranscriptIngestQueue {
         &self,
         content_hash: &str,
     ) -> Result<Option<String>, TranscriptQueueError> {
-        let row =
-            sqlx::query("SELECT status FROM transcript_ingest_queue WHERE content_hash = $1")
-                .bind(content_hash)
-                .fetch_optional(&self.pool)
-                .await?;
+        let row = sqlx::query("SELECT status FROM transcript_ingest_queue WHERE content_hash = $1")
+            .bind(content_hash)
+            .fetch_optional(&self.pool)
+            .await?;
         Ok(row.map(|row| row.get::<String, _>("status")))
     }
 

@@ -93,7 +93,11 @@ impl QdrantAdapter {
         Ok(())
     }
 
-    pub async fn ensure_collection(&self, collection_name: &str, vector_size: u64) -> Result<(), QdrantError> {
+    pub async fn ensure_collection(
+        &self,
+        collection_name: &str,
+        vector_size: u64,
+    ) -> Result<(), QdrantError> {
         let endpoint = format!(
             "{}/collections/{collection_name}",
             self.config.endpoint.trim_end_matches('/')
@@ -420,7 +424,7 @@ mod tests {
 
         let adapter = QdrantAdapter::new(
             reqwest::Client::new(),
-QdrantConfig {
+            QdrantConfig {
                 endpoint: format!("http://{address}"),
                 timeout_ms: 1_000,
                 collection_name: "skills".to_owned(),
@@ -461,11 +465,11 @@ QdrantConfig {
             spawn_single_response_server("404 Not Found", r#"{"status":"not_found"}"#).await;
         let adapter = QdrantAdapter::new(
             reqwest::Client::new(),
-QdrantConfig {
-            endpoint,
-            timeout_ms: 1_000,
-            ..QdrantConfig::default()
-        },
+            QdrantConfig {
+                endpoint,
+                timeout_ms: 1_000,
+                ..QdrantConfig::default()
+            },
         )
         .expect("test config should be valid");
 
@@ -488,11 +492,11 @@ QdrantConfig {
             spawn_single_response_server("404 Not Found", r#"{"status":"not_found"}"#).await;
         let adapter = QdrantAdapter::new(
             reqwest::Client::new(),
-QdrantConfig {
-            endpoint,
-            timeout_ms: 1_000,
-            ..QdrantConfig::default()
-        },
+            QdrantConfig {
+                endpoint,
+                timeout_ms: 1_000,
+                ..QdrantConfig::default()
+            },
         )
         .expect("test config should be valid");
 
@@ -515,11 +519,11 @@ QdrantConfig {
             spawn_single_response_server("404 Not Found", r#"{"status":"not_found"}"#).await;
         let adapter = QdrantAdapter::new(
             reqwest::Client::new(),
-QdrantConfig {
-            endpoint,
-            timeout_ms: 1_000,
-            ..QdrantConfig::default()
-        },
+            QdrantConfig {
+                endpoint,
+                timeout_ms: 1_000,
+                ..QdrantConfig::default()
+            },
         )
         .expect("test config should be valid");
 
@@ -549,11 +553,11 @@ QdrantConfig {
         .await;
         let adapter = QdrantAdapter::new(
             reqwest::Client::new(),
-QdrantConfig {
-            endpoint,
-            timeout_ms: 1_000,
-            ..QdrantConfig::default()
-        },
+            QdrantConfig {
+                endpoint,
+                timeout_ms: 1_000,
+                ..QdrantConfig::default()
+            },
         )
         .expect("test config should be valid");
 
@@ -574,11 +578,11 @@ QdrantConfig {
             spawn_single_response_server("404 Not Found", r#"{"status":"not_found"}"#).await;
         let adapter = QdrantAdapter::new(
             reqwest::Client::new(),
-QdrantConfig {
-            endpoint,
-            timeout_ms: 1_000,
-            ..QdrantConfig::default()
-        },
+            QdrantConfig {
+                endpoint,
+                timeout_ms: 1_000,
+                ..QdrantConfig::default()
+            },
         )
         .expect("test config should be valid");
 

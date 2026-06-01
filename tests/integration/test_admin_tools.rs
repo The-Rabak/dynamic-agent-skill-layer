@@ -59,7 +59,12 @@ fn build_admin_app(
     rebuild_trigger: Arc<dyn admin::tools::GraphRebuildTrigger>,
     graph_reader: Arc<dyn GraphSnapshotReader>,
 ) -> McpServerApp {
-    McpServerApp::new_with_admin(Arc::new(EmptyRetriever), rebuild_trigger, graph_reader, None)
+    McpServerApp::new_with_admin(
+        Arc::new(EmptyRetriever),
+        rebuild_trigger,
+        graph_reader,
+        None,
+    )
 }
 
 fn seeded_reader() -> StaticGraphSnapshotReader {

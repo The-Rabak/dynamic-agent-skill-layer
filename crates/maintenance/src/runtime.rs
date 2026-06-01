@@ -15,9 +15,7 @@ use crate::audit_sink::PostgresMaintenanceAuditSink;
 use crate::cron::{
     CronDecision, CronError, MaintenanceCron, MergePassRunner, RetirementPassRunner,
 };
-use crate::merge::{
-    MergeConfig, MergeProposal, MergeProposalWriter, SkillSnapshot,
-};
+use crate::merge::{MergeConfig, MergeProposal, MergeProposalWriter, SkillSnapshot};
 use crate::merge_verifier::TextOverlapMergeSemanticVerifier;
 use crate::retire::{RetirementConfig, RetirementProposal, RetirementProposalWriter};
 use crate::transcript_drain::{DEFAULT_TRANSCRIPT_DRAIN_BATCH, TranscriptQueueDrain};
@@ -190,9 +188,7 @@ where
     }
 }
 
-fn load_skill_snapshots(
-    scope_roots: &[std::path::PathBuf],
-) -> Result<Vec<SkillSnapshot>, String> {
+fn load_skill_snapshots(scope_roots: &[std::path::PathBuf]) -> Result<Vec<SkillSnapshot>, String> {
     use domain::{ScopeRoot, ScopeType};
     use graph_builder::{
         graph::build::build_skills_from_scope_roots,
@@ -204,10 +200,7 @@ fn load_skill_snapshots(
         .enumerate()
         .map(|(i, path)| {
             let scope_id = format!("scope-{i}");
-            let scope_type = if path
-                .to_str()
-                .is_some_and(|s| s.contains("global"))
-            {
+            let scope_type = if path.to_str().is_some_and(|s| s.contains("global")) {
                 ScopeType::Global
             } else {
                 ScopeType::Project
@@ -330,8 +323,9 @@ pub async fn run_maintenance_worker_from_environment() -> Result<(), Maintenance
     let config = MaintenanceWorkerConfig::from_environment()?;
     let mut cron = MaintenanceCron::new(config.cron_interval)?;
 
-    let db_url = std::env::var("DATABASE_URL")
-        .unwrap_or_else(|_| "postgres://skill_layer:skill_layer@localhost:15432/skill_layer".to_owned());
+    let db_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
+        "postgres://skill_layer:skill_layer@localhost:15432/skill_layer".to_owned()
+    });
     let pg_adapter = PostgresAdapter::connect(&PostgresConfig {
         database_url: db_url,
         ..PostgresConfig::default()
@@ -342,11 +336,8 @@ pub async fn run_maintenance_worker_from_environment() -> Result<(), Maintenance
 
     let scope_roots = build_scope_roots_from_environment();
 
-    let mut merge_runner = LiveMergePassRunner::new(
-        snapshot_store.clone(),
-        scope_roots.clone(),
-        &pg_adapter,
-    );
+    let mut merge_runner =
+        LiveMergePassRunner::new(snapshot_store.clone(), scope_roots.clone(), &pg_adapter);
     let mut retirement_runner = LiveRetirementPassRunner::new(
         snapshot_store,
         scope_roots,
@@ -510,10 +501,7 @@ mod tests {
     }
 
     impl MergePassRunner for CountingMergeRunner {
-        fn run_merge_pass(
-            &mut self,
-            _now: DateTime<Utc>,
-        ) -> Result<Vec<MergeProposal>, CronError> {
+        fn run_merge_pass(&mut self, _now: DateTime<Utc>) -> Result<Vec<MergeProposal>, CronError> {
             self.invocations += 1;
             Ok(Vec::new())
         }
