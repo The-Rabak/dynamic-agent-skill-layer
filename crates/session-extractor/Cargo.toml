@@ -6,6 +6,7 @@ license = "MIT"
 description = "Session-end transcript extraction and pending draft generation"
 
 [dependencies]
+async-channel = "2.5.0"
 async-trait = "0.1.89"
 chrono = { version = "0.4.42", features = ["clock"] }
 domain = { path = "../domain" }

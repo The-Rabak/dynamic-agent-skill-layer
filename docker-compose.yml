@@ -99,6 +99,10 @@ services:
       SKILL_GLOBAL_ALLOWED_ROOTS: ${SKILL_GLOBAL_ALLOWED_ROOTS:-/skills/project,/skills/global}
       GRAPH_BUILDER_PROJECT_ROOT: ${GRAPH_BUILDER_PROJECT_ROOT:-/skills/project}
       CLAUDE_TRANSCRIPT_ROOT: ${CLAUDE_TRANSCRIPT_ROOT:-/transcripts}
+      # Extraction provider for the extract_session worker pool. Ollama is the
+      # default local path (no cloud key); set EXTRACT_SESSION_PROVIDER=claude
+      # plus ANTHROPIC_API_KEY to opt into the Anthropic Messages API.
+      EXTRACT_SESSION_PROVIDER: ${EXTRACT_SESSION_PROVIDER:-ollama}
       # Shared secret for the localhost /ingest/transcript endpoint (todo 103/099).
       # When set, host capture hooks must send a matching X-Ingest-Secret header.
       # When empty, the endpoint relies on the 127.0.0.1 port binding alone.

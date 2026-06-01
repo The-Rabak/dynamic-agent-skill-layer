@@ -44,10 +44,19 @@ impl RateLimiter {
     }
 }
 
-static EXTRACTION_RATE_LIMITER: LazyLock<RateLimiter> =
-    LazyLock::new(|| RateLimiter::new(5.0));
+static EXTRACTION_RATE_LIMITER: LazyLock<RateLimiter> = LazyLock::new(|| RateLimiter::new(5.0));
 static EXTRACTION_CLAUDE_RATE_LIMITER: LazyLock<RateLimiter> =
     LazyLock::new(|| RateLimiter::new(5.0));
+
+/// Acquires one token from the shared Claude extraction rate limiter.
+///
+/// Exposed for adapters (e.g. the Anthropic Messages API in `claude.rs`) that
+/// build their requests directly — with custom headers — instead of through
+/// [`post_json_with_timeout`], but must still respect the same per-provider
+/// request rate as the generic helper.
+pub(crate) async fn acquire_claude_rate_limit() -> Result<(), ExtractionError> {
+    EXTRACTION_CLAUDE_RATE_LIMITER.acquire().await
+}
 
 pub(crate) async fn post_json_with_timeout<Req, Res>(
     client: &reqwest::Client,

@@ -90,10 +90,7 @@ impl PendingDraftWriter {
     }
 
     /// Creates a writer with an explicit write-target guard for testing.
-    pub fn new_with_guard(
-        global_scope_paths: Vec<PathBuf>,
-        write_guard: WriteTargetGuard,
-    ) -> Self {
+    pub fn new_with_guard(global_scope_paths: Vec<PathBuf>, write_guard: WriteTargetGuard) -> Self {
         Self {
             global_scope_paths,
             write_guard,
@@ -301,8 +298,7 @@ fn resolve_write_allowed_roots() -> Result<Vec<PathBuf>, WriterError> {
         .or_else(|_| std::env::var("SKILL_GLOBAL_ALLOWED_ROOTS"))
         .map_err(|_| {
             WriterError::InvalidRepoPath(
-                "neither SKILL_GLOBAL_WRITE_ROOTS nor SKILL_GLOBAL_ALLOWED_ROOTS is set"
-                    .to_owned(),
+                "neither SKILL_GLOBAL_WRITE_ROOTS nor SKILL_GLOBAL_ALLOWED_ROOTS is set".to_owned(),
             )
         })?;
     let entries = split_env_paths(&env_value);
@@ -654,7 +650,8 @@ mod tests {
         let skill_source_root = sandbox.join("skills");
 
         fs::create_dir_all(&output_root).expect("output root should be creatable");
-        fs::create_dir_all(skill_source_root.join("my-skill")).expect("skill source should be creatable");
+        fs::create_dir_all(skill_source_root.join("my-skill"))
+            .expect("skill source should be creatable");
 
         // only output_root is in the write allowlist — skill_source_root is NOT
         let write_guard = WriteTargetGuard::new(vec![output_root.clone()]);
@@ -684,7 +681,10 @@ mod tests {
             .expect("guard should build from SKILL_GLOBAL_WRITE_ROOTS");
 
         let result = guard.check_scope_root(&write_root);
-        assert!(result.is_ok(), "write to env-configured root must be allowed");
+        assert!(
+            result.is_ok(),
+            "write to env-configured root must be allowed"
+        );
 
         unsafe {
             env::remove_var("SKILL_GLOBAL_WRITE_ROOTS");
@@ -699,14 +699,20 @@ mod tests {
 
         unsafe {
             env::remove_var("SKILL_GLOBAL_WRITE_ROOTS");
-            env::set_var("SKILL_GLOBAL_ALLOWED_ROOTS", write_root.display().to_string());
+            env::set_var(
+                "SKILL_GLOBAL_ALLOWED_ROOTS",
+                write_root.display().to_string(),
+            );
         }
 
         let guard = WriteTargetGuard::from_environment()
             .expect("guard should fall back to SKILL_GLOBAL_ALLOWED_ROOTS");
 
         let result = guard.check_scope_root(&write_root);
-        assert!(result.is_ok(), "write to allowed-roots fallback must be permitted");
+        assert!(
+            result.is_ok(),
+            "write to allowed-roots fallback must be permitted"
+        );
 
         unsafe {
             env::remove_var("SKILL_GLOBAL_ALLOWED_ROOTS");
@@ -731,10 +737,7 @@ mod tests {
         let request = stub_request(Some(blocked_root.to_str().unwrap()));
 
         unsafe {
-            env::set_var(
-                "SKILL_GLOBAL_ALLOWED_ROOTS",
-                sandbox.display().to_string(),
-            );
+            env::set_var("SKILL_GLOBAL_ALLOWED_ROOTS", sandbox.display().to_string());
             env::remove_var("SKILL_GLOBAL_WRITE_ROOTS");
         }
 
@@ -772,10 +775,7 @@ mod tests {
         let request = stub_request(Some(repo_subdir.to_str().unwrap()));
 
         unsafe {
-            env::set_var(
-                "SKILL_GLOBAL_ALLOWED_ROOTS",
-                sandbox.display().to_string(),
-            );
+            env::set_var("SKILL_GLOBAL_ALLOWED_ROOTS", sandbox.display().to_string());
             env::remove_var("SKILL_GLOBAL_WRITE_ROOTS");
         }
 

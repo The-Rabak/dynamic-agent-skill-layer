@@ -1,13 +1,16 @@
-use std::sync::Arc;
-
 use infrastructure::RetryPolicy;
-use tokio::sync::{Semaphore, mpsc, oneshot};
+use tokio::sync::oneshot;
 
-use crate::{ExtractSessionRequest, ExtractSessionResponse, SessionExtractor};
+use crate::{ExtractSessionRequest, ExtractSessionResponse, ExtractionOutcome, SessionExtractor};
 
 const DEFAULT_QUEUE_DEPTH: usize = 64;
 const DEFAULT_MAX_CONCURRENT: usize = 4;
-const DEFAULT_TIMEOUT_SECS: u64 = 30;
+/// Worker-pool (outer) per-job timeout. Must stay >= 1.5x the provider's inner
+/// timeout so a slow-but-progressing extraction is not cut off prematurely. The
+/// Ollama default inner timeout is 120s (CPU `granite4:3b`), so 180s = 1.5x.
+/// This inner number is an UNMEASURED placeholder (see ollama.rs) — confirm both
+/// values against the target host.
+const DEFAULT_TIMEOUT_SECS: u64 = 180;
 
 #[derive(Debug, Clone)]
 pub struct ExtractionWorkerPoolConfig {
@@ -59,24 +62,24 @@ struct ExtractionJob {
 
 #[derive(Clone)]
 pub struct ExtractionWorkerPool {
-    job_tx: mpsc::Sender<ExtractionJob>,
+    job_tx: async_channel::Sender<ExtractionJob>,
 }
 
 impl ExtractionWorkerPool {
     pub fn new(config: ExtractionWorkerPoolConfig) -> Self {
-        let (job_tx, job_rx) = mpsc::channel::<ExtractionJob>(config.queue_depth.max(1));
-        let rx = Arc::new(tokio::sync::Mutex::new(job_rx));
-        let semaphore = Arc::new(Semaphore::new(config.max_concurrent.max(1)));
+        // Bounded MPMC channel: a single shared receiver that N workers pull from
+        // concurrently. This replaces the previous `Arc<Mutex<mpsc::Receiver>>`
+        // (held across `recv().await`), which serialized all workers behind one
+        // lock and was the confirmed "0/32 parallel jobs" throughput bug. The
+        // channel's own bound (`queue_depth`) provides backpressure, so the
+        // separate `Semaphore` is now redundant and removed.
+        let (job_tx, job_rx) = async_channel::bounded::<ExtractionJob>(config.queue_depth.max(1));
         let timeout = config.timeout;
-        let retry_policy = config.retry_policy;
 
         for _ in 0..config.max_concurrent.max(1) {
-            let rx = Arc::clone(&rx);
-            let semaphore = Arc::clone(&semaphore);
-            let timeout = timeout;
-            let retry_policy = retry_policy.clone();
+            let job_rx = job_rx.clone();
             tokio::spawn(async move {
-                worker_loop(rx, semaphore, timeout, retry_policy).await;
+                worker_loop(job_rx, timeout).await;
             });
         }
 
@@ -100,13 +103,13 @@ impl ExtractionWorkerPool {
 
         match self.job_tx.try_send(job) {
             Ok(()) => Ok(response_rx),
-            Err(mpsc::error::TrySendError::Full(_)) => Err(ExtractSessionResponse {
+            Err(async_channel::TrySendError::Full(_)) => Err(ExtractSessionResponse {
                 status: "rejected".to_owned(),
                 reason_code: Some("extraction_queue_full".to_owned()),
                 job_id: None,
                 provider: Some(provider),
             }),
-            Err(mpsc::error::TrySendError::Closed(_)) => Err(ExtractSessionResponse {
+            Err(async_channel::TrySendError::Closed(_)) => Err(ExtractSessionResponse {
                 status: "rejected".to_owned(),
                 reason_code: Some("extraction_pool_shutdown".to_owned()),
                 job_id: None,
@@ -116,79 +119,67 @@ impl ExtractionWorkerPool {
     }
 }
 
-async fn worker_loop(
-    rx: Arc<tokio::sync::Mutex<mpsc::Receiver<ExtractionJob>>>,
-    semaphore: Arc<Semaphore>,
-    timeout: std::time::Duration,
-    _retry_policy: RetryPolicy,
-) {
-    loop {
-        let job = {
-            let mut rx = rx.lock().await;
-            rx.recv().await
-        };
-
+/// One worker: pulls jobs from the shared MPMC receiver and runs each to a
+/// terminal lifecycle event.
+///
+/// This loop is the dispatch layer that OWNS terminal-event publication for the
+/// pool path. `execute_job` produces a pure [`ExtractionOutcome`] and publishes
+/// nothing; the loop maps it (or a timeout) to exactly one of
+/// `extraction.completed` / `extraction.failed`, so every accepted job emits one
+/// and only one terminal event.
+async fn worker_loop(job_rx: async_channel::Receiver<ExtractionJob>, timeout: std::time::Duration) {
+    while let Ok(job) = job_rx.recv().await {
         let ExtractionJob {
             extractor,
             job_id,
             request,
             response_tx,
-        } = match job {
-            Some(job) => job,
-            None => return,
-        };
+        } = job;
 
-        let _permit = semaphore.acquire().await;
-
-        let result = tokio::time::timeout(timeout, extractor.execute_job(&job_id, &request)).await;
-
-        let response = match result {
-            Ok(Ok(_draft_paths)) => ExtractSessionResponse {
-                status: "completed".to_owned(),
-                reason_code: None,
-                job_id: Some(job_id),
-                provider: Some(extractor.provider.as_str().to_owned()),
-            },
-            Ok(Err(error)) => {
-                let reason = error.reason_code().to_owned();
-                let _ = extractor
-                    .publish_lifecycle_event(infrastructure::EventEnvelope::new(
-                        "extraction.failed",
-                        format!("extraction.failed:{job_id}"),
-                        serde_json::json!({
-                            "job_id": job_id.as_str(),
-                            "provider": extractor.provider.as_str(),
-                            "error": error.to_string(),
-                        }),
-                    ))
-                    .await;
-                ExtractSessionResponse {
-                    status: "failed".to_owned(),
-                    reason_code: Some(reason),
-                    job_id: Some(job_id),
-                    provider: Some(extractor.provider.as_str().to_owned()),
+        let response =
+            match tokio::time::timeout(timeout, extractor.execute_job(&job_id, &request)).await {
+                Ok(ExtractionOutcome::Completed {
+                    draft_paths,
+                    source_session_id,
+                }) => {
+                    extractor
+                        .publish_terminal_event(
+                            &job_id,
+                            ExtractionOutcome::Completed {
+                                draft_paths,
+                                source_session_id,
+                            },
+                        )
+                        .await;
+                    ExtractSessionResponse {
+                        status: "completed".to_owned(),
+                        reason_code: None,
+                        job_id: Some(job_id),
+                        provider: Some(extractor.provider.as_str().to_owned()),
+                    }
                 }
-            }
-            Err(_elapsed) => {
-                let _ = extractor
-                    .publish_lifecycle_event(infrastructure::EventEnvelope::new(
-                        "extraction.failed",
-                        format!("extraction.failed:{job_id}"),
-                        serde_json::json!({
-                            "job_id": job_id.as_str(),
-                            "provider": extractor.provider.as_str(),
-                            "error": "extraction timed out",
-                        }),
-                    ))
-                    .await;
-                ExtractSessionResponse {
-                    status: "timeout".to_owned(),
-                    reason_code: Some("extraction_timed_out".to_owned()),
-                    job_id: Some(job_id),
-                    provider: Some(extractor.provider.as_str().to_owned()),
+                Ok(ExtractionOutcome::Failed(error)) => {
+                    let reason = error.reason_code().to_owned();
+                    extractor
+                        .publish_terminal_event(&job_id, ExtractionOutcome::Failed(error))
+                        .await;
+                    ExtractSessionResponse {
+                        status: "failed".to_owned(),
+                        reason_code: Some(reason),
+                        job_id: Some(job_id),
+                        provider: Some(extractor.provider.as_str().to_owned()),
+                    }
                 }
-            }
-        };
+                Err(_elapsed) => {
+                    extractor.publish_timeout_event(&job_id).await;
+                    ExtractSessionResponse {
+                        status: "timeout".to_owned(),
+                        reason_code: Some("extraction_timed_out".to_owned()),
+                        job_id: Some(job_id),
+                        provider: Some(extractor.provider.as_str().to_owned()),
+                    }
+                }
+            };
 
         let _ = response_tx.send(response);
     }
@@ -197,7 +188,10 @@ async fn worker_loop(
 #[cfg(test)]
 mod tests {
     use std::{
-        sync::{Arc, atomic::{AtomicU32, Ordering}},
+        sync::{
+            Arc,
+            atomic::{AtomicU32, Ordering},
+        },
         time::Duration,
     };
 
@@ -208,16 +202,17 @@ mod tests {
     };
 
     use super::*;
-    use crate::{
-        ExtractionProvider, transcripts::TranscriptLoader, writer::PendingDraftWriter,
-    };
+    use crate::{ExtractionProvider, transcripts::TranscriptLoader, writer::PendingDraftWriter};
 
     #[test]
     fn config_defaults_match_constants() {
         let config = ExtractionWorkerPoolConfig::default();
         assert_eq!(config.queue_depth, 64);
         assert_eq!(config.max_concurrent, 4);
-        assert_eq!(config.timeout, Duration::from_secs(30));
+        assert_eq!(config.timeout, Duration::from_secs(180));
+        // Outer pool timeout must remain >= 1.5x the Ollama inner timeout (120s)
+        // so a progressing CPU extraction is not cut off prematurely.
+        assert!(config.timeout >= Duration::from_secs(120 * 3 / 2));
     }
 
     #[test]
@@ -239,10 +234,8 @@ mod tests {
     }
 
     fn sandbox_dir(name: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "worker-pool-test-{name}-{}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("worker-pool-test-{name}-{}", std::process::id()));
         std::fs::create_dir_all(&dir).expect("sandbox dir should be creatable");
         dir
     }
@@ -303,6 +296,8 @@ mod tests {
             lifecycle_events: crate::ExtractionLifecycleEvents::default(),
             event_publisher: Arc::new(crate::NoopExtractionEventPublisher),
             worker_pool: Some(pool),
+            retry_policy: RetryPolicy::default(),
+            job_timeout: std::time::Duration::from_secs(30),
         }
     }
 
@@ -424,6 +419,81 @@ mod tests {
 
         let total_calls = call_count.load(Ordering::SeqCst);
         assert_eq!(total_calls, total_jobs as u32);
+    }
+
+    #[tokio::test]
+    async fn parallel_burst_emits_exactly_one_terminal_event_per_job() {
+        // SC-V1.5-C: a >=32-job burst through the real worker pool must yield
+        // exactly one terminal event (completed|failed) per accepted job, with
+        // counts reconciling. This is the offline deterministic proxy for the
+        // live-Ollama burst (the live e2e is #[ignore]-gated in mcp-server).
+        let sandbox = sandbox_dir("burst");
+        let transcript_root = sandbox_dir("burst-transcripts");
+
+        let total_jobs = 32;
+        let pool_config = ExtractionWorkerPoolConfig::default()
+            .with_queue_depth(total_jobs * 2)
+            .with_max_concurrent(8)
+            .with_timeout(Duration::from_secs(10));
+        let pool = ExtractionWorkerPool::new(pool_config);
+
+        let counting_extractor = CountingExtractor::new(Duration::from_millis(20));
+        let call_count = Arc::clone(&counting_extractor.call_count);
+
+        let extractor = build_extractor(
+            &sandbox,
+            &transcript_root,
+            Arc::new(counting_extractor),
+            pool,
+        );
+
+        let mut accepted = 0usize;
+        for i in 0..total_jobs {
+            let response = extractor.enqueue(make_request(&format!("burst-{i}"))).await;
+            assert_eq!(response.status, "processing");
+            accepted += 1;
+        }
+
+        // Wait until every accepted job has produced a terminal event.
+        for _ in 0..200 {
+            tokio::time::sleep(Duration::from_millis(25)).await;
+            let terminal = extractor
+                .lifecycle_events()
+                .iter()
+                .filter(|event| {
+                    event.event_type == "extraction.completed"
+                        || event.event_type == "extraction.failed"
+                })
+                .count();
+            if terminal >= accepted {
+                break;
+            }
+        }
+
+        let events = extractor.lifecycle_events();
+        let completed = events
+            .iter()
+            .filter(|event| event.event_type == "extraction.completed")
+            .count();
+        let failed = events
+            .iter()
+            .filter(|event| event.event_type == "extraction.failed")
+            .count();
+
+        assert_eq!(
+            completed + failed,
+            accepted,
+            "exactly one terminal event per accepted job; completed={completed} failed={failed} accepted={accepted}"
+        );
+        assert_eq!(
+            completed, accepted,
+            "all jobs should complete with the fake extractor"
+        );
+        assert_eq!(
+            call_count.load(Ordering::SeqCst),
+            accepted as u32,
+            "extractor called exactly once per job"
+        );
     }
 
     #[tokio::test]

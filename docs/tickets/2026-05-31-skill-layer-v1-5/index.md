@@ -3,7 +3,7 @@ plan_ref: docs/plans/2026-05-31-feat-skill-layer-v1-5-close-the-loop-plan.md
 architecture_ref: docs/architecture/2026-05-31-skill-layer-v1-5-close-the-loop-architecture.md
 execution_shape: vertical-slices
 ticket_set_status: in_progress # ready | in_progress | blocked | completed
-last_completed_batch: 3
+last_completed_batch: 4
 total_batches: 9 # re-batched 2026-05-31: T02 pulled forward into its own batch (was paired w/ T05); see Execution Batches note
 ---
 
@@ -57,7 +57,7 @@ Explicit `depends_on` edges:
 | 1 | T01 | completed | Foundation. Sweeping cross-crate rename (`SeededGraph`→`RetrievalSnapshot`) + prod constructor. Must be alone — it edits files every downstream retrieval ticket also touches. |
 | 2 | T03, **‖** T04 | completed | Both depend only on T01. **Parallel-safe** — file-disjoint (see safety note). T04 hooks.example.json human-gate approved. |
 | 3 | T02 | completed | **Pulled forward 2026-05-31** (was paired with T05). Singleton — T02 and T03 both edit `retrieval/src/orchestrator.rs`, so T02 CANNOT run parallel with T03; it runs sequentially right after Batch 2. Dep T01 ✓. |
-| 4 | T05 | pending | Singleton — was paired with T02; now solo. Dep T04 ✓ (done in B2). File-disjoint from T02 but separated by the re-batch; gated cloud dep on the opt-in `provider=claude` path. |
+| 4 | T05 | completed | Singleton — was paired with T02; now solo. Dep T04 ✓ (done in B2). File-disjoint from T02 but separated by the re-batch; gated cloud dep on the opt-in `provider=claude` path. |
 | 5 | T06 | pending | Singleton — shares `mcp-server/lib.rs`, `retrieval/orchestrator.rs`, `maintenance/runtime.rs` with other tickets. |
 | 6 | ~~T07~~ | **superseded → todo 103** | **Folded into todo 103's durable PG transcript-ingest queue (2026-06-01).** The marker table + `reconcile_transcripts()` FS-scan are replaced by `transcript_ingest_queue` (migration `002`) + the maintenance queue drain. SessionEnd's broken absolute-`{{transcript_path}}` wiring is fixed at the same time. See `todos/103-...md`. |
 | 7 | T08 | pending | Singleton — shares `tests/e2e/*` with T09/T10 and `run-e2e-tests.sh` with T10 (line-ownership fence). Deps T01–T03 satisfied. |

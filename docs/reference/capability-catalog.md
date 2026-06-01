@@ -193,7 +193,32 @@ The `trigger` field is optional. Omit it (or pass `null`) for all calls except p
 - `status`: `processing` or `failed`
 - `reason_code`: failure reason if `failed`
 - `job_id`: UUIDv7 tracking identifier
-- `provider`: `claude` or `ollama`
+- `provider`: `ollama` (default) or `claude`
+
+#### Extraction provider selection
+
+Extraction is provider-selectable (constitution v2.0.0). **Ollama is the default
+local path and needs no cloud key.** Claude is a first-class opt-in that calls the
+Anthropic Messages API directly with a forced `tool_use` for schema-conformant
+candidates.
+
+| Variable | Purpose | Default |
+|----------|---------|---------|
+| `EXTRACT_SESSION_PROVIDER` | Extraction provider: `ollama` or `claude`. Unset or blank ⇒ `ollama`. Unknown ⇒ loud startup error. | `ollama` |
+| `EXTRACT_SESSION_MODEL` | Model id for the Claude provider | `claude-haiku-4-5` |
+| `ANTHROPIC_API_KEY` | Anthropic API key. **Required** when `EXTRACT_SESSION_PROVIDER=claude` — a missing key fails loudly at startup (no silent fallback). Read from the environment, never committed. | _(unset)_ |
+| `ANTHROPIC_BASE_URL` | Anthropic API base URL (no `/v1/messages` suffix) | `https://api.anthropic.com` |
+| `OLLAMA_EXTRACTION_MODEL` | Local extraction model for the Ollama provider | `granite4:3b` |
+| `OLLAMA_EXTRACTION_TIMEOUT_MS` | Inner per-call timeout for Ollama CPU inference. The default (`120000`) is an **unmeasured placeholder** — confirm single-job p50/p95 against the target host. The worker-pool (outer) timeout stays ≥ 1.5× this value. | `120000` |
+
+**Opt into Claude:**
+
+```bash
+EXTRACT_SESSION_PROVIDER=claude
+ANTHROPIC_API_KEY=sk-ant-...          # required; never commit
+EXTRACT_SESSION_MODEL=claude-haiku-4-5 # optional override
+ANTHROPIC_BASE_URL=https://api.anthropic.com  # optional override
+```
 
 ### Admin Tools
 

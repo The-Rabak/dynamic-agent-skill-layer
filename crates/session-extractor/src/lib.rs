@@ -170,9 +170,11 @@ impl std::str::FromStr for ExtractionProvider {
     type Err = SessionExtractorInitError;
 
     fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        // Ollama is the default local provider (constitution v2.0.0): an unset or
+        // blank `EXTRACT_SESSION_PROVIDER` selects Ollama, never the cloud path.
         match raw.trim().to_ascii_lowercase().as_str() {
-            "" | "claude" => Ok(Self::Claude),
-            "ollama" => Ok(Self::Ollama),
+            "" | "ollama" => Ok(Self::Ollama),
+            "claude" => Ok(Self::Claude),
             other => Err(SessionExtractorInitError::InvalidProvider(other.to_owned())),
         }
     }
@@ -188,13 +190,41 @@ pub struct SessionExtractor {
     pub(crate) lifecycle_events: ExtractionLifecycleEvents,
     pub(crate) event_publisher: Arc<dyn ExtractionEventPublisher>,
     pub(crate) worker_pool: Option<ExtractionWorkerPool>,
+    /// Single config-sourced retry policy applied to the provider extraction
+    /// call. Both the no-pool path and the worker loop share this value (the
+    /// worker pool clones the whole extractor into each job), so retry behavior
+    /// is sourced from exactly one place.
+    pub(crate) retry_policy: RetryPolicy,
+    /// Per-job extraction timeout, sourced from the same pool config as the
+    /// worker loop. Carried on the extractor so the no-pool spawn path can apply
+    /// its own timeout arm (otherwise a slow extraction stalls silently).
+    pub(crate) job_timeout: std::time::Duration,
+}
+
+/// Typed result of one extraction job, produced by [`SessionExtractor::execute_job`].
+///
+/// `execute_job` is a pure outcome producer: it publishes NO lifecycle events.
+/// Terminal-event ownership (`extraction.completed` / `extraction.failed`) lives
+/// entirely in the dispatch layer — the worker loop, the no-pool spawn path, and
+/// [`SessionExtractor::extract_blocking`] — so every accepted job emits exactly
+/// one terminal event regardless of dispatch route.
+pub(crate) enum ExtractionOutcome {
+    /// Extraction succeeded; carries the committed `.pending` draft paths and the
+    /// source session id for the `extraction.completed` payload.
+    Completed {
+        draft_paths: Vec<std::path::PathBuf>,
+        source_session_id: String,
+    },
+    /// Extraction failed at some stage; carries the typed error for reason-code
+    /// mapping and the `extraction.failed` payload.
+    Failed(SessionExtractionError),
 }
 
 impl SessionExtractor {
     /// Constructs the default extractor runtime from environment-driven routing.
     pub fn from_environment() -> Result<Self, SessionExtractorInitError> {
         let provider = std::env::var("EXTRACT_SESSION_PROVIDER")
-            .unwrap_or_else(|_| "claude".to_owned())
+            .unwrap_or_default()
             .parse::<ExtractionProvider>()?;
         let extractor = match provider {
             ExtractionProvider::Claude => {
@@ -205,6 +235,9 @@ impl SessionExtractor {
             }
         };
 
+        let pool_config = ExtractionWorkerPoolConfig::default();
+        let retry_policy = pool_config.retry_policy.clone();
+        let job_timeout = pool_config.timeout;
         Ok(Self {
             provider,
             extractor,
@@ -212,9 +245,9 @@ impl SessionExtractor {
             draft_writer: PendingDraftWriter::from_environment()?,
             lifecycle_events: ExtractionLifecycleEvents::default(),
             event_publisher: Arc::new(RedisExtractionEventPublisher::from_environment()?),
-            worker_pool: Some(ExtractionWorkerPool::new(
-                ExtractionWorkerPoolConfig::default(),
-            )),
+            worker_pool: Some(ExtractionWorkerPool::new(pool_config)),
+            retry_policy,
+            job_timeout,
         })
     }
 
@@ -242,6 +275,9 @@ impl SessionExtractor {
         draft_writer: PendingDraftWriter,
         event_publisher: Arc<dyn ExtractionEventPublisher>,
     ) -> Self {
+        let pool_config = ExtractionWorkerPoolConfig::default();
+        let retry_policy = pool_config.retry_policy.clone();
+        let job_timeout = pool_config.timeout;
         Self {
             provider,
             extractor,
@@ -249,9 +285,9 @@ impl SessionExtractor {
             draft_writer,
             lifecycle_events: ExtractionLifecycleEvents::default(),
             event_publisher,
-            worker_pool: Some(ExtractionWorkerPool::new(
-                ExtractionWorkerPoolConfig::default(),
-            )),
+            worker_pool: Some(ExtractionWorkerPool::new(pool_config)),
+            retry_policy,
+            job_timeout,
         }
     }
 
@@ -264,6 +300,8 @@ impl SessionExtractor {
         event_publisher: Arc<dyn ExtractionEventPublisher>,
         pool_config: ExtractionWorkerPoolConfig,
     ) -> Self {
+        let retry_policy = pool_config.retry_policy.clone();
+        let job_timeout = pool_config.timeout;
         Self {
             provider,
             extractor,
@@ -272,6 +310,8 @@ impl SessionExtractor {
             lifecycle_events: ExtractionLifecycleEvents::default(),
             event_publisher,
             worker_pool: Some(ExtractionWorkerPool::new(pool_config)),
+            retry_policy,
+            job_timeout,
         }
     }
 
@@ -337,25 +377,21 @@ impl SessionExtractor {
             let worker_request = request;
             let worker_job_id = job_id.clone();
             tokio::spawn(async move {
-                if let Err(error) = worker.execute_job(&worker_job_id, &worker_request).await {
-                    if let Err(failed_publish_error) = worker
-                        .publish_lifecycle_event(EventEnvelope::new(
-                            "extraction.failed",
-                            format!("extraction.failed:{worker_job_id}"),
-                            json!({
-                                "job_id": worker_job_id.as_str(),
-                                "provider": worker.provider.as_str(),
-                                "error": error.to_string(),
-                            }),
-                        ))
-                        .await
-                    {
-                        tracing::error!(
-                            ?failed_publish_error,
-                            "failed to publish extraction.failed lifecycle event"
-                        );
+                // The no-pool spawn path owns terminal events itself, including a
+                // timeout arm — otherwise a slow extraction stalls silently.
+                let outcome = match tokio::time::timeout(
+                    worker.job_timeout,
+                    worker.execute_job(&worker_job_id, &worker_request),
+                )
+                .await
+                {
+                    Ok(outcome) => outcome,
+                    Err(_elapsed) => {
+                        worker.publish_timeout_event(&worker_job_id).await;
+                        return;
                     }
-                }
+                };
+                worker.publish_terminal_event(&worker_job_id, outcome).await;
             });
 
             ExtractSessionResponse {
@@ -367,37 +403,116 @@ impl SessionExtractor {
         }
     }
 
+    /// Runs one extraction job to a typed [`ExtractionOutcome`], publishing NO
+    /// lifecycle events. Terminal-event ownership belongs to the dispatch layer
+    /// (worker loop, no-pool spawn path, [`Self::extract_blocking`]).
     pub(crate) async fn execute_job(
         &self,
-        job_id: &str,
+        _job_id: &str,
         request: &ExtractSessionRequest,
-    ) -> Result<Vec<std::path::PathBuf>, SessionExtractionError> {
-        let transcript = self.transcript_loader.load(
+    ) -> ExtractionOutcome {
+        let transcript = match self.transcript_loader.load(
             &request.session_id,
             &request.transcript_ref,
             request.transcript_inline.as_deref(),
-        )?;
-        let extraction_result = self.extract_with_retry(&transcript).await?;
-        let draft_paths = self.draft_writer.write_pending_drafts(
+        ) {
+            Ok(transcript) => transcript,
+            Err(error) => return ExtractionOutcome::Failed(error.into()),
+        };
+        let extraction_result = match self.extract_with_retry(&transcript).await {
+            Ok(result) => result,
+            Err(error) => return ExtractionOutcome::Failed(error),
+        };
+        let draft_paths = match self.draft_writer.write_pending_drafts(
             &extraction_result,
             request,
             self.provider.as_str(),
-        )?;
+        ) {
+            Ok(paths) => paths,
+            Err(error) => return ExtractionOutcome::Failed(error.into()),
+        };
 
-        self.publish_lifecycle_event(EventEnvelope::new(
-            "extraction.completed",
-            format!("extraction.completed:{job_id}"),
-            json!({
-                "job_id": job_id,
-                "provider": self.provider.as_str(),
-                "source_session_id": extraction_result.source_session_id.as_str(),
-                "draft_count": draft_paths.len(),
-                "draft_paths": draft_paths.iter().map(|path| path.display().to_string()).collect::<Vec<_>>(),
-            }),
-        ))
-        .await?;
+        ExtractionOutcome::Completed {
+            draft_paths,
+            source_session_id: extraction_result.source_session_id.as_str().to_owned(),
+        }
+    }
 
-        Ok(draft_paths)
+    /// Publishes exactly one terminal lifecycle event for a finished job.
+    ///
+    /// `Completed` maps to `extraction.completed` (with scope-relative draft
+    /// paths — never absolute host paths); `Failed` maps to `extraction.failed`.
+    /// This is the single terminal-event publication site shared by the worker
+    /// loop and the no-pool spawn path.
+    pub(crate) async fn publish_terminal_event(&self, job_id: &str, outcome: ExtractionOutcome) {
+        let envelope = match outcome {
+            ExtractionOutcome::Completed {
+                draft_paths,
+                source_session_id,
+            } => EventEnvelope::new(
+                "extraction.completed",
+                format!("extraction.completed:{job_id}"),
+                json!({
+                    "job_id": job_id,
+                    "provider": self.provider.as_str(),
+                    "source_session_id": source_session_id,
+                    "draft_count": draft_paths.len(),
+                    "draft_paths": self.scope_relative_draft_paths(&draft_paths),
+                }),
+            ),
+            ExtractionOutcome::Failed(error) => EventEnvelope::new(
+                "extraction.failed",
+                format!("extraction.failed:{job_id}"),
+                json!({
+                    "job_id": job_id,
+                    "provider": self.provider.as_str(),
+                    "error": error.to_string(),
+                }),
+            ),
+        };
+        if let Err(publish_error) = self.publish_lifecycle_event(envelope).await {
+            tracing::error!(
+                ?publish_error,
+                "failed to publish terminal extraction lifecycle event"
+            );
+        }
+    }
+
+    /// Publishes the timeout terminal event. Timeout maps to `extraction.failed`
+    /// with the canonical "extraction timed out" error string (the Redis 8-event
+    /// catalog is frozen — there is no dedicated `extraction.timeout` type).
+    pub(crate) async fn publish_timeout_event(&self, job_id: &str) {
+        if let Err(publish_error) = self
+            .publish_lifecycle_event(EventEnvelope::new(
+                "extraction.failed",
+                format!("extraction.failed:{job_id}"),
+                json!({
+                    "job_id": job_id,
+                    "provider": self.provider.as_str(),
+                    "error": "extraction timed out",
+                }),
+            ))
+            .await
+        {
+            tracing::error!(
+                ?publish_error,
+                "failed to publish timeout extraction.failed lifecycle event"
+            );
+        }
+    }
+
+    /// Renders committed draft paths as scope-relative strings for event payloads.
+    ///
+    /// Security P1: the `extraction.completed` event must never leak absolute
+    /// host paths. Committed paths live under `<scope_root>/.skills/...`, so we
+    /// emit each path relative to its scope root (falling back to the `.skills`
+    /// suffix if the prefix cannot be stripped). The returned `.pending` paths
+    /// (used internally for `draft_count`) remain absolute.
+    fn scope_relative_draft_paths(&self, draft_paths: &[std::path::PathBuf]) -> Vec<String> {
+        draft_paths
+            .iter()
+            .map(|path| relative_draft_path(path))
+            .collect()
     }
 
     /// Runs one extraction synchronously and returns the written `.pending`
@@ -426,30 +541,34 @@ impl SessionExtractor {
             .map_err(|error| error.reason_code())?;
 
         let job_id = Uuid::now_v7().to_string();
+        // The blocking drain owns its terminal events itself: it must emit
+        // `extraction.completed` on success so the queue drain observes
+        // completion before acking a row (todo 103 coupling), and
+        // `extraction.failed` on error for operator visibility.
         match self.execute_job(&job_id, request).await {
-            Ok(paths) => Ok(paths),
-            Err(error) => {
-                if let Err(publish_error) = self
-                    .publish_lifecycle_event(EventEnvelope::new(
-                        "extraction.failed",
-                        format!("extraction.failed:{job_id}"),
-                        json!({
-                            "job_id": job_id.as_str(),
-                            "provider": self.provider.as_str(),
-                            "error": error.to_string(),
-                        }),
-                    ))
-                    .await
-                {
-                    tracing::error!(
-                        ?publish_error,
-                        "failed to publish extraction.failed lifecycle event from blocking drain"
-                    );
-                }
+            ExtractionOutcome::Completed {
+                draft_paths,
+                source_session_id,
+            } => {
+                self.publish_terminal_event(
+                    &job_id,
+                    ExtractionOutcome::Completed {
+                        draft_paths: draft_paths.clone(),
+                        source_session_id,
+                    },
+                )
+                .await;
+                Ok(draft_paths)
+            }
+            ExtractionOutcome::Failed(error) => {
+                let reason_code = error.reason_code();
+                let detail = error.to_string();
+                self.publish_terminal_event(&job_id, ExtractionOutcome::Failed(error))
+                    .await;
                 // Carry the reason code AND the underlying detail so the queue's
                 // `error` column is actionable for operators, not just a bare
                 // category. Format: `<reason_code>: <detail>`.
-                Err(format!("{}: {error}", error.reason_code()))
+                Err(format!("{reason_code}: {detail}"))
             }
         }
     }
@@ -458,13 +577,7 @@ impl SessionExtractor {
         &self,
         transcript: &domain::SessionTranscript,
     ) -> Result<ExtractionResult, SessionExtractionError> {
-        let policy = RetryPolicy {
-            max_attempts: 3,
-            base_delay: std::time::Duration::from_millis(150),
-            max_delay: std::time::Duration::from_secs(1),
-        };
-
-        retry_with_backoff(&policy, || {
+        retry_with_backoff(&self.retry_policy, || {
             let extractor = Arc::clone(&self.extractor);
             async move { extractor.extract(transcript).await }
         })
@@ -530,6 +643,315 @@ impl SessionExtractionError {
                 WriterError::WriteDenied(_) => "write_denied",
             },
             Self::EventPublication(_) => "event_publication_failed",
+        }
+    }
+}
+
+/// Renders one committed draft path as a scope-relative string.
+///
+/// Committed `.pending` drafts live under `<scope_root>/.skills/...`. To keep
+/// absolute host paths out of the published `extraction.completed` event
+/// (Security P1), we emit the path starting at the `.skills` component. If no
+/// `.skills` component is present (unexpected), we fall back to the final path
+/// component, never the absolute path.
+fn relative_draft_path(path: &std::path::Path) -> String {
+    use std::path::Component;
+
+    let mut components = path.components().peekable();
+    let mut found_skills = false;
+    let mut relative = std::path::PathBuf::new();
+    while let Some(component) = components.next() {
+        if let Component::Normal(name) = component
+            && name == std::ffi::OsStr::new(".skills")
+        {
+            found_skills = true;
+        }
+        if found_skills {
+            relative.push(component);
+        }
+        let _ = components.peek();
+    }
+
+    if found_skills {
+        relative.display().to_string()
+    } else {
+        path.file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| path.display().to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        path::PathBuf,
+        str::FromStr,
+        sync::atomic::{AtomicU32, Ordering},
+        time::Duration,
+    };
+
+    use async_trait::async_trait;
+    use domain::{
+        DomainId, ExtractedSkillCandidate, ExtractionError, ExtractionResult, SessionTranscript,
+        TranscriptSkillExtractionService,
+    };
+
+    use super::*;
+    use crate::{transcripts::TranscriptLoader, writer::PendingDraftWriter};
+
+    #[test]
+    fn provider_unset_and_empty_default_to_ollama() {
+        assert_eq!(
+            ExtractionProvider::from_str("").expect("empty parses"),
+            ExtractionProvider::Ollama,
+            "empty EXTRACT_SESSION_PROVIDER must map to Ollama, not Claude"
+        );
+        assert_eq!(
+            ExtractionProvider::from_str("   ").expect("whitespace parses"),
+            ExtractionProvider::Ollama,
+        );
+        assert_eq!(
+            ExtractionProvider::from_str("ollama").expect("ollama parses"),
+            ExtractionProvider::Ollama,
+        );
+        assert_eq!(
+            ExtractionProvider::from_str("claude").expect("claude parses"),
+            ExtractionProvider::Claude,
+        );
+        assert!(
+            ExtractionProvider::from_str("gpt").is_err(),
+            "unknown provider must be a loud error"
+        );
+    }
+
+    fn sandbox_dir(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "lib-test-{name}-{}-{}",
+            std::process::id(),
+            uuid::Uuid::now_v7()
+        ));
+        std::fs::create_dir_all(&dir).expect("sandbox dir should be creatable");
+        dir
+    }
+
+    fn inline_transcript() -> String {
+        r#"{"type":"message","message":{"role":"user","content":"setup rust io helpers"}}"#
+            .to_owned()
+    }
+
+    fn request_for(session_id: &str) -> ExtractSessionRequest {
+        ExtractSessionRequest {
+            transcript_ref: "ignored".to_owned(),
+            transcript_inline: Some(inline_transcript()),
+            session_id: session_id.to_owned(),
+            repo_path: None,
+        }
+    }
+
+    #[derive(Clone)]
+    struct StaticExtractor {
+        delay: Duration,
+        fail_until: Arc<AtomicU32>,
+    }
+
+    impl StaticExtractor {
+        fn ok(delay: Duration) -> Self {
+            Self {
+                delay,
+                fail_until: Arc::new(AtomicU32::new(0)),
+            }
+        }
+
+        fn failing_for(attempts: u32) -> Self {
+            Self {
+                delay: Duration::ZERO,
+                fail_until: Arc::new(AtomicU32::new(attempts)),
+            }
+        }
+    }
+
+    #[async_trait]
+    impl TranscriptSkillExtractionService for StaticExtractor {
+        async fn extract(
+            &self,
+            _transcript: &SessionTranscript,
+        ) -> Result<ExtractionResult, ExtractionError> {
+            if self.fail_until.load(Ordering::SeqCst) > 0 {
+                self.fail_until.fetch_sub(1, Ordering::SeqCst);
+                return Err(ExtractionError::ProviderUnavailable("transient".to_owned()));
+            }
+            if !self.delay.is_zero() {
+                tokio::time::sleep(self.delay).await;
+            }
+            Ok(ExtractionResult {
+                source_session_id: DomainId::new_unchecked("lib-test"),
+                provider: "ollama".to_owned(),
+                candidates: vec![ExtractedSkillCandidate {
+                    name: "lib-skill".to_owned(),
+                    description: "desc".to_owned(),
+                    tags: vec![],
+                    procedures: vec!["step".to_owned()],
+                    conventions: vec![],
+                    assets: vec![],
+                    confidence: 0.9,
+                }],
+            })
+        }
+    }
+
+    fn build_no_pool_extractor(
+        sandbox: &std::path::Path,
+        transcript_root: &std::path::Path,
+        extractor_impl: Arc<dyn TranscriptSkillExtractionService>,
+        pool_config: ExtractionWorkerPoolConfig,
+        worker_pool: Option<ExtractionWorkerPool>,
+    ) -> SessionExtractor {
+        let retry_policy = pool_config.retry_policy.clone();
+        let job_timeout = pool_config.timeout;
+        SessionExtractor {
+            provider: ExtractionProvider::Ollama,
+            extractor: extractor_impl,
+            transcript_loader: TranscriptLoader::new(transcript_root.to_path_buf())
+                .expect("loader"),
+            draft_writer: PendingDraftWriter::new(vec![sandbox.to_path_buf()]),
+            lifecycle_events: ExtractionLifecycleEvents::default(),
+            event_publisher: Arc::new(NoopExtractionEventPublisher),
+            worker_pool,
+            retry_policy,
+            job_timeout,
+        }
+    }
+
+    #[tokio::test]
+    async fn no_pool_path_emits_completed_event() {
+        let sandbox = sandbox_dir("no-pool-ok");
+        let transcript_root = sandbox_dir("no-pool-ok-tx");
+        let extractor = build_no_pool_extractor(
+            &sandbox,
+            &transcript_root,
+            Arc::new(StaticExtractor::ok(Duration::ZERO)),
+            ExtractionWorkerPoolConfig::default(),
+            None,
+        );
+
+        let response = extractor.enqueue(request_for("no-pool-ok")).await;
+        assert_eq!(response.status, "processing");
+
+        for _ in 0..40 {
+            tokio::time::sleep(Duration::from_millis(25)).await;
+            if extractor
+                .lifecycle_events()
+                .iter()
+                .any(|event| event.event_type == "extraction.completed")
+            {
+                return;
+            }
+        }
+        panic!("no-pool path did not emit extraction.completed");
+    }
+
+    #[tokio::test]
+    async fn no_pool_path_has_timeout_arm() {
+        // The no-pool spawn fallback must own a timeout arm: a slow extraction
+        // must surface extraction.failed ("extraction timed out"), never stall
+        // silently.
+        let sandbox = sandbox_dir("no-pool-timeout");
+        let transcript_root = sandbox_dir("no-pool-timeout-tx");
+        let extractor = build_no_pool_extractor(
+            &sandbox,
+            &transcript_root,
+            Arc::new(StaticExtractor::ok(Duration::from_secs(10))),
+            ExtractionWorkerPoolConfig::default().with_timeout(Duration::from_millis(100)),
+            None,
+        );
+
+        let response = extractor.enqueue(request_for("no-pool-timeout")).await;
+        assert_eq!(response.status, "processing");
+
+        for _ in 0..60 {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            let timed_out = extractor.lifecycle_events().iter().any(|event| {
+                event.event_type == "extraction.failed"
+                    && event
+                        .payload
+                        .as_object()
+                        .and_then(|payload| payload.get("error"))
+                        .and_then(|value| value.as_str())
+                        == Some("extraction timed out")
+            });
+            if timed_out {
+                return;
+            }
+        }
+        panic!("no-pool path did not emit a timeout extraction.failed event");
+    }
+
+    #[tokio::test]
+    async fn retry_policy_is_config_sourced_and_runs() {
+        // The unified config-sourced retry must actually re-run the extraction
+        // call: an extractor that fails twice then succeeds must complete when
+        // max_attempts >= 3.
+        let sandbox = sandbox_dir("retry");
+        let transcript_root = sandbox_dir("retry-tx");
+        let extractor = build_no_pool_extractor(
+            &sandbox,
+            &transcript_root,
+            Arc::new(StaticExtractor::failing_for(2)),
+            ExtractionWorkerPoolConfig::default(),
+            None,
+        );
+
+        let paths = extractor
+            .extract_blocking(&request_for("retry"))
+            .await
+            .expect("retry should recover after two transient failures");
+        assert!(!paths.is_empty());
+    }
+
+    #[tokio::test]
+    async fn completed_event_draft_paths_are_scope_relative() {
+        // Security P1: the extraction.completed payload must never leak absolute
+        // host paths. draft_paths must be scope-relative.
+        let sandbox = sandbox_dir("scope-relative");
+        let transcript_root = sandbox_dir("scope-relative-tx");
+        let extractor = build_no_pool_extractor(
+            &sandbox,
+            &transcript_root,
+            Arc::new(StaticExtractor::ok(Duration::ZERO)),
+            ExtractionWorkerPoolConfig::default(),
+            None,
+        );
+
+        extractor
+            .extract_blocking(&request_for("scope-relative"))
+            .await
+            .expect("extraction should succeed");
+
+        let events = extractor.lifecycle_events();
+        let completed = events
+            .iter()
+            .find(|event| event.event_type == "extraction.completed")
+            .expect("completed event must be present");
+        let draft_paths = completed
+            .payload
+            .get("draft_paths")
+            .and_then(|value| value.as_array())
+            .expect("draft_paths array must be present");
+        assert!(!draft_paths.is_empty(), "at least one draft path expected");
+        for path in draft_paths {
+            let path = path.as_str().expect("draft path is a string");
+            assert!(
+                !path.starts_with('/'),
+                "draft path must not be an absolute unix path: {path}"
+            );
+            assert!(
+                !path.contains(":\\"),
+                "draft path must not be an absolute windows path: {path}"
+            );
+            assert!(
+                !path.starts_with(sandbox.to_str().unwrap()),
+                "draft path must not contain the absolute host scope root: {path}"
+            );
         }
     }
 }

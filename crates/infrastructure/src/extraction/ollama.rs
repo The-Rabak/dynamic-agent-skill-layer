@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use domain::{
-    ExtractionError, ExtractionResult, SessionTranscript, TranscriptEntry, TranscriptSkillExtractionService,
+    ExtractionError, ExtractionResult, SessionTranscript, TranscriptEntry,
+    TranscriptSkillExtractionService,
 };
 use serde::{Deserialize, Serialize};
 
@@ -31,8 +32,14 @@ impl Default for OllamaExtractionConfig {
     fn default() -> Self {
         Self {
             endpoint: "http://127.0.0.1:11434/api/generate".to_owned(),
-            model: "llama3.1".to_owned(),
-            timeout_ms: 1_500,
+            // granite4:3b is the V1.5 target local model (small, CPU-friendly).
+            model: "granite4:3b".to_owned(),
+            // 120s inner timeout for CPU inference. NOTE: this is an UNMEASURED
+            // placeholder — single-job p50/p95 on the target host has not been
+            // measured in this environment. The operator must confirm/adjust
+            // against the real deployment (override via OLLAMA_EXTRACTION_TIMEOUT_MS).
+            // The worker-pool (outer) timeout must stay >= 1.5x this value.
+            timeout_ms: 120_000,
             max_entries: 2_000,
             max_entry_chars: 8_192,
             max_total_chars: 1_000_000,
@@ -95,7 +102,10 @@ const SUSPICIOUS_SPEAKERS: &[&str] = &[
 /// characters stripped.
 fn sanitize_transcript_entry(entry: &TranscriptEntry) -> Option<String> {
     // Reject entries where the speaker impersonates system/assistant roles
-    if SUSPICIOUS_SPEAKERS.iter().any(|s| entry.speaker.contains(s)) {
+    if SUSPICIOUS_SPEAKERS
+        .iter()
+        .any(|s| entry.speaker.contains(s))
+    {
         return None;
     }
 
@@ -107,7 +117,10 @@ fn sanitize_transcript_entry(entry: &TranscriptEntry) -> Option<String> {
         .collect();
 
     // Reject entries whose content starts with a known jailbreak prefix
-    if JAILBREAK_PREFIXES.iter().any(|prefix| cleaned.starts_with(*prefix)) {
+    if JAILBREAK_PREFIXES
+        .iter()
+        .any(|prefix| cleaned.starts_with(*prefix))
+    {
         return None;
     }
 
@@ -185,6 +198,20 @@ impl TranscriptSkillExtractionService for OllamaExtractor {
 mod tests {
     use super::*;
     use domain::{DomainId, TranscriptEntry};
+
+    #[test]
+    fn default_config_targets_granite_with_cpu_inference_timeout() {
+        let config = OllamaExtractionConfig::default();
+        assert_eq!(
+            config.model, "granite4:3b",
+            "default Ollama model must be granite4:3b"
+        );
+        assert!(
+            config.timeout_ms >= 60_000,
+            "inner timeout must be realistic for CPU inference (>=60s), got {}ms",
+            config.timeout_ms
+        );
+    }
 
     #[tokio::test]
     async fn extract_rejects_empty_transcript() {
