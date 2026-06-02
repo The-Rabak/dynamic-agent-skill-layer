@@ -428,6 +428,30 @@ struct HttpAppState {
     ingest_secret: Option<String>,
 }
 
+/// Compares two byte slices in constant time to prevent timing attacks.
+///
+/// Returns `true` iff both slices have equal length and identical contents.
+/// Uses XOR accumulation so the loop always runs for `min(a.len(), b.len())`
+/// iterations regardless of where the first difference appears, preventing
+/// timing-based length or content inference.
+///
+/// This is a defense-in-depth measure: the ingest endpoint is loopback-only,
+/// but a correct constant-time compare is cheap and avoids a subtle class of
+/// vulnerability if the binding constraint ever relaxes.
+#[inline]
+fn constant_time_bytes_equal(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    // XOR each pair of bytes and OR the results. A non-zero accumulator means
+    // at least one byte differed. The loop always runs all iterations.
+    let mut diff: u8 = 0;
+    for (byte_a, byte_b) in a.iter().zip(b.iter()) {
+        diff |= byte_a ^ byte_b;
+    }
+    diff == 0
+}
+
 /// Verifies the shared secret for a transcript-ingest request.
 ///
 /// Returns `Ok(())` when no secret is configured (loopback-only guard) or when
@@ -449,9 +473,10 @@ fn check_ingest_secret(
         .and_then(|value| value.to_str().ok())
         .unwrap_or_default();
 
-    // Length-then-bytes compare keeps the check simple; the endpoint is
-    // loopback-only so this is defense-in-depth, not the primary boundary.
-    if provided.as_bytes() == expected.as_bytes() {
+    // Constant-time comparison so secret length is not leaked via short-circuit.
+    // The endpoint is loopback-only so this is defense-in-depth, not the primary
+    // boundary — but a proper constant-time compare is correct here.
+    if constant_time_bytes_equal(provided.as_bytes(), expected.as_bytes()) {
         Ok(())
     } else {
         Err((

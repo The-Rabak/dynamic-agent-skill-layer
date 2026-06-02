@@ -14,6 +14,7 @@ serves:
   - SC-V1.5-E (live suite is GREEN)
 files:
   - crates/infrastructure/src/vector/qdrant.rs
+  - crates/infrastructure/src/health.rs
   - crates/mcp-server/src/suppression_state.rs
   - crates/mcp-server/src/protocol.rs
   - scripts/run-e2e-tests.sh
@@ -32,7 +33,7 @@ tdd_mode: inherit
 ## Scope
 Make the Qdrant adapter own the REST↔gRPC port relationship from one configured base; fix `run-e2e-tests.sh` + `docker-compose.test.yml` to use the REST port for the REST preflight; add suppression test isolation; fix the local `clear_session` prefix bug.
 
-- **Owns:** port derivation, suppression isolation, compose/runner alignment.
+- **Owns:** port derivation, suppression isolation, compose/runner alignment, and the local-only safety posture preflight that lets a new user trust the stack before running the live suite.
 - **Non-goals:** retrieval quality (T09); un-RED-ing tests (T10).
 
 ## Scope Fence
@@ -44,6 +45,8 @@ No behavior change to production suppression semantics beyond namespacing. **Thi
 - [ ] **Fix the local suppression `clear_session` bug:** `suppression_state.rs` `retain` uses prefix `suppression:{session_id}` but local DashMap keys are `{session_id}::{repo_path}`, so local state is never cleared. Without this, in-memory suppression leaks across extractions in the same process.
 - [ ] (Performance) Invert the suppression lookup to DashMap-first / Redis-fallback so warm sessions don't pay a Redis RTT on the hot path.
 - [ ] **Security P1 — add `DefaultBodyLimit` to the axum MCP router** (`crates/mcp-server/src/protocol.rs:428` `Router::new()`): `extract_session.transcript_inline` is otherwise an unbounded buffer (DoS). Set a sane cap and add a test asserting an oversized body is rejected.
+- [ ] **Localhost safety posture preflight:** the test runner / health-preflight verifies the MCP server binds to `127.0.0.1` by default, not `0.0.0.0`, unless an explicit env override is set. The report warns if PG/Redis/Qdrant test endpoints are host-exposed beyond loopback in local/test compose. This is an adoption/trust check, not a new auth system.
+- [ ] Oversized payload coverage includes both MCP JSON-RPC and `/ingest/transcript` where applicable: the former is rejected by the router body limit, the latter by the transcript queue content cap. Tests assert explicit 4xx/413-style failures with reason codes.
 - [ ] **Scope-line ownership:** the `run-e2e-tests.sh` changes here are restricted to the port/env lines (`QDRANT_URL` line ~76 + the `docker-compose.test.yml` port lines) — **do not** add any CI stanza (T10 owns that), so the two tickets never collide on this shared file.
 - [ ] **Human-gate enforced:** compose/script/env edits are staged for explicit approval before commit.
 
@@ -51,9 +54,12 @@ No behavior change to production suppression semantics beyond namespacing. **Thi
 - **Infrastructure configuration change — HUMAN GATE:** `docker-compose.test.yml`, `scripts/run-e2e-tests.sh` env edits require approval.
 - Shared adapter `vector/qdrant.rs` is touched by T03 (role/labelling) and T08 (port derivation) — T03 runs in an earlier batch, so T08 picks up its changes; no concurrent edit.
 - The `run-e2e-tests.sh` ownership fence with T10 is a deliberate same-file conflict-avoidance: T08 = port/env lines, T10 = CI gate stanza.
+- The local-only safety posture check intentionally stays in T08 because this ticket already owns port/env alignment and the body-limit security fix. Do not expand it into auth or public-network support; constitution §Deferred-risk guard still says admin/MCP surfaces are localhost/private-network only for this phase.
 
 ## Local Context
 **WHY:** Every live test in `test_live_data_plane_roundtrip` failed identically at the preflight: `GET http://localhost:16334/collections` → `hyper Parse(Version)` (16334 is gRPC; REST `/collections` belongs on 16333). Suppression `suppression:<session_id>::<repo_path>` has no per-instance namespace, so a second `build_live_server()` reusing a session id returns `DuplicateSuppressed` instead of `Ok`.
+
+**Adoption WHY (2026-06-02 assessment):** Users will only trust a local-first agent skill layer if the first preflight proves the stack is loopback-bound, payload-bounded, and not accidentally exposing code/transcripts on broad host interfaces. This adds a small trust signal without changing the V1.5 product surface.
 
 **Open question to surface:** confirm current line numbers (`run-e2e-tests.sh:76`, `docker-compose.test.yml:107,141`) before editing — if drifted, locate via `semble search "QDRANT_URL grpc port preflight"`.
 

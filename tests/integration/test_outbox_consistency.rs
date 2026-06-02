@@ -707,6 +707,7 @@ async fn graph_rebuilt_is_not_emitted_when_outbox_drain_fails() {
 struct RelayBackedState {
     operation_log: Vec<String>,
     graph_version: i64,
+    #[allow(dead_code)]
     outbox_events: Vec<OutboxEvent>,
     outbox_pending_count: usize,
 }
@@ -764,7 +765,7 @@ async fn graph_rebuilt_ordering_persist_then_outbox_drain_then_version_then_even
     let mut published_events = Vec::new();
     let mut orchestrator = GraphRebuildOrchestrator::new(&mut durable_state, &mut published_events);
 
-    let outcome = orchestrator
+    let _outcome = orchestrator
         .rebuild_from_changes(&[scope], &[file_change])
         .await
         .expect("rebuild should succeed with clean relay");

@@ -153,17 +153,17 @@ impl CompiledContextCache {
     ) -> Option<CachedContext> {
         let key = Self::cache_key(session_id, prompt, configured_scopes);
 
-        if let Some(entry) = self.inner.get(&key) {
-            if entry.graph_version == graph_version {
-                return Some(entry.clone());
-            }
+        if let Some(entry) = self.inner.get(&key)
+            && entry.graph_version == graph_version
+        {
+            return Some(entry.clone());
         }
 
-        if let Some(redis_entry) = self.try_redis_get(&key).await {
-            if redis_entry.graph_version == graph_version {
-                self.inner.insert(key.clone(), redis_entry.clone());
-                return Some(redis_entry);
-            }
+        if let Some(redis_entry) = self.try_redis_get(&key).await
+            && redis_entry.graph_version == graph_version
+        {
+            self.inner.insert(key.clone(), redis_entry.clone());
+            return Some(redis_entry);
         }
 
         None

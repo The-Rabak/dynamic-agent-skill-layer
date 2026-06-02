@@ -388,7 +388,11 @@ mod tests {
                         content: "Trace middleware sequence".to_owned(),
                         lifecycle: LifecycleStatus::Active,
                     }],
-                    prior: 0.1,
+                    // Prior is computed dynamically from real usage at graph-load
+                    // time (mcp-server lib.rs via `retrieval::usage_prior`). Test
+                    // fixtures use 0.0 (cold-start, no usage history) — the same
+                    // value `usage_prior(0, 0)` produces.
+                    prior: 0.0,
                     community_boost: 0.2,
                 },
                 SeededSkill {
@@ -404,7 +408,11 @@ mod tests {
                         content: "Validate token lifetime".to_owned(),
                         lifecycle: LifecycleStatus::Active,
                     }],
-                    prior: 0.1,
+                    // Prior is computed dynamically from real usage at graph-load
+                    // time (mcp-server lib.rs via `retrieval::usage_prior`). Test
+                    // fixtures use 0.0 (cold-start, no usage history) — the same
+                    // value `usage_prior(0, 0)` produces.
+                    prior: 0.0,
                     community_boost: 0.2,
                 },
             ],
@@ -698,7 +706,11 @@ mod tests {
                         content: "Trace middleware sequence".to_owned(),
                         lifecycle: LifecycleStatus::Active,
                     }],
-                    prior: 0.1,
+                    // Prior is computed dynamically from real usage at graph-load
+                    // time (mcp-server lib.rs via `retrieval::usage_prior`). Test
+                    // fixtures use 0.0 (cold-start, no usage history) — the same
+                    // value `usage_prior(0, 0)` produces.
+                    prior: 0.0,
                     community_boost: 0.2,
                 },
                 SeededSkill {
@@ -714,7 +726,11 @@ mod tests {
                         content: "Should be excluded".to_owned(),
                         lifecycle: LifecycleStatus::Active,
                     }],
-                    prior: 0.1,
+                    // Prior is computed dynamically from real usage at graph-load
+                    // time (mcp-server lib.rs via `retrieval::usage_prior`). Test
+                    // fixtures use 0.0 (cold-start, no usage history) — the same
+                    // value `usage_prior(0, 0)` produces.
+                    prior: 0.0,
                     community_boost: 0.2,
                 },
             ],

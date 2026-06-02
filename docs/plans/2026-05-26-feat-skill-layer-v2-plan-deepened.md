@@ -38,6 +38,7 @@ execution_shape:
   mode: vertical-slices
   rationale: |
     Every phase delivers a user-visible, constitution-compliant tracer bullet.
+    Phase 0 proves adoption/trust surfaces: provider privacy, skill intake, review inbox, outcome signals, canaries, OpenCode parity, and session deltas.
     Phase 1 proves quality-scored extraction with SkillLens rubric.
     Phase 2 proves team scope with remote resolvers.
     Phase 3 proves autonomous optimization loop.
@@ -51,9 +52,9 @@ execution_shape:
 ## Enhancement Summary
 
 **Deepened on:** 2026-05-26
-**Sections enhanced:** 13 (all phases + cross-harness deep-dive + SkillOpt params + extraction architecture + pipeline architecture + E2E test specification)
+**Sections enhanced:** 14 (all phases + cross-harness deep-dive + SkillOpt params + extraction architecture + pipeline architecture + E2E test specification + 2026-06-02 adoption/trust addendum)
 **Research agents used:** 11 (SkillLens deep-dive, SkillOpt deep-dive, cross-harness synthesis, multi-harness format research, Phase 1-5 research agents, team scope research, architecture/security/performance reviews)
-**Slices:** 39 (original 38 + Slice 1.6: Pipeline architecture docs + E2E test harness infrastructure)
+**Slices:** 46 (original 38 + Slice 1.6: Pipeline architecture docs + E2E test harness infrastructure + 7 adoption/trust slices added 2026-06-02)
 
 ### WHY Integrity Check
 - Problem Narrative: preserved
@@ -108,6 +109,22 @@ execution_shape:
 - **Added cosine edit budget schedule** (paper's best stable schedule, 4→2 decay)
 - **optimizer_model: requires explicit stronger model** (not same-as-extraction default)
 - **Removed any implication of LLM-judge-based gating** (paper proves harmful)
+
+### 2026-06-02 Adoption / Trust Addendum
+
+The 2026-06-02 V1.5 assessment surfaced a gap not in architecture correctness, but in **activation and user trust**. V1.5 proves the loop can close; V2 must make the loop feel useful, inspectable, and safe to humans before adding large intelligence machinery.
+
+Seven slices are added as a new **Phase 0: Adoption & Trust Surfaces**. They are deliberately small and additive:
+
+1. **Provider privacy ledger** — shows which provider is active, whether transcript content can leave the machine, and what credentials/env are required.
+2. **Existing skill library intake report** — gives value before extraction by inventorying current skill dirs, invalid frontmatter, duplicates, stale candidates, and dead references.
+3. **Skill inbox review pack** — makes `.pending` approval pleasant without adding a web UI or bypassing the filesystem human gate.
+4. **Context outcome signals** — records explicit/weak helpfulness signals so SkillOpt/outcome learning is grounded in utility, not usage count alone.
+5. **Project behavioral canary packs** — repo-defined prompts with expected top skills, used to gate extraction, merge, optimization, and team promotion.
+6. **OpenCode minimum harness parity** — pull a tiny read-only OpenCode proof forward before the full Phase 5 multi-harness suite.
+7. **Session delta context** — shows what the skill graph learned/changed since the last session so users feel compounding value.
+
+**Scope discipline:** these slices do not weaken the V1.5 fence. They land in V2 only, after the V1.5 live suite/activation path is green. None may auto-approve skills, introduce a web dashboard, or add learned ranking before outcome signals exist.
 
 ---
 
@@ -318,6 +335,172 @@ The multi-harness compiler architecture simplifies dramatically: 3 of 4 harnesse
 
 ### Execution Slices
 
+#### Phase 0: Adoption & Trust Surfaces (NEW — 2026-06-02)
+
+**Purpose:** Make the system desirable and legible before making it smarter. V1.5 proves the local loop works; Phase 0 lets a developer see the loop's value, privacy posture, pending review workload, and behavioral quality signal without reading implementation docs or raw E2E JSON.
+
+**Depends on:** V1.5 T10/T10b green path. These slices consume the working local stack, activation demo, and realistic retrieval corpus. They must not fix V1.5 wiring defects.
+
+**Constitution fit:** All mutations remain human-gated. Filesystem stays the approval UI. Reports are inspectable local artifacts. No cloud calls are introduced by default.
+
+##### Slice 0.1: Provider privacy ledger
+
+**Slice type:** hardening / trust-surface
+**Serves:** SC-V2-1, SC-V2-7, constitution Principle 1 (local-first), DS-010 (hostile input / trust boundary), DS-011 (observability)
+**Feature home:** `docs/reference/` + `crates/mcp-server/` health/reporting surface + `scripts/doctor.sh`
+**Depends on:** V1.5 provider-contract reconciliation (#115/#116/#117/#126)
+
+###### What to build
+Expose a local, machine-readable and human-readable provider ledger that says which extraction provider is active (`ollama`, `claude`, `claude-code`), whether transcript content can leave the machine, which env vars are required, and what the last extraction provider used. The ledger should be visible through the doctor/demo output and capability catalog; optionally expose it in MCP health metadata if already available without adding a new tool.
+
+###### Acceptance criteria
+- [ ] `scripts/doctor.sh` / activation report prints `active_extraction_provider`, `cloud_possible: true|false`, `cloud_default: false`, and required credential/env status.
+- [ ] Capability catalog has a provider privacy table: Ollama default/local, Anthropic API opt-in/cloud, Claude Code CLI host-local/credential-opaque.
+- [ ] Selecting `provider=claude` without `ANTHROPIC_API_KEY` still fails loudly at construction; selecting `provider=claude-code` clearly states first-extraction failure mode if CLI/session unavailable.
+- [ ] No transcript content or provider secret is logged in the ledger.
+- [ ] Non-HTTPS `ANTHROPIC_BASE_URL` is rejected or explicitly test-gated per the provider hardening todo.
+
+###### Rationale
+Provider complexity is now product reality. Users will trust local-first claims only if the system makes cloud/local behavior obvious before they run extraction.
+
+##### Slice 0.2: Existing skill library intake report
+
+**Slice type:** adoption / inspection
+**Serves:** SC-V2-7, SC-V2-2 preparation, DS-013 (lifecycle backlog), DS-017 preparation
+**Feature home:** `admin` or `maintenance` report path + `scripts/`
+**Depends on:** V1.5 graph-builder scan and T10b activation path
+
+###### What to build
+Generate a local intake report for configured project/global skill directories before any new extraction runs. The report inventories existing `SKILL.md` files and flags invalid frontmatter, duplicate candidates, oversized descriptions, missing tags, stale/retired files, dead reference paths, and unsupported harness-specific fields.
+
+###### Acceptance criteria
+- [ ] Intake report lists active/pending/retired skill counts by scope and path.
+- [ ] Report flags invalid YAML/frontmatter, missing name/description, oversized descriptions, duplicate names/content hashes, dead `references/` or `scripts/` paths, and suspicious host-specific paths.
+- [ ] Suggested fixes are emitted as report entries only, not auto-applied. Any generated remediation proposal uses `.pending`/human-gated workflow.
+- [ ] Report can run on an empty repository and returns an honest `no skills found` result.
+- [ ] T10b demo links to the intake report as "what the system discovered before learning anything new."
+
+###### Rationale
+First value should not depend on waiting for a new extraction. A user with existing skills/rules gets immediate visibility into what the system found and what needs cleanup.
+
+##### Slice 0.3: Skill inbox review pack
+
+**Slice type:** governance / UX-without-UI
+**Serves:** SC-V2-1, SC-V2-3, DS-013, DS-016
+**Feature home:** `maintenance` + `docs/reports/` or `.skills/_pending-review.md`
+**Depends on:** Phase 1 quality fields when present; works with V1.5 `.pending` files without quality scores
+
+###### What to build
+Create a filesystem-visible pending-skill review pack that makes human approval fast while preserving the human gate. The pack summarizes each `.pending` draft with source session, proposed scope, duplicate risk, quality scores when available, risk flags, and suggested action.
+
+###### Acceptance criteria
+- [ ] Generates a local review artifact (`.skills/_pending-review.md` or `docs/reports/pending-skills.md`) listing every `.pending` skill grouped by scope.
+- [ ] Each entry includes title, description, tags, source session/provider, proposed path, duplicate candidates, risk flags, and exact approve/reject/edit instructions.
+- [ ] Quality scores are display-only when present; they never auto-approve or auto-delete.
+- [ ] Risk flags include potential secrets, host paths, destructive commands, over-broad/generic advice, and model/provider uncertainty.
+- [ ] Report remains stable under backlog scale (100+ pending drafts) with deterministic ordering.
+
+###### Rationale
+Self-growing systems fail when approval is annoying. This keeps the no-dashboard philosophy but gives the human a useful inbox.
+
+##### Slice 0.4: Context outcome signals
+
+**Slice type:** telemetry / learning substrate
+**Serves:** SC-V2-4, SC-V2-9, DS-021, DS-024
+**Feature home:** `mcp-server` + `infrastructure` + `maintenance`
+**Depends on:** V1.5 usage append-log (T06)
+
+###### What to build
+Add explicit and weak outcome signals beyond "skill was selected." Usage count only means a skill appeared in context; it does not mean it helped. V2 learning, SkillOpt, and retirement need outcome rows that can represent helpful, irrelevant, harmful, contradicted, or unknown.
+
+###### Acceptance criteria
+- [ ] Add an append-only `context_outcomes` or equivalent table via additive migration: `session_id`, `skill_id`, `outcome`, `source`, `confidence`, `reason_code`, `created_at`.
+- [ ] MCP/admin surface or local script can record explicit user outcome: `helpful|irrelevant|harmful|unknown` for a session/skill.
+- [ ] Transcript analyzer can emit weak inferred signals (e.g. user correction after context, repeated failure, explicit "that was wrong") with low confidence and clear source.
+- [ ] Outcome signals are never used for learned ranking until Phase 3/SkillOpt gates consume them; V2 initially records and reports only.
+- [ ] Privacy: raw prompt/transcript text is not stored in outcome rows; use hashes/ids and reason codes.
+
+###### Rationale
+Outcome learning without outcome data is fake. This slice gives V2 real reward signal while keeping V1.5's deterministic prior untouched.
+
+##### Slice 0.5: Project behavioral canary packs
+
+**Slice type:** evidence / quality gate
+**Serves:** SC-V2-1, SC-V2-3, SC-V2-9, DS-018, DS-019, DS-021
+**Feature home:** `tests/e2e/fixtures/` + `maintenance` validation runner
+**Depends on:** V1.5 retrieval corpus + graph-versioned replay path
+
+###### What to build
+Let a repository define canary prompts with expected top skills. Run canaries before/after extraction, merge, optimization, team promotion, and retrieval-weight changes. Canary failures block automated proposals from being presented as "safe" and are recorded in reports.
+
+###### Example
+```yaml
+- prompt: "fix flaky docker compose test"
+  expected_top_skills:
+    - docker-compose-test-debugging
+    - systematic-debugging
+  forbidden_skills:
+    - production-db-reset
+```
+
+###### Acceptance criteria
+- [ ] Define a simple YAML canary pack format with `prompt`, `expected_top_skills`, optional `forbidden_skills`, and tolerance rules.
+- [ ] Runner executes canaries against a fixed graph_version and produces deterministic pass/fail output.
+- [ ] Merge proposals, SkillOpt candidates, and team-scope promotions can attach canary results before human review.
+- [ ] Canary failures do not mutate active skills; they block or flag proposals only.
+- [ ] T10/T10b demo corpus can be promoted into a default starter canary pack.
+
+###### Rationale
+SkillLens says LLM judges are unreliable. Behavioral canaries give this system a practical, local utility test that users can understand.
+
+##### Slice 0.6: OpenCode minimum harness parity
+
+**Slice type:** tracer-bullet / ecosystem proof
+**Serves:** SC-V2-7, DS-002, cross-harness portability story
+**Feature home:** `compiler` + `mcp-server` / docs + fixtures
+**Depends on:** AgentSkills-compatible SKILL.md format; does not depend on team scope or SkillOpt
+
+###### What to build
+Pull a tiny read-only OpenCode parity proof ahead of the full Phase 5 compiler suite. Index OpenCode global skills, compile the same canonical skill context into an OpenCode-compatible output, and prove one fixture skill appears in both Claude Code and OpenCode context paths.
+
+###### Acceptance criteria
+- [ ] OpenCode global skill directory is discoverable through existing global scope config (no new schema).
+- [ ] Minimal `OpenCodeCompiler` strips/ignores Claude-specific fields and preserves name, description, procedures, conventions, and assets.
+- [ ] E2E fixture proves same `SKILL.md` can be consumed by Claude Code and OpenCode formatting paths with subunit counts preserved.
+- [ ] No Copilot/Codex support pulled forward; full multi-harness suite remains Phase 5.
+- [ ] Docs state this is read-only parity, not cross-harness outcome learning.
+
+###### Rationale
+Cross-harness portability is a core differentiator. A tiny OpenCode proof makes the product story tangible without dragging all Phase 5 scope forward.
+
+##### Slice 0.7: Session delta context
+
+**Slice type:** compiler / trust affordance
+**Serves:** SC-V2-8, DS-011, DS-022 preparation
+**Feature home:** `compiler` + `mcp-server` + `infrastructure` graph metadata reads
+**Depends on:** V1.5 graph_version and event/audit records
+
+###### What to build
+At session start or first prompt, optionally include a tiny "Skill Graph Updates Since Last Session" section: newly approved skills, pending drafts produced by last session, retired proposals, and graph_version changes. This should be deterministic, small, and suppressible.
+
+###### Example output
+```markdown
+### Skill Graph Updates Since Last Session
+- New pending skill proposed from previous session: `docker-compose-healthcheck-debugging`
+- Approved skill now active: `rust-sqlx-runtime-query-pattern`
+- Retired proposal pending: `old-qdrant-port-notes`
+```
+
+###### Acceptance criteria
+- [ ] Delta section is optional and bounded (max items/chars) so it cannot crowd out task-relevant context.
+- [ ] Delta derives from durable graph/audit/session metadata, not free-form LLM text.
+- [ ] Cold-start or no-change sessions omit the section silently.
+- [ ] User can disable the delta section via config.
+- [ ] E2E proves approving a pending skill causes a later session to mention the active skill once, then suppress repeated delta noise.
+
+###### Rationale
+Users need to feel compounding value. Showing what changed since last session makes learning visible without adding a dashboard.
+
 #### Phase 1: Quality Intelligence
 
 _(Phase 1 Purpose and Rationale — unchanged)_
@@ -479,7 +662,7 @@ fn validate_dimensions(embedding: &[f32], expected: usize) -> Result<(), Embeddi
 
 **Slice type:** infra-track
 **Capability enabled:** Architecture-verified pipeline execution with exhaustive test coverage. Every pipeline stage, decision point, and error path has a corresponding E2E test before implementation begins. This is the evidence contract for the entire V2 plan.
-**Consumers / downstream work unlocked:** All 37 subsequent slices across Phases 1-5. Each slice's acceptance criteria now trace to specific E2E test cases (E2E-1.1 through E2E-9.9). `/workflows:work` execution agents use this test catalog as their "done" checklist.
+**Consumers / downstream work unlocked:** The remaining implementation slices across Phases 1-5. Each slice's acceptance criteria now trace to specific E2E test cases (E2E-1.1 through E2E-9.9). `/workflows:work` execution agents use this test catalog as their "done" checklist.
 **Feature home:** `tests/e2e/` + `docs/architecture/`
 **Files:**
 - `docs/architecture/2026-05-26-skill-layer-v2-architecture.md` — NEW section: Pipeline Architecture (6 pipelines, 350+ lines of stage-by-stage detail) + E2E Test Specification (99 tests across 9 categories)
@@ -968,7 +1151,7 @@ Assert: procedure count, convention count, asset count equal across all transfor
 
 ##### Slice 5.1: Multi-harness compiler implementations
 
-_(Slice definition unchanged — simplified by AgentSkills convergence)_
+_(Slice definition unchanged — simplified by AgentSkills convergence; consumes the earlier Slice 0.6 OpenCode minimum parity proof rather than re-proving it)_
 
 ### Research Insights: Compiler Implementation
 
@@ -1092,6 +1275,13 @@ _(Unchanged from original plan)_
 
 **Additional acceptance criteria from research:**
 
+- [ ] Provider privacy ledger exposes active provider, cloud/local posture, required credentials, and last-used provider without logging transcript content or secrets
+- [ ] Existing skill library intake report inventories configured skill dirs and flags invalid/duplicate/stale/dead-reference skills before any new extraction runs
+- [ ] Skill inbox review pack lists all `.pending` drafts with duplicate risk, quality/risk signals, and exact human approval/rejection instructions; no auto-approval path exists
+- [ ] Context outcome signals capture explicit/weak helpfulness outcomes separately from usage rows and are report-only until learning gates consume them
+- [ ] Project behavioral canary packs run against fixed graph versions and gate merge/optimization/team-promotion proposals with deterministic pass/fail evidence
+- [ ] OpenCode minimum parity proves one canonical `SKILL.md` can be consumed through Claude Code and OpenCode formatting paths with subunit counts preserved
+- [ ] Session delta context is optional, bounded, deterministic, and omitted silently when no graph changes exist
 - [ ] Cross-harness canary test verifies skills compiled for different harnesses produce equivalent behavioral outcomes (±5% tolerance) on fixture tasks
 - [ ] Every extracted skill carries `extraction_source_harness` and `extraction_source_model` metadata in `.pending` frontmatter and PG
 - [ ] SkillOpt optimizer uses explicitly stronger model than extraction provider (config-enforced, not defaulted)
@@ -1141,6 +1331,10 @@ _(Unchanged from original plan)_
 | Map-reduce overgeneralizes in coding domain | Medium | Medium | G=5 group size. Rare-pattern preservation. Single-pass fallback. |
 | Quality rubric over-claims coding domain gains | Low | Medium | Expected +0.5-1.0pp on coding (vs +1.55pp paper). Don't market +1.55pp. |
 | Cross-harness compilation assumes format = portability | High | Low | Cross-harness canary test added. Behavioral validation not just format roundtrip. |
+| Adoption surfaces become a stealth dashboard / second control plane | Medium | Medium | Keep Phase 0 artifacts filesystem/report/script-only. No web UI, no auto-approval, no mutation outside `.pending`/`.retired`. |
+| Outcome signals are treated as ground truth too early | High | Medium | Record and report outcomes first. Do not feed learned/adaptive ranking until canary/shadow gates validate them. |
+| Provider privacy ledger gives false safety if provider routing drifts | High | Medium | Generate from live config/dispatch where possible; add tests that docs, env mapping, and construction behavior agree. |
+| OpenCode parity pulls full multi-harness scope forward | Medium | Medium | Limit Slice 0.6 to read-only OpenCode formatting/indexing. Copilot/Codex remain Phase 5/V3. |
 | AgentSkills standard diverges between harnesses | Medium | Low | 3-way convergence as of May 2026. Monitor agentskills.io changelog. |
 
 ---
@@ -1176,6 +1370,12 @@ _(Unchanged from original plan)_
 9. **Plausibility-based quality dimensions:** Rejected permanently. SkillLens proves plausibility rubric HURTS extraction (-0.59pp). Including "clarity," "conciseness," or "completeness" dimensions would actively degrade skill quality.
 
 10. **Codex AGENTS.md compiler:** Rejected for V2. Different format entirely. No Codex users currently. Build when demand exists.
+
+11. **Web dashboard for pending skills / reports:** Rejected for V2. It would add auth, UI, deployment, and browser test surface while weakening the project's filesystem-as-UI principle. Use review packs and markdown reports first.
+
+12. **Learned ranking from usage-only signals:** Rejected. Usage means "selected," not "helpful." Adaptive ranking waits for explicit/weak outcome signals plus behavioral canary/shadow validation.
+
+13. **Full multi-harness support before OpenCode proof:** Rejected. A tiny OpenCode tracer bullet proves the differentiator without pulling Copilot/Codex and cross-consumer outcome gates into the early V2 path.
 
 ---
 

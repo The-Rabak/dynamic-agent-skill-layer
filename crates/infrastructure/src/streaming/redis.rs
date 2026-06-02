@@ -309,8 +309,7 @@ mod tests {
 
     #[test]
     fn redis_config_validation_rejects_blank_values() {
-        let mut config = RedisStreamsConfig::default();
-        config.stream_key = " ".to_owned();
+        let config = RedisStreamsConfig { stream_key: " ".to_owned(), ..RedisStreamsConfig::default() };
 
         let error = RedisStreamsAdapter::new(config)
             .expect_err("blank stream_key should fail config validation");

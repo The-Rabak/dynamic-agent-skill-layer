@@ -169,9 +169,16 @@ impl UsagePersistencePort for PostgresUsageWriter {
         .execute(&mut *tx)
         .await?;
 
-        // Insert one skill_usage row per selected skill (append-log, no UPSERT).
+        // Validate all selected skills upfront before touching the DB, so the
+        // transaction stays clean on contract violations. Build parallel arrays
+        // for the bulk unnest insert — one element per selected skill.
+        let skill_count = record.selected_skills.len();
+        let mut usage_ids: Vec<Uuid> = Vec::with_capacity(skill_count);
+        let mut skill_uuids: Vec<Uuid> = Vec::with_capacity(skill_count);
+        let mut relevance_scores: Vec<f32> = Vec::with_capacity(skill_count);
+        let mut context_statuses: Vec<String> = Vec::with_capacity(skill_count);
+
         for skill_selection in &record.selected_skills {
-            let usage_id = Uuid::now_v7();
             let skill_uuid: Uuid = skill_selection.skill_id.parse().map_err(|_| {
                 UsagePersistenceError::InvalidContract(format!(
                     "skill_id '{}' is not a valid UUID",
@@ -190,15 +197,28 @@ impl UsagePersistencePort for PostgresUsageWriter {
                 )));
             }
 
+            usage_ids.push(Uuid::now_v7());
+            skill_uuids.push(skill_uuid);
+            relevance_scores.push(skill_selection.relevance_score);
+            context_statuses.push(skill_selection.context_status.clone());
+        }
+
+        // Bulk insert all skill_usage rows in one round-trip using unnest, mirroring
+        // the read-side unnest pattern in `recent_usage`. Each parallel array element
+        // maps positionally to one row — same columns and values as the former per-row
+        // loop, reduced from N round-trips to one.
+        if !skill_uuids.is_empty() {
             sqlx::query(
                 "INSERT INTO skill_usage (id, session_id, skill_id, usage_count, context_status, relevance_score, used_at, metadata)
-                 VALUES ($1, $2, $3, 1, $4, $5, NOW(), '{}'::jsonb)"
+                 SELECT u_id, $5, u_skill_id, 1, u_context_status, u_relevance_score, NOW(), '{}'::jsonb
+                 FROM unnest($1::uuid[], $2::uuid[], $3::real[], $4::text[])
+                     AS t(u_id, u_skill_id, u_relevance_score, u_context_status)",
             )
-            .bind(usage_id)
+            .bind(&usage_ids as &[Uuid])
+            .bind(&skill_uuids as &[Uuid])
+            .bind(&relevance_scores as &[f32])
+            .bind(&context_statuses as &[String])
             .bind(&record.session_id)
-            .bind(skill_uuid)
-            .bind(&skill_selection.context_status)
-            .bind(skill_selection.relevance_score)
             .execute(&mut *tx)
             .await?;
         }
@@ -254,8 +274,8 @@ impl UsageSampleStore for PostgresUsageSampleStore {
             r#"
             SELECT
                 s.id::TEXT                                                              AS skill_id,
-                COUNT(u.id)::INTEGER                                                    AS total_count,
-                COUNT(u.id) FILTER (WHERE u.used_at >= NOW() - ($2 || ' days')::INTERVAL)::INTEGER
+                COUNT(u.id)                                                             AS total_count,
+                COUNT(u.id) FILTER (WHERE u.used_at >= NOW() - ($2 * INTERVAL '1 day'))
                                                                                        AS windowed_count,
                 MAX(u.used_at)                                                          AS last_used_at,
                 EXTRACT(EPOCH FROM (NOW() - MAX(u.used_at))) / 86400.0                 AS age_days_float
@@ -265,28 +285,32 @@ impl UsageSampleStore for PostgresUsageSampleStore {
             "#,
         )
         .bind(&uuids as &[Uuid])
-        .bind(format!("{window_days}"))
+        .bind(window_days)
         .fetch_all(&self.pool)
         .await?;
 
         use sqlx::Row;
-        Ok(rows
-            .into_iter()
+        // Propagate column-access errors rather than silently defaulting to
+        // "" / 0. A try_get failure means a schema regression (missing or
+        // mistyped column); swallowing it turns a hard error into a silent
+        // cold-start prior for every skill, hiding the root cause entirely.
+        rows.into_iter()
             .map(|row| {
-                let total_count: i32 = row.try_get("total_count").unwrap_or(0);
-                let windowed_count: i32 = row.try_get("windowed_count").unwrap_or(0);
-                let last_used_at: Option<DateTime<Utc>> =
-                    row.try_get("last_used_at").unwrap_or(None);
-                let age_days_float: Option<f64> = row.try_get("age_days_float").unwrap_or(None);
-                SkillUsageSummary {
-                    skill_id: row.try_get("skill_id").unwrap_or_default(),
+                let skill_id: String = row.try_get("skill_id")?;
+                let total_count: i64 = row.try_get("total_count")?;
+                let windowed_count: i64 = row.try_get("windowed_count")?;
+                let last_used_at: Option<DateTime<Utc>> = row.try_get("last_used_at")?;
+                let age_days_float: Option<f64> = row.try_get("age_days_float")?;
+                Ok(SkillUsageSummary {
+                    skill_id,
                     total_count: total_count.max(0) as u32,
                     windowed_count: windowed_count.max(0) as u32,
                     last_used_at,
                     age_days: age_days_float.map(|f| f.max(0.0) as u32),
-                }
+                })
             })
-            .collect())
+            .collect::<Result<Vec<SkillUsageSummary>, sqlx::Error>>()
+            .map_err(UsagePersistenceError::Database)
     }
 }
 

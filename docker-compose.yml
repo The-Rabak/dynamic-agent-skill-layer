@@ -104,8 +104,12 @@ services:
       GRAPH_BUILDER_PROJECT_ROOT: ${GRAPH_BUILDER_PROJECT_ROOT:-/skills/project}
       CLAUDE_TRANSCRIPT_ROOT: ${CLAUDE_TRANSCRIPT_ROOT:-/transcripts}
       # Extraction provider for the extract_session worker pool. Ollama is the
-      # default local path (no cloud key); set EXTRACT_SESSION_PROVIDER=claude
-      # plus ANTHROPIC_API_KEY to opt into the Anthropic Messages API.
+      # default local path (no cloud key).
+      # - =claude or =claude-api: Anthropic Messages API; requires ANTHROPIC_API_KEY
+      #   (loud startup error if key absent). Not available as =claude-code here —
+      #   the CLI provider is host-only and must not be set in this container config.
+      # - =claude-code / =claude-cli: host-only CLI subprocess; NOT available in the
+      #   stock container (no claude binary, no login). Use on bare-host deployments only.
       EXTRACT_SESSION_PROVIDER: ${EXTRACT_SESSION_PROVIDER:-ollama}
       # Shared secret for the localhost /ingest/transcript endpoint (todo 103/099).
       # When set, host capture hooks must send a matching X-Ingest-Secret header.

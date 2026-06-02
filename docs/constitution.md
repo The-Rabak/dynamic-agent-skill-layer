@@ -1,9 +1,9 @@
 ---
 artifact: project-constitution
 status: active
-version: 2.0.0
+version: 2.1.0
 ratified: 2026-05-21
-last_amended: 2026-06-01
+last_amended: 2026-06-02
 owners:
   - rabak
 review_cycle: monthly
@@ -40,7 +40,7 @@ This repository builds **Dynamic Agent Skill Layer** — a local-first, self-gro
 - All services MUST run entirely on the developer's machine via Docker Compose.
 - **The data plane MUST remain local.** Embeddings MUST use local Ollama. Vector search MUST use local Qdrant. Relational storage MUST use local PostgreSQL. These have no cloud option in V1.
 - **Local-first is the default.** A default `docker compose up` with no extra configuration MUST NOT reach any cloud service.
-- **The skill-extraction LLM provider is user-selectable.** Ollama (local) is the default; a cloud provider (Claude / Anthropic) is a **first-class, fully supported** alternative when the user explicitly opts in via `EXTRACT_SESSION_PROVIDER`. Opting into a cloud extraction provider is the user's informed choice and is NOT a constitution violation. Selecting a cloud provider without its credential (e.g. `provider=claude` and no `ANTHROPIC_API_KEY`) MUST fail loudly at construction — never a silent cloud attempt and never a silent fallback.
+- **The skill-extraction LLM provider is user-selectable.** Three providers are sanctioned: (1) **Ollama** (`EXTRACT_SESSION_PROVIDER=ollama`, or unset) — local, default, no credentials required; (2) **Claude / Anthropic API** (`=claude`) — cloud, opt-in, first-class, requires `ANTHROPIC_API_KEY`; (3) **Claude Code CLI** (`=claude-code`, alias `=claude-cli`) — host-only, credential-free (uses the host `~/.claude` session), does NOT run in the stock `docker compose` container. Opting into a cloud extraction provider is the user's informed choice and is NOT a constitution violation. Selecting a cloud provider without its credential (e.g. `provider=claude` and no `ANTHROPIC_API_KEY`) MUST fail loudly at construction — never a silent cloud attempt and never a silent fallback.
 - V2 team scope MAY add remote PG + Qdrant, but the local-first default path MUST remain available.
 
 ### 2. Zero-Touch Session Start
@@ -129,3 +129,4 @@ This repository builds **Dynamic Agent Skill Layer** — a local-first, self-gro
 
 - v1.0.0 (2026-05-21) — Initial ratification. Derived from `docs/brainstorms/2026-05-21-compiled-context-layer-skill-rae-brainstorm.md` and subsequent grill-with-docs session.
 - v2.0.0 (2026-06-01) — **Principle 1 (Local-First Execution) redefined.** The skill-extraction LLM provider is now user-selectable: Ollama stays the default and a default `docker compose up` still reaches no cloud service, but Claude (Anthropic) extraction is promoted from "documented transport stub / human-vetoable exception" to a **first-class, opt-in** provider (`EXTRACT_SESSION_PROVIDER=claude`). Data-plane locality (Ollama embeddings, Qdrant, PostgreSQL) is unchanged and still mandatory, with no cloud option. Cloud extraction must fail loudly without its credential. **Rationale:** extraction quality benefits materially from a strong cloud LLM when the user chooses it; forcing Ollama-only added no safety (opt-in is explicit and fails loudly) while blocking a wanted capability. This resolves the empty-`constitution_waivers` concern (todo 105) by removing the underlying violation rather than waiving it. **Authorized by:** repository owner (rabak), 2026-06-01.
+- v2.1.0 (2026-06-02) — **Principle 1 (Local-First Execution) amended: third extraction provider added.** The `claude-code` CLI subprocess provider (`EXTRACT_SESSION_PROVIDER=claude-code`, alias `=claude-cli`) is sanctioned as a host-only, credential-free third extraction provider. It runs directly on the developer's host machine (where the Claude Code CLI and `~/.claude` session are already present) and does NOT run in the stock `docker compose` container. The provider list is now: (1) Ollama — default, local; (2) Claude/Anthropic API (`=claude`) — cloud, opt-in, key-checked loud-fail; (3) Claude Code CLI (`=claude-code`) — host-only, credential-free. The Principle 1 loud-fail clause for `provider=claude` without `ANTHROPIC_API_KEY` is unchanged. Plan RATIFIED Decision 3's "more moving parts" objection applied to the container context; it is superseded by ADR-0002 for the host-only path. **Rationale:** subscription users have a working Claude Code installation; the CLI provider requires zero API key management and reuses the existing host session. The governance trail for the implementing commits (`bcfa9de`, `d8e45f3`, `295bfef`) is recorded in ADR-0002 (`docs/architecture/adr-0002-claude-code-cli-extraction-provider-v1-5.md`) and retro-ticket `T05-addendum-claude-code-cli-provider.md`. **Authorized by:** repository owner (rabak), 2026-06-02.

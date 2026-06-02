@@ -61,15 +61,15 @@ pub(crate) async fn scan_and_del_pattern(client: &RedisClient, pattern: &str, co
             break;
         }
     }
-    if !keys.is_empty() {
-        if let Err(error) = conn.del::<_, ()>(&keys[..]).await {
-            tracing::warn!(
-                ?error,
-                key_count = keys.len(),
-                %context,
-                "failed to delete keys from redis"
-            );
-        }
+    if !keys.is_empty()
+        && let Err(error) = conn.del::<_, ()>(&keys[..]).await
+    {
+        tracing::warn!(
+            ?error,
+            key_count = keys.len(),
+            %context,
+            "failed to delete keys from redis"
+        );
     }
 }
 
@@ -323,7 +323,7 @@ mod tests {
     fn clear_session_pattern_escapes_wildcard_session_id() {
         // Verify that a session_id of "*" does NOT produce "suppression:*:*"
         // which would match every suppression key.
-        let state = SessionSuppressionState::default();
+        let _state = SessionSuppressionState::default();
         // We cannot call clear_session and inspect the pattern directly, but
         // we can verify the escaping helper produces the safe escaped form
         // and that session_prefix uses the raw id (not the glob-safe form,

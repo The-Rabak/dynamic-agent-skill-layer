@@ -95,6 +95,24 @@ impl InfrastructureHealthChecker {
         self
     }
 
+    /// Register a static component whose state is known at startup and does not
+    /// require runtime probing. Used to surface features whose enabled/disabled
+    /// state is determined by env vars rather than by a reachable network dependency
+    /// (e.g. `usage_write`, `extraction_provider`).
+    pub fn with_static_component(
+        mut self,
+        name: impl Into<String>,
+        healthy: bool,
+        detail: impl Into<String>,
+    ) -> Self {
+        self.config_invalid_components.push(HealthComponent {
+            name: name.into(),
+            healthy,
+            detail: detail.into(),
+        });
+        self
+    }
+
     pub async fn check(&self) -> HealthReport {
         let mut components: Vec<HealthComponent> = self.config_invalid_components.clone();
 
@@ -219,6 +237,35 @@ impl DependencyFactory {
             );
         }
 
+        // Surface usage-write state on /health so agents can observe it without
+        // waiting for a compile_context call. Three states:
+        //   "disabled" — MCP_USAGE_LOGGING=off; no rows written (rollback flag active)
+        //   "enabled"  — writer will be spawned; actual write health is updated at runtime
+        // The disabled state is the only startup-time signal; "enabled" is a best-effort
+        // startup assertion (actual failures surface via compile_context health markers).
+        let usage_logging_off = std::env::var("MCP_USAGE_LOGGING").as_deref() == Ok("off");
+        checker = if usage_logging_off {
+            checker.with_static_component("usage_write", true, "disabled")
+        } else {
+            checker.with_static_component("usage_write", true, "enabled")
+        };
+
+        // Surface the active extraction provider on /health so agents can query
+        // provider configuration pre-flight without enqueuing a job. Falls back to
+        // "ollama" (the constitution v2.0.0 default) when the env var is unset/blank.
+        let extraction_provider = std::env::var("EXTRACT_SESSION_PROVIDER")
+            .unwrap_or_default();
+        let extraction_provider = match extraction_provider.trim().to_ascii_lowercase().as_str() {
+            "claude" | "claude-api" => "claude",
+            "claude-code" | "claude-cli" => "claude-code",
+            _ => "ollama",
+        };
+        checker = checker.with_static_component(
+            "extraction_provider",
+            true,
+            extraction_provider,
+        );
+
         checker
     }
 
@@ -291,5 +338,101 @@ mod tests {
         assert!(!redis_component.healthy);
         assert!(redis_component.detail.contains("config_invalid"));
         assert!(redis_component.detail.contains("unresolvable host"));
+    }
+
+    /// Proves that `with_static_component` surfaces the component in the `/health`
+    /// report and that a healthy static component does not flip the overall health to
+    /// unhealthy.
+    #[tokio::test]
+    async fn static_component_appears_in_report_and_preserves_healthy_flag() {
+        let checker = InfrastructureHealthChecker::new()
+            .with_static_component("usage_write", true, "disabled")
+            .with_static_component("extraction_provider", true, "ollama");
+
+        let report = checker.check().await;
+
+        assert!(
+            report.healthy,
+            "healthy static components must not flip the overall health flag"
+        );
+        assert_eq!(report.components.len(), 2);
+
+        let usage = report
+            .components
+            .iter()
+            .find(|c| c.name == "usage_write")
+            .expect("usage_write component must be present");
+        assert!(usage.healthy);
+        assert_eq!(usage.detail, "disabled");
+
+        let provider = report
+            .components
+            .iter()
+            .find(|c| c.name == "extraction_provider")
+            .expect("extraction_provider component must be present");
+        assert!(provider.healthy);
+        assert_eq!(provider.detail, "ollama");
+    }
+
+    /// Proves that `build_health_checker_from_environment` injects `usage_write: "disabled"`
+    /// when `MCP_USAGE_LOGGING=off` and `usage_write: "enabled"` otherwise.
+    ///
+    /// Guards the three-state contract (disabled / enabled / failed): an agent must be
+    /// able to distinguish `disabled` from `healthy` on the `/health` endpoint.
+    #[test]
+    fn build_health_checker_injects_usage_write_disabled_when_flag_is_off() {
+        // SAFETY: serial test isolation — we set then immediately unset the var.
+        unsafe {
+            std::env::set_var("MCP_USAGE_LOGGING", "off");
+        }
+        let checker = DependencyFactory::build_health_checker_from_environment();
+        unsafe {
+            std::env::remove_var("MCP_USAGE_LOGGING");
+        }
+
+        // The static components are stored in config_invalid_components (the field
+        // shared for pre-check components). We do a synchronous inspection via the
+        // public check() path but use a blocking executor since we only need the
+        // startup-time static values.
+        let report = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .expect("tokio rt")
+            .block_on(checker.check());
+
+        let usage = report
+            .components
+            .iter()
+            .find(|c| c.name == "usage_write")
+            .expect("usage_write must be present in /health output");
+        assert_eq!(
+            usage.detail, "disabled",
+            "usage_write detail must be 'disabled' when MCP_USAGE_LOGGING=off"
+        );
+    }
+
+    /// Proves that `build_health_checker_from_environment` injects `usage_write: "enabled"`
+    /// when the rollback flag is not set.
+    #[test]
+    fn build_health_checker_injects_usage_write_enabled_when_flag_is_not_set() {
+        // Ensure flag is absent.
+        unsafe {
+            std::env::remove_var("MCP_USAGE_LOGGING");
+        }
+        let checker = DependencyFactory::build_health_checker_from_environment();
+
+        let report = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .expect("tokio rt")
+            .block_on(checker.check());
+
+        let usage = report
+            .components
+            .iter()
+            .find(|c| c.name == "usage_write")
+            .expect("usage_write must be present in /health output");
+        assert_eq!(
+            usage.detail, "enabled",
+            "usage_write detail must be 'enabled' when MCP_USAGE_LOGGING is not set"
+        );
     }
 }

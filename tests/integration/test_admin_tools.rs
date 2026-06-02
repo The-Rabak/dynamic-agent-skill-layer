@@ -114,7 +114,7 @@ fn fresh_sandbox(prefix: &str) -> PathBuf {
     sandbox
 }
 
-fn write_skill_file(root: &PathBuf, slug: &str, title: &str) {
+fn write_skill_file(root: &std::path::Path, slug: &str, title: &str) {
     let skill_dir = root.join(slug);
     std::fs::create_dir_all(&skill_dir).expect("skill dir should be creatable");
     std::fs::write(
@@ -506,7 +506,7 @@ async fn inspect_skill_and_list_communities_read_live_postgres_state_after_rebui
         .expect("skill should be present from live state");
     assert_eq!(inspected.skill_id, project_skill_id);
     assert_eq!(inspected.name, "Project Skill");
-    assert!(inspected.subunits.len() >= 1);
+    assert!(!inspected.subunits.is_empty());
     assert!(inspected.community.is_some());
 }
 

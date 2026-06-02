@@ -1,5 +1,6 @@
 use std::{sync::Arc, time::Duration};
 
+use async_trait::async_trait;
 use chrono::Utc;
 use infrastructure::{
     PostgresAdapter, PostgresConfig, PostgresGraphSnapshotStore, PostgresUsageSampleStore,
@@ -96,11 +97,12 @@ where
     }
 }
 
+#[async_trait]
 impl<A> MergePassRunner for LiveMergePassRunner<A>
 where
-    A: MaintenanceAuditSink,
+    A: MaintenanceAuditSink + Send,
 {
-    fn run_merge_pass(
+    async fn run_merge_pass(
         &mut self,
         now: chrono::DateTime<Utc>,
     ) -> Result<Vec<MergeProposal>, CronError> {
@@ -139,21 +141,6 @@ where
 }
 
 impl LiveRetirementPassRunner<PostgresMaintenanceAuditSink> {
-    pub fn new(
-        snapshot_store: PostgresGraphSnapshotStore,
-        scope_roots: Vec<std::path::PathBuf>,
-        retirement_config: RetirementConfig,
-        audit_adapter: &PostgresAdapter,
-    ) -> Self {
-        Self {
-            snapshot_store,
-            scope_roots,
-            retirement_config,
-            audit_sink: PostgresMaintenanceAuditSink::from_pool(audit_adapter.pool().clone()),
-            usage_store: None,
-        }
-    }
-
     /// Creates a runner with a live usage store so retirement scoring is based
     /// on real usage data (T06).
     pub fn new_with_usage_store(
@@ -191,13 +178,23 @@ where
             usage_store: None,
         }
     }
+
+    /// Wires a usage store into an audit-sink-constructed runner.
+    ///
+    /// Used in unit tests to attach a stub store without a live Postgres pool.
+    #[cfg(test)]
+    fn with_usage_store(mut self, usage_store: Arc<dyn UsageSampleStore>) -> Self {
+        self.usage_store = Some(usage_store);
+        self
+    }
 }
 
+#[async_trait]
 impl<A> RetirementPassRunner for LiveRetirementPassRunner<A>
 where
-    A: MaintenanceAuditSink,
+    A: MaintenanceAuditSink + Send,
 {
-    fn run_retirement_pass(
+    async fn run_retirement_pass(
         &mut self,
         now: chrono::DateTime<Utc>,
     ) -> Result<Vec<RetirementProposal>, CronError> {
@@ -207,38 +204,34 @@ where
             return Ok(Vec::new());
         }
 
-        // Fetch real usage samples when a store is wired (T06). Uses
-        // block_in_place so the sync trait impl can drive the async query
-        // without spawning a separate thread.
+        // Fetch real usage samples when a store is wired (T06). The async trait
+        // lets us await the query directly without any blocking bridge.
         let usage_samples = if let Some(store) = &self.usage_store {
             let skill_ids: Vec<String> = skills.iter().map(|s| s.id.clone()).collect();
             let window_days = self.retirement_config.scoring_window_days;
-            let summaries = tokio::task::block_in_place(|| {
-                tokio::runtime::Handle::current()
-                    .block_on(store.recent_usage(&skill_ids, window_days))
-            })
-            .map_err(|e| CronError::RetirementPass(format!("usage query failed: {e}")))?;
+            let summaries = store
+                .recent_usage(&skill_ids, window_days)
+                .await
+                .map_err(|e| CronError::RetirementPass(format!("usage query failed: {e}")))?;
 
             summaries
                 .into_iter()
-                .flat_map(|summary| {
-                    // Emit one UsageSample per usage count unit so the retirement
-                    // scorer's recency-weighted sum is accurate. Each sample
-                    // represents a single historical selection anchored to
-                    // `last_used_at` (best available without the per-event log).
-                    // For V1.5 accuracy this is sufficient — the scorer sees
-                    // `windowed_count` usages at the last-seen timestamp.
+                .filter_map(|summary| {
                     if summary.windowed_count == 0 {
-                        return Vec::new();
+                        return None;
                     }
+                    // Emit ONE sample with `usage_count = windowed_count` rather
+                    // than fanning out into `windowed_count` unit-count clones.
+                    // The retirement scorer sums `sample.usage_count * recency_weight`
+                    // per sample, so one sample of N produces the same weighted sum
+                    // as N samples of 1 — same math, O(1) allocations per skill
+                    // instead of O(windowed_count).
                     let used_at = summary.last_used_at.unwrap_or(now);
-                    (0..summary.windowed_count)
-                        .map(|_| UsageSample {
-                            skill_id: summary.skill_id.clone(),
-                            used_at,
-                            usage_count: 1,
-                        })
-                        .collect::<Vec<_>>()
+                    Some(UsageSample {
+                        skill_id: summary.skill_id,
+                        used_at,
+                        usage_count: summary.windowed_count,
+                    })
                 })
                 .collect::<Vec<UsageSample>>()
         } else {
@@ -297,8 +290,9 @@ fn load_skill_snapshots(scope_roots: &[std::path::PathBuf]) -> Result<Vec<SkillS
 #[derive(Debug, Default)]
 pub struct NoopMergePassRunner;
 
+#[async_trait]
 impl MergePassRunner for NoopMergePassRunner {
-    fn run_merge_pass(
+    async fn run_merge_pass(
         &mut self,
         _now: chrono::DateTime<Utc>,
     ) -> Result<Vec<MergeProposal>, CronError> {
@@ -309,8 +303,9 @@ impl MergePassRunner for NoopMergePassRunner {
 #[derive(Debug, Default)]
 pub struct NoopRetirementPassRunner;
 
+#[async_trait]
 impl RetirementPassRunner for NoopRetirementPassRunner {
-    fn run_retirement_pass(
+    async fn run_retirement_pass(
         &mut self,
         _now: chrono::DateTime<Utc>,
     ) -> Result<Vec<RetirementProposal>, CronError> {
@@ -330,7 +325,7 @@ pub async fn run_maintenance_worker(
     drain_transcripts(transcript_drain).await;
 
     if config.run_once {
-        run_one_tick(cron, merge_runner, retirement_runner)?;
+        run_one_tick(cron, merge_runner, retirement_runner).await?;
         return Ok(());
     }
 
@@ -338,7 +333,7 @@ pub async fn run_maintenance_worker(
     ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
     loop {
         ticker.tick().await;
-        if let Err(error) = run_one_tick(cron, merge_runner, retirement_runner) {
+        if let Err(error) = run_one_tick(cron, merge_runner, retirement_runner).await {
             error!(
                 reason_code = error.reason_code(),
                 error = %error,
@@ -480,10 +475,10 @@ fn build_scope_roots_from_environment() -> Vec<std::path::PathBuf> {
             roots.push(path);
         }
     }
-    if roots.is_empty() {
-        if let Ok(cwd) = std::env::current_dir() {
-            roots.push(cwd);
-        }
+    if roots.is_empty()
+        && let Ok(cwd) = std::env::current_dir()
+    {
+        roots.push(cwd);
     }
     roots
 }
@@ -508,12 +503,12 @@ impl MaintenanceRuntimeError {
     }
 }
 
-fn run_one_tick(
+async fn run_one_tick(
     cron: &mut MaintenanceCron,
     merge_runner: &mut impl MergePassRunner,
     retirement_runner: &mut impl RetirementPassRunner,
 ) -> Result<(), MaintenanceRuntimeError> {
-    let decision = cron.tick(Utc::now(), merge_runner, retirement_runner)?;
+    let decision = cron.tick(Utc::now(), merge_runner, retirement_runner).await?;
     match decision {
         CronDecision::SkippedNotDue { now, next_due_at } => {
             info!(
@@ -564,15 +559,22 @@ fn parse_boolean_switch(name: &str, raw_value: &str) -> Result<bool, Maintenance
 #[cfg(test)]
 mod tests {
     use super::*;
+    use async_trait::async_trait;
     use chrono::DateTime;
+    use infrastructure::{SkillUsageSummary, UsagePersistenceError};
+    use sqlx::postgres::PgPoolOptions;
 
     #[derive(Default)]
     struct CountingMergeRunner {
         invocations: usize,
     }
 
+    #[async_trait]
     impl MergePassRunner for CountingMergeRunner {
-        fn run_merge_pass(&mut self, _now: DateTime<Utc>) -> Result<Vec<MergeProposal>, CronError> {
+        async fn run_merge_pass(
+            &mut self,
+            _now: DateTime<Utc>,
+        ) -> Result<Vec<MergeProposal>, CronError> {
             self.invocations += 1;
             Ok(Vec::new())
         }
@@ -583,8 +585,9 @@ mod tests {
         invocations: usize,
     }
 
+    #[async_trait]
     impl RetirementPassRunner for CountingRetirementRunner {
-        fn run_retirement_pass(
+        async fn run_retirement_pass(
             &mut self,
             _now: DateTime<Utc>,
         ) -> Result<Vec<RetirementProposal>, CronError> {
@@ -631,5 +634,58 @@ mod tests {
     fn parse_boolean_switch_accepts_expected_values() {
         assert!(parse_boolean_switch("MAINTENANCE_RUN_ONCE", "true").expect("true"));
         assert!(!parse_boolean_switch("MAINTENANCE_RUN_ONCE", "0").expect("0"));
+    }
+
+    /// Stub store that returns empty usage results immediately.
+    ///
+    /// Used to prove the async retirement path on a current-thread runtime
+    /// without a live Postgres connection.
+    struct EmptyUsageSampleStore;
+
+    #[async_trait]
+    impl UsageSampleStore for EmptyUsageSampleStore {
+        async fn recent_usage(
+            &self,
+            _skill_ids: &[String],
+            _window_days: i64,
+        ) -> Result<Vec<SkillUsageSummary>, UsagePersistenceError> {
+            Ok(Vec::new())
+        }
+    }
+
+    /// Proves that `LiveRetirementPassRunner` with a usage store wired can be
+    /// driven on a current-thread `#[tokio::test]` runtime without panicking.
+    ///
+    /// Previously, the `block_in_place` bridge would panic with "can only
+    /// block_in_place on a multi-threaded runtime" on this default runtime.
+    #[tokio::test]
+    async fn live_retirement_runner_with_usage_store_does_not_panic_on_current_thread_runtime() {
+        // Build a lazy pool that never actually connects — the runner's
+        // `run_retirement_pass` returns early (empty scope_roots -> empty skills)
+        // before touching the pool, so no real DB is needed.
+        let pool = PgPoolOptions::new()
+            .max_connections(1)
+            .connect_lazy("postgres://unused:unused@localhost/unused")
+            .expect("lazy pool construction should not connect");
+        let snapshot_store = PostgresGraphSnapshotStore::new(pool);
+
+        let usage_store: Arc<dyn UsageSampleStore> = Arc::new(EmptyUsageSampleStore);
+        let mut runner = LiveRetirementPassRunner::with_audit_sink(
+            snapshot_store,
+            Vec::new(), // empty scope_roots: load_skill_snapshots returns [] -> early return
+            RetirementConfig::default(),
+            crate::audit::NoopMaintenanceAuditSink,
+        )
+        .with_usage_store(usage_store);
+
+        let result = runner.run_retirement_pass(Utc::now()).await;
+        assert!(
+            result.is_ok(),
+            "retirement pass with usage store must succeed on current-thread runtime"
+        );
+        assert!(
+            result.unwrap().is_empty(),
+            "no skills loaded -> no proposals expected"
+        );
     }
 }

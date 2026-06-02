@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use thiserror::Error;
 
@@ -25,13 +26,15 @@ pub enum CronDecision {
 }
 
 /// Merge workflow seam for scheduled orchestration.
-pub trait MergePassRunner {
-    fn run_merge_pass(&mut self, now: DateTime<Utc>) -> Result<Vec<MergeProposal>, CronError>;
+#[async_trait]
+pub trait MergePassRunner: Send {
+    async fn run_merge_pass(&mut self, now: DateTime<Utc>) -> Result<Vec<MergeProposal>, CronError>;
 }
 
 /// Retirement workflow seam for scheduled orchestration.
-pub trait RetirementPassRunner {
-    fn run_retirement_pass(
+#[async_trait]
+pub trait RetirementPassRunner: Send {
+    async fn run_retirement_pass(
         &mut self,
         now: DateTime<Utc>,
     ) -> Result<Vec<RetirementProposal>, CronError>;
@@ -58,7 +61,7 @@ impl MaintenanceCron {
     }
 
     /// Runs merge and retirement passes only when the configured interval has elapsed.
-    pub fn tick(
+    pub async fn tick(
         &mut self,
         now: DateTime<Utc>,
         merge_runner: &mut impl MergePassRunner,
@@ -82,8 +85,8 @@ impl MaintenanceCron {
         }
 
         let started_at = now;
-        let merge_proposals = merge_runner.run_merge_pass(now)?;
-        let retirement_proposals = retirement_runner.run_retirement_pass(now)?;
+        let merge_proposals = merge_runner.run_merge_pass(now).await?;
+        let retirement_proposals = retirement_runner.run_retirement_pass(now).await?;
         let completed_at = Utc::now();
         self.last_run_at = Some(now);
 
@@ -125,15 +128,20 @@ mod tests {
     use super::*;
 
     struct NoopMergeRunner;
+    #[async_trait]
     impl MergePassRunner for NoopMergeRunner {
-        fn run_merge_pass(&mut self, _now: DateTime<Utc>) -> Result<Vec<MergeProposal>, CronError> {
+        async fn run_merge_pass(
+            &mut self,
+            _now: DateTime<Utc>,
+        ) -> Result<Vec<MergeProposal>, CronError> {
             Ok(Vec::new())
         }
     }
 
     struct NoopRetirementRunner;
+    #[async_trait]
     impl RetirementPassRunner for NoopRetirementRunner {
-        fn run_retirement_pass(
+        async fn run_retirement_pass(
             &mut self,
             _now: DateTime<Utc>,
         ) -> Result<Vec<RetirementProposal>, CronError> {
@@ -147,14 +155,15 @@ mod tests {
         assert!(matches!(result, Err(CronError::InvalidInterval(_))));
     }
 
-    #[test]
-    fn tick_skips_when_not_due() {
+    #[tokio::test]
+    async fn tick_skips_when_not_due() {
         let mut cron = MaintenanceCron::new(Duration::from_secs(60)).expect("cron init");
         let now = Utc::now();
         let mut merge_runner = NoopMergeRunner;
         let mut retirement_runner = NoopRetirementRunner;
         let first = cron
             .tick(now, &mut merge_runner, &mut retirement_runner)
+            .await
             .expect("first run");
         assert!(matches!(first, CronDecision::Executed(_)));
         let second = cron
@@ -163,6 +172,7 @@ mod tests {
                 &mut merge_runner,
                 &mut retirement_runner,
             )
+            .await
             .expect("second run");
         assert!(matches!(second, CronDecision::SkippedNotDue { .. }));
     }

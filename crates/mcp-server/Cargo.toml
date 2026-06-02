@@ -25,6 +25,7 @@ compiler = { path = "../compiler" }
 dashmap = "6.1.0"
 domain = { path = "../domain" }
 infrastructure = { path = "../infrastructure" }
+maintenance = { path = "../maintenance" }
 retrieval = { path = "../retrieval" }
 session-extractor = { path = "../session-extractor" }
 reqwest = { version = "0.12.24", default-features = false, features = ["json", "rustls-tls"] }

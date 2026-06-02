@@ -124,6 +124,7 @@ mod tests {
 
     #[test]
     fn default_batch_is_positive() {
-        assert!(DEFAULT_TRANSCRIPT_DRAIN_BATCH > 0);
+        // Compile-time invariant: the drain batch constant must be > 0.
+        const _: () = assert!(DEFAULT_TRANSCRIPT_DRAIN_BATCH > 0);
     }
 }

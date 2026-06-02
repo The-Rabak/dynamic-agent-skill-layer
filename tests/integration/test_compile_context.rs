@@ -246,7 +246,7 @@ fn fresh_sandbox(prefix: &str) -> PathBuf {
     sandbox
 }
 
-fn write_skill_file(root: &PathBuf, slug: &str, title: &str) {
+fn write_skill_file(root: &std::path::Path, slug: &str, title: &str) {
     let skill_dir = root.join(slug);
     std::fs::create_dir_all(&skill_dir).expect("skill dir should be creatable");
     std::fs::write(
@@ -667,5 +667,44 @@ async fn compact_trigger_bypasses_suppression_and_returns_fresh_context() {
     assert!(
         compact_reinject.additional_context.is_some(),
         "compact trigger must include compiled context"
+    );
+}
+
+/// Proves the three-state `usage_write` observability contract in `compile_context` responses.
+///
+/// An agent must be able to distinguish:
+///   "disabled" — `MCP_USAGE_LOGGING=off` or no writer wired (rollback flag active)
+///   "ok"       — writer active, last write succeeded (key absent from response)
+///   "failed"   — writer active, last write or channel-post failed
+///
+/// This test exercises the `disabled` state: when `with_usage_writer` is not called
+/// (the default for `with_explicit_graph`), `usage_sender` is `None` and the response
+/// must carry `health["usage_write"] = "disabled"`, never an absent key.
+#[tokio::test]
+async fn compile_context_reports_usage_write_disabled_when_no_writer_is_wired() {
+    let _env_guard = env_guard::configure_scope_env();
+    // No `.with_usage_writer(...)` call — usage_sender stays None, triggering disabled state.
+    let server = McpServerApp::with_explicit_graph(
+        Arc::new(DeterministicEmbeddingService::healthy()),
+        seeded_graph(),
+        retrieval_config(),
+        None,
+    );
+
+    let response = server
+        .compile_context(CompileContextRequest {
+            prompt: "how do i read a file in rust".to_owned(),
+            session_id: "session-usage-disabled".to_owned(),
+            repo_path: test_repo_path(),
+            trigger: None,
+        })
+        .await;
+
+    let usage_write_status = response.health.get("usage_write").map(String::as_str);
+    assert_eq!(
+        usage_write_status,
+        Some("disabled"),
+        "compile_context response must include health[\"usage_write\"] = \"disabled\" when no writer is wired; \
+         got: {usage_write_status:?}"
     );
 }

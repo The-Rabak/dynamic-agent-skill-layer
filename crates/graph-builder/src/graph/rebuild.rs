@@ -130,23 +130,12 @@ where
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct InMemoryDurableGraphState {
     pub operation_log: Vec<String>,
     pub graph_version: i64,
     pub mutations: Vec<DurableGraphMutation>,
     allow_synthetic_outbox_drain: bool,
-}
-
-impl Default for InMemoryDurableGraphState {
-    fn default() -> Self {
-        Self {
-            operation_log: Vec::new(),
-            graph_version: 0,
-            mutations: Vec::new(),
-            allow_synthetic_outbox_drain: false,
-        }
-    }
 }
 
 impl InMemoryDurableGraphState {

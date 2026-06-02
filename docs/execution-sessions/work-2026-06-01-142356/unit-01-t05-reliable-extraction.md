@@ -89,5 +89,5 @@ Behaviors delivered (all verified against the working tree):
 - `cargo fmt --check -p session-extractor -p infrastructure`: clean (exit 0). NB: an unrelated pre-existing fmt drift exists in `crates/graph-builder/src/graph/rebuild.rs` — out of T05 scope, left untouched.
 
 ## Follow-ups
-- **Measure `granite4:3b` p50/p95** on the target host and replace the UNMEASURED-conservative 120s inner timeout with a measured value (surfaced in code comments + capability catalog).
+- **Measure `gemma4:e4b` p50/p95** on the target host and replace the UNMEASURED-conservative 120s inner timeout with a measured value (surfaced in code comments + capability catalog). (Model updated from `granite4:3b` to `gemma4:e4b` post-T05; retro-approved 2026-06-02 — see `docs/execution-sessions/retro-2026-06-02-model-healthcheck-approval/retro-approval.md`.)
 - Live ≥32-job burst e2e against real Ollama is `#[ignore]`-gated; run it in an environment with live infra (belongs to T10's green-live-suite gate).

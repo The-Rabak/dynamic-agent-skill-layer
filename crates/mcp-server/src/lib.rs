@@ -1,3 +1,6 @@
+// FOLLOW-UP (post-v1.5): split this module — see todo #128. Intended split:
+// `app.rs` (McpServerApp struct + builders), `request_handlers.rs` (compile_context,
+// extract_session, find_skill dispatch), `admin.rs` (admin tool delegation).
 mod admin_wiring;
 mod context_cache;
 mod graph_refresh_subscriber;
@@ -21,6 +24,7 @@ use admin::tools::{
 use async_trait::async_trait;
 use compiler::TemplateOnlyCompiler;
 use domain::{EmbeddingService, ScopeResolver};
+use maintenance::RetirementConfig;
 #[cfg(any(test, feature = "test-utils"))]
 use infrastructure::OutboxVectorStore;
 use infrastructure::{
@@ -78,16 +82,6 @@ pub struct McpServerApp {
 }
 
 impl McpServerApp {
-    pub fn new(retriever: Arc<dyn SkillRetriever>, redis_client: Option<RedisClient>) -> Self {
-        let admin_runtime_dependencies = admin_wiring::live_admin_runtime_dependencies();
-        Self::new_with_admin(
-            retriever,
-            admin_runtime_dependencies.rebuild_trigger,
-            admin_runtime_dependencies.graph_reader,
-            redis_client,
-        )
-    }
-
     pub fn new_with_admin(
         retriever: Arc<dyn SkillRetriever>,
         rebuild_trigger: Arc<dyn GraphRebuildTrigger>,
@@ -204,23 +198,45 @@ impl McpServerApp {
     /// latency or the returned response.
     pub async fn compile_context(&self, request: CompileContextRequest) -> CompileContextResponse {
         let prompt_hash = compute_prompt_hash(&request.prompt);
+        // Extract only the fields needed for usage capture before consuming the
+        // request, so `invoke_and_capture_outcome` can take ownership without
+        // forcing a full clone of the prompt String.
+        let session_id = request.session_id.clone();
+        let repo_path = request.repo_path.clone();
         let (mut response, outcome) = self
             .compile_context
-            .invoke_and_capture_outcome(request.clone())
+            .invoke_and_capture_outcome(request)
             .await;
 
         // Post usage record to the background writer if a live retrieval ran.
-        if let Some(outcome) = outcome {
-            if let Some(sender) = &self.usage_sender {
-                let record =
-                    build_session_usage_record(&request, &response, &outcome, &prompt_hash);
-                post_usage_record(sender, record, &self.usage_write_health);
-            }
+        if let Some(outcome) = outcome
+            && let Some(sender) = &self.usage_sender
+        {
+            let record = build_session_usage_record(
+                &session_id,
+                &repo_path,
+                &response,
+                &outcome,
+                &prompt_hash,
+            );
+            post_usage_record(sender, record, &self.usage_write_health);
         }
 
         // Inject the usage-write health marker into the response so the
         // observability seam is visible to callers.
-        let usage_health = read_usage_write_health(&self.usage_write_health);
+        //
+        // Three distinct states are emitted:
+        //   "ok"       — writer active and last write succeeded (key suppressed for brevity)
+        //   "disabled" — MCP_USAGE_LOGGING=off; usage_sender is None; no rows written
+        //   "failed"   — writer active but last write or channel post failed
+        //
+        // "disabled" is always injected (not absent) so an agent can distinguish it
+        // from "healthy" when the rollback flag is in effect.
+        let usage_health = if self.usage_sender.is_none() {
+            "disabled".to_owned()
+        } else {
+            read_usage_write_health(&self.usage_write_health)
+        };
         if usage_health != "ok" {
             response.health.insert(
                 usage_writer::USAGE_WRITE_HEALTH_KEY.to_owned(),
@@ -377,10 +393,10 @@ impl LiveServerComponents {
 
         match self.qdrant_adapter.list_point_ids().await {
             Ok(listing) => {
-                if !listing.point_ids.is_empty() {
-                    if let Err(e) = self.qdrant_adapter.delete_points(&listing.point_ids).await {
-                        errors.push(format!("qdrant delete failed: {e}"));
-                    }
+                if !listing.point_ids.is_empty()
+                    && let Err(e) = self.qdrant_adapter.delete_points(&listing.point_ids).await
+                {
+                    errors.push(format!("qdrant delete failed: {e}"));
                 }
             }
             Err(e) => {
@@ -713,10 +729,17 @@ async fn build_graph_from_pg(
     // Batch-query usage for all skills in one round trip so the prior is
     // populated at load time without N+1 queries. Skills with no rows get
     // total_count=0 → prior=0.0 (honest cold-start).
-    // Window of 90 days matches RetirementConfig::default().scoring_window_days.
+    // Source the window from RetirementConfig so the prior and retirement eligibility
+    // always use the same lookback period — no silent divergence on config change.
     let skill_ids: Vec<String> = skills.iter().map(|s| s.skill_id.clone()).collect();
     let usage_by_skill: std::collections::HashMap<String, retrieval::UsagePriorInputs> =
-        match usage_sample_store.recent_usage(&skill_ids, 90).await {
+        match usage_sample_store
+            .recent_usage(
+                &skill_ids,
+                RetirementConfig::default().scoring_window_days,
+            )
+            .await
+        {
             Ok(summaries) => summaries
                 .into_iter()
                 .map(|s| {
@@ -751,6 +774,10 @@ async fn build_graph_from_pg(
                     "global".to_owned(),
                     global_scope_paths.clone(),
                 ),
+                // "team" is reserved-but-unwired forward-compat: the scope column
+                // and DB CHECK constraint already allow it so future wiring is a
+                // pure addition. The DualScopeResolver currently emits only
+                // "project" and "global"; no team resolver exists yet.
                 "team" => (domain::ScopeType::Team, "team".to_owned(), Vec::new()),
                 _ => (
                     domain::ScopeType::Project,
@@ -785,7 +812,7 @@ async fn build_graph_from_pg(
                     .collect(),
                 community_id: record
                     .community_id
-                    .map(|id| domain::DomainId::new_unchecked(id)),
+                    .map(domain::DomainId::new_unchecked),
             };
             let community_boost = if skill.community_id.is_some() {
                 0.2
@@ -837,8 +864,15 @@ fn compute_prompt_hash(prompt: &str) -> String {
 /// internal state. Skills with no UUID-format IDs are silently skipped rather
 /// than aborting the entire write — an invalid ID in the graph is a data
 /// hygiene issue, not a reason to drop the whole session's usage.
+/// Builds a [`SessionUsageRecord`] from the minimal request fields needed for
+/// persistence, the compilation response, and the retrieval outcome.
+///
+/// Accepts `session_id` and `repo_path` as separate borrowed strings rather than
+/// a full `&CompileContextRequest` so the caller can pass ownership of the request
+/// to `invoke_and_capture_outcome` without cloning the prompt String.
 fn build_session_usage_record(
-    request: &CompileContextRequest,
+    session_id: &str,
+    repo_path: &str,
     response: &CompileContextResponse,
     outcome: &retrieval::RetrievalOutcome,
     prompt_hash: &str,
@@ -852,11 +886,7 @@ fn build_session_usage_record(
 
     // Determine the scope string from the first resolved scope, falling back to
     // "project" so the DB CHECK constraint is always satisfied.
-    let scope = request
-        .repo_path
-        .is_empty()
-        .then_some("global")
-        .unwrap_or("project");
+    let scope = if repo_path.is_empty() { "global" } else { "project" };
 
     let selected_skills: Vec<SkillSelectionRecord> = outcome
         .skills
@@ -882,7 +912,7 @@ fn build_session_usage_record(
         .collect();
 
     SessionUsageRecord {
-        session_id: request.session_id.clone(),
+        session_id: session_id.to_owned(),
         prompt_hash: prompt_hash.to_owned(),
         scope: scope.to_owned(),
         latency_ms: response.latency_ms as i64,

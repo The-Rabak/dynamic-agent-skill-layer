@@ -215,7 +215,7 @@ async fn repeated_prompt_returns_cached_context_without_rerunning_pipeline() {
     let first = server.compile_context(request.clone()).await;
     assert_eq!(first.status, CompileContextStatus::Ok);
     assert!(first.additional_context.is_some());
-    let first_markdown = first.additional_context.clone().unwrap_or_default();
+    let _first_markdown = first.additional_context.clone().unwrap_or_default();
 
     // Same session: second call is suppressed (suppression before cache per #073).
     let second = server.compile_context(request.clone()).await;

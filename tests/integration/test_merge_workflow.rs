@@ -508,21 +508,33 @@ fn merge_workflow_rejects_symlinked_pending_root_that_escapes_scope_root() {
     );
 }
 
+/// Proves `LiveMergePassRunner` implements `MergePassRunner` both by value and trait object.
+///
+/// The inner functions are intentionally defined but not called — their existence is
+/// the compile-time proof that the trait bounds are satisfied.
 #[test]
 fn live_merge_runner_exists_and_implements_merge_pass_runner_trait() {
-    use maintenance::LiveMergePassRunner;
     use maintenance::cron::MergePassRunner;
+    // Import is the proof that the type is publicly exported.
+    let _: Option<maintenance::LiveMergePassRunner> = None;
 
+    #[allow(dead_code)]
     fn assert_merge_runner(_r: &impl MergePassRunner) {}
+    #[allow(dead_code)]
     fn assert_merge_runner_object_safe(_r: &dyn MergePassRunner) {}
 }
 
+/// Proves `LiveRetirementPassRunner` implements `RetirementPassRunner` both by value and
+/// trait object.
 #[test]
 fn live_retirement_runner_exists_and_implements_retirement_pass_runner_trait() {
-    use maintenance::LiveRetirementPassRunner;
     use maintenance::cron::RetirementPassRunner;
+    // Import is the proof that the type is publicly exported.
+    let _: Option<maintenance::LiveRetirementPassRunner> = None;
 
+    #[allow(dead_code)]
     fn assert_retirement_runner(_r: &impl RetirementPassRunner) {}
+    #[allow(dead_code)]
     fn assert_retirement_runner_object_safe(_r: &dyn RetirementPassRunner) {}
 }
 
@@ -531,8 +543,8 @@ fn maintenance_runtime_noop_runners_dont_compromise_trait_existence() {
     use maintenance::cron::{MergePassRunner, RetirementPassRunner};
     use maintenance::{NoopMergePassRunner, NoopRetirementPassRunner};
 
-    fn assert_merge_runner(r: &impl MergePassRunner) {}
-    fn assert_retirement_runner(r: &impl RetirementPassRunner) {}
+    fn assert_merge_runner(_r: &impl MergePassRunner) {}
+    fn assert_retirement_runner(_r: &impl RetirementPassRunner) {}
 
     assert_merge_runner(&NoopMergePassRunner);
     assert_retirement_runner(&NoopRetirementPassRunner);

@@ -1,3 +1,7 @@
+// FOLLOW-UP (post-v1.5): split this module — see todo #128. Intended split:
+// `extraction_job.rs` (SessionExtractor + enqueue/run), `events.rs`
+// (ExtractionLifecycleEvents + event types), `provider_dispatch.rs`
+// (ExtractionProvider + from_environment).
 pub mod providers {
     pub mod claude;
     pub mod claude_code;
@@ -156,16 +160,20 @@ impl ExtractionEventPublisher for NoopExtractionEventPublisher {
 ///
 /// The `EXTRACT_SESSION_PROVIDER` env variable controls which variant is chosen:
 /// - unset / blank / `"ollama"` → `Ollama` (local default; constitution v2.0.0)
-/// - `"claude"` → `ClaudeCode` (Claude Code CLI subscription, host-only)
-/// - `"claude-api"` → `Claude` (Anthropic Messages API, requires `ANTHROPIC_API_KEY`)
+/// - `"claude"` / `"claude-api"` → `Claude` (Anthropic Messages API, requires `ANTHROPIC_API_KEY`;
+///   fails loudly at construction when the key is absent — Constitution Principle 1)
+/// - `"claude-code"` / `"claude-cli"` → `ClaudeCode` (Claude Code CLI subscription, host-only;
+///   CLI absence surfaces at first extraction via `ProviderUnavailable`, no silent fallback)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExtractionProvider {
-    /// Claude Code CLI subscription path (`EXTRACT_SESSION_PROVIDER=claude`).
-    /// Host-only — not suitable for containerised deployments without CLI mount.
-    ClaudeCode,
-    /// Anthropic Messages API path (`EXTRACT_SESSION_PROVIDER=claude-api`).
-    /// Requires `ANTHROPIC_API_KEY`.
+    /// Anthropic Messages API path (`EXTRACT_SESSION_PROVIDER=claude` or `=claude-api`).
+    /// Requires `ANTHROPIC_API_KEY` — missing key fails loudly at construct time
+    /// (Constitution Principle 1: no silent cloud attempt, no silent fallback).
     Claude,
+    /// Claude Code CLI subscription path (`EXTRACT_SESSION_PROVIDER=claude-code` or `=claude-cli`).
+    /// Host-only — not suitable for containerised deployments without CLI mount.
+    /// CLI absence surfaces at first extraction via `ExtractionError::ProviderUnavailable`.
+    ClaudeCode,
     Ollama,
 }
 
@@ -187,10 +195,12 @@ impl std::str::FromStr for ExtractionProvider {
         // blank `EXTRACT_SESSION_PROVIDER` selects Ollama, never a cloud path.
         match raw.trim().to_ascii_lowercase().as_str() {
             "" | "ollama" => Ok(Self::Ollama),
-            // "claude" → Claude Code CLI subscription (host-only, no API key).
-            "claude" => Ok(Self::ClaudeCode),
-            // "claude-api" → Anthropic Messages API (requires ANTHROPIC_API_KEY).
-            "claude-api" => Ok(Self::Claude),
+            // "claude" / "claude-api" → Anthropic Messages API (requires ANTHROPIC_API_KEY).
+            // "claude-api" is accepted as an alias so existing deployments using the prior
+            // selector continue to work without reconfiguration.
+            "claude" | "claude-api" => Ok(Self::Claude),
+            // "claude-code" / "claude-cli" → Claude Code CLI subscription (host-only, no API key).
+            "claude-code" | "claude-cli" => Ok(Self::ClaudeCode),
             other => Err(SessionExtractorInitError::InvalidProvider(other.to_owned())),
         }
     }
@@ -243,12 +253,13 @@ impl SessionExtractor {
             .unwrap_or_default()
             .parse::<ExtractionProvider>()?;
         let extractor = match provider {
-            // Claude Code CLI subscription path: host-only, no API key.
-            ExtractionProvider::ClaudeCode => providers::claude_code::build_extractor()?,
             // Anthropic Messages API path: requires ANTHROPIC_API_KEY.
+            // Fails loudly at construction when the key is absent (Constitution Principle 1).
             ExtractionProvider::Claude => {
                 providers::claude::build_extractor(reqwest::Client::new())?
             }
+            // Claude Code CLI subscription path: host-only, no API key.
+            ExtractionProvider::ClaudeCode => providers::claude_code::build_extractor()?,
             // Local default (constitution v2.0.0).
             ExtractionProvider::Ollama => {
                 providers::ollama::build_extractor(reqwest::Client::new())?
@@ -296,30 +307,6 @@ impl SessionExtractor {
         event_publisher: Arc<dyn ExtractionEventPublisher>,
     ) -> Self {
         let pool_config = ExtractionWorkerPoolConfig::default();
-        let retry_policy = pool_config.retry_policy.clone();
-        let job_timeout = pool_config.timeout;
-        Self {
-            provider,
-            extractor,
-            transcript_loader,
-            draft_writer,
-            lifecycle_events: ExtractionLifecycleEvents::default(),
-            event_publisher,
-            worker_pool: Some(ExtractionWorkerPool::new(pool_config)),
-            retry_policy,
-            job_timeout,
-        }
-    }
-
-    /// Constructs an extractor with an explicit worker pool config for tests.
-    pub fn new_for_tests_with_pool(
-        provider: ExtractionProvider,
-        extractor: Arc<dyn TranscriptSkillExtractionService>,
-        transcript_loader: TranscriptLoader,
-        draft_writer: PendingDraftWriter,
-        event_publisher: Arc<dyn ExtractionEventPublisher>,
-        pool_config: ExtractionWorkerPoolConfig,
-    ) -> Self {
         let retry_policy = pool_config.retry_policy.clone();
         let job_timeout = pool_config.timeout;
         Self {
@@ -486,6 +473,7 @@ impl SessionExtractor {
                 json!({
                     "job_id": job_id,
                     "provider": self.provider.as_str(),
+                    "reason_code": error.reason_code(),
                     "error": error.to_string(),
                 }),
             ),
@@ -650,7 +638,10 @@ impl SessionExtractionError {
                 TranscriptError::ReadFailure(_, _) => "transcript_read_failed",
                 TranscriptError::InvalidPayload(_) => "invalid_transcript_payload",
             },
-            Self::Extraction(_) => "extraction_failed",
+            Self::Extraction(error) => match error {
+                ExtractionError::ProviderUnavailable(_) => "provider_unavailable",
+                _ => "extraction_failed",
+            },
             Self::Writer(error) => match error {
                 WriterError::InvalidRepoPath(_) => "invalid_repo_path",
                 WriterError::ScopeResolution(_) => "scope_resolution_failed",
@@ -674,13 +665,31 @@ impl SessionExtractionError {
 /// (Security P1), we emit the path starting at the `.skills` component. If no
 /// `.skills` component is present (unexpected), we fall back to the final path
 /// component, never the absolute path.
+/// Normalizes provider outputs for writer and event paths.
+pub fn extraction_contract_view(result: &ExtractionResult) -> serde_json::Value {
+    json!({
+        "source_session_id": result.source_session_id.as_str(),
+        "provider": result.provider,
+        "candidates": result.candidates.iter().map(|candidate| {
+            json!({
+                "name": candidate.name,
+                "description": candidate.description,
+                "tags": candidate.tags,
+                "procedures": candidate.procedures,
+                "conventions": candidate.conventions,
+                "assets": candidate.assets,
+                "confidence": candidate.confidence,
+            })
+        }).collect::<Vec<_>>(),
+    })
+}
+
 fn relative_draft_path(path: &std::path::Path) -> String {
     use std::path::Component;
 
-    let mut components = path.components().peekable();
     let mut found_skills = false;
     let mut relative = std::path::PathBuf::new();
-    while let Some(component) = components.next() {
+    for component in path.components() {
         if let Component::Normal(name) = component
             && name == std::ffi::OsStr::new(".skills")
         {
@@ -689,7 +698,6 @@ fn relative_draft_path(path: &std::path::Path) -> String {
         if found_skills {
             relative.push(component);
         }
-        let _ = components.peek();
     }
 
     if found_skills {
@@ -720,11 +728,12 @@ mod tests {
     use crate::{transcripts::TranscriptLoader, writer::PendingDraftWriter};
 
     #[test]
-    fn provider_unset_and_empty_default_to_ollama() {
+    fn provider_from_str_maps_per_dispatch_contract() {
+        // Unset / blank / "ollama" → Ollama (constitution v2.0.0 default).
         assert_eq!(
             ExtractionProvider::from_str("").expect("empty parses"),
             ExtractionProvider::Ollama,
-            "empty EXTRACT_SESSION_PROVIDER must map to Ollama, not Claude"
+            "empty EXTRACT_SESSION_PROVIDER must map to Ollama, not a cloud path"
         );
         assert_eq!(
             ExtractionProvider::from_str("   ").expect("whitespace parses"),
@@ -734,19 +743,137 @@ mod tests {
             ExtractionProvider::from_str("ollama").expect("ollama parses"),
             ExtractionProvider::Ollama,
         );
-        // "claude" now routes to the CLI subscription path (ClaudeCode), not the API path.
+
+        // "claude" → Anthropic Messages API (Claude), requires ANTHROPIC_API_KEY.
+        // Constitution Principle 1: selecting this without a key fails loudly at construction.
         assert_eq!(
             ExtractionProvider::from_str("claude").expect("claude parses"),
-            ExtractionProvider::ClaudeCode,
+            ExtractionProvider::Claude,
+            "'claude' must map to the Anthropic Messages API provider"
         );
-        // "claude-api" routes to the Anthropic Messages API path.
+        // "claude-api" is an accepted alias for Claude (backwards-compat for prior deployments).
         assert_eq!(
             ExtractionProvider::from_str("claude-api").expect("claude-api parses"),
             ExtractionProvider::Claude,
         );
+
+        // "claude-code" / "claude-cli" → Claude Code CLI subscription path.
+        assert_eq!(
+            ExtractionProvider::from_str("claude-code").expect("claude-code parses"),
+            ExtractionProvider::ClaudeCode,
+        );
+        assert_eq!(
+            ExtractionProvider::from_str("claude-cli").expect("claude-cli parses"),
+            ExtractionProvider::ClaudeCode,
+        );
+
+        // Unknown provider strings must be a loud error (no silent fallback).
         assert!(
             ExtractionProvider::from_str("gpt").is_err(),
             "unknown provider must be a loud error"
+        );
+        assert!(
+            ExtractionProvider::from_str("openai").is_err(),
+            "unknown provider must be a loud error"
+        );
+    }
+
+    #[test]
+    fn provider_from_str_as_str_round_trips() {
+        // Every as_str() output must be accepted by from_str() and produce the same variant.
+        for variant in [
+            ExtractionProvider::Claude,
+            ExtractionProvider::ClaudeCode,
+            ExtractionProvider::Ollama,
+        ] {
+            let serialized = variant.as_str();
+            let deserialized = ExtractionProvider::from_str(serialized)
+                .unwrap_or_else(|_| panic!("as_str() output '{serialized}' must round-trip through from_str()"));
+            assert_eq!(
+                deserialized, variant,
+                "from_str(as_str({variant:?})) must equal {variant:?}"
+            );
+        }
+    }
+
+    /// Verifies that selecting `EXTRACT_SESSION_PROVIDER=claude` (the Anthropic Messages API
+    /// path) without `ANTHROPIC_API_KEY` fails loudly at construction — never silently.
+    ///
+    /// This is the env-route version of the test in `claude.rs`; it exercises the full
+    /// `from_str` dispatch so the Constitution Principle 1 guarantee is proven end-to-end
+    /// for the `=claude` selector, not just for `ClaudeExtractor::new` in isolation.
+    #[test]
+    fn env_route_claude_without_api_key_fails_loudly_at_construction() {
+        // Guard: ensure ANTHROPIC_API_KEY is absent for this test.
+        let _guard = std::env::var("ANTHROPIC_API_KEY").ok();
+        // SAFETY: single-threaded test; we restore the value (or remove it) after the test.
+        // Using remove_var rather than set_var to an empty string because build_extractor
+        // reads the raw env var (absent ≠ blank for some callers).
+        unsafe {
+            std::env::remove_var("ANTHROPIC_API_KEY");
+        }
+
+        let provider = ExtractionProvider::from_str("claude").expect("'claude' must parse");
+        assert_eq!(
+            provider,
+            ExtractionProvider::Claude,
+            "'claude' must route to the Anthropic Messages API provider"
+        );
+
+        // Constructing the extractor via the real provider builder must fail loudly
+        // at construction (not at extraction time) when ANTHROPIC_API_KEY is missing.
+        let error = crate::providers::claude::build_extractor(reqwest::Client::new())
+            .err()
+            .expect("building the Claude provider without ANTHROPIC_API_KEY must fail loudly at construction");
+        assert!(
+            matches!(error, domain::ExtractionError::ProviderUnavailable(_)),
+            "expected ProviderUnavailable, got {error:?}"
+        );
+        assert!(
+            error.to_string().contains("ANTHROPIC_API_KEY"),
+            "error message must name ANTHROPIC_API_KEY; got: {error}"
+        );
+    }
+
+    /// Verifies that selecting `EXTRACT_SESSION_PROVIDER=claude-code` (the CLI subscription
+    /// path) and attempting an extraction when the CLI binary is absent surfaces loudly as
+    /// `ExtractionError::ProviderUnavailable` — no silent fallback.
+    #[tokio::test]
+    async fn env_route_claude_code_with_absent_cli_fails_loudly_at_extraction() {
+        use domain::{DomainId, TranscriptEntry, TranscriptSkillExtractionService};
+        use infrastructure::{ClaudeCodeExtractionConfig, ClaudeCodeExtractor};
+
+        let provider = ExtractionProvider::from_str("claude-code").expect("'claude-code' must parse");
+        assert_eq!(
+            provider,
+            ExtractionProvider::ClaudeCode,
+            "'claude-code' must route to the CLI provider"
+        );
+
+        // Construction succeeds even without a reachable CLI binary (deliberate design:
+        // the CLI is probed at extraction time, not at construction).
+        let config = ClaudeCodeExtractionConfig {
+            cli_path: "/nonexistent-claude-binary-path-for-test".to_owned(),
+            ..ClaudeCodeExtractionConfig::default()
+        };
+        let extractor = ClaudeCodeExtractor::new(config)
+            .expect("ClaudeCodeExtractor construction must succeed even with absent CLI");
+
+        let transcript = domain::SessionTranscript {
+            session_id: DomainId::new_unchecked("cli-absent-test"),
+            entries: vec![TranscriptEntry {
+                speaker: "user".to_owned(),
+                content: "test content".to_owned(),
+            }],
+        };
+
+        let error = extractor
+            .extract(&transcript)
+            .await
+            .expect_err("extraction with absent CLI must fail loudly");
+        assert!(
+            matches!(error, domain::ExtractionError::ProviderUnavailable(_)),
+            "expected ProviderUnavailable for absent CLI, got {error:?}"
         );
     }
 
@@ -980,23 +1107,88 @@ mod tests {
             );
         }
     }
-}
 
-/// Normalizes provider outputs for writer and event paths.
-pub fn extraction_contract_view(result: &ExtractionResult) -> serde_json::Value {
-    json!({
-        "source_session_id": result.source_session_id.as_str(),
-        "provider": result.provider,
-        "candidates": result.candidates.iter().map(|candidate| {
-            json!({
-                "name": candidate.name,
-                "description": candidate.description,
-                "tags": candidate.tags,
-                "procedures": candidate.procedures,
-                "conventions": candidate.conventions,
-                "assets": candidate.assets,
-                "confidence": candidate.confidence,
-            })
-        }).collect::<Vec<_>>(),
-    })
+    /// Proves that `SessionExtractionError::Extraction(ProviderUnavailable)` maps to the
+    /// distinct `"provider_unavailable"` reason code, not the coarse `"extraction_failed"`.
+    ///
+    /// An agent must be able to distinguish CLI misconfiguration (alert: fix config)
+    /// from a generic extraction failure (retry: transient), so the two codes must be
+    /// separate. This test locks the string so a rename surfaces immediately.
+    #[test]
+    fn provider_unavailable_extraction_error_maps_to_distinct_reason_code() {
+        let error = SessionExtractionError::Extraction(ExtractionError::ProviderUnavailable(
+            "cli binary not found".to_owned(),
+        ));
+        assert_eq!(
+            error.reason_code(),
+            "provider_unavailable",
+            "ProviderUnavailable must produce reason_code 'provider_unavailable', not 'extraction_failed'"
+        );
+    }
+
+    /// Proves that non-ProviderUnavailable extraction errors still map to the
+    /// catch-all `"extraction_failed"` reason code (regression guard).
+    #[test]
+    fn non_provider_unavailable_extraction_errors_map_to_extraction_failed() {
+        let error = SessionExtractionError::Extraction(ExtractionError::Unexpected(
+            "some transient error".to_owned(),
+        ));
+        assert_eq!(
+            error.reason_code(),
+            "extraction_failed",
+            "Unexpected extraction errors must still map to 'extraction_failed'"
+        );
+    }
+
+    /// Proves that the `extraction.failed` event payload includes a `reason_code`
+    /// field so agents can programmatically branch on failure category without
+    /// string-parsing the `error` field.
+    #[tokio::test]
+    async fn extraction_failed_event_includes_reason_code_in_payload() {
+        let sandbox = sandbox_dir("failed-event-reason");
+        let transcript_root = sandbox_dir("failed-event-reason-tx");
+
+        // Build a provider-unavailable extractor so the job fails with ProviderUnavailable.
+        struct ProviderUnavailableExtractor;
+        #[async_trait]
+        impl TranscriptSkillExtractionService for ProviderUnavailableExtractor {
+            async fn extract(
+                &self,
+                _transcript: &SessionTranscript,
+            ) -> Result<ExtractionResult, ExtractionError> {
+                Err(ExtractionError::ProviderUnavailable(
+                    "cli not found in test".to_owned(),
+                ))
+            }
+        }
+
+        let pool_config = ExtractionWorkerPoolConfig::default();
+        let extractor = build_no_pool_extractor(
+            &sandbox,
+            &transcript_root,
+            Arc::new(ProviderUnavailableExtractor),
+            pool_config,
+            None,
+        );
+
+        // Use extract_blocking which publishes the terminal event synchronously.
+        let _ = extractor.extract_blocking(&request_for("failed-event")).await;
+
+        let events = extractor.lifecycle_events();
+        let failed = events
+            .iter()
+            .find(|event| event.event_type == "extraction.failed")
+            .expect("extraction.failed event must be emitted on ProviderUnavailable");
+
+        let payload = failed.payload.as_object().expect("payload must be a JSON object");
+        let reason_code = payload
+            .get("reason_code")
+            .and_then(|v| v.as_str())
+            .expect("extraction.failed payload must include a 'reason_code' field");
+
+        assert_eq!(
+            reason_code, "provider_unavailable",
+            "reason_code in extraction.failed event must be 'provider_unavailable' for ProviderUnavailable errors"
+        );
+    }
 }

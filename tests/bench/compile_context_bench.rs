@@ -56,7 +56,7 @@ fn build_seeded_skill(id: &str, name: &str, scope: ScopeType, embedding: Vec<f32
         source_paths: vec![],
         embedding,
         subunits: vec![Subunit {
-            id: DomainId::new_unchecked(&format!("{id}-sub-0")),
+            id: DomainId::new_unchecked(format!("{id}-sub-0")),
             skill_id: DomainId::new_unchecked(id),
             kind: SubunitType::Procedure,
             title: "Procedure".to_owned(),

@@ -24,7 +24,7 @@ fn fresh_sandbox(prefix: &str) -> PathBuf {
     sandbox
 }
 
-fn write_skill(root: &PathBuf, dir: &str, name: &str, desc: &str, tags: &str, procedures: &str) {
+fn write_skill(root: &std::path::Path, dir: &str, name: &str, desc: &str, tags: &str, procedures: &str) {
     let skill_dir = root.join(dir);
     fs::create_dir_all(&skill_dir).expect("skill dir should exist");
     fs::write(

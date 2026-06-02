@@ -383,8 +383,7 @@ mod tests {
 
     #[tokio::test]
     async fn qdrant_adapter_rejects_blank_endpoint() {
-        let mut config = QdrantConfig::default();
-        config.endpoint = " ".to_owned();
+        let config = QdrantConfig { endpoint: " ".to_owned(), ..QdrantConfig::default() };
 
         let error = QdrantAdapter::new(reqwest::Client::new(), config)
             .expect_err("blank endpoint should fail config validation");

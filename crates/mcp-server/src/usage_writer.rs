@@ -21,6 +21,7 @@
 //! always active regardless of this flag.
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU8, Ordering};
 
 use infrastructure::{SessionUsageRecord, UsagePersistencePort};
 use tokio::sync::mpsc;
@@ -42,26 +43,41 @@ pub const USAGE_WRITE_CHANNEL_CAPACITY: usize = 128;
 // with usage rows confirmed in the live DB.
 pub const USAGE_LOGGING_FLAG: &str = "MCP_USAGE_LOGGING";
 
+/// Atomic encoding for the two runtime usage-write health states.
+///
+/// `HEALTH_OK` is the initialized state; `HEALTH_FAILED` is set on a DB error
+/// or channel-full backpressure event and reset to `HEALTH_OK` after the next
+/// successful write.
+///
+/// Note: the `"disabled"` state (when `usage_sender` is `None`) is NOT stored
+/// here — it is computed at the read site in `McpServerApp::compile_context`.
+/// This cell only tracks whether the active writer succeeded or failed.
+const HEALTH_OK: u8 = 0;
+const HEALTH_FAILED: u8 = 1;
+
 /// Shared health-marker cell for the usage writer observability seam.
 ///
-/// `Arc<std::sync::Mutex<String>>` so both the writer task and the caller side
-/// can inspect/set it without async overhead.
-pub type UsageWriteHealth = Arc<std::sync::Mutex<String>>;
+/// `Arc<AtomicU8>` replaces the previous `Arc<Mutex<String>>` so the warm-path
+/// read in `compile_context` is a lock-free atomic load rather than a mutex
+/// acquire. Both the writer task and the hot path share the same `Arc`.
+pub type UsageWriteHealth = Arc<AtomicU8>;
 
-/// Creates a new health cell initialized to `"ok"`.
+/// Creates a new health cell initialized to the ok state.
 pub fn new_usage_write_health() -> UsageWriteHealth {
-    Arc::new(std::sync::Mutex::new("ok".to_owned()))
+    Arc::new(AtomicU8::new(HEALTH_OK))
 }
 
-/// Returns the current value of the usage-write health marker.
+/// Returns the current usage-write health as a string tag.
 ///
-/// Called by `McpServerApp::compile_context` to include in `health` on each
-/// response, satisfying the observability seam requirement.
+/// Called by `McpServerApp::compile_context` on every response to populate the
+/// `health["usage_write"]` field. Uses `Relaxed` ordering: the only requirement
+/// is that we observe *a* recent value — strict sequencing with other memory
+/// operations is not needed for this observability-only read.
 pub fn read_usage_write_health(health: &UsageWriteHealth) -> String {
-    health
-        .lock()
-        .map(|guard| guard.clone())
-        .unwrap_or_else(|_| "unknown".to_owned())
+    match health.load(Ordering::Relaxed) {
+        HEALTH_FAILED => "failed".to_owned(),
+        _ => "ok".to_owned(),
+    }
 }
 
 /// Marks the health cell as failed and emits a structured warn log.
@@ -70,9 +86,7 @@ pub fn read_usage_write_health(health: &UsageWriteHealth) -> String {
 /// hot path (on channel-full backpressure). Both count as an observable failure;
 /// neither propagates to the caller.
 fn set_failed(health: &UsageWriteHealth, reason: &str) {
-    if let Ok(mut guard) = health.lock() {
-        *guard = "failed".to_owned();
-    }
+    health.store(HEALTH_FAILED, Ordering::Relaxed);
     warn!(
         health_key = USAGE_WRITE_HEALTH_KEY,
         reason, "usage write failed; latency and caller response unaffected"
@@ -81,9 +95,7 @@ fn set_failed(health: &UsageWriteHealth, reason: &str) {
 
 /// Resets the health cell to `"ok"` after a successful write.
 fn set_ok(health: &UsageWriteHealth) {
-    if let Ok(mut guard) = health.lock() {
-        *guard = "ok".to_owned();
-    }
+    health.store(HEALTH_OK, Ordering::Relaxed);
 }
 
 /// Spawns the background usage-writer task and returns the channel sender.

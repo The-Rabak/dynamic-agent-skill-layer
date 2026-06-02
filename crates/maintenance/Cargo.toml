@@ -34,6 +34,7 @@ name = "test_maintenance_e2e"
 path = "../../tests/e2e/test_maintenance_e2e.rs"
 
 [dependencies]
+async-trait = "0.1.89"
 blake3 = "1.8.2"
 chrono = { version = "0.4.42", features = ["clock", "serde"] }
 domain = { path = "../domain" }

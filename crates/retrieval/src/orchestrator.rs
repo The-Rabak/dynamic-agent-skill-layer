@@ -649,7 +649,11 @@ mod tests {
                 source_paths: Vec::new(),
                 embedding: vec![1.0, 0.0, 0.0, 0.0],
                 subunits: Vec::new(),
-                prior: 0.1,
+                // Prior is computed dynamically from real usage at graph-load
+                // time (mcp-server lib.rs via `retrieval::usage_prior`). Test
+                // fixtures use 0.0 (cold-start, no usage history) — the same
+                // value `usage_prior(0, 0)` produces.
+                prior: 0.0,
                 community_boost: 0.2,
             })
             .collect();

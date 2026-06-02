@@ -63,13 +63,12 @@ fn qdrant_url() -> String {
 }
 
 async fn setup_pg() -> PostgresAdapter {
-    let pg = PostgresAdapter::connect(&PostgresConfig {
+    PostgresAdapter::connect(&PostgresConfig {
         database_url: db_url(),
         ..PostgresConfig::default()
     })
     .await
-    .expect("PG should be reachable");
-    pg
+    .expect("PG should be reachable")
 }
 
 async fn setup_qdrant() -> QdrantAdapter {

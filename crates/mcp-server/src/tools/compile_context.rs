@@ -127,7 +127,7 @@ impl CompileContextTool {
             .await;
 
         let response = self
-            .handle_retrieval_result(&request, outcome.clone(), &scopes)
+            .handle_retrieval_result(&request, &outcome, &scopes)
             .await;
         (response, Some(outcome))
     }
@@ -189,7 +189,7 @@ impl CompileContextTool {
     async fn handle_retrieval_result(
         &self,
         request: &CompileContextRequest,
-        outcome: RetrievalOutcome,
+        outcome: &RetrievalOutcome,
         scopes: &[String],
     ) -> CompileContextResponse {
         if outcome.skills.is_empty() {
@@ -202,8 +202,8 @@ impl CompileContextTool {
                         .cloned()
                         .or_else(|| Some("retrieval_degraded".to_owned())),
                     additional_context: None,
-                    health: outcome.health,
-                    scopes_considered: outcome.scopes_considered,
+                    health: outcome.health.clone(),
+                    scopes_considered: outcome.scopes_considered.clone(),
                     graph_version: outcome.graph_version,
                     latency_ms: outcome.latency_ms,
                     source: "retrieval".to_owned(),
@@ -239,15 +239,15 @@ impl CompileContextTool {
                 status: CompileContextStatus::NoMatch,
                 reason_code: Some("no_relevant_skills".to_owned()),
                 additional_context: None,
-                health: outcome.health,
-                scopes_considered: outcome.scopes_considered,
+                health: outcome.health.clone(),
+                scopes_considered: outcome.scopes_considered.clone(),
                 graph_version: outcome.graph_version,
                 latency_ms: outcome.latency_ms,
                 source: "retrieval".to_owned(),
             };
         }
 
-        let markdown = self.compile_markdown(&request.prompt, &outcome);
+        let markdown = self.compile_markdown(&request.prompt, outcome);
 
         if outcome.is_degraded() {
             return CompileContextResponse {
@@ -258,23 +258,23 @@ impl CompileContextTool {
                     .cloned()
                     .or_else(|| Some("retrieval_degraded".to_owned())),
                 additional_context: Some(markdown),
-                health: outcome.health,
-                scopes_considered: outcome.scopes_considered,
+                health: outcome.health.clone(),
+                scopes_considered: outcome.scopes_considered.clone(),
                 graph_version: outcome.graph_version,
                 latency_ms: outcome.latency_ms,
                 source: "retrieval".to_owned(),
             };
         }
 
-        self.cache_and_suppress_ok(request, &outcome, &markdown, scopes)
+        self.cache_and_suppress_ok(request, outcome, &markdown, scopes)
             .await;
 
         CompileContextResponse {
             status: CompileContextStatus::Ok,
             reason_code: None,
             additional_context: Some(markdown),
-            health: outcome.health,
-            scopes_considered: outcome.scopes_considered,
+            health: outcome.health.clone(),
+            scopes_considered: outcome.scopes_considered.clone(),
             graph_version: outcome.graph_version,
             latency_ms: outcome.latency_ms,
             source: "retrieval".to_owned(),

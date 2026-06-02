@@ -151,13 +151,26 @@ The `trigger` field is optional. Omit it (or pass `null`) for all calls except p
 - `status`: one of the four statuses above
 - `reason_code`: machine-readable reason (e.g., `no_relevant_skills`, `embedding_provider_unavailable`)
 - `additional_context`: compiled markdown (present for `ok` and `degraded` with partial results)
-- `health`: per-dependency status map for the compile_context read path — keys are `ollama`, `skill_snapshot_sync`, `filesystem_index`. Note: `qdrant_write_side` appears only on the infrastructure `/health` endpoint (it is the durable write-side store, not a read-path dependency).
+- `health`: per-dependency status map for the compile_context read path — keys are `ollama`, `skill_snapshot_sync`, `filesystem_index`, `usage_write`. Note: `qdrant_write_side` appears only on the infrastructure `/health` endpoint (it is the durable write-side store, not a read-path dependency).
+  - `health["usage_write"]`: `"ok"` — background writer active and last DB write succeeded (key may be omitted when healthy for brevity); `"disabled"` — `MCP_USAGE_LOGGING=off` at startup, `usage_sender` is `None`, no rows written; `"failed"` — writer active but the most recent DB write or channel post failed (always emits a `warn` log; never propagates to the caller or affects latency).
 - `scopes_considered`: list of scope IDs searched
 - `graph_version`: current graph version at time of request
 - `latency_ms`: end-to-end latency in milliseconds
 - `source`: origin of the response — `"retrieval"` (fresh), `"cache"` (cached hit), or `"suppression"` (duplicate suppressed). Compaction-bypass calls always return `"retrieval"` regardless of prior suppression state.
 
 **Latency target:** <500ms p95 (verified by `cargo bench --bench compile_context_bench`)
+
+### Infrastructure `/health` endpoint
+
+**Purpose:** Startup and runtime liveness probe. Returns a JSON object with per-component status strings.
+
+**Components:**
+
+| Component key | Values | Meaning |
+|---------------|--------|---------|
+| `qdrant_write_side` | `"ok"` / `"degraded"` | Qdrant write-side store reachable. Under Option A, a `"degraded"` value here does **not** affect `compile_context` (read path uses the in-memory snapshot). |
+| `usage_write` | `"enabled"` / `"disabled"` | Best-effort startup assertion. `"disabled"` when `MCP_USAGE_LOGGING=off` at startup; `"enabled"` otherwise. For the runtime per-call status see `health["usage_write"]` in `compile_context` responses. |
+| `extraction_provider` | `"ollama"` / `"claude"` / `"claude-code"` | Active extraction provider as resolved from `EXTRACT_SESSION_PROVIDER` at startup (default `"ollama"`). |
 
 ### `find_skill`
 
@@ -204,46 +217,47 @@ subscription-based CLI path and an API-key path.
 | `EXTRACT_SESSION_PROVIDER` value | Provider | Auth requirement |
 |----------------------------------|----------|-----------------|
 | unset / blank / `ollama` | Ollama (local default) | None |
-| `claude` | Claude Code CLI (`ClaudeCodeExtractor`) — subscription-based | An already-logged-in `claude` CLI in the run environment; **no API key, no credential handling** |
-| `claude-api` | Anthropic Messages API (`ClaudeExtractor`) — direct API call | `ANTHROPIC_API_KEY` |
+| `claude` or `claude-api` | Anthropic Messages API (`ClaudeExtractor`) — direct API call | `ANTHROPIC_API_KEY` (required; loud startup error if absent) |
+| `claude-code` or `claude-cli` | Claude Code CLI (`ClaudeCodeExtractor`) — subscription-based, **host-only** | An already-logged-in `claude` CLI in the run environment; **no API key, no credential handling** |
 
-**Environment constraint for `claude` (CLI path):** This provider does **not** read,
+**Environment constraint for `claude-code` / `claude-cli` (CLI path):** This provider does **not** read,
 store, or pass any credentials. It simply shells out to the `claude` binary, which
 uses whatever login already exists in its environment (`~/.claude`). The only
 requirement is that the `claude` CLI is installed and already authenticated where the
 extractor process runs. That holds on a host where you've run `claude` interactively,
 but **not** in the stock compose container, which ships neither the CLI nor a login.
 The compose default therefore remains `ollama`. For containerised deployments use
-`claude-api` (API key) or leave unset for Ollama.
+`claude` / `claude-api` (API key) or leave unset for Ollama.
 
 | Variable | Purpose | Default |
 |----------|---------|---------|
-| `EXTRACT_SESSION_PROVIDER` | Extraction provider: `ollama`, `claude` (CLI), or `claude-api` (API key). Unset or blank ⇒ `ollama`. Unknown ⇒ loud startup error. | `ollama` |
+| `EXTRACT_SESSION_PROVIDER` | Extraction provider. `""` or `"ollama"` ⇒ Ollama (default). `"claude"` or `"claude-api"` ⇒ Anthropic Messages API (requires `ANTHROPIC_API_KEY`; loud startup error if absent). `"claude-code"` or `"claude-cli"` ⇒ host-only CLI subprocess (no API key; requires installed+authenticated `claude` binary). Unknown value ⇒ loud startup error. Surfaced on `/health` as `extraction_provider`. | `ollama` |
 | `EXTRACT_SESSION_MODEL` | Model id for Claude CLI and API providers | `claude-sonnet-4-6` |
-| `CLAUDE_CLI_PATH` | Path to the `claude` CLI binary (CLI path only) | `claude` (from `$PATH`) |
+| `CLAUDE_CLI_PATH` | Explicit path to the `claude` CLI binary (CLI path only). When set, validated at construction: the path must exist, be a file, and be executable — a missing/non-executable binary fails loudly at startup. When unset, `claude` is resolved from `$PATH` at invocation time. | `claude` (from `$PATH`) |
 | `CLAUDE_CODE_EXTRACTION_TIMEOUT_MS` | Inner per-call timeout for the CLI path | `120000` |
-| `ANTHROPIC_API_KEY` | Anthropic API key. **Required** when `EXTRACT_SESSION_PROVIDER=claude-api` — a missing key fails loudly at startup (no silent fallback). Read from the environment, never committed. | _(unset)_ |
-| `ANTHROPIC_BASE_URL` | Anthropic API base URL (no `/v1/messages` suffix) | `https://api.anthropic.com` |
+| `ANTHROPIC_API_KEY` | Anthropic API key. **Required** when `EXTRACT_SESSION_PROVIDER=claude` or `=claude-api` — a missing key fails loudly at startup (no silent fallback). Read from the environment, never committed. | _(unset)_ |
+| `ANTHROPIC_BASE_URL` | Anthropic API base URL (no `/v1/messages` suffix). **Must be `https://`** — non-HTTPS URLs are rejected at construction with `ProviderUnavailable`. **Exfiltration warning:** transcripts may contain source code, secrets, and user data; never point this at an untrusted or HTTP-only endpoint. | `https://api.anthropic.com` |
+| `MCP_USAGE_LOGGING` | Usage write rollback flag. Set to `"off"` to disable usage row writes to `session_logs` / `skill_usage` (→ `health["usage_write"]="disabled"` in `compile_context` responses). Omitting the variable or any value other than `"off"` leaves usage writes enabled. | _(on — writes enabled)_ |
 | `CLAUDE_EXTRACTION_TIMEOUT_MS` | Inner per-call timeout for the API path | `30000` |
 | `OLLAMA_EXTRACTION_MODEL` | Local extraction model for the Ollama provider | `gemma4:e4b` |
 | `OLLAMA_EXTRACTION_TIMEOUT_MS` | Inner per-call timeout for Ollama CPU inference. The default (`120000`) is an **unmeasured placeholder** — confirm single-job p50/p95 against the target host. The worker-pool (outer) timeout stays ≥ 1.5× this value. | `120000` |
 
-**Opt into Claude CLI (subscription, host-only):**
+**Opt into Claude CLI (subscription, host-only — use `claude-code` or `claude-cli`):**
 
 ```bash
-EXTRACT_SESSION_PROVIDER=claude
+EXTRACT_SESSION_PROVIDER=claude-code
 # No API key needed — uses your Claude Code subscription via the local CLI.
 EXTRACT_SESSION_MODEL=claude-sonnet-4-6  # optional override
-CLAUDE_CLI_PATH=/home/user/.local/bin/claude  # optional: explicit path to claude binary
+CLAUDE_CLI_PATH=/home/user/.local/bin/claude  # optional: explicit path; validated at startup
 ```
 
-**Opt into Claude API (API key, containerised-compatible):**
+**Opt into Claude API (API key, containerised-compatible — use `claude` or `claude-api`):**
 
 ```bash
-EXTRACT_SESSION_PROVIDER=claude-api
-ANTHROPIC_API_KEY=sk-ant-...           # required; never commit
+EXTRACT_SESSION_PROVIDER=claude          # or claude-api (alias)
+ANTHROPIC_API_KEY=sk-ant-...             # required; never commit
 EXTRACT_SESSION_MODEL=claude-sonnet-4-6  # optional override
-ANTHROPIC_BASE_URL=https://api.anthropic.com  # optional override
+ANTHROPIC_BASE_URL=https://api.anthropic.com  # optional; must be https://
 ```
 
 ### Admin Tools
@@ -334,7 +348,8 @@ A dedicated `graph_refresh_subscriber` component in the `/health` response is a 
 | `invalid_transcript_ref` | Transcript file not found | Check transcript file exists under mount |
 | `transcript_read_failed` | IO error reading transcript | Check filesystem permissions |
 | `invalid_transcript_payload` | Transcript JSONL malformed | Validate transcript format |
-| `extraction_failed` | LLM extraction call failed | Check provider health, retry |
+| `extraction_failed` | LLM extraction call failed (generic or transient) | Check provider health, retry |
+| `provider_unavailable` | Extraction provider unavailable: CLI binary missing/not-authenticated/bad-exit/empty stdout (CLI path), or API key missing/invalid/non-HTTPS base URL (API path) | Check `EXTRACT_SESSION_PROVIDER`, verify CLI is installed+authenticated or API key is valid |
 | `invalid_repo_path` | `repo_path` does not exist | Verify path in request |
 | `scope_resolution_failed` | Cannot resolve output scope | Check `SKILL_GLOBAL_PATHS` env var |
 | `pending_draft_write_failed` | Cannot write `.pending` file | Check directory permissions |
@@ -375,3 +390,24 @@ A dedicated `graph_refresh_subscriber` component in the `/health` response is a 
 ```
 
 Idempotency is tracked via Redis `SETEX` with 24h TTL (not in-memory).
+
+## Scope — Team Scope (Reserved, Not Wired)
+
+The `team` scope identifier is **reserved in the codebase for forward compatibility** but is not wired to any data source or retrieval path in V1.5. Agents must not rely on team-scope results; any team-scope query is treated the same as an empty result. Wiring team scope is a V2 feature (gated on the ≤5000-skill-cap trigger or explicit team deployment — see ADR-0001).
+
+## Migration Notes
+
+### `EXTRACT_SESSION_PROVIDER=claude` — Breaking Change (2026-06-02 realignment)
+
+In a brief intermediate state (undocumented commits `bcfa9de`, `d8e45f3`, `295bfef`), `EXTRACT_SESSION_PROVIDER=claude` was remapped to route to the Claude Code CLI subprocess provider (`ClaudeCodeExtractor`), and `=claude-api` was introduced as the API-key path.
+
+**The realignment (2026-06-02) reverted this.** The final shipped behavior is:
+
+| Value | Final behavior |
+|-------|---------------|
+| `claude` | Anthropic Messages API (`ClaudeExtractor`) — requires `ANTHROPIC_API_KEY` |
+| `claude-api` | Alias for `claude` (also Anthropic Messages API) |
+| `claude-code` | Claude Code CLI subprocess — host-only; no API key |
+| `claude-cli` | Alias for `claude-code` |
+
+**Operators who set `EXTRACT_SESSION_PROVIDER=claude` intending to invoke the CLI must switch to `=claude-code`.** The `=claude` value has returned to its original API-key meaning.

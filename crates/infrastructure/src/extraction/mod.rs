@@ -18,15 +18,15 @@ pub mod prompt_contract;
 //
 // | Provider | Prompt Ownership | Transport | Prompt Content |
 // |----------|-----------------|-----------|----------------|
-// | Claude (API) | `ClaudeExtractor` (this crate) | HTTPS POST to the Anthropic Messages API (`{ANTHROPIC_BASE_URL}/v1/messages`) with a forced `emit_candidates` `tool_use` | Static instruction block as the cacheable `system` prompt (`cache_control: ephemeral`) + transcript as the user message; tool `input_schema` is the candidate schema. Keyed by `ANTHROPIC_API_KEY`. Selected by `EXTRACT_SESSION_PROVIDER=claude-api`. |
-// | Claude Code (CLI) | `ClaudeCodeExtractor` (this crate) | Local `claude -p --output-format json` subprocess; prompt fed via stdin | Full text→JSON prompt from `build_ollama_extraction_prompt` (same as Ollama). Subscription-based; no API key. **Host-only** (CLI must be on the host). Selected by `EXTRACT_SESSION_PROVIDER=claude`. |
+// | Claude (API) | `ClaudeExtractor` (this crate) | HTTPS POST to the Anthropic Messages API (`{ANTHROPIC_BASE_URL}/v1/messages`) with a forced `emit_candidates` `tool_use` | Static instruction block as the cacheable `system` prompt (`cache_control: ephemeral`) + transcript as the user message; tool `input_schema` is the candidate schema. Keyed by `ANTHROPIC_API_KEY`. Selected by `EXTRACT_SESSION_PROVIDER=claude` (or alias `=claude-api`). Fails loudly at construction when `ANTHROPIC_API_KEY` is absent (Constitution Principle 1). |
+// | Claude Code (CLI) | `ClaudeCodeExtractor` (this crate) | Local `claude -p --output-format json` subprocess; prompt fed via stdin | Full text→JSON prompt from `build_text_json_extraction_prompt` (same as Ollama). Subscription-based; no API key. **Host-only** (CLI must be on the host). Selected by `EXTRACT_SESSION_PROVIDER=claude-code` (or alias `=claude-cli`). CLI absence surfaces at first extraction via `ProviderUnavailable`. |
 // | Ollama   | `OllamaExtractor` (this crate) | HTTP POST to Ollama `/api/generate` with `{model, stream: false, format: "json", prompt}` | A full natural-language prompt instructing the local model to produce structured JSON matching `ExtractedSkillCandidate`. |
 //
 // ### Provider Symmetry
 //
 // Both providers source their instructions from the shared semantic contract in
 // `prompt_contract.rs` (`build_extraction_system_prompt` for Claude,
-// `build_ollama_extraction_prompt` for Ollama). The text differs only because of
+// `build_text_json_extraction_prompt` for Ollama). The text differs only because of
 // transport: Claude uses a forced tool-call for schema conformance, while Ollama
 // (which lacks `tool_choice`) keeps schema guidance in-prompt alongside
 // `format: "json"`. This preserves extraction parity (SC-3), not a redesign.
