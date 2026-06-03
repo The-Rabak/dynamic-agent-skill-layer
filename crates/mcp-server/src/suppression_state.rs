@@ -95,6 +95,12 @@ impl SessionSuppressionState {
     /// Returns the prefix used to match all local DashMap keys belonging to
     /// `session_id`. Must be consistent with `local_key`'s format, which is
     /// `"{session_id}::{repo_path}"`.
+    ///
+    /// Separator invariant: `session_id` values MUST NOT themselves contain `"::"`
+    /// because the DashMap `starts_with` eviction in `clear_session` would then
+    /// over-evict entries for a session whose id is a prefix of another. This
+    /// invariant is enforced at the JSON-RPC param boundary in `protocol.rs`
+    /// (`validate_session_id` rejects `"::"` and constrains ids to `[A-Za-z0-9_-]`).
     fn local_session_prefix(session_id: &str) -> String {
         format!("{}::", session_id.trim())
     }
@@ -105,7 +111,11 @@ impl SessionSuppressionState {
     /// Redis SCAN / KEYS treats `*`, `?`, `[`, `]`, and `\` as special. Each
     /// is prefixed with `\` so it matches literally. A session_id like `"*"`
     /// becomes `"\*"` instead of the wildcard that would wipe all sessions.
-    fn escape_redis_glob(raw: &str) -> String {
+    ///
+    /// Also used by `context_cache::CompiledContextCache::clear_session` for the
+    /// same Redis-SCAN safety guarantee. Both stores must always apply this helper
+    /// before building a SCAN pattern from a client-supplied `session_id`.
+    pub(crate) fn escape_redis_glob(raw: &str) -> String {
         let mut escaped = String::with_capacity(raw.len());
         for ch in raw.chars() {
             if matches!(ch, '*' | '?' | '[' | ']' | '\\') {

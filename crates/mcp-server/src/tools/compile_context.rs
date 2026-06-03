@@ -334,7 +334,7 @@ impl CompileContextTool {
                     .collect(),
                 // Thread scope + rationale through for the deterministic
                 // "Why These Skills" section in render_markdown.
-                matched_scope: format!("{:?}", retrieved.scored_skill.matched_scope).to_lowercase(),
+                matched_scope: retrieved.scored_skill.matched_scope.as_str().to_owned(),
                 rationale: retrieved.scored_skill.rationale.clone(),
             })
             .collect();

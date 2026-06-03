@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::tools::compile_context::CompileContextStatus;
 
-use crate::suppression_state::scan_and_del_pattern;
+use crate::suppression_state::{SessionSuppressionState, scan_and_del_pattern};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CachedContext {
@@ -188,8 +188,12 @@ impl CompiledContextCache {
         self.inner.retain(|key, _| !key.starts_with(&prefix));
 
         let redis_client = self.redis_client.clone();
-        let sid = session_id.to_owned();
-        let pattern = format!("cache:{}:*", sid.trim());
+        // Escape Redis glob metacharacters in the session_id before embedding it in the
+        // SCAN pattern. Mirrors the identical guard in `suppression_state.rs::clear_session`.
+        // Without escaping, a session_id of "*" produces "cache:*:*" and wipes every
+        // session's cache. `escape_redis_glob` is `pub(crate)` specifically for this reuse.
+        let escaped_sid = SessionSuppressionState::escape_redis_glob(session_id.trim());
+        let pattern = format!("cache:{escaped_sid}:*");
         tokio::spawn(async move {
             if let Some(client) = redis_client {
                 scan_and_del_pattern(&client, &pattern, "cache_clear").await;
@@ -289,6 +293,46 @@ mod tests {
         assert_eq!(
             cache.get("session-c", "prompt-1", &scopes, 7).await,
             Some(entry)
+        );
+    }
+
+    /// Proves that `clear_session("abc")` does NOT evict entries for a distinct session
+    /// whose id shares "abc" as a prefix but uses a different suffix character.
+    ///
+    /// The DashMap eviction prefix is `"cache:{session_id}:"` (note the trailing colon).
+    /// A valid session `"abc-2"` has prefix `"cache:abc-2:"` and must not be matched
+    /// by clearing `"abc"` (which uses prefix `"cache:abc:"`).
+    ///
+    /// The deeper `"::"` separator collision (where `"abc::extra"` starts with `"abc::"`)
+    /// is addressed by rejecting `"::"` at the protocol boundary in `validate_session_id`.
+    /// Clients that bypass validation are out of scope per todo #142.
+    #[tokio::test]
+    async fn clear_session_does_not_evict_prefix_sharing_valid_session() {
+        let cache = CompiledContextCache::default();
+        let scopes = vec!["global".to_owned()];
+        let entry = CachedContext {
+            status: CompileContextStatus::Ok,
+            reason_code: None,
+            additional_context: Some("ctx".to_owned()),
+            scopes_considered: scopes.clone(),
+            graph_version: 1,
+            health: BTreeMap::new(),
+        };
+
+        cache.set("abc", "prompt", &scopes, entry.clone()).await;
+        // "abc-2" is a valid session whose DashMap key starts with "cache:abc-2:", not "cache:abc:".
+        cache.set("abc-2", "prompt", &scopes, entry.clone()).await;
+
+        cache.clear_session("abc");
+
+        assert!(
+            cache.get("abc", "prompt", &scopes, 1).await.is_none(),
+            "clear_session(\"abc\") must evict \"abc\"'s own entries"
+        );
+        assert_eq!(
+            cache.get("abc-2", "prompt", &scopes, 1).await,
+            Some(entry),
+            "clear_session(\"abc\") must NOT evict \"abc-2\"'s entries — different key prefix"
         );
     }
 

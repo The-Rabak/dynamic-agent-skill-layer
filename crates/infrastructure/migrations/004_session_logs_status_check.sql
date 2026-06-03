@@ -20,6 +20,11 @@ BEGIN;
 -- Human gate: the retirement automation never auto-applies SQL; a human must
 -- run this migration before it takes effect.
 --
+-- T09 (2026-06-03): wired into MIGRATIONS array + converted to idempotent DO block.
+-- #130 (2026-06-03): NOT VALID + NULL-allowed CHECK (status IS NULL OR ...) + schema-scoped probe
+--   (table_schema = current_schema() in the existence query).
+-- Human gate: APPROVED 2026-06-03.
+--
 -- Rollback (down):
 --   ALTER TABLE session_logs DROP CONSTRAINT IF EXISTS chk_session_logs_status;
 
@@ -32,10 +37,12 @@ BEGIN
         FROM information_schema.table_constraints
         WHERE table_name = 'session_logs'
           AND constraint_name = 'chk_session_logs_status'
+          AND table_schema = current_schema()
     ) THEN
         ALTER TABLE session_logs
             ADD CONSTRAINT chk_session_logs_status
-            CHECK (status IN ('ok', 'no_match', 'degraded', 'duplicate_suppressed'));
+            CHECK (status IS NULL OR status IN ('ok', 'no_match', 'degraded', 'duplicate_suppressed'))
+            NOT VALID;
     END IF;
 END
 $$;

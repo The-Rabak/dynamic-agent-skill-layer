@@ -30,10 +30,15 @@ pub struct LiveGraphSubunitRecord {
     pub content: String,
 }
 
-/// Skill record supplied to the durable write path during a graph rebuild.
+/// Write DTO used by the durable write path during a graph rebuild.
 ///
-/// `source_paths` carries the real SKILL.md file path(s) discovered by the
-/// graph builder. An empty `Vec` is valid for skills seeded programmatically
+/// This record owns the authoritative domain types at write time: `scope` is
+/// [`ScopeType`] (the typed domain enum) and `source_paths` carries raw
+/// absolute path strings exactly as discovered by the graph builder. The DB
+/// stores `source_paths` as a `text[]` column; the retrieval read path
+/// re-resolves them to `PathBuf` values at boot (see [`PersistedGraphSkillRecord`]).
+///
+/// An empty `source_paths` is valid for skills seeded programmatically
 /// (e.g. E2E test fixtures); the retrieval boot adapter falls back to the
 /// configured scope root for those rows so scope matching still works.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -73,10 +78,18 @@ pub struct PersistedGraphSubunitRecord {
     pub content: String,
 }
 
-/// Persisted skill projection used by live graph read adapters.
+/// Read projection returned by live graph read adapters from the database.
 ///
-/// `source_paths` is populated from the `skills.source_paths` column added in
-/// migration 005. Rows written before that migration carry an empty array;
+/// Unlike [`LiveGraphSkillRecord`] (the write DTO), this record uses raw DB
+/// strings for fields that carry typed values at write time: `scope` is a
+/// `String` (the raw DB value, e.g. `"project"` or `"global"`) rather than
+/// [`ScopeType`], and `source_paths` holds the raw path strings exactly as
+/// stored in the `skills.source_paths` `text[]` column. The retrieval boot
+/// adapter resolves these strings to `PathBuf` values via `canonicalize` with
+/// a raw-string fallback so scope prefix matching works even for paths that
+/// no longer exist on the current host.
+///
+/// Rows written before migration 005 carry an empty `source_paths` array;
 /// callers must fall back to the configured scope root for those rows.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PersistedGraphSkillRecord {
@@ -564,4 +577,49 @@ fn stable_uuid(entity_kind: &str, stable_id: &str) -> Uuid {
     bytes[6] = (bytes[6] & 0x0f) | 0x40;
     bytes[8] = (bytes[8] & 0x3f) | 0x80;
     Uuid::from_bytes(bytes)
+}
+
+#[cfg(test)]
+mod tests {
+    /// Smoke test: deserializes `tests/fixtures/retrieval_corpus.json` and
+    /// asserts the field contract that all positive fixtures carry
+    /// `expected_match: true` and all negative fixtures carry
+    /// `expected_match: false`. Catches accidental edits that break the
+    /// threshold-alignment prose embedded in the fixture.
+    #[test]
+    fn retrieval_corpus_fixture_field_contract() {
+        let fixture_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tests/fixtures/retrieval_corpus.json");
+        let raw = std::fs::read_to_string(&fixture_path)
+            .expect("tests/fixtures/retrieval_corpus.json must be readable");
+        let corpus: serde_json::Value =
+            serde_json::from_str(&raw).expect("retrieval_corpus.json must be valid JSON");
+
+        let positives = corpus["positive_fixtures"]
+            .as_array()
+            .expect("positive_fixtures must be a JSON array");
+        for fixture in positives {
+            assert_eq!(
+                fixture["expected_match"],
+                serde_json::Value::Bool(true),
+                "positive fixture '{}' must have expected_match: true",
+                fixture["id"].as_str().unwrap_or("<unknown>")
+            );
+        }
+
+        let negatives = corpus["negative_fixtures"]
+            .as_array()
+            .expect("negative_fixtures must be a JSON array");
+        for fixture in negatives {
+            assert_eq!(
+                fixture["expected_match"],
+                serde_json::Value::Bool(false),
+                "negative fixture prompt '{}' must have expected_match: false",
+                fixture["prompt"].as_str().unwrap_or("<unknown>")
+            );
+        }
+
+        assert!(!positives.is_empty(), "positive_fixtures must not be empty");
+        assert!(!negatives.is_empty(), "negative_fixtures must not be empty");
+    }
 }

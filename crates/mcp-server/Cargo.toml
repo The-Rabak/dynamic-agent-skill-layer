@@ -89,6 +89,11 @@ path = "../../tests/e2e/test_watcher_churn_reconciliation.rs"
 required-features = ["test-utils"]
 
 [[test]]
+name = "test_pg_source_paths_roundtrip"
+path = "../../tests/e2e/test_pg_source_paths_roundtrip.rs"
+required-features = ["test-utils"]
+
+[[test]]
 name = "test_admin_tools"
 path = "../../tests/integration/test_admin_tools.rs"
 

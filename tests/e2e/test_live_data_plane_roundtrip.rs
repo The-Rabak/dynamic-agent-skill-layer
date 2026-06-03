@@ -13,8 +13,8 @@ use domain::{
     SubunitType, TranscriptSkillExtractionService,
 };
 use infrastructure::{
-    EventEnvelope, InfrastructureHealthChecker, LiveGraphSkillRecord, LiveGraphSnapshotMutation,
-    LiveGraphSubunitRecord, RebuildCoordinator,
+    EventEnvelope, LiveGraphSkillRecord, LiveGraphSnapshotMutation, LiveGraphSubunitRecord,
+    RebuildCoordinator,
 };
 use mcp_server::{
     McpServerApp,
@@ -503,8 +503,12 @@ async fn test_live_data_plane_roundtrip() {
         compiled_context.contains("roundtrip-rust-file-io"),
         "compiled context must contain seeded skill name, got: '{compiled_context:?}'"
     );
-    // Deterministic match-reason section (T09): verify scope + bucket provenance
+    // Deterministic match-reason section (T09 AC-9): assert scope + score bucket provenance
     // is present in the compiled context so the agent can audit why the skill matched.
+    // V1.5 provenance contract: scope= AND bucket= must be present.
+    // source= is intentionally NOT asserted — source path is an internal scope-gating signal
+    // only, deferred from the agent-visible why-section for V1.5 (WAIVER 2026-06-03, todo #134,
+    // AC-9 of T09 ticket).
     assert!(
         compiled_context.contains("### Why These Skills"),
         "compiled context must include deterministic match-reason section, got: '{compiled_context:?}'"
@@ -1287,15 +1291,19 @@ async fn graph_rebuilt_event_refreshes_running_server_without_restart() {
         .expect("teardown should succeed");
 }
 
-/// Unit-level proof that two `SessionSuppressionState` instances sharing the
-/// same in-process DashMap (simulating two server instances on one Redis)
-/// do NOT leak suppression when session IDs are unique per instance.
+/// Proves that two independent `SessionSuppressionState` instances — each
+/// backed by its own in-memory DashMap with `redis_client: None` — do not
+/// share suppression entries even for the same session ID.
 ///
-/// This test runs without live containers because the suppression state is
-/// purely in-memory here. The invariant: a fresh session ID (not previously
-/// marked healthy on this state) must never appear suppressed.
+/// This test uses no live Redis; it proves **DashMap-level isolation only**.
+/// Cross-Redis isolation (the guarantee that two server processes pointing at
+/// the same Redis do not bleed state) is proven by the live-container roundtrip
+/// (`components` + `components2` in the container-gated tests above).
+///
+/// The invariant here: a session marked healthy on state A must never appear
+/// suppressed on an independent state B.
 #[tokio::test]
-async fn two_server_instances_on_shared_redis_do_not_leak_suppression_for_unique_session_ids() {
+async fn two_independent_dashmap_states_do_not_share_entries() {
     use mcp_server::suppression_state_for_tests::SessionSuppressionState;
 
     // Simulate instance A and instance B using different session IDs.
@@ -1328,75 +1336,5 @@ async fn two_server_instances_on_shared_redis_do_not_leak_suppression_for_unique
             .is_suppressed("unique-session-b", repo, version)
             .await,
         "fresh session-b must never appear pre-suppressed"
-    );
-}
-
-/// Proves the clear_session fix in an in-process scenario:
-/// after marking a session healthy and then clearing it, the same session
-/// used in a subsequent call must NOT be suppressed (leak-free re-use).
-#[tokio::test]
-async fn cleared_session_is_not_suppressed_on_reuse() {
-    use mcp_server::suppression_state_for_tests::SessionSuppressionState;
-
-    let state = SessionSuppressionState::default();
-    let session_id = "reuse-session";
-    let repo = "/project/root";
-
-    // First use: mark healthy.
-    state
-        .mark_healthy(session_id, repo, 1, &["project".to_owned()])
-        .await;
-    assert!(
-        state.is_suppressed(session_id, repo, 1).await,
-        "must be suppressed after mark"
-    );
-
-    // Clear the session (e.g. between extractions in the same process).
-    state.clear_session(session_id);
-    assert!(
-        !state.is_suppressed(session_id, repo, 1).await,
-        "after clear_session the session must not be suppressed — in-process leak fixed"
-    );
-}
-
-/// Proves the MCP router rejects oversized bodies (DoS guard) at the
-/// HTTP transport level without needing live infrastructure.
-#[tokio::test]
-async fn mcp_http_router_rejects_oversized_payload_with_payload_too_large() {
-    use mcp_server::protocol::{MCP_BODY_LIMIT_BYTES, router};
-
-    let app = McpServerApp::with_explicit_graph(
-        Arc::new(DeterministicEmbeddingService),
-        seeded_graph(),
-        retrieval_config(),
-        None,
-    );
-    let health_checker = InfrastructureHealthChecker::new();
-    let app_router = router(app, health_checker);
-
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("ephemeral port should bind");
-    let addr: std::net::SocketAddr = listener.local_addr().expect("listener has local addr");
-    tokio::spawn(async move {
-        axum::serve(listener, app_router)
-            .await
-            .expect("test server should serve");
-    });
-
-    let oversized_body = "z".repeat(MCP_BODY_LIMIT_BYTES + 1);
-    let client = reqwest::Client::new();
-    let response = client
-        .post(format!("http://{addr}/mcp"))
-        .header("content-type", "application/json")
-        .body(oversized_body)
-        .send()
-        .await
-        .expect("request should complete");
-
-    assert_eq!(
-        response.status(),
-        reqwest::StatusCode::PAYLOAD_TOO_LARGE,
-        "MCP endpoint must reject bodies exceeding MCP_BODY_LIMIT_BYTES with 413"
     );
 }

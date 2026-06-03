@@ -2,7 +2,10 @@ use infrastructure::{
     DependencyFactory,
     logging::{ServiceLoggingConfig, init_service_logging},
 };
-use mcp_server::{McpServerApp, protocol::serve_http};
+use mcp_server::{
+    McpServerApp,
+    protocol::{DEFAULT_MCP_SERVER_ADDR, serve_http},
+};
 use retrieval::{RetrievalConfig, RetrievalSnapshot};
 use tracing::info;
 
@@ -21,7 +24,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let redis_client = DependencyFactory::build_redis_client_from_environment();
     let health_checker = DependencyFactory::build_health_checker_from_environment();
     let address = std::env::var("MCP_SERVER_ADDR")
-        .unwrap_or_else(|_| "127.0.0.1:3001".to_owned())
+        .unwrap_or_else(|_| DEFAULT_MCP_SERVER_ADDR.to_owned())
         .parse()?;
 
     // TODO(remove-after-v1.5-green): temporary rollback switch back to the empty

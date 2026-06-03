@@ -784,6 +784,12 @@ async fn build_graph_from_pg(
                 // and DB CHECK constraint already allow it so future wiring is a
                 // pure addition. The DualScopeResolver currently emits only
                 // "project" and "global"; no team resolver exists yet.
+                //
+                // The fallback is intentionally empty (no team scope root is
+                // configured); skills that also have empty `source_paths` will
+                // receive zero paths and be invisible to all `starts_with` scope
+                // gates.  The warn! below makes that observable so the silent
+                // drop is not mistaken for a DB or retrieval bug.
                 "team" => (domain::ScopeType::Team, "team".to_owned(), Vec::new()),
                 _ => (
                     domain::ScopeType::Project,
@@ -801,18 +807,30 @@ async fn build_graph_from_pg(
                 record
                     .source_paths
                     .iter()
-                    .filter_map(|p| {
-                        std::fs::canonicalize(p).ok().or_else(|| {
-                            // The path may not exist on the current host (e.g. the skill
-                            // was built on another machine). Parse the raw string so
-                            // scope matching can still attempt a prefix check; the
-                            // starts_with will simply fail for non-canonical paths, which
-                            // is safer than silently falling back to the scope root.
-                            Some(std::path::PathBuf::from(p))
-                        })
+                    .map(|p| {
+                        // The path may not exist on the current host (e.g. the skill
+                        // was built on another machine). Parse the raw string so
+                        // scope matching can still attempt a prefix check; the
+                        // starts_with will simply fail for non-canonical paths, which
+                        // is safer than silently falling back to the scope root.
+                        std::fs::canonicalize(p).unwrap_or_else(|_| std::path::PathBuf::from(p))
                     })
                     .collect()
             };
+            // Team scope has no configured scope root (no team resolver is wired
+            // yet).  A team skill whose DB row also carries no `source_paths`
+            // ends up with zero paths and is invisible to every `starts_with`
+            // scope gate — it will be silently dropped from retrieval results.
+            // Log here so the gap is observable without a debugger.
+            if scope_id == "team" && source_paths.is_empty() {
+                warn!(
+                    skill_id = %record.skill_id,
+                    "team-scope skill has no source_paths and no configured team \
+                     scope root — it will be excluded from all scope-filtered \
+                     retrievals until a team scope root is wired or the skill \
+                     gains explicit source_paths"
+                );
+            }
             // Deterministic prior from real usage: ln(1+count)·e^(-age/30),
             // clamped at 0.15. Zero for cold-start (no usage rows) so unseen
             // skills never receive a phantom boost. V1.5 fixed formula — see
@@ -882,16 +900,14 @@ fn compute_prompt_hash(prompt: &str) -> String {
     blake3::hash(prompt.as_bytes()).to_hex().to_string()
 }
 
-/// Builds a [`SessionUsageRecord`] from the compile_context call's request,
-/// response, and retrieval outcome.
+/// Builds a [`SessionUsageRecord`] from the minimal request fields needed for
+/// persistence, the compilation response, and the retrieval outcome.
 ///
 /// Called at the coordination layer in `McpServerApp::compile_context` AFTER
 /// the tool returns so this function never touches `CompileContextTool`'s
 /// internal state. Skills with no UUID-format IDs are silently skipped rather
 /// than aborting the entire write — an invalid ID in the graph is a data
 /// hygiene issue, not a reason to drop the whole session's usage.
-/// Builds a [`SessionUsageRecord`] from the minimal request fields needed for
-/// persistence, the compilation response, and the retrieval outcome.
 ///
 /// Accepts `session_id` and `repo_path` as separate borrowed strings rather than
 /// a full `&CompileContextRequest` so the caller can pass ownership of the request

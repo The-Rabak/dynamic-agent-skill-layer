@@ -22,6 +22,9 @@ files:
   - crates/mcp-server/src/lib.rs
   - tests/fixtures/retrieval_corpus.json
   - tests/e2e/test_live_data_plane_roundtrip.rs
+  - crates/compiler/src/rescue.rs        # provenance write-path completion
+  - crates/admin/src/tools.rs            # provenance write-path completion
+  - crates/graph-builder/src/graph/rebuild.rs  # provenance write-path completion
 test_command: cargo test -p mcp-server --features test-utils -- --ignored test_live_data_plane_roundtrip
 tdd_mode: inherit
 human_gate: schema-migration # 004_skill_source_paths.sql — stage and confirm before apply/commit
@@ -56,7 +59,8 @@ Deterministic threshold tuning only; no model swap. Keep cold-start `no_match` h
 - [x] **Boot read uses the column, replacing T01's workaround:** `build_graph_from_pg` (`crates/mcp-server/src/lib.rs`) reads `source_paths` from the column into `RetrievalSnapshot` instead of substituting the configured scope root. If a row has empty `source_paths` (pre-migration data), fall back to the scope-root behavior so old graphs still match — document the fallback.
 - [x] A named test proves a skill loaded from PG carries its real `source_paths` and that scope-matching uses it (not the scope-root stand-in).
 - [x] **Why-this-matched lite:** compiled `ok` context includes a compact deterministic section (e.g. `### Why These Skills`) listing each selected skill's scope, graph_version, score bucket, top matched terms/subunit title when available, and source path provenance. This is a trust affordance, not full explainability; keep it short enough to preserve context budget.
-- [x] E2E asserts the seeded roundtrip skill's compiled context contains both the skill name and a deterministic match reason (scope + source path or score bucket), so users can see why context was injected.
+  > **WAIVER 2026-06-03 (owner):** source-path provenance deferred from the agent-visible why-section for V1.5; scope+bucket is the accepted provenance contract. Source path remains an internal scope-gating signal and is intentionally NOT surfaced to the agent in V1.5. See todo #134.
+- [x] E2E asserts the seeded roundtrip skill's compiled context contains both the skill name and a deterministic match reason (scope + score bucket), so users can see why context was injected. **V1.5 contract: `scope=` AND `bucket=` must be present; `source=` is NOT required** (source path is internal only — see WAIVER above and todo #134).
 
 ## Shared / Global Notes
 - Shared fixture corpus under `tests/fixtures/` is reused by the live tests and T10b's activation demo — T10/T10b consume it but do not redefine it; this ticket owns its creation.

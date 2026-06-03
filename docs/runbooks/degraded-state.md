@@ -156,6 +156,12 @@ docker compose logs redis | tail -20
 docker compose restart redis
 ```
 
+## Test Isolation
+
+### Unexpected `DuplicateSuppressed` in Live Tests
+
+If live tests fail with unexpected `DuplicateSuppressed` responses (stale session-suppression state left from a prior run), reset Redis: `redis-cli -p 16379 FLUSHDB ASYNC`
+
 ## Circuit Breaker Behavior
 
 The graph builder uses a circuit breaker with these settings:

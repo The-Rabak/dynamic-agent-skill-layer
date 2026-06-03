@@ -35,11 +35,14 @@ pub fn render_markdown(prompt: &str, skills: &[CompiledSkillContext]) -> String 
                 markdown.push('\n');
             }
         }
+    }
 
-        // Deterministic match-reason: always present so an agent can audit why
-        // this skill was injected. Kept compact (one line per skill) to minimise
-        // context budget impact. Content is purely derived from retrieval output.
-        markdown.push_str(&format!("### Why These Skills\n- {}\n", skill.match_reason));
+    // Aggregated match-reason section: one heading, one labeled bullet per skill.
+    // Emitted after the per-skill blocks so each block stays self-contained while
+    // the rationale for the full selection is readable in one place.
+    markdown.push_str("### Why These Skills\n");
+    for skill in skills {
+        markdown.push_str(&format!("- {}: {}\n", skill.name, skill.match_reason));
     }
 
     markdown
@@ -68,5 +71,48 @@ mod tests {
         assert!(markdown.contains("### Rescue cues"));
         assert!(markdown.contains("### Why These Skills"));
         assert!(markdown.contains("scope=global"));
+        // Heading must appear exactly once even for a single skill.
+        assert_eq!(markdown.matches("### Why These Skills").count(), 1);
+        // Bullet must be labeled by skill name.
+        assert!(markdown.contains("- rust-file-reading: scope=global"));
+    }
+
+    #[test]
+    fn render_markdown_why_these_skills_heading_appears_exactly_once_for_multiple_skills() {
+        let skills = vec![
+            CompiledSkillContext {
+                name: "skill-alpha".to_owned(),
+                description: "Alpha skill".to_owned(),
+                score: "0.900".to_owned(),
+                highlights: vec![],
+                rescue_cues: vec![],
+                match_reason: "scope=global | bucket=high | semantic=0.900".to_owned(),
+            },
+            CompiledSkillContext {
+                name: "skill-beta".to_owned(),
+                description: "Beta skill".to_owned(),
+                score: "0.750".to_owned(),
+                highlights: vec![],
+                rescue_cues: vec![],
+                match_reason: "scope=local | bucket=medium | semantic=0.750".to_owned(),
+            },
+        ];
+        let markdown = render_markdown("test prompt", &skills);
+
+        // Heading must appear exactly once regardless of skill count.
+        assert_eq!(
+            markdown.matches("### Why These Skills").count(),
+            1,
+            "heading appeared more than once:\n{markdown}"
+        );
+        // One labeled bullet per skill must be present.
+        assert!(
+            markdown.contains("- skill-alpha: scope=global"),
+            "missing skill-alpha bullet:\n{markdown}"
+        );
+        assert!(
+            markdown.contains("- skill-beta: scope=local"),
+            "missing skill-beta bullet:\n{markdown}"
+        );
     }
 }
