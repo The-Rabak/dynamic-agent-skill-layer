@@ -107,7 +107,8 @@ services:
       RUST_LOG: debug
       DATABASE_URL: postgres://skill_layer:skill_layer@postgres:5432/skill_layer_test
       REDIS_URL: redis://redis:6379
-      QDRANT_URL: http://qdrant:6334
+      # T08 fix: use REST port 6333, not gRPC port 6334.
+      QDRANT_URL: http://qdrant:6333
       OLLAMA_URL: http://ollama:11434
       MCP_SERVER_ADDR: 0.0.0.0:3001
       SKILL_GLOBAL_PATHS: /skills/global
@@ -141,7 +142,8 @@ services:
       RUST_LOG: debug
       DATABASE_URL: postgres://skill_layer:skill_layer@postgres:5432/skill_layer_test
       REDIS_URL: redis://redis:6379
-      QDRANT_URL: http://qdrant:6334
+      # T08 fix: use REST port 6333, not gRPC port 6334.
+      QDRANT_URL: http://qdrant:6333
       OLLAMA_URL: http://ollama:11434
       GRAPH_BUILDER_PROJECT_ROOT: /skills/project
       GRAPH_BUILDER_GLOBAL_ROOT: /skills/global

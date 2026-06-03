@@ -73,7 +73,10 @@ if [[ "${SKIP_INFRA}" -eq 0 ]]; then
 
     echo "==> Running live data plane roundtrip E2E test"
     export OLLAMA_URL="http://localhost:${OLLAMA_PORT}"
-    export QDRANT_URL="http://localhost:${QDRANT_GRPC_PORT}"
+    # T08 fix: use the REST port (16333) here, not the gRPC port (16334).
+    # The QdrantAdapter uses HTTP/REST; pointing at gRPC (16334) causes
+    # hyper::Parse(Version) errors in check_connectivity.
+    export QDRANT_URL="http://localhost:${QDRANT_HTTP_PORT}"
     export DATABASE_URL="postgres://skill_layer:skill_layer@localhost:${POSTGRES_PORT}/skill_layer_test"
     export REDIS_URL="redis://localhost:${REDIS_PORT}"
     # The extraction provider reads OLLAMA_EXTRACTION_ENDPOINT (not OLLAMA_URL) and

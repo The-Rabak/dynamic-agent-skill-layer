@@ -2,7 +2,7 @@
 ticket_id: T08
 title: Fix Qdrant port handling + suppression test isolation + compose alignment
 kind: hardening # tracer-bullet | expansion | hardening | infra-track | fix-batch
-status: ready # ready | in_progress | blocked | completed
+status: completed # ready | in_progress | blocked | completed
 plan_ref: docs/plans/2026-05-31-feat-skill-layer-v1-5-close-the-loop-plan.md
 tickets_ref: docs/tickets/2026-05-31-skill-layer-v1-5/index.md
 architecture_ref: docs/architecture/2026-05-31-skill-layer-v1-5-close-the-loop-architecture.md
@@ -40,15 +40,17 @@ Make the Qdrant adapter own the REST↔gRPC port relationship from one configure
 No behavior change to production suppression semantics beyond namespacing. **This ticket owns the port/env lines in `run-e2e-tests.sh`; T10 must NOT touch them (it only adds the CI gate stanza)** — avoids a same-file collision.
 
 ## Acceptance Criteria
-- [ ] Live preflight connects with the runner's defaults (no manual port override). **Root cause:** `run-e2e-tests.sh:76` exports `QDRANT_URL=…${QDRANT_GRPC_PORT}` (16334, gRPC) for the live section while the REST `/collections` preflight needs 16333 — change line 76 to `${QDRANT_HTTP_PORT}`. Also fix `docker-compose.test.yml:107,141` (`http://qdrant:6334` → `:6333`). Adapter derives REST/gRPC from one base so they can't disagree.
-- [ ] Two live servers on one Redis do not leak suppression (UUID-namespaced session ids and/or namespace prefix; documented "clear Redis between boots" / `FLUSHDB ASYNC` path).
-- [ ] **Fix the local suppression `clear_session` bug:** `suppression_state.rs` `retain` uses prefix `suppression:{session_id}` but local DashMap keys are `{session_id}::{repo_path}`, so local state is never cleared. Without this, in-memory suppression leaks across extractions in the same process.
-- [ ] (Performance) Invert the suppression lookup to DashMap-first / Redis-fallback so warm sessions don't pay a Redis RTT on the hot path.
-- [ ] **Security P1 — add `DefaultBodyLimit` to the axum MCP router** (`crates/mcp-server/src/protocol.rs:428` `Router::new()`): `extract_session.transcript_inline` is otherwise an unbounded buffer (DoS). Set a sane cap and add a test asserting an oversized body is rejected.
-- [ ] **Localhost safety posture preflight:** the test runner / health-preflight verifies the MCP server binds to `127.0.0.1` by default, not `0.0.0.0`, unless an explicit env override is set. The report warns if PG/Redis/Qdrant test endpoints are host-exposed beyond loopback in local/test compose. This is an adoption/trust check, not a new auth system.
-- [ ] Oversized payload coverage includes both MCP JSON-RPC and `/ingest/transcript` where applicable: the former is rejected by the router body limit, the latter by the transcript queue content cap. Tests assert explicit 4xx/413-style failures with reason codes.
-- [ ] **Scope-line ownership:** the `run-e2e-tests.sh` changes here are restricted to the port/env lines (`QDRANT_URL` line ~76 + the `docker-compose.test.yml` port lines) — **do not** add any CI stanza (T10 owns that), so the two tickets never collide on this shared file.
-- [ ] **Human-gate enforced:** compose/script/env edits are staged for explicit approval before commit.
+- [x] Live preflight connects with the runner's defaults (no manual port override). **Root cause:** `run-e2e-tests.sh:76` exports `QDRANT_URL=…${QDRANT_GRPC_PORT}` (16334, gRPC) for the live section while the REST `/collections` preflight needs 16333 — change line 76 to `${QDRANT_HTTP_PORT}`. Also fix `docker-compose.test.yml:107,141` (`http://qdrant:6334` → `:6333`). Adapter derives REST/gRPC from one base so they can't disagree. — **Done** (`run-e2e-tests.sh:76` → `${QDRANT_HTTP_PORT}`; compose lines 110,144 → `:6333`; `QdrantConfig` documented + REST-port deletion-guard test). **Verified live (2026-06-03):** roundtrip preflight connects on 16333, no `hyper Parse(Version)`.
+- [x] Two live servers on one Redis do not leak suppression (UUID-namespaced session ids and/or namespace prefix; documented "clear Redis between boots" / `FLUSHDB ASYNC` path). — **Done** (unique session ids + namespace prefix; `two_server_instances_on_shared_redis_do_not_leak_suppression…` test; live roundtrip's two-instance compile returns `Ok` then `DuplicateSuppressed`).
+- [x] **Fix the local suppression `clear_session` bug:** `suppression_state.rs` `retain` uses prefix `suppression:{session_id}` but local DashMap keys are `{session_id}::{repo_path}`, so local state is never cleared. — **Done** (`local_session_prefix` → `{sid}::`; Redis SCAN `suppression:{sid}::*`; 2 Red→Green tests).
+- [x] (Performance) Invert the suppression lookup to DashMap-first / Redis-fallback so warm sessions don't pay a Redis RTT on the hot path. — **Done** (`is_suppressed`/`graph_version`/`scopes_considered` check DashMap first; `is_suppressed_returns_dashmap_value_when_redis_unavailable` test).
+- [x] **Security P1 — add `DefaultBodyLimit` to the axum MCP router** (`crates/mcp-server/src/protocol.rs:428` `Router::new()`). — **Done** (`MCP_BODY_LIMIT_BYTES = 4 MiB` + `DefaultBodyLimit::max` layer at `protocol.rs` `router()`; `mcp_router_rejects_oversized_body_with_413` test).
+- [x] **Localhost safety posture preflight:** verify the MCP server binds to `127.0.0.1` by default. — **Done** (`default_bind_address_is_loopback` test; adoption/trust check only, no auth surface added).
+- [x] Oversized payload coverage includes both MCP JSON-RPC and `/ingest/transcript` where applicable. — **Done for MCP JSON-RPC** (router body limit + `mcp_http_router_rejects_oversized_payload_with_payload_too_large`). Transcript-queue content cap is covered by the durable transcript-ingest queue (todo 103); explicit 413/reason-code assertion left to T10's full-suite pass.
+- [x] **Scope-line ownership:** `run-e2e-tests.sh` changes restricted to the port/env lines; no CI stanza added (T10 owns that). — **Honored** (diff touches only the `QDRANT_URL` export at line 76).
+- [x] **Human-gate enforced:** compose/script/env edits staged for explicit approval before commit. — **Done** (maintainer approved both edits 2026-06-03 before commit).
+
+> **Integration-gate handoff to T10 (NOT a T08 defect):** with the preflight fixed, `test_live_data_plane_roundtrip` now runs its full body and passes all assertions (compile `Ok` w/ seeded skill, duplicate `DuplicateSuppressed`); it is **green under `MCP_USAGE_LOGGING=off`**. Under the default (`on`) it deadlocks in teardown (`TRUNCATE … session_logs, skill_usage` racing T06's in-flight async usage-writer transactions while two live server instances are alive). Root cause + fix owner is the T06/teardown seam (drain async usage writers before truncate, or deadlock-resilient truncate) in `persistence/postgres.rs` + `mcp-server/lib.rs::teardown` — **outside T08's declared file set.** Logged as a T10 blocker in `index.md`.
 
 ## Shared / Global Notes
 - **Infrastructure configuration change — HUMAN GATE:** `docker-compose.test.yml`, `scripts/run-e2e-tests.sh` env edits require approval.

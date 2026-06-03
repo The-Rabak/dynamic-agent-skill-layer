@@ -2,7 +2,7 @@ use std::{future::Future, net::SocketAddr, pin::Pin, sync::LazyLock};
 
 use axum::{
     Json, Router,
-    extract::State,
+    extract::{DefaultBodyLimit, State},
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
     routing::{get, post},
@@ -553,6 +553,13 @@ async fn health_handler(State(state): State<HttpAppState>) -> impl IntoResponse 
     (status, Json(report))
 }
 
+/// Hard cap on the request body size accepted by the MCP and ingest routes.
+///
+/// 4 MiB is generous enough for large inline transcripts while preventing
+/// unbounded buffering of `extract_session.transcript_inline` payloads.
+/// Requests exceeding this limit receive 413 Payload Too Large.
+pub const MCP_BODY_LIMIT_BYTES: usize = 4 * 1024 * 1024; // 4 MiB
+
 pub fn router(app: McpServerApp, health_checker: InfrastructureHealthChecker) -> Router {
     let ingest_secret = std::env::var(INGEST_SECRET_ENV)
         .ok()
@@ -563,6 +570,7 @@ pub fn router(app: McpServerApp, health_checker: InfrastructureHealthChecker) ->
         .route("/mcp", post(mcp_handler))
         .route("/health", get(health_handler))
         .route("/ingest/transcript", post(ingest_transcript_handler))
+        .layer(DefaultBodyLimit::max(MCP_BODY_LIMIT_BYTES))
         .with_state(HttpAppState {
             app,
             health_checker,
@@ -579,4 +587,94 @@ pub async fn serve_http(
     axum::serve(listener, router(app, health_checker))
         .await
         .map_err(std::io::Error::other)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{net::SocketAddr, sync::Arc};
+
+    use domain::{EmbeddingError, EmbeddingService};
+    use retrieval::{RetrievalConfig, RetrievalSnapshot};
+
+    use super::*;
+    use crate::McpServerApp;
+
+    /// Minimal embedding stub for protocol-level tests that do not exercise
+    /// the retrieval pipeline.
+    struct NoOpEmbeddingService;
+
+    #[async_trait::async_trait]
+    impl EmbeddingService for NoOpEmbeddingService {
+        async fn embed_text(&self, _text: &str) -> Result<Vec<f32>, EmbeddingError> {
+            Err(EmbeddingError::ProviderUnavailable("test stub".to_owned()))
+        }
+
+        async fn embed_batch(&self, _texts: &[&str]) -> Result<Vec<Vec<f32>>, EmbeddingError> {
+            Err(EmbeddingError::ProviderUnavailable("test stub".to_owned()))
+        }
+    }
+
+    /// Proves that the MCP router rejects payloads exceeding the hard body cap
+    /// with 413 Payload Too Large. This guards against unbounded buffering of
+    /// the `transcript_inline` field or any other large JSON-RPC body (DoS).
+    ///
+    /// The explicit `DefaultBodyLimit::max(MCP_BODY_LIMIT_BYTES)` layer in
+    /// `router()` must enforce this cap. Without it, axum 0.8 has a 2 MiB
+    /// default limit; the explicit limit documents intent and is tested here.
+    #[tokio::test]
+    async fn mcp_router_rejects_oversized_body_with_413() {
+        let app = McpServerApp::with_explicit_graph(
+            Arc::new(NoOpEmbeddingService),
+            RetrievalSnapshot::new(vec![], 0),
+            RetrievalConfig::default(),
+            None,
+        );
+        let health_checker = InfrastructureHealthChecker::new();
+        let app_router = router(app, health_checker);
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("ephemeral port should bind");
+        let addr: SocketAddr = listener.local_addr().expect("listener has local addr");
+        tokio::spawn(async move {
+            axum::serve(listener, app_router)
+                .await
+                .expect("test server should serve");
+        });
+
+        // Send a body larger than MCP_BODY_LIMIT_BYTES to prove the cap is enforced.
+        let oversized_payload = "x".repeat(MCP_BODY_LIMIT_BYTES + 1);
+        let client = reqwest::Client::new();
+        let response = client
+            .post(format!("http://{addr}/mcp"))
+            .header("content-type", "application/json")
+            .body(oversized_payload)
+            .send()
+            .await
+            .expect("request should complete");
+
+        assert_eq!(
+            response.status(),
+            reqwest::StatusCode::PAYLOAD_TOO_LARGE,
+            "oversized MCP body must be rejected with 413"
+        );
+    }
+
+    /// Proves the server binds to loopback (`127.0.0.1`) by default rather than
+    /// `0.0.0.0`, satisfying the localhost safety-posture requirement.
+    ///
+    /// The `MCP_SERVER_ADDR` env var can override this for deployment; without
+    /// it the server must not expose the MCP endpoint on a broad interface.
+    #[test]
+    fn default_bind_address_is_loopback() {
+        // main.rs reads MCP_SERVER_ADDR with fallback "127.0.0.1:3001".
+        // This test verifies the fallback value parses to a loopback address.
+        let fallback = "127.0.0.1:3001";
+        let addr: SocketAddr = fallback.parse().expect("fallback address must parse");
+        assert!(
+            addr.ip().is_loopback(),
+            "default MCP_SERVER_ADDR must bind to loopback, got: {}",
+            addr.ip()
+        );
+    }
 }

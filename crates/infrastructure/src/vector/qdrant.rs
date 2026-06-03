@@ -8,6 +8,20 @@ use tokio::time::timeout;
 
 use crate::persistence::outbox::{OutboxVectorStore, VectorPointListing};
 
+/// Configuration for the Qdrant REST HTTP adapter.
+///
+/// Qdrant exposes two interfaces on separate ports:
+///   - REST (HTTP/JSON): port 6333 (container) / 16333 (host-mapped in test compose)
+///   - gRPC:             port 6334 (container) / 16334 (host-mapped in test compose)
+///
+/// This adapter uses the REST interface exclusively. The `endpoint` field must
+/// point to the REST base URL (`:6333` / `:16333`). Using the gRPC port here
+/// will cause parse errors because gRPC uses binary framing, not HTTP/1.1.
+///
+/// Invariant: `QDRANT_URL` env var must export the REST base URL. Any
+/// `docker-compose` environment block or test-runner export that sets
+/// `QDRANT_URL` to a `:6334` (gRPC) address will break `check_connectivity`
+/// with a `hyper::Parse(Version)` error.
 #[derive(Debug, Clone)]
 pub struct QdrantConfig {
     pub endpoint: String,
@@ -18,6 +32,7 @@ pub struct QdrantConfig {
 impl Default for QdrantConfig {
     fn default() -> Self {
         Self {
+            // Port 6333 is the Qdrant REST interface. Do NOT use 6334 (gRPC).
             endpoint: "http://127.0.0.1:6333".to_owned(),
             timeout_ms: 500,
             collection_name: "skills".to_owned(),
@@ -383,7 +398,10 @@ mod tests {
 
     #[tokio::test]
     async fn qdrant_adapter_rejects_blank_endpoint() {
-        let config = QdrantConfig { endpoint: " ".to_owned(), ..QdrantConfig::default() };
+        let config = QdrantConfig {
+            endpoint: " ".to_owned(),
+            ..QdrantConfig::default()
+        };
 
         let error = QdrantAdapter::new(reqwest::Client::new(), config)
             .expect_err("blank endpoint should fail config validation");
@@ -593,5 +611,26 @@ mod tests {
         assert!(!has_vector);
 
         server.await.expect("mock server should complete");
+    }
+
+    /// Proves the `QdrantConfig` default endpoint uses the REST port (6333),
+    /// NOT the gRPC port (6334). Using the gRPC port for REST requests causes
+    /// `hyper::Parse(Version)` errors in `check_connectivity`.
+    ///
+    /// This is a named deletion guard: if the default endpoint is ever changed
+    /// to `:6334` (gRPC), this test will catch the regression immediately.
+    #[test]
+    fn qdrant_config_default_endpoint_uses_rest_port_not_grpc() {
+        let config = QdrantConfig::default();
+        assert!(
+            config.endpoint.contains(":6333"),
+            "QdrantConfig default endpoint must use REST port 6333, got: {}",
+            config.endpoint
+        );
+        assert!(
+            !config.endpoint.contains(":6334"),
+            "QdrantConfig default endpoint must NOT use gRPC port 6334, got: {}",
+            config.endpoint
+        );
     }
 }

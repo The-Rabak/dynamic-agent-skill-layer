@@ -253,18 +253,13 @@ impl DependencyFactory {
         // Surface the active extraction provider on /health so agents can query
         // provider configuration pre-flight without enqueuing a job. Falls back to
         // "ollama" (the constitution v2.0.0 default) when the env var is unset/blank.
-        let extraction_provider = std::env::var("EXTRACT_SESSION_PROVIDER")
-            .unwrap_or_default();
+        let extraction_provider = std::env::var("EXTRACT_SESSION_PROVIDER").unwrap_or_default();
         let extraction_provider = match extraction_provider.trim().to_ascii_lowercase().as_str() {
             "claude" | "claude-api" => "claude",
             "claude-code" | "claude-cli" => "claude-code",
             _ => "ollama",
         };
-        checker = checker.with_static_component(
-            "extraction_provider",
-            true,
-            extraction_provider,
-        );
+        checker = checker.with_static_component("extraction_provider", true, extraction_provider);
 
         checker
     }

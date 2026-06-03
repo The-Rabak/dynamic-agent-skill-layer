@@ -6,8 +6,18 @@ mod context_cache;
 mod graph_refresh_subscriber;
 pub mod protocol;
 pub mod state;
-mod suppression_state;
+pub(crate) mod suppression_state;
 mod usage_writer;
+
+/// Re-exports of internal suppression state for integration and E2E tests.
+///
+/// Gated on `test-utils` to keep the public API clean in production builds.
+/// Tests use this to prove the clear_session fix and cross-instance isolation
+/// without going through live Redis.
+#[cfg(any(test, feature = "test-utils"))]
+pub mod suppression_state_for_tests {
+    pub use crate::suppression_state::SessionSuppressionState;
+}
 pub mod tools {
     pub mod compile_context;
     pub mod extract_session;
@@ -24,7 +34,6 @@ use admin::tools::{
 use async_trait::async_trait;
 use compiler::TemplateOnlyCompiler;
 use domain::{EmbeddingService, ScopeResolver};
-use maintenance::RetirementConfig;
 #[cfg(any(test, feature = "test-utils"))]
 use infrastructure::OutboxVectorStore;
 use infrastructure::{
@@ -35,6 +44,7 @@ use infrastructure::{
     SessionUsageRecord, SkillSelectionRecord, TranscriptIngestQueue, UsagePersistencePort,
     UsageSampleStore,
 };
+use maintenance::RetirementConfig;
 use retrieval::{
     DualScopeResolver, RetrievalConfig, RetrievalOrchestrator, RetrievalSnapshot, SkillRetriever,
 };
@@ -734,10 +744,7 @@ async fn build_graph_from_pg(
     let skill_ids: Vec<String> = skills.iter().map(|s| s.skill_id.clone()).collect();
     let usage_by_skill: std::collections::HashMap<String, retrieval::UsagePriorInputs> =
         match usage_sample_store
-            .recent_usage(
-                &skill_ids,
-                RetirementConfig::default().scoring_window_days,
-            )
+            .recent_usage(&skill_ids, RetirementConfig::default().scoring_window_days)
             .await
         {
             Ok(summaries) => summaries
@@ -810,9 +817,7 @@ async fn build_graph_from_pg(
                     .iter()
                     .map(|s| domain::DomainId::new_unchecked(&s.subunit_id))
                     .collect(),
-                community_id: record
-                    .community_id
-                    .map(domain::DomainId::new_unchecked),
+                community_id: record.community_id.map(domain::DomainId::new_unchecked),
             };
             let community_boost = if skill.community_id.is_some() {
                 0.2
@@ -886,7 +891,11 @@ fn build_session_usage_record(
 
     // Determine the scope string from the first resolved scope, falling back to
     // "project" so the DB CHECK constraint is always satisfied.
-    let scope = if repo_path.is_empty() { "global" } else { "project" };
+    let scope = if repo_path.is_empty() {
+        "global"
+    } else {
+        "project"
+    };
 
     let selected_skills: Vec<SkillSelectionRecord> = outcome
         .skills
