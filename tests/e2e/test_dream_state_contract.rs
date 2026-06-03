@@ -64,6 +64,7 @@ async fn dream_seed_skills(
                 description: desc.to_string(),
                 scope: domain::ScopeType::Global,
                 tags: tags.iter().map(|t| t.to_string()).collect(),
+                source_paths: vec![],
                 subunits: vec![LiveGraphSubunitRecord {
                     kind: SubunitType::Procedure,
                     title: "test procedure".to_string(),

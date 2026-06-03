@@ -1,5 +1,7 @@
 use async_trait::async_trait;
-use domain::{ExtractionError, ExtractionResult, SessionTranscript, TranscriptSkillExtractionService};
+use domain::{
+    ExtractionError, ExtractionResult, SessionTranscript, TranscriptSkillExtractionService,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::extraction::{
@@ -173,7 +175,10 @@ mod tests {
 
     #[tokio::test]
     async fn extract_rejects_entry_larger_than_limit() {
-        let config = OllamaExtractionConfig { max_entry_chars: 4, ..OllamaExtractionConfig::default() };
+        let config = OllamaExtractionConfig {
+            max_entry_chars: 4,
+            ..OllamaExtractionConfig::default()
+        };
         let extractor =
             OllamaExtractor::new(reqwest::Client::new(), config).expect("config should be valid");
         let transcript = SessionTranscript {

@@ -393,6 +393,7 @@ async fn seed_live_skill(
             description: description.to_owned(),
             scope: domain::ScopeType::Global,
             tags,
+            source_paths: vec![],
             subunits: vec![LiveGraphSubunitRecord {
                 kind: domain::SubunitType::Procedure,
                 title: "test procedure".to_owned(),

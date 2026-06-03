@@ -787,8 +787,9 @@ mod tests {
             ExtractionProvider::Ollama,
         ] {
             let serialized = variant.as_str();
-            let deserialized = ExtractionProvider::from_str(serialized)
-                .unwrap_or_else(|_| panic!("as_str() output '{serialized}' must round-trip through from_str()"));
+            let deserialized = ExtractionProvider::from_str(serialized).unwrap_or_else(|_| {
+                panic!("as_str() output '{serialized}' must round-trip through from_str()")
+            });
             assert_eq!(
                 deserialized, variant,
                 "from_str(as_str({variant:?})) must equal {variant:?}"
@@ -843,7 +844,8 @@ mod tests {
         use domain::{DomainId, TranscriptEntry, TranscriptSkillExtractionService};
         use infrastructure::{ClaudeCodeExtractionConfig, ClaudeCodeExtractor};
 
-        let provider = ExtractionProvider::from_str("claude-code").expect("'claude-code' must parse");
+        let provider =
+            ExtractionProvider::from_str("claude-code").expect("'claude-code' must parse");
         assert_eq!(
             provider,
             ExtractionProvider::ClaudeCode,
@@ -1172,7 +1174,9 @@ mod tests {
         );
 
         // Use extract_blocking which publishes the terminal event synchronously.
-        let _ = extractor.extract_blocking(&request_for("failed-event")).await;
+        let _ = extractor
+            .extract_blocking(&request_for("failed-event"))
+            .await;
 
         let events = extractor.lifecycle_events();
         let failed = events
@@ -1180,7 +1184,10 @@ mod tests {
             .find(|event| event.event_type == "extraction.failed")
             .expect("extraction.failed event must be emitted on ProviderUnavailable");
 
-        let payload = failed.payload.as_object().expect("payload must be a JSON object");
+        let payload = failed
+            .payload
+            .as_object()
+            .expect("payload must be a JSON object");
         let reason_code = payload
             .get("reason_code")
             .and_then(|v| v.as_str())

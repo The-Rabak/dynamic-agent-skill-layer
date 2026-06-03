@@ -332,6 +332,10 @@ impl CompileContextTool {
                         relevance: highlight.relevance,
                     })
                     .collect(),
+                // Thread scope + rationale through for the deterministic
+                // "Why These Skills" section in render_markdown.
+                matched_scope: format!("{:?}", retrieved.scored_skill.matched_scope).to_lowercase(),
+                rationale: retrieved.scored_skill.rationale.clone(),
             })
             .collect();
         let rescue_pool: Vec<CompilerRescueCueInput> = outcome

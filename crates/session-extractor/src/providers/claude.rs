@@ -92,8 +92,7 @@ mod tests {
 
     #[test]
     fn validate_base_url_scheme_accepts_https() {
-        validate_base_url_scheme("https://api.anthropic.com")
-            .expect("https:// must be accepted");
+        validate_base_url_scheme("https://api.anthropic.com").expect("https:// must be accepted");
     }
 
     #[test]

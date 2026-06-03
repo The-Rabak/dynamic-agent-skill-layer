@@ -442,6 +442,10 @@ async fn test_live_data_plane_roundtrip() {
                     .to_owned(),
             scope: ScopeType::Global,
             tags: vec!["rust".to_owned(), "file".to_owned(), "io".to_owned()],
+            // Programmatically seeded skill has no filesystem origin; empty
+            // source_paths causes the boot adapter to fall back to the global
+            // scope root (SKILL_GLOBAL_PATHS) for scope matching.
+            source_paths: vec![],
             subunits: vec![LiveGraphSubunitRecord {
                 kind: SubunitType::Procedure,
                 title: "Read file async".to_owned(),
@@ -494,14 +498,24 @@ async fn test_live_data_plane_roundtrip() {
     builder.record_latency("compile_context_first", first_latency);
 
     assert_eq!(first.status, CompileContextStatus::Ok);
+    let compiled_context = first.additional_context.as_deref().unwrap_or("");
     assert!(
-        first
-            .additional_context
-            .as_deref()
-            .unwrap_or("")
-            .contains("roundtrip-rust-file-io"),
-        "compiled context must contain seeded skill name, got: '{:?}'",
-        first.additional_context
+        compiled_context.contains("roundtrip-rust-file-io"),
+        "compiled context must contain seeded skill name, got: '{compiled_context:?}'"
+    );
+    // Deterministic match-reason section (T09): verify scope + bucket provenance
+    // is present in the compiled context so the agent can audit why the skill matched.
+    assert!(
+        compiled_context.contains("### Why These Skills"),
+        "compiled context must include deterministic match-reason section, got: '{compiled_context:?}'"
+    );
+    assert!(
+        compiled_context.contains("scope=global") || compiled_context.contains("scope=project"),
+        "match-reason must include scope label, got: '{compiled_context:?}'"
+    );
+    assert!(
+        compiled_context.contains("bucket="),
+        "match-reason must include score bucket, got: '{compiled_context:?}'"
     );
     builder.push_action(
         "compile_context",
@@ -1193,6 +1207,10 @@ async fn graph_rebuilt_event_refreshes_running_server_without_restart() {
                     .to_owned(),
             scope: ScopeType::Global,
             tags: vec!["rust".to_owned(), "file".to_owned(), "io".to_owned()],
+            // Programmatically seeded skill has no filesystem origin; empty
+            // source_paths causes the boot adapter to fall back to the global
+            // scope root for scope matching.
+            source_paths: vec![],
             subunits: vec![LiveGraphSubunitRecord {
                 kind: SubunitType::Procedure,
                 title: "Read file async".to_owned(),

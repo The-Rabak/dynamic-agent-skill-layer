@@ -97,8 +97,8 @@ mod tests {
 
     #[test]
     fn validate_cli_path_rejects_missing_file() {
-        let error = validate_cli_path("/nonexistent/path/to/claude")
-            .expect_err("missing path must fail");
+        let error =
+            validate_cli_path("/nonexistent/path/to/claude").expect_err("missing path must fail");
         assert!(
             matches!(error, ExtractionError::ProviderUnavailable(_)),
             "got {error:?}"
@@ -110,16 +110,13 @@ mod tests {
     fn validate_cli_path_rejects_non_executable_file() {
         use std::os::unix::fs::PermissionsExt as _;
 
-        let tmp = std::env::temp_dir().join(format!(
-            "non-exec-claude-{}.sh",
-            std::process::id()
-        ));
+        let tmp = std::env::temp_dir().join(format!("non-exec-claude-{}.sh", std::process::id()));
         std::fs::write(&tmp, "#!/bin/sh\n").expect("write tmp file");
         std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o644))
             .expect("set non-executable permissions");
 
-        let error = validate_cli_path(tmp.to_str().unwrap())
-            .expect_err("non-executable path must fail");
+        let error =
+            validate_cli_path(tmp.to_str().unwrap()).expect_err("non-executable path must fail");
         assert!(
             matches!(error, ExtractionError::ProviderUnavailable(_)),
             "got {error:?}"
@@ -133,16 +130,12 @@ mod tests {
     fn validate_cli_path_accepts_executable_file() {
         use std::os::unix::fs::PermissionsExt as _;
 
-        let tmp = std::env::temp_dir().join(format!(
-            "exec-claude-{}.sh",
-            std::process::id()
-        ));
+        let tmp = std::env::temp_dir().join(format!("exec-claude-{}.sh", std::process::id()));
         std::fs::write(&tmp, "#!/bin/sh\n").expect("write tmp file");
         std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o755))
             .expect("set executable permissions");
 
-        validate_cli_path(tmp.to_str().unwrap())
-            .expect("executable file must pass validation");
+        validate_cli_path(tmp.to_str().unwrap()).expect("executable file must pass validation");
 
         let _ = std::fs::remove_file(&tmp);
     }

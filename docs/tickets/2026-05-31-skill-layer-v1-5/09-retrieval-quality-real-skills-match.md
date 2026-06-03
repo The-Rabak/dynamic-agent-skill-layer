@@ -2,7 +2,7 @@
 ticket_id: T09
 title: Retrieval quality — real/seeded skills actually match
 kind: hardening # tracer-bullet | expansion | hardening | infra-track | fix-batch
-status: ready # ready | in_progress | blocked | completed
+status: completed # ready | in_progress | blocked | completed (done 2026-06-03, session work-2026-06-03-073851; migration renumbered 004→005)
 plan_ref: docs/plans/2026-05-31-feat-skill-layer-v1-5-close-the-loop-plan.md
 tickets_ref: docs/tickets/2026-05-31-skill-layer-v1-5/index.md
 architecture_ref: docs/architecture/2026-05-31-skill-layer-v1-5-close-the-loop-architecture.md
@@ -45,18 +45,18 @@ Root-cause the `NoMatch`: confirm seeded skills load into the live retriever (T0
 Deterministic threshold tuning only; no model swap. Keep cold-start `no_match` honest (not degraded, not forced filler). The `source_paths` column is a **non-rewriting `ADD COLUMN`** with a safe default — do not alter existing columns or backfill-rewrite the table. Do not change the SKILL.md format or the extraction path that discovers source files. The "why this matched" section must be deterministic and compact — no LLM-generated explanation, no counterfactual engine, no V2 explainability surface.
 
 ## Acceptance Criteria
-- [ ] Roundtrip and concurrency-burst tests get `ok` for relevant prompts (e.g. seed "Rust file I/O … async tokio" + prompt "how to read files in rust with tokio async" → `ok` containing the seeded skill).
-- [ ] Cold-start still returns `no_match` (not degraded, not forced filler).
-- [ ] Suggested starting values to validate (not hardcode blindly): `relevance_threshold: 0.20`, `candidate_limit: 50`, `max_results: 3`, `rescue_threshold: 0.15`, `scope_timeout_ms: 400` (tight with two scopes — validate).
-- [ ] Provide a shared fixture corpus where ≥3 project-scope skills clear 0.20 on the roundtrip prompt; keep a named negative fixture proving cold-start `no_match`.
-- [ ] **Fixture corpus doubles as demo corpus:** `tests/fixtures/retrieval_corpus.json` contains realistic agent-work skills across Rust, Docker Compose, git, testing, and security. The corpus is suitable for `scripts/run-demo.sh` / T10b reuse, not only artificial threshold tuning. Include at least one negative prompt fixture proving honest `no_match`.
-- [ ] `mmr_select` uses `total_cmp` (NaN-safe).
-- [ ] **`skills.source_paths` column added** via human-gated `004_skill_source_paths.sql` — `ALTER TABLE skills ADD COLUMN source_paths TEXT[] NOT NULL DEFAULT '{}'` (nullable-safe, non-rewriting). Staged and approved before apply.
-- [ ] **Write path populates it:** the skill INSERT in `crates/infrastructure/src/persistence/rebuild.rs` writes `source_paths`, and `LiveGraphSkillRecord` carries the real source path(s) supplied by the graph-builder rebuild that reads the SKILL.md files. (Confirm the upstream constructor of `LiveGraphSkillRecord` during execution and thread the file path through.)
-- [ ] **Boot read uses the column, replacing T01's workaround:** `build_graph_from_pg` (`crates/mcp-server/src/lib.rs`) reads `source_paths` from the column into `RetrievalSnapshot` instead of substituting the configured scope root. If a row has empty `source_paths` (pre-migration data), fall back to the scope-root behavior so old graphs still match — document the fallback.
-- [ ] A named test proves a skill loaded from PG carries its real `source_paths` and that scope-matching uses it (not the scope-root stand-in).
-- [ ] **Why-this-matched lite:** compiled `ok` context includes a compact deterministic section (e.g. `### Why These Skills`) listing each selected skill's scope, graph_version, score bucket, top matched terms/subunit title when available, and source path provenance. This is a trust affordance, not full explainability; keep it short enough to preserve context budget.
-- [ ] E2E asserts the seeded roundtrip skill's compiled context contains both the skill name and a deterministic match reason (scope + source path or score bucket), so users can see why context was injected.
+- [~] Roundtrip and concurrency-burst tests get `ok` for relevant prompts (e.g. seed "Rust file I/O … async tokio" + prompt "how to read files in rust with tokio async" → `ok` containing the seeded skill). **Roundtrip: DONE & green** (`MCP_USAGE_LOGGING=off`, orchestrator-reverified). **Concurrency-burst: relevant prompts now DO get `ok`** (`ok_count > 0` passes), but `compile_context_parallel_burst_under_live_infra_stays_within_contract_statuses` (`tests/e2e/test_concurrency_stress.rs:558`) still asserts `no_match_count > 0` — a stale mixed-status expectation that T09's working retrieval invalidates (the burst prompts all match now). `test_concurrency_stress.rs` is **T10's file** (Slice 3.3 "DS-006/007 concurrency budgets"); the assertion rebalancing is handed to T10 (see index Blockers). This is a consequence of T09 succeeding, not a retrieval-quality defect.
+- [x] Cold-start still returns `no_match` (not degraded, not forced filler).
+- [x] Suggested starting values to validate (not hardcode blindly): `relevance_threshold: 0.20`, `candidate_limit: 50`, `max_results: 3`, `rescue_threshold: 0.15`, `scope_timeout_ms: 400` (tight with two scopes — validate).
+- [x] Provide a shared fixture corpus where ≥3 project-scope skills clear 0.20 on the roundtrip prompt; keep a named negative fixture proving cold-start `no_match`.
+- [x] **Fixture corpus doubles as demo corpus:** `tests/fixtures/retrieval_corpus.json` contains realistic agent-work skills across Rust, Docker Compose, git, testing, and security. The corpus is suitable for `scripts/run-demo.sh` / T10b reuse, not only artificial threshold tuning. Include at least one negative prompt fixture proving honest `no_match`.
+- [x] `mmr_select` uses `total_cmp` (NaN-safe).
+- [x] **`skills.source_paths` column added** via human-gated `004_skill_source_paths.sql` — `ALTER TABLE skills ADD COLUMN source_paths TEXT[] NOT NULL DEFAULT '{}'` (nullable-safe, non-rewriting). Staged and approved before apply.
+- [x] **Write path populates it:** the skill INSERT in `crates/infrastructure/src/persistence/rebuild.rs` writes `source_paths`, and `LiveGraphSkillRecord` carries the real source path(s) supplied by the graph-builder rebuild that reads the SKILL.md files. (Confirm the upstream constructor of `LiveGraphSkillRecord` during execution and thread the file path through.)
+- [x] **Boot read uses the column, replacing T01's workaround:** `build_graph_from_pg` (`crates/mcp-server/src/lib.rs`) reads `source_paths` from the column into `RetrievalSnapshot` instead of substituting the configured scope root. If a row has empty `source_paths` (pre-migration data), fall back to the scope-root behavior so old graphs still match — document the fallback.
+- [x] A named test proves a skill loaded from PG carries its real `source_paths` and that scope-matching uses it (not the scope-root stand-in).
+- [x] **Why-this-matched lite:** compiled `ok` context includes a compact deterministic section (e.g. `### Why These Skills`) listing each selected skill's scope, graph_version, score bucket, top matched terms/subunit title when available, and source path provenance. This is a trust affordance, not full explainability; keep it short enough to preserve context budget.
+- [x] E2E asserts the seeded roundtrip skill's compiled context contains both the skill name and a deterministic match reason (scope + source path or score bucket), so users can see why context was injected.
 
 ## Shared / Global Notes
 - Shared fixture corpus under `tests/fixtures/` is reused by the live tests and T10b's activation demo — T10/T10b consume it but do not redefine it; this ticket owns its creation.

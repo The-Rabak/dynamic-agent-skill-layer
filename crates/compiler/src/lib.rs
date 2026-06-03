@@ -76,6 +76,8 @@ mod tests {
                 content: "Use std::fs::read_to_string".to_owned(),
                 relevance: 0.92,
             }],
+            matched_scope: "global".to_owned(),
+            rationale: vec!["semantic=0.800".to_owned(), "lexical=0.150".to_owned()],
         };
         let rescue_pool = vec![CompilerRescueCueInput {
             source_skill: "tokio-io".to_owned(),

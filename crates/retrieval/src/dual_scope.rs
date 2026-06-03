@@ -750,4 +750,130 @@ mod tests {
         assert_eq!(results.len(), 1);
         assert!(results[0].candidates.is_empty());
     }
+
+    /// Keystone: a skill with real `source_paths` loaded from PG matches the
+    /// scope by its actual file path, not by the scope-root stand-in.
+    ///
+    /// This proves T09's replacement of T01's scope-root substitution:
+    /// - skill A has `source_paths = ["/workspace/project/src/io.rs"]`
+    ///   → matched by a scope whose path is `/workspace/project`
+    /// - skill B has `source_paths = ["/other-project/src/io.rs"]`
+    ///   → excluded by that same scope (path does not start with `/workspace/project`)
+    ///
+    /// An empty `source_paths` would fall back to the scope root; the stand-in
+    /// is exercised in `excludes_candidates_when_scope_id_or_paths_do_not_match_descriptor`.
+    #[tokio::test]
+    async fn skill_with_real_source_paths_matches_scope_by_true_provenance_not_scope_root() {
+        let skill_with_real_path = Skill {
+            id: DomainId::new_unchecked("io-skill-real-path"),
+            name: "rust-tokio-io".to_owned(),
+            description: "Async file IO with tokio".to_owned(),
+            scope: ScopeType::Project,
+            status: SkillStatus::Ready,
+            lifecycle: LifecycleStatus::Active,
+            tags: vec!["rust".to_owned(), "tokio".to_owned(), "io".to_owned()],
+            subunit_ids: vec![DomainId::new_unchecked("io-sub")],
+            community_id: None,
+        };
+
+        let graph = RetrievalSnapshot::new(
+            vec![
+                // Skill A: source_paths under the queried scope root — MUST match.
+                SeededSkill {
+                    skill: skill_with_real_path.clone(),
+                    scope_id: "project".to_owned(),
+                    source_paths: vec![PathBuf::from("/workspace/project/src/io.rs")],
+                    embedding: vec![1.0, 1.0],
+                    subunits: vec![Subunit {
+                        id: DomainId::new_unchecked("io-sub"),
+                        skill_id: skill_with_real_path.id.clone(),
+                        kind: SubunitType::Procedure,
+                        title: "Read file async".to_owned(),
+                        content: "tokio::fs::read_to_string".to_owned(),
+                        lifecycle: LifecycleStatus::Active,
+                    }],
+                    prior: 0.0,
+                    community_boost: 0.0,
+                },
+                // Skill B: source_paths outside the queried scope root — MUST be excluded.
+                SeededSkill {
+                    skill: skill_with_real_path.clone(),
+                    scope_id: "project".to_owned(),
+                    source_paths: vec![PathBuf::from("/other-project/src/io.rs")],
+                    embedding: vec![1.0, 1.0],
+                    subunits: vec![Subunit {
+                        id: DomainId::new_unchecked("io-sub-outside"),
+                        skill_id: skill_with_real_path.id.clone(),
+                        kind: SubunitType::Procedure,
+                        title: "Read file outside scope".to_owned(),
+                        content: "must be excluded by path gate".to_owned(),
+                        lifecycle: LifecycleStatus::Active,
+                    }],
+                    prior: 0.0,
+                    community_boost: 0.0,
+                },
+            ],
+            1,
+        );
+
+        // Scope root is `/workspace/project` — only skill A's path starts with it.
+        let project_scope = ScopeDescriptor {
+            scope_id: "project".to_owned(),
+            scope_type: ScopeType::Project,
+            paths: vec![PathBuf::from("/workspace/project")],
+            config: std::collections::BTreeMap::new(),
+        };
+
+        let (results, failures) = search_scopes_concurrently(
+            "rust tokio io",
+            &[1.0, 1.0],
+            Arc::new(graph),
+            &config(),
+            &[project_scope],
+        )
+        .await;
+
+        assert!(failures.is_empty(), "search should not fail");
+        assert_eq!(results.len(), 1, "should have one scope result");
+        // Exactly one candidate: skill A (real path matches). Skill B is excluded.
+        assert_eq!(
+            results[0].candidates.len(),
+            1,
+            "only the skill whose source_path is under the scope root should match; \
+             got {} candidates (expected 1 — skill A only)",
+            results[0].candidates.len()
+        );
+    }
+
+    /// Proves cold-start (empty graph) returns no candidates, not an error.
+    ///
+    /// An empty `skills` vector is the valid cold-start state; scope matching
+    /// correctly produces `candidates = []` without panicking or returning degraded.
+    #[tokio::test]
+    async fn empty_graph_returns_no_candidates_not_error() {
+        let empty_graph = RetrievalSnapshot::new(vec![], 0);
+
+        let (results, failures) = search_scopes_concurrently(
+            "rust tokio io",
+            &[1.0, 1.0],
+            Arc::new(empty_graph),
+            &config(),
+            &[scope("project", ScopeType::Project)],
+        )
+        .await;
+
+        assert!(
+            failures.is_empty(),
+            "empty graph must not produce scope failures"
+        );
+        assert_eq!(
+            results.len(),
+            1,
+            "should have one scope result even for empty graph"
+        );
+        assert!(
+            results[0].candidates.is_empty(),
+            "empty graph must return zero candidates (honest no_match)"
+        );
+    }
 }

@@ -365,6 +365,7 @@ async fn watcher_churn_and_reconciliation_converges_to_correct_graph_state_under
                 description: skill.description.clone(),
                 scope: skill.scope_type,
                 tags: skill.tags.clone(),
+                source_paths: vec![skill.source_path.display().to_string()],
                 subunits: skill
                     .subunits
                     .iter()

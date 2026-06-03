@@ -32,7 +32,9 @@ pub struct ExtractionQualityCriteria {
 
 impl Default for ExtractionQualityCriteria {
     fn default() -> Self {
-        Self { min_confidence: 0.5 }
+        Self {
+            min_confidence: 0.5,
+        }
     }
 }
 

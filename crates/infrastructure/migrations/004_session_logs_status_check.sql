@@ -23,8 +23,21 @@ BEGIN;
 -- Rollback (down):
 --   ALTER TABLE session_logs DROP CONSTRAINT IF EXISTS chk_session_logs_status;
 
-ALTER TABLE session_logs
-    ADD CONSTRAINT chk_session_logs_status
-    CHECK (status IN ('ok', 'no_match', 'degraded', 'duplicate_suppressed'));
+-- Use DO block for idempotent constraint addition (Postgres does not support
+-- ADD CONSTRAINT IF NOT EXISTS before PG 17; this works on all supported versions).
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.table_constraints
+        WHERE table_name = 'session_logs'
+          AND constraint_name = 'chk_session_logs_status'
+    ) THEN
+        ALTER TABLE session_logs
+            ADD CONSTRAINT chk_session_logs_status
+            CHECK (status IN ('ok', 'no_match', 'degraded', 'duplicate_suppressed'));
+    END IF;
+END
+$$;
 
 COMMIT;

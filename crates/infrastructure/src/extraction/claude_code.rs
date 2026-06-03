@@ -229,12 +229,8 @@ impl ClaudeCodeExtractor {
             //              CLAUDE_CODE_SIMPLE); collect above before clear.
             .env_clear()
             .envs(claude_env_vars)
-            .envs(
-                [("HOME", std::env::var("HOME").unwrap_or_default())]
-            )
-            .envs(
-                [("PATH", std::env::var("PATH").unwrap_or_default())]
-            )
+            .envs([("HOME", std::env::var("HOME").unwrap_or_default())])
+            .envs([("PATH", std::env::var("PATH").unwrap_or_default())])
             .spawn()
             .map_err(|error| {
                 ExtractionError::ProviderUnavailable(format!(
@@ -365,14 +361,12 @@ pub(crate) fn parse_cli_output(
     // from that position. The deserializer handles string-literal content correctly,
     // so `}` characters inside string values will not truncate the parse — unlike the
     // hand-rolled brace scanner this replaces.
-    let first_value: Option<serde_json::Value> = stripped
-        .find('{')
-        .and_then(|offset| {
-            serde_json::Deserializer::from_str(&stripped[offset..])
-                .into_iter::<serde_json::Value>()
-                .next()
-                .and_then(|r| r.ok())
-        });
+    let first_value: Option<serde_json::Value> = stripped.find('{').and_then(|offset| {
+        serde_json::Deserializer::from_str(&stripped[offset..])
+            .into_iter::<serde_json::Value>()
+            .next()
+            .and_then(|r| r.ok())
+    });
 
     let value = first_value.ok_or_else(|| {
         ExtractionError::Unexpected(format!(
@@ -407,7 +401,6 @@ fn strip_markdown_fences(s: &str) -> &str {
     }
     trimmed
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -810,10 +803,7 @@ mod tests {
 
         // Inject a sentinel into the current process env to simulate a leaked
         // infra credential present in the parent service environment.
-        let sentinel_key = format!(
-            "TEST_SENTINEL_SECRET_{}",
-            std::process::id()
-        );
+        let sentinel_key = format!("TEST_SENTINEL_SECRET_{}", std::process::id());
         let sentinel_value = "super-secret-db-password-must-not-leak";
         // SAFETY: single-threaded test setup; no other threads read this var.
         unsafe { std::env::set_var(&sentinel_key, sentinel_value) };

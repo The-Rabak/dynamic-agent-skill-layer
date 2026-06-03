@@ -67,6 +67,7 @@ async fn boot_time_live_retrieval() {
                     .to_owned(),
             scope: ScopeType::Global,
             tags: vec!["rust".to_owned(), "file".to_owned(), "io".to_owned()],
+            source_paths: vec![],
             subunits: vec![LiveGraphSubunitRecord {
                 kind: SubunitType::Procedure,
                 title: "Read file async".to_owned(),

@@ -265,6 +265,9 @@ impl GraphRebuildTrigger for FilesystemGraphRebuildTrigger {
                     description: skill.description,
                     scope: skill.scope_type,
                     tags: skill.tags,
+                    // Persist the real SKILL.md path so the retrieval boot
+                    // adapter uses true provenance, not the scope-root stand-in.
+                    source_paths: vec![skill.source_path.display().to_string()],
                     subunits: skill
                         .subunits
                         .into_iter()

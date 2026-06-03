@@ -6,13 +6,26 @@ use thiserror::Error;
 const MIGRATION_001: &str = include_str!("../../migrations/001_initial_schema.sql");
 const MIGRATION_002: &str = include_str!("../../migrations/002_transcript_ingest_queue.sql");
 const MIGRATION_003: &str = include_str!("../../migrations/003_usage_fields.sql");
+const MIGRATION_004: &str = include_str!("../../migrations/004_session_logs_status_check.sql");
+/// Migration 005: adds `skills.source_paths TEXT[] NOT NULL DEFAULT '{}'`.
+/// Per-skill SKILL.md provenance so the retrieval boot adapter uses true paths
+/// instead of the scope-root stand-in. Pre-migration rows get an empty array
+/// and fall back to the scope-root behavior in `build_graph_from_pg`.
+const MIGRATION_005: &str = include_str!("../../migrations/005_skill_source_paths.sql");
 
 /// Ordered migration set applied on every boot. Each entry is idempotent
 /// (`IF NOT EXISTS` / `ADD COLUMN IF NOT EXISTS`) so re-running is safe; ordering
 /// matters because later migrations depend on objects created by earlier ones
 /// (e.g. 002 reuses the `set_updated_at_timestamp()` function from 001, and
-/// 003 adds typed columns to tables declared by 001).
-const MIGRATIONS: &[&str] = &[MIGRATION_001, MIGRATION_002, MIGRATION_003];
+/// 003 adds typed columns to tables declared by 001, 004 adds a CHECK constraint
+/// to session_logs, 005 adds the source_paths provenance column to skills).
+const MIGRATIONS: &[&str] = &[
+    MIGRATION_001,
+    MIGRATION_002,
+    MIGRATION_003,
+    MIGRATION_004,
+    MIGRATION_005,
+];
 
 #[derive(Debug, Clone)]
 pub struct PostgresConfig {
@@ -159,8 +172,17 @@ mod tests {
     }
 
     #[test]
-    fn migration_set_is_ordered_001_then_002_then_003() {
-        assert_eq!(MIGRATIONS, &[MIGRATION_001, MIGRATION_002, MIGRATION_003]);
+    fn migration_set_is_ordered_001_through_005() {
+        assert_eq!(
+            MIGRATIONS,
+            &[
+                MIGRATION_001,
+                MIGRATION_002,
+                MIGRATION_003,
+                MIGRATION_004,
+                MIGRATION_005
+            ]
+        );
     }
 
     #[test]

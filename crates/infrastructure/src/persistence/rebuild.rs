@@ -30,6 +30,12 @@ pub struct LiveGraphSubunitRecord {
     pub content: String,
 }
 
+/// Skill record supplied to the durable write path during a graph rebuild.
+///
+/// `source_paths` carries the real SKILL.md file path(s) discovered by the
+/// graph builder. An empty `Vec` is valid for skills seeded programmatically
+/// (e.g. E2E test fixtures); the retrieval boot adapter falls back to the
+/// configured scope root for those rows so scope matching still works.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LiveGraphSkillRecord {
     pub stable_id: String,
@@ -37,6 +43,9 @@ pub struct LiveGraphSkillRecord {
     pub description: String,
     pub scope: ScopeType,
     pub tags: Vec<String>,
+    /// Real SKILL.md file path(s) for this skill, as absolute path strings.
+    /// Empty for skills that were seeded without a filesystem origin.
+    pub source_paths: Vec<String>,
     pub subunits: Vec<LiveGraphSubunitRecord>,
 }
 
@@ -65,6 +74,10 @@ pub struct PersistedGraphSubunitRecord {
 }
 
 /// Persisted skill projection used by live graph read adapters.
+///
+/// `source_paths` is populated from the `skills.source_paths` column added in
+/// migration 005. Rows written before that migration carry an empty array;
+/// callers must fall back to the configured scope root for those rows.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PersistedGraphSkillRecord {
     pub skill_id: String,
@@ -72,6 +85,9 @@ pub struct PersistedGraphSkillRecord {
     pub description: String,
     pub scope: String,
     pub tags: Vec<String>,
+    /// Real SKILL.md source paths from `skills.source_paths`. Empty for
+    /// pre-migration rows or skills seeded without a filesystem origin.
+    pub source_paths: Vec<String>,
     pub community_id: Option<String>,
     pub subunits: Vec<PersistedGraphSubunitRecord>,
 }
@@ -97,14 +113,26 @@ impl PostgresGraphSnapshotStore {
     }
 
     pub async fn list_skills(&self) -> Result<Vec<PersistedGraphSkillRecord>, RebuildError> {
-        let skill_rows =
-            sqlx::query_as::<_, (String, String, String, Vec<String>, Option<String>, String)>(
-                r#"
+        // source_paths was added in migration 005; pre-migration rows return '{}'.
+        let skill_rows = sqlx::query_as::<
+            _,
+            (
+                String,
+                String,
+                String,
+                Vec<String>,
+                Vec<String>,
+                Option<String>,
+                String,
+            ),
+        >(
+            r#"
             SELECT
                 skills.id::TEXT,
                 skills.name,
                 skills.description,
                 skills.tags,
+                skills.source_paths,
                 communities.id::TEXT,
                 skills.scope
             FROM skills
@@ -115,9 +143,9 @@ impl PostgresGraphSnapshotStore {
             WHERE skills.lifecycle = 'active'
             ORDER BY skills.id
             "#,
-            )
-            .fetch_all(&self.pool)
-            .await?;
+        )
+        .fetch_all(&self.pool)
+        .await?;
 
         let subunit_rows = sqlx::query_as::<_, (String, String, String, String, String)>(
             r#"
@@ -154,17 +182,20 @@ impl PostgresGraphSnapshotStore {
 
         Ok(skill_rows
             .into_iter()
-            .map(|(skill_id, name, description, tags, community_id, scope)| {
-                PersistedGraphSkillRecord {
-                    subunits: subunits_by_skill.remove(&skill_id).unwrap_or_default(),
-                    skill_id,
-                    name,
-                    description,
-                    scope,
-                    tags,
-                    community_id,
-                }
-            })
+            .map(
+                |(skill_id, name, description, tags, source_paths, community_id, scope)| {
+                    PersistedGraphSkillRecord {
+                        subunits: subunits_by_skill.remove(&skill_id).unwrap_or_default(),
+                        skill_id,
+                        name,
+                        description,
+                        scope,
+                        tags,
+                        source_paths,
+                        community_id,
+                    }
+                },
+            )
             .collect())
     }
 
@@ -397,9 +428,9 @@ impl RebuildCoordinator for PostgresRebuildCoordinator {
             sqlx::query(
                 r#"
                 INSERT INTO skills (
-                    id, name, description, scope, status, lifecycle, tags, merged_from_scopes, graph_version
+                    id, name, description, scope, status, lifecycle, tags, source_paths, merged_from_scopes, graph_version
                 ) VALUES (
-                    $1, $2, $3, $4, 'ready', 'active', $5, '{}'::TEXT[], 0
+                    $1, $2, $3, $4, 'ready', 'active', $5, $6, '{}'::TEXT[], 0
                 )
                 "#,
             )
@@ -408,6 +439,7 @@ impl RebuildCoordinator for PostgresRebuildCoordinator {
             .bind(&skill.description)
             .bind(scope_to_db_value(skill.scope))
             .bind(&skill.tags)
+            .bind(&skill.source_paths)
             .execute(&mut *tx)
             .await?;
 

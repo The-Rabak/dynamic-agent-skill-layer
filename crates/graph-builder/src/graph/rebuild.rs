@@ -222,6 +222,9 @@ where
                 description: skill.description.clone(),
                 scope: skill.scope_type,
                 tags: skill.tags.clone(),
+                // Persist the real SKILL.md path so the retrieval boot adapter
+                // can use true provenance instead of the scope-root stand-in.
+                source_paths: vec![skill.source_path.display().to_string()],
                 subunits: skill
                     .subunits
                     .iter()

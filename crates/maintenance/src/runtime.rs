@@ -508,7 +508,9 @@ async fn run_one_tick(
     merge_runner: &mut impl MergePassRunner,
     retirement_runner: &mut impl RetirementPassRunner,
 ) -> Result<(), MaintenanceRuntimeError> {
-    let decision = cron.tick(Utc::now(), merge_runner, retirement_runner).await?;
+    let decision = cron
+        .tick(Utc::now(), merge_runner, retirement_runner)
+        .await?;
     match decision {
         CronDecision::SkippedNotDue { now, next_due_at } => {
             info!(

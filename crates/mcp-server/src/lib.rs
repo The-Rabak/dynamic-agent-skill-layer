@@ -772,10 +772,9 @@ async fn build_graph_from_pg(
         .into_iter()
         .zip(embeddings.into_iter())
         .map(|(record, embedding)| {
-            // Derive scope type, scope_id, and source_paths from the single
-            // `skills.scope` column in one match to prevent the two arms drifting
-            // apart (previously two separate match blocks could disagree).
-            let (scope, scope_id, source_paths) = match record.scope.as_str() {
+            // Derive scope type, scope_id, and the fallback scope-root paths from
+            // the `skills.scope` column in one match so the two arms cannot drift.
+            let (scope, scope_id, fallback_scope_paths) = match record.scope.as_str() {
                 "global" => (
                     domain::ScopeType::Global,
                     "global".to_owned(),
@@ -791,6 +790,28 @@ async fn build_graph_from_pg(
                     "project".to_owned(),
                     project_scope_paths.clone(),
                 ),
+            };
+            // Use the real per-skill SKILL.md provenance from the `source_paths`
+            // column (migration 005). Fall back to the configured scope root for
+            // pre-migration rows whose column value is empty — this matches T01's
+            // stand-in exactly and keeps old graphs scope-matching correctly.
+            let source_paths = if record.source_paths.is_empty() {
+                fallback_scope_paths
+            } else {
+                record
+                    .source_paths
+                    .iter()
+                    .filter_map(|p| {
+                        std::fs::canonicalize(p).ok().or_else(|| {
+                            // The path may not exist on the current host (e.g. the skill
+                            // was built on another machine). Parse the raw string so
+                            // scope matching can still attempt a prefix check; the
+                            // starts_with will simply fail for non-canonical paths, which
+                            // is safer than silently falling back to the scope root.
+                            Some(std::path::PathBuf::from(p))
+                        })
+                    })
+                    .collect()
             };
             // Deterministic prior from real usage: ln(1+count)·e^(-age/30),
             // clamped at 0.15. Zero for cold-start (no usage rows) so unseen

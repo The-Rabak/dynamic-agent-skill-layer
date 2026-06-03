@@ -28,7 +28,8 @@ pub enum CronDecision {
 /// Merge workflow seam for scheduled orchestration.
 #[async_trait]
 pub trait MergePassRunner: Send {
-    async fn run_merge_pass(&mut self, now: DateTime<Utc>) -> Result<Vec<MergeProposal>, CronError>;
+    async fn run_merge_pass(&mut self, now: DateTime<Utc>)
+    -> Result<Vec<MergeProposal>, CronError>;
 }
 
 /// Retirement workflow seam for scheduled orchestration.
