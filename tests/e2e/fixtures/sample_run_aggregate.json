@@ -1,0 +1,300 @@
+{
+  "run_summary": {
+    "total_tests": 3,
+    "passed": 2,
+    "failed": 1,
+    "degraded_passed": 1,
+    "total_duration_ms": 53200,
+    "start_time": "2026-06-03T10:00:00Z",
+    "end_time": "2026-06-03T10:00:53Z",
+    "container_versions": {
+      "pg": "16.3",
+      "qdrant": "1.9.2",
+      "ollama": "0.1.48",
+      "redis": "7.2.5"
+    }
+  },
+  "reports": [
+    {
+      "test_name": "DS-003_dependency_chaos_matrix",
+      "test_id": "20260603100000",
+      "started_at": "2026-06-03T10:00:00Z",
+      "duration_ms": 31500,
+      "outcome": { "status": "Passed" },
+      "sections": [
+        {
+          "name": "healthy_baseline",
+          "status": { "status": "Passed" },
+          "actions": [
+            {
+              "description": "compile_context with prompt 'rust file async' returns Ok|NoMatch at healthy baseline",
+              "status": { "result": "Passed" },
+              "side_effects": [],
+              "duration_ms": 480
+            }
+          ],
+          "duration_ms": 480
+        },
+        {
+          "name": "qdrant_chaos",
+          "status": { "status": "Passed" },
+          "actions": [
+            {
+              "description": "compile_context read path unaffected when qdrant stopped (Option A CQRS)",
+              "status": { "result": "Passed" },
+              "side_effects": [],
+              "duration_ms": 320
+            },
+            {
+              "description": "qdrant_write_side health component degraded as expected",
+              "status": { "result": "Passed" },
+              "side_effects": [],
+              "duration_ms": 110
+            }
+          ],
+          "duration_ms": 430
+        },
+        {
+          "name": "ollama_chaos",
+          "status": { "status": "Passed" },
+          "actions": [
+            {
+              "description": "compile_context returns Degraded when Ollama is stopped",
+              "status": { "result": "Passed" },
+              "side_effects": [],
+              "duration_ms": 18500
+            }
+          ],
+          "duration_ms": 18500
+        },
+        {
+          "name": "full_recovery",
+          "status": { "status": "Passed" },
+          "actions": [
+            {
+              "description": "compile_context returns Ok|NoMatch after full recovery",
+              "status": { "result": "Passed" },
+              "side_effects": [],
+              "duration_ms": 12090
+            }
+          ],
+          "duration_ms": 12090
+        }
+      ],
+      "environment": {
+        "pg_version": "16.3",
+        "qdrant_version": "1.9.2",
+        "ollama_model": "granite4:3b",
+        "redis_version": "7.2.5"
+      },
+      "contract_assertions": [
+        {
+          "contract_name": "cqrs_read_path_survives_qdrant_down",
+          "status": { "result": "Passed" },
+          "details": "compile_context returns Ok|NoMatch with qdrant stopped; Option A CQRS contract verified"
+        },
+        {
+          "contract_name": "qdrant_write_side_health_marker_degraded",
+          "status": { "result": "Passed" },
+          "details": "qdrant_write_side component healthy=false when Qdrant is unreachable"
+        }
+      ],
+      "degradation_events": [
+        {
+          "service": "all",
+          "at": "2026-06-03T10:00:00Z",
+          "recovered": false,
+          "reason": "healthy baseline"
+        },
+        {
+          "service": "qdrant",
+          "at": "2026-06-03T10:00:05Z",
+          "recovered": false,
+          "reason": "qdrant stopped — read path unaffected (Option A CQRS contract)"
+        },
+        {
+          "service": "qdrant_write_side_health",
+          "at": "2026-06-03T10:00:06Z",
+          "recovered": true,
+          "reason": "qdrant_write_side health marker degraded as expected"
+        },
+        {
+          "service": "both",
+          "at": "2026-06-03T10:00:25Z",
+          "recovered": true,
+          "reason": "ollama stopped — Degraded as expected"
+        },
+        {
+          "service": "all",
+          "at": "2026-06-03T10:00:43Z",
+          "recovered": true,
+          "reason": "recovered to healthy"
+        }
+      ],
+      "latency_samples": [
+        { "stage": "compile_context", "duration_ms": 480, "at": "2026-06-03T10:00:00Z" },
+        { "stage": "compile_context", "duration_ms": 320, "at": "2026-06-03T10:00:05Z" },
+        { "stage": "compile_context", "duration_ms": 18500, "at": "2026-06-03T10:00:25Z" },
+        { "stage": "compile_context", "duration_ms": 12090, "at": "2026-06-03T10:00:43Z" }
+      ]
+    },
+    {
+      "test_name": "DS-004_outbox_backlog_replay",
+      "test_id": "20260603100031",
+      "started_at": "2026-06-03T10:00:31Z",
+      "duration_ms": 14800,
+      "outcome": { "status": "Passed" },
+      "sections": [
+        {
+          "name": "seed_and_version",
+          "status": { "status": "Passed" },
+          "actions": [
+            {
+              "description": "seed 3 skills via rebuild_coordinator; graph_version advances",
+              "status": { "result": "Passed" },
+              "side_effects": [
+                { "kind": "DbRowInserted", "table": "live_graph_skills" },
+                { "kind": "DbRowInserted", "table": "live_graph_skills" },
+                { "kind": "DbRowInserted", "table": "live_graph_skills" },
+                { "kind": "EventPublished", "event_type": "graph.rebuilt" }
+              ],
+              "duration_ms": 4200
+            }
+          ],
+          "duration_ms": 4200
+        },
+        {
+          "name": "extraction_flow",
+          "status": { "status": "Passed" },
+          "actions": [
+            {
+              "description": "extract_session attempt 1 — submission accepted",
+              "status": { "result": "Passed" },
+              "side_effects": [
+                { "kind": "EventPublished", "event_type": "extraction.attempted" }
+              ],
+              "duration_ms": 1100
+            },
+            {
+              "description": "extract_session completed — .pending draft written",
+              "status": { "result": "Passed" },
+              "side_effects": [
+                { "kind": "EventPublished", "event_type": "extraction.completed" },
+                { "kind": "DbRowInserted", "table": "skill_proposals.pending" }
+              ],
+              "duration_ms": 16800
+            }
+          ],
+          "duration_ms": 17900
+        },
+        {
+          "name": "fresh_restart_and_replay",
+          "status": { "status": "Passed" },
+          "actions": [
+            {
+              "description": "fresh McpServerApp recovers graph_version from pg; compile_context Ok|NoMatch",
+              "status": { "result": "Passed" },
+              "side_effects": [],
+              "duration_ms": 8300
+            }
+          ],
+          "duration_ms": 8300
+        }
+      ],
+      "environment": {
+        "pg_version": "16.3",
+        "qdrant_version": "1.9.2",
+        "ollama_model": "granite4:3b",
+        "redis_version": "7.2.5"
+      },
+      "contract_assertions": [
+        {
+          "contract_name": "outbox_replay_durability",
+          "status": { "result": "Passed" },
+          "details": "graph_version before=4, after=5; outbox events replayed without loss after fresh start"
+        }
+      ],
+      "degradation_events": [],
+      "latency_samples": [
+        { "stage": "seed", "duration_ms": 4200, "at": "2026-06-03T10:00:31Z" },
+        { "stage": "extraction", "duration_ms": 16800, "at": "2026-06-03T10:00:32Z" },
+        { "stage": "compile_context", "duration_ms": 8300, "at": "2026-06-03T10:00:48Z" }
+      ]
+    },
+    {
+      "test_name": "DS-005_qdrant_pg_drift",
+      "test_id": "20260603100046",
+      "started_at": "2026-06-03T10:00:46Z",
+      "duration_ms": 6900,
+      "outcome": {
+        "status": "Failed",
+        "reason": "qdrant_pg_drift reconciliation assertion timed out"
+      },
+      "sections": [
+        {
+          "name": "seed_drift_skills",
+          "status": { "status": "Passed" },
+          "actions": [
+            {
+              "description": "seed 2 drift-detection skills",
+              "status": { "result": "Passed" },
+              "side_effects": [
+                { "kind": "DbRowInserted", "table": "live_graph_skills" },
+                { "kind": "DbRowInserted", "table": "live_graph_skills" }
+              ],
+              "duration_ms": 2100
+            }
+          ],
+          "duration_ms": 2100
+        },
+        {
+          "name": "reconciliation_check",
+          "status": {
+            "status": "Failed",
+            "reason": "expected qdrant vectors == pg skills within 5s; timed out after 6s"
+          },
+          "actions": [
+            {
+              "description": "compile_context returns Ok|NoMatch after seed",
+              "status": { "result": "Passed" },
+              "side_effects": [],
+              "duration_ms": 390
+            },
+            {
+              "description": "qdrant vector count matches pg skill count within 5s deadline",
+              "status": {
+                "result": "Failed",
+                "expected": "vector_count == 2",
+                "actual": "vector_count == 1 after 6s"
+              },
+              "side_effects": [],
+              "duration_ms": 6000
+            }
+          ],
+          "duration_ms": 6390
+        }
+      ],
+      "environment": {
+        "pg_version": "16.3",
+        "qdrant_version": "1.9.2",
+        "ollama_model": "granite4:3b",
+        "redis_version": "7.2.5"
+      },
+      "contract_assertions": [
+        {
+          "contract_name": "qdrant_pg_drift",
+          "status": {
+            "result": "Failed",
+            "expected": "vector_count == pg_skill_count",
+            "actual": "vector_count < pg_skill_count after reconciliation window"
+          },
+          "details": "graph_version=5; Qdrant vector count lagged PG after 6s reconciliation window"
+        }
+      ],
+      "degradation_events": [],
+      "latency_samples": [
+        { "stage": "compile_context", "duration_ms": 390, "at": "2026-06-03T10:00:47Z" }
+      ]
+    }
+  ]
+}

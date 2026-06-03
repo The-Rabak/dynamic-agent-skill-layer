@@ -9,7 +9,7 @@ brainstorm_ref: docs/brainstorms/2026-05-21-compiled-context-layer-skill-rae-bra
 started: 2026-06-03T23:01:32Z
 status: in_progress
 execution_shape: vertical-slices
-current_unit: 2
+current_unit: 3
 total_units: 3
 session_id: work-2026-06-03-230132
 batch: 9
@@ -58,8 +58,8 @@ As a solo developer who deploys the skill layer with `docker compose up`, I need
 | # | Unit | Kind | Serves / Unlocks | Status | Attempts | Session File |
 |---|------|------|------------------|--------|----------|--------------|
 | 1 | Unblock & green the live suite (teardown drain, clippy, DS-003 rewrite, burst rebalance, timing de-flake, ignored-reasons) | hardening | SC-V1.5-E, SC-V1.5-F | completed | 1 | unit-01-green-live-suite.md |
-| 2 | Human-readable run summary (`latest-summary.md`) | hardening | SC-V1.5-E (adoption proof) | in_progress | -- | -- |
-| 3 | CI gate + purity check + retire all V1.5 rollback flags (HUMAN GATE) | hardening | SC-V1.5-E, SC-V1.5-F | pending | -- | -- |
+| 2 | Human-readable run summary (`latest-summary.md`) | hardening | SC-V1.5-E (adoption proof) | completed | 1 | unit-02-run-summary.md |
+| 3 | CI gate + purity check + retire all V1.5 rollback flags (HUMAN GATE) | hardening | SC-V1.5-E, SC-V1.5-F | in_progress | -- | -- |
 
 ## Learnings Brief
 - [mcp-server] `LiveServerComponents::teardown` must drain the background usage writer (close sender → abort → await) BEFORE `truncate_all_tables`; the writer holds `RowExclusive` locks until it exits, deadlocking against `TRUNCATE … CASCADE`. Production hot-path write behavior is unchanged.
