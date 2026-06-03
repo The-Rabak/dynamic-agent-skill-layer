@@ -2,7 +2,7 @@
 ticket_id: T10
 title: Turn the 12 live tests + DS-003…007 green and CI-gate them
 kind: hardening # tracer-bullet | expansion | hardening | infra-track | fix-batch
-status: ready # ready | in_progress | blocked | completed
+status: completed # ready | in_progress | blocked | completed (done 2026-06-04, session work-2026-06-03-230132, 3 sub-units)
 plan_ref: docs/plans/2026-05-31-feat-skill-layer-v1-5-close-the-loop-plan.md
 tickets_ref: docs/tickets/2026-05-31-skill-layer-v1-5/index.md
 architecture_ref: docs/architecture/2026-05-31-skill-layer-v1-5-close-the-loop-architecture.md
@@ -40,18 +40,18 @@ tdd_mode: inherit
 Only DS-003…007 + the 12 live tests are in V1.5's green bar. **MUST NOT start until T01, T02, T05, T06, T08, T09 are each individually green.** Touches `scripts/run-e2e-tests.sh` only to add the CI gate stanza — the port/env lines are owned by T08.
 
 ## Acceptance Criteria
-- [ ] `run-e2e-tests.sh --include-dream` is green on live containers.
-- [ ] CI runs the live suite (or a documented subset) and fails on regression. Use a dedicated GitHub Actions `live-e2e` job with service-container healthchecks, `--test-threads=1` for the docker stop/start dream tests, a ~20min timeout, and report-artifact upload on failure.
-- [ ] **DS-003 rewritten to the Option-A contract (defined in T03):** with Qdrant stopped, assert `compile_context` still returns `Ok`/`NoMatch` (read path unaffected) AND the health map shows `qdrant_write_side` degraded — NOT a `Degraded` read result. Positive CQRS-resilience proof, not `#[ignore]`. No eager per-request Qdrant check (protects <500ms). See WHY Reassessment R-5.
-- [ ] Fix DS-004 restart/version monotonicity; DS-006/007 concurrency budgets.
-- [ ] Replace fixed `sleep()` calls in dream tests with bounded readiness-polling (backoff, ~30s cap) to de-flake docker stop/start timing.
-- [ ] The bulk runner doesn't mix panic-stubs with promoted tests.
-- [ ] Every still-ignored contract has a one-line logged reason (no silent truncation).
-- [ ] `run-e2e-tests.sh --include-dream` emits `tests/e2e/reports/latest-summary.md` alongside JSON reports. The summary includes green/red status, p50/p95/p99 latency where available, graph_version progression, extraction attempts/completions, pending draft count, degraded/recovery events, and ignored dream contracts with reasons.
-- [ ] CI uploads `latest-summary.md` as a report artifact on success and failure, so the live-suite proof is readable without opening raw JSON.
-- [ ] **CI purity gate:** the workflow runs `cargo tree -p domain --depth 1` and `cargo tree -p retrieval --depth 1` and fails if `sqlx`/`redis`/`qdrant` appear (enforces the architecture boundary that `domain`/`retrieval` stay infra-free).
-- [ ] **Scope-line ownership (shared `run-e2e-tests.sh`):** this ticket appends ONLY the CI gate stanza; the port/env lines (owned by T08) are left unchanged — verify via diff that no `QDRANT_URL`/port line is touched here.
-- [ ] **All env rollback flags introduced in V1.5 are removed here once the suite is green** (`MCP_RETRIEVAL_MODE`, `MCP_GRAPH_REFRESH`, `MCP_USAGE_LOGGING`, `MCP_TRANSCRIPT_RECONCILE` — the `remove-after-v1.5-green` trigger).
+- [x] `run-e2e-tests.sh --include-dream` is green on live containers. — Unit 1 (targeted live tests green under DEFAULT config: roundtrip 5/5, DS-003…007, concurrency burst, watcher churn) + full `--include-dream` proof (session work-2026-06-03-230132).
+- [x] CI runs the live suite (or a documented subset) and fails on regression. — `.github/workflows/live-e2e.yml`: dedicated `live-e2e` job, service stack via `docker-compose.test.yml` + healthchecks, `--test-threads=1` (runner-owned for dream tests), `timeout-minutes: 20`, artifact upload on success AND failure. Non-zero suite exit fails the job. (First actual CI run executes on merge.) — Unit 3
+- [x] **DS-003 rewritten to the Option-A contract:** Qdrant stopped ⇒ `compile_context` `Ok`/`NoMatch` AND `qdrant_write_side` degraded; not `#[ignore]`; no eager per-request Qdrant check. — Unit 1 (`dependency_chaos_matrix`; orchestrator re-verified live 5.12s)
+- [x] Fix DS-004 restart/version monotonicity; DS-006/007 concurrency budgets. — Unit 1 (promoted dream contracts green: outbox_backlog_replays, qdrant_pg_drift, sustained_watcher, high_qps)
+- [x] Replace fixed `sleep()` calls in dream tests with bounded readiness-polling (backoff, ~30s cap). — Unit 1
+- [x] The bulk runner doesn't mix panic-stubs with promoted tests. — Unit 1 (promoted tests separated from `#[ignore]` dream-state stubs)
+- [x] Every still-ignored contract has a one-line logged reason (no silent truncation). — Unit 1 (`#[ignore = "…"]` reasons) + Unit 2 (generator surfaces them, flags any missing reason)
+- [x] `run-e2e-tests.sh --include-dream` emits `tests/e2e/reports/latest-summary.md` with status, p50/p95/p99 latency, graph_version progression, extraction attempts/completions, pending draft count, degraded/recovery events, ignored contracts+reasons. — Unit 2 (`scripts/generate-e2e-summary.py`) + Unit 3 (runner step)
+- [x] CI uploads `latest-summary.md` as a report artifact on success and failure. — Unit 3 (`if: always()` artifact upload of summary + JSON)
+- [x] **CI purity gate:** workflow runs `cargo tree -p domain`/`-p retrieval` and fails if `sqlx`/`redis`/`qdrant` appear. — Unit 3 (both currently PURE)
+- [x] **Scope-line ownership (shared `run-e2e-tests.sh`):** appends ONLY the summary/CI step; T08's port/env lines unchanged (verified by diff). — Unit 3
+- [x] **All env rollback flags removed** (`MCP_RETRIEVAL_MODE`, `MCP_GRAPH_REFRESH`, `MCP_USAGE_LOGGING`, `MCP_TRANSCRIPT_RECONCILE`→shipped as `MAINTENANCE_TRANSCRIPT_DRAIN` + `ScopeRoot` alias). — Unit 3 (`grep remove-after-v1.5-green` = 0; human-gate approved 2026-06-04)
 
 ## Shared / Global Notes
 - **Infrastructure configuration change — HUMAN GATE:** CI workflow + the `run-e2e-tests.sh` CI stanza are infra-config; stage and confirm.
