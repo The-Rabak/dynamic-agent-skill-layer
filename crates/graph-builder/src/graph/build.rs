@@ -3,14 +3,14 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use domain::ScopeType;
+use domain::{ScopeRoot, ScopeType};
 use thiserror::Error;
 use walkdir::WalkDir;
 
 use crate::{
     extraction::{ExtractedSubunit, extract_skill},
     graph::embeddings::EmbeddingGenerator,
-    watcher::{ScopeRoot, is_active_skill_file},
+    watcher::is_active_skill_file,
 };
 
 #[derive(Debug, Clone, PartialEq)]

@@ -26,14 +26,6 @@ pub const DEFAULT_CRON_INTERVAL_SECS: u64 = 60;
 pub const CRON_INTERVAL_ENV: &str = "MAINTENANCE_CRON_INTERVAL_SECS";
 pub const RUN_ONCE_ENV: &str = "MAINTENANCE_RUN_ONCE";
 
-/// Rollback flag: set `MAINTENANCE_TRANSCRIPT_DRAIN=off` to disable the durable
-/// transcript-ingest queue drain (folds the T07 reconcile flag).
-///
-// TODO(remove-after-v1.5-green): delete this flag and always run the drain once
-// the queue path is proven in deployment. Removal criterion: first green CI on
-// `main` with the self-growth loop (SC-B) exercised end-to-end through the queue.
-pub const TRANSCRIPT_DRAIN_FLAG: &str = "MAINTENANCE_TRANSCRIPT_DRAIN";
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct MaintenanceWorkerConfig {
     pub cron_interval: Duration,
@@ -423,23 +415,14 @@ pub async fn run_maintenance_worker_from_environment() -> Result<(), Maintenance
     .await
 }
 
-/// Builds the transcript-queue drain, or `None` when disabled or unconstructable.
+/// Builds the transcript-queue drain, or `None` when unconstructable.
 ///
 /// Returns `None` (degraded, but the worker still runs merge/retire) when the
-/// rollback flag is `off` or when the extractor cannot be built from the
-/// environment — e.g. `CLAUDE_TRANSCRIPT_ROOT` / `SKILL_GLOBAL_PATHS` not
-/// configured on the maintenance container. The drain only ever uses
-/// `transcript_inline`, so the transcript root is never read; it is required
-/// solely by `SessionExtractor::from_environment`'s construction contract.
+/// extractor cannot be built from the environment — e.g. `CLAUDE_TRANSCRIPT_ROOT`
+/// / `SKILL_GLOBAL_PATHS` not configured on the maintenance container. The drain
+/// only ever uses `transcript_inline`, so the transcript root is never read; it is
+/// required solely by `SessionExtractor::from_environment`'s construction contract.
 fn build_transcript_drain(pg_adapter: &PostgresAdapter) -> Option<TranscriptQueueDrain> {
-    if std::env::var(TRANSCRIPT_DRAIN_FLAG).as_deref() == Ok("off") {
-        warn!(
-            flag = TRANSCRIPT_DRAIN_FLAG,
-            "transcript ingest queue drain disabled by rollback flag"
-        );
-        return None;
-    }
-
     let extractor = match SessionExtractor::from_environment() {
         Ok(extractor) => extractor,
         Err(error) => {

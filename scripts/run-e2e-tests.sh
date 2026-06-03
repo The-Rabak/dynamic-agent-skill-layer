@@ -182,6 +182,9 @@ else
   echo '{"run_summary":{"total_tests":0,"passed":0,"failed":0,"degraded_passed":0,"total_duration_ms":0,"start_time":"","end_time":"","container_versions":{}},"reports":[]}' > "${AGGREGATE_REPORT}"
 fi
 
+echo "==> Generating human-readable run summary"
+python3 "${SCRIPT_DIR}/generate-e2e-summary.py" 2>&1 || echo "Warning: summary generation failed (non-fatal)"
+
 echo "==> Running judge contract validation"
 JUDGE_REPORT="${REPORTS_DIR}/judge_evaluation.json"
 python3 -c "

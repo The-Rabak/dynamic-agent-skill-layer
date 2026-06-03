@@ -4,8 +4,8 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use domain::ScopeType;
-use graph_builder::{ScopeRoot, graph::build::build_skills_from_scope_roots};
+use domain::{ScopeRoot, ScopeType};
+use graph_builder::graph::build::build_skills_from_scope_roots;
 use maintenance::{
     MergeProposalWriter, SkillSnapshot, merge_verifier::TextOverlapMergeSemanticVerifier,
 };

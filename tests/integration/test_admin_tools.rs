@@ -16,8 +16,7 @@ use admin::tools::{
 };
 use async_trait::async_trait;
 use chrono::Utc;
-use domain::ScopeType;
-use graph_builder::ScopeRoot;
+use domain::{ScopeRoot, ScopeType};
 use infrastructure::{
     LiveGraphSnapshotMutation, PostgresAdapter, PostgresConfig, RebuildCoordinator, RebuildError,
 };

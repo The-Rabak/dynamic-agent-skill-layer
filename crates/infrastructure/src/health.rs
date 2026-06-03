@@ -238,17 +238,10 @@ impl DependencyFactory {
         }
 
         // Surface usage-write state on /health so agents can observe it without
-        // waiting for a compile_context call. Three states:
-        //   "disabled" — MCP_USAGE_LOGGING=off; no rows written (rollback flag active)
-        //   "enabled"  — writer will be spawned; actual write health is updated at runtime
-        // The disabled state is the only startup-time signal; "enabled" is a best-effort
-        // startup assertion (actual failures surface via compile_context health markers).
-        let usage_logging_off = std::env::var("MCP_USAGE_LOGGING").as_deref() == Ok("off");
-        checker = if usage_logging_off {
-            checker.with_static_component("usage_write", true, "disabled")
-        } else {
-            checker.with_static_component("usage_write", true, "enabled")
-        };
+        // waiting for a compile_context call. The startup-time signal is always
+        // "enabled" — the writer is unconditionally spawned on the live boot path.
+        // Actual write failures surface at runtime via compile_context health markers.
+        checker = checker.with_static_component("usage_write", true, "enabled");
 
         // Surface the active extraction provider on /health so agents can query
         // provider configuration pre-flight without enqueuing a job. Falls back to
@@ -291,17 +284,7 @@ impl DependencyFactory {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Mutex;
-
     use super::*;
-
-    /// Serializes tests that mutate the process-wide `MCP_USAGE_LOGGING` env var.
-    ///
-    /// `std::env::set_var` / `remove_var` are process-global and unsound when
-    /// called from concurrent threads. Tests that touch `MCP_USAGE_LOGGING` must
-    /// hold this lock for their entire duration (set → run → unset) to prevent
-    /// a racing sibling test from reading a contaminated env state.
-    static USAGE_LOGGING_ENV_LOCK: Mutex<()> = Mutex::new(());
 
     #[tokio::test]
     async fn empty_health_checker_reports_healthy_with_no_components() {
@@ -379,65 +362,13 @@ mod tests {
         assert_eq!(provider.detail, "ollama");
     }
 
-    /// Proves that `build_health_checker_from_environment` injects `usage_write: "disabled"`
-    /// when `MCP_USAGE_LOGGING=off` and `usage_write: "enabled"` otherwise.
+    /// Proves that `build_health_checker_from_environment` always injects
+    /// `usage_write: "enabled"` — usage writing is unconditionally on.
     ///
-    /// Guards the three-state contract (disabled / enabled / failed): an agent must be
-    /// able to distinguish `disabled` from `healthy` on the `/health` endpoint.
-    ///
-    /// Holds `USAGE_LOGGING_ENV_LOCK` for the full duration to prevent concurrent tests
-    /// from racing on the process-global `MCP_USAGE_LOGGING` env var.
+    /// The startup-time health signal is always "enabled"; actual write failures
+    /// surface at runtime via compile_context health markers.
     #[test]
-    fn build_health_checker_injects_usage_write_disabled_when_flag_is_off() {
-        let _env_lock = USAGE_LOGGING_ENV_LOCK
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-
-        // SAFETY: held under USAGE_LOGGING_ENV_LOCK for the full set→check→unset window.
-        unsafe {
-            std::env::set_var("MCP_USAGE_LOGGING", "off");
-        }
-        let checker = DependencyFactory::build_health_checker_from_environment();
-        unsafe {
-            std::env::remove_var("MCP_USAGE_LOGGING");
-        }
-
-        // The static components are stored in config_invalid_components (the field
-        // shared for pre-check components). We do a synchronous inspection via the
-        // public check() path but use a blocking executor since we only need the
-        // startup-time static values.
-        let report = tokio::runtime::Builder::new_current_thread()
-            .build()
-            .expect("tokio rt")
-            .block_on(checker.check());
-
-        let usage = report
-            .components
-            .iter()
-            .find(|c| c.name == "usage_write")
-            .expect("usage_write must be present in /health output");
-        assert_eq!(
-            usage.detail, "disabled",
-            "usage_write detail must be 'disabled' when MCP_USAGE_LOGGING=off"
-        );
-    }
-
-    /// Proves that `build_health_checker_from_environment` injects `usage_write: "enabled"`
-    /// when the rollback flag is not set.
-    ///
-    /// Holds `USAGE_LOGGING_ENV_LOCK` so this test cannot race with the `_when_flag_is_off`
-    /// sibling that sets `MCP_USAGE_LOGGING=off`.
-    #[test]
-    fn build_health_checker_injects_usage_write_enabled_when_flag_is_not_set() {
-        let _env_lock = USAGE_LOGGING_ENV_LOCK
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-
-        // Ensure flag is absent.
-        // SAFETY: held under USAGE_LOGGING_ENV_LOCK for the full remove→check window.
-        unsafe {
-            std::env::remove_var("MCP_USAGE_LOGGING");
-        }
+    fn build_health_checker_always_injects_usage_write_enabled() {
         let checker = DependencyFactory::build_health_checker_from_environment();
 
         let report = tokio::runtime::Builder::new_current_thread()
@@ -452,7 +383,7 @@ mod tests {
             .expect("usage_write must be present in /health output");
         assert_eq!(
             usage.detail, "enabled",
-            "usage_write detail must be 'enabled' when MCP_USAGE_LOGGING is not set"
+            "usage_write must always be 'enabled' — no rollback flag exists"
         );
     }
 }

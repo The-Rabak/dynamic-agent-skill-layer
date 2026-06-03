@@ -79,8 +79,7 @@ pub struct McpServerApp {
     transcript_ingest: Option<TranscriptIngestQueue>,
     /// Sender side of the bounded channel feeding the background usage writer (T06).
     ///
-    /// `None` when usage logging is disabled (`MCP_USAGE_LOGGING=off`) or when the
-    /// server was constructed without a Postgres pool (test/in-memory constructors).
+    /// `None` only for in-memory/test constructors that do not wire a Postgres pool.
     /// When `None`, no usage rows are written and the health marker stays `"ok"`.
     usage_sender: Option<mpsc::Sender<SessionUsageRecord>>,
     /// Shared health cell for the usage-write observability seam (T06).
@@ -136,30 +135,24 @@ impl McpServerApp {
     ///
     /// Spawns the bounded-channel writer task and stores the sender so every
     /// `compile_context` call can post usage records off the hot path. Builder-style
-    /// so test/in-memory constructors stay free of Postgres. When not called (or when
-    /// `MCP_USAGE_LOGGING=off`), usage writes are silently skipped and the health
-    /// marker stays `"ok"`.
+    /// so test/in-memory constructors stay free of Postgres. When not called,
+    /// usage writes are silently skipped and the health marker stays `"ok"`.
     ///
-    /// Returns `Option<JoinHandle<()>>` so the caller (e.g. `build_live_server`) can
-    /// stash the handle on `LiveServerComponents` for deterministic drain during
-    /// teardown. Dropping the sender signals end-of-channel; awaiting the handle waits
-    /// for the last in-flight write to complete — must be done BEFORE `TRUNCATE` to
+    /// Returns a `JoinHandle<()>` that the caller (e.g. `build_live_server`) can
+    /// stash on `LiveServerComponents` for deterministic drain during teardown.
+    /// Dropping the sender signals end-of-channel; awaiting the handle waits for
+    /// the last in-flight write to complete — must be done BEFORE `TRUNCATE` to
     /// avoid the RowExclusive vs ACCESS EXCLUSIVE deadlock.
     pub fn with_usage_writer(
         mut self,
         writer: Arc<dyn UsagePersistencePort>,
-    ) -> (Self, Option<tokio::task::JoinHandle<()>>) {
+    ) -> (Self, tokio::task::JoinHandle<()>) {
         let health = self.usage_write_health.clone();
-        let join_handle = if let Some(UsageWriterHandle {
+        let UsageWriterHandle {
             sender,
             join_handle,
-        }) = spawn_usage_writer(writer, health)
-        {
-            self.usage_sender = Some(sender);
-            Some(join_handle)
-        } else {
-            None
-        };
+        } = spawn_usage_writer(writer, health);
+        self.usage_sender = Some(sender);
         (self, join_handle)
     }
 
@@ -266,18 +259,14 @@ impl McpServerApp {
         // Inject the usage-write health marker into the response so the
         // observability seam is visible to callers.
         //
-        // Three distinct states are emitted:
-        //   "ok"       — writer active and last write succeeded (key suppressed for brevity)
-        //   "disabled" — MCP_USAGE_LOGGING=off; usage_sender is None; no rows written
-        //   "failed"   — writer active but last write or channel post failed
+        // Two runtime states are emitted:
+        //   "ok"     — writer active and last write succeeded (key suppressed for brevity)
+        //   "failed" — writer active but last write or channel post failed
         //
-        // "disabled" is always injected (not absent) so an agent can distinguish it
-        // from "healthy" when the rollback flag is in effect.
-        let usage_health = if self.usage_sender.is_none() {
-            "disabled".to_owned()
-        } else {
-            read_usage_write_health(&self.usage_write_health)
-        };
+        // The key is only injected when non-ok so healthy responses stay compact.
+        // Usage writes are always on — `usage_sender` is `None` only for in-memory
+        // test constructors that do not wire a Postgres pool.
+        let usage_health = read_usage_write_health(&self.usage_write_health);
         if usage_health != "ok" {
             response.health.insert(
                 usage_writer::USAGE_WRITE_HEALTH_KEY.to_owned(),
@@ -421,10 +410,11 @@ pub struct LiveServerComponents {
     pub rebuild_coordinator: Arc<PostgresRebuildCoordinator>,
     /// Join handle for the background usage-writer task.
     ///
-    /// `None` when usage logging was disabled at boot. Teardown must drop
-    /// `app.usage_sender` then await this handle before calling `truncate_all_tables`.
+    /// Only present in test/test-utils builds (elided via `#[cfg]` in production).
+    /// Teardown must drop `app.usage_sender` then await this handle before calling
+    /// `truncate_all_tables` to release RowExclusive locks held by in-flight writes.
     #[cfg(any(test, feature = "test-utils"))]
-    pub usage_writer_join_handle: Option<tokio::task::JoinHandle<()>>,
+    pub usage_writer_join_handle: tokio::task::JoinHandle<()>,
 }
 
 impl LiveServerComponents {
@@ -449,13 +439,13 @@ impl LiveServerComponents {
         // Drop the sender (signals channel closure to the writer task) then abort and
         // await the task handle (ensures the task is no longer holding DB locks).
         self.app.close_usage_sender();
-        if let Some(handle) = self.usage_writer_join_handle.take() {
+        {
             // Abort-and-await is safe: the task caught all Result paths and never
             // holds application state that requires graceful flushing. The abort
             // ensures we do not wait indefinitely if a write is in progress; the
             // await guarantees the OS-level task resources are reclaimed.
-            handle.abort();
-            let _ = handle.await;
+            self.usage_writer_join_handle.abort();
+            let _ = self.usage_writer_join_handle.await;
         }
 
         if let Err(e) = self.pg_adapter.truncate_all_tables().await {
@@ -546,18 +536,19 @@ async fn build_live_server(
     // Wire the background usage writer so compile_context records usage (T06).
     // In test/test-utils builds the join handle is stashed on `LiveServerComponents`
     // so teardown can drain the writer before TRUNCATE (prevents deadlock). In
-    // production builds the handle variable is elided via #[cfg].
+    // production builds the handle is intentionally dropped — the process runs
+    // until OS exit; the OS reclaims the task at that point.
     #[cfg(any(test, feature = "test-utils"))]
     let (app, usage_writer_join_handle) = app_builder.with_usage_writer(usage_writer);
     #[cfg(not(any(test, feature = "test-utils")))]
-    let (app, _usage_writer_join_handle) = app_builder.with_usage_writer(usage_writer);
+    let (app, _) = app_builder.with_usage_writer(usage_writer);
 
     // Online refresh-without-restart (T02): subscribe to `graph.rebuilt`
     // and atomically swap the in-memory read model. Spawned on its own
-    // task so it never blocks the HTTP server; gated by a rollback flag.
+    // task so it never blocks the HTTP server.
     // T06: pass the usage_sample_store so graph refreshes also populate
     // the deterministic usage prior.
-    spawn_graph_refresh_if_enabled(
+    spawn_graph_refresh_subscriber(
         redis_streams.clone(),
         pg_adapter.clone(),
         embedding_service.clone(),
@@ -573,6 +564,8 @@ async fn build_live_server(
         redis_adapter: redis_streams,
         pg_adapter,
         rebuild_coordinator: Arc::new(rebuild_coordinator),
+        // `usage_writer_join_handle` is defined only in test/test-utils builds
+        // so the production binary never carries a reference to the task handle.
         #[cfg(any(test, feature = "test-utils"))]
         usage_writer_join_handle,
     })
@@ -659,14 +652,6 @@ fn scope_paths_from_env(name: &str) -> Vec<std::path::PathBuf> {
         .collect()
 }
 
-/// Rollback flag: set `MCP_GRAPH_REFRESH=off` to disable the online subscriber
-/// and fall back to boot-only graph loading.
-///
-// TODO(remove-after-v1.5-green): delete this flag and always-spawn the
-// subscriber once the online refresh path is proven. Removal criterion: first
-// green CI on `main`.
-const GRAPH_REFRESH_FLAG: &str = "MCP_GRAPH_REFRESH";
-
 /// Reloads the bounded PG snapshot and atomically swaps it into the live
 /// retriever, reusing the SAME [`build_graph_from_pg`] loader used at boot
 /// (caps at 5000, reads the real `graph_version`, populates `source_paths`).
@@ -704,25 +689,17 @@ impl GraphReloader for PostgresGraphReloader {
     }
 }
 
-/// Spawns the graph-refresh subscriber unless rolled back via [`GRAPH_REFRESH_FLAG`].
+/// Spawns the graph-refresh subscriber on a detached Tokio task.
 ///
 /// Runs on a detached Tokio task so a slow/failed reload never blocks request
 /// handling. Returns immediately; the loop owns its own backoff/reconnect.
-fn spawn_graph_refresh_if_enabled(
+fn spawn_graph_refresh_subscriber(
     redis_streams: Arc<RedisStreamsAdapter>,
     pg_adapter: Arc<PostgresAdapter>,
     embedding_service: Arc<OllamaEmbeddingService>,
     retriever: Arc<RetrievalOrchestrator<OllamaEmbeddingService>>,
     usage_sample_store: Arc<PostgresUsageSampleStore>,
 ) {
-    if std::env::var(GRAPH_REFRESH_FLAG).as_deref() == Ok("off") {
-        warn!(
-            flag = GRAPH_REFRESH_FLAG,
-            "graph refresh subscriber disabled by rollback flag; graph is boot-only"
-        );
-        return;
-    }
-
     let reloader: Arc<dyn GraphReloader> = Arc::new(PostgresGraphReloader {
         pg_adapter,
         embedding_service,

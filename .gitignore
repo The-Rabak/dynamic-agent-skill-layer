@@ -1,6 +1,9 @@
 /target
 /.env
-.github/
+# Ignore the locally-installed compound-engineering plugin under .github
+# (agents/, skills/, copilot configs) but DO track real CI workflows.
+.github/*
+!.github/workflows/
 docs/plans/
 todos/
 crates/tests/e2e/reports/

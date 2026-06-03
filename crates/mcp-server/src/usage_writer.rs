@@ -12,13 +12,6 @@
 //! dropped and the health marker is set to `"failed"`. Raw `tokio::spawn` is
 //! intentionally avoided: panics inside a raw spawn vanish silently; the
 //! background task here catches all `Result::Err` paths explicitly.
-//!
-//! # Feature gate
-//!
-//! The `MCP_USAGE_LOGGING` environment variable controls whether usage is
-//! recorded. When set to `"off"` the writer is not spawned and no usage rows
-//! are written. The observability seam (warn + health marker on failure) is
-//! always active regardless of this flag.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, Ordering};
@@ -35,13 +28,6 @@ pub const USAGE_WRITE_HEALTH_KEY: &str = "usage_write";
 /// 128 is chosen to absorb short bursts during graph refresh while keeping
 /// memory overhead negligible (each `SessionUsageRecord` is O(skills) small).
 pub const USAGE_WRITE_CHANNEL_CAPACITY: usize = 128;
-
-/// Rollback flag: set `MCP_USAGE_LOGGING=off` to disable usage recording.
-///
-// TODO(remove-after-v1.5-green): delete this flag once usage recording is
-// proven stable in production. Removal criterion: first green CI on `main`
-// with usage rows confirmed in the live DB.
-pub const USAGE_LOGGING_FLAG: &str = "MCP_USAGE_LOGGING";
 
 /// Atomic encoding for the two runtime usage-write health states.
 ///
@@ -115,9 +101,9 @@ pub struct UsageWriterHandle {
 
 /// Spawns the background usage-writer task and returns a [`UsageWriterHandle`].
 ///
-/// Returns `None` when usage logging is disabled via [`USAGE_LOGGING_FLAG`].
 /// The caller (`McpServerApp`) stores the sender as `Option<mpsc::Sender<…>>`
-/// and uses `try_send` on the hot path; a `None` means no write is attempted.
+/// and uses `try_send` on the hot path; a `None` caller-side means no pool was
+/// wired (in-memory / test constructors only — production always wires a pool).
 ///
 /// The background task runs until the sender side is dropped (server shutdown).
 /// All failures are logged and update the shared health cell — they are never
@@ -132,15 +118,7 @@ pub struct UsageWriterHandle {
 pub fn spawn_usage_writer(
     writer: Arc<dyn UsagePersistencePort>,
     health: UsageWriteHealth,
-) -> Option<UsageWriterHandle> {
-    if std::env::var(USAGE_LOGGING_FLAG).as_deref() == Ok("off") {
-        warn!(
-            flag = USAGE_LOGGING_FLAG,
-            "usage logging disabled by rollback flag; no usage rows will be written"
-        );
-        return None;
-    }
-
+) -> UsageWriterHandle {
     let (tx, mut rx) = mpsc::channel::<SessionUsageRecord>(USAGE_WRITE_CHANNEL_CAPACITY);
     let health_clone = health.clone();
 
@@ -155,10 +133,10 @@ pub fn spawn_usage_writer(
         }
     });
 
-    Some(UsageWriterHandle {
+    UsageWriterHandle {
         sender: tx,
         join_handle,
-    })
+    }
 }
 
 /// Posts a usage record to the background writer channel.
@@ -235,8 +213,7 @@ mod tests {
     async fn write_failure_sets_health_marker_to_failed_and_never_propagates() {
         let health = new_usage_write_health();
         let writer = Arc::new(FailingUsageWriter);
-        let handle = spawn_usage_writer(writer, health.clone())
-            .expect("writer should be spawned when flag is not off");
+        let handle = spawn_usage_writer(writer, health.clone());
 
         post_usage_record(&handle.sender, sample_record(), &health);
 
@@ -280,7 +257,7 @@ mod tests {
         let writer = Arc::new(CapturingUsageWriter {
             records: records.clone(),
         });
-        let handle = spawn_usage_writer(writer, health.clone()).expect("writer should be spawned");
+        let handle = spawn_usage_writer(writer, health.clone());
 
         post_usage_record(&handle.sender, sample_record(), &health);
         tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;

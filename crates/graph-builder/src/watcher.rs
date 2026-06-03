@@ -7,7 +7,7 @@ use std::{
 
 use domain::{
     ACTIVE_SKILL_FILE_NAME, PENDING_SKILL_FILE_NAME, REJECTED_SKILL_FILE_NAME,
-    RETIRED_SKILL_FILE_NAME, ScopeType, has_lifecycle_file_name,
+    RETIRED_SKILL_FILE_NAME, ScopeRoot, ScopeType, has_lifecycle_file_name,
 };
 use notify::{Config, RecommendedWatcher, RecursiveMode};
 use notify_debouncer_full::{Debouncer, FileIdMap, new_debouncer_opt};
@@ -40,13 +40,6 @@ pub struct SkillFileChange {
     pub content_hash: String,
     pub idempotency_key: String,
 }
-
-// TODO(remove-after-v1.5-green): alias kept for callers that still import
-// `graph_builder::ScopeRoot`; migrate them to `domain::ScopeRoot` and remove.
-/// Transitional re-export: `ScopeRoot` now lives in `domain` (V1.5 T01).
-/// Existing `graph_builder::ScopeRoot` callers continue to compile unchanged.
-#[deprecated(note = "use domain::ScopeRoot directly")]
-pub use domain::ScopeRoot;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SkillFileFingerprint {

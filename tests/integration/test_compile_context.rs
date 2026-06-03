@@ -670,20 +670,20 @@ async fn compact_trigger_bypasses_suppression_and_returns_fresh_context() {
     );
 }
 
-/// Proves the three-state `usage_write` observability contract in `compile_context` responses.
+/// Proves the two-state `usage_write` observability contract in `compile_context` responses.
 ///
-/// An agent must be able to distinguish:
-///   "disabled" — `MCP_USAGE_LOGGING=off` or no writer wired (rollback flag active)
-///   "ok"       — writer active, last write succeeded (key absent from response)
-///   "failed"   — writer active, last write or channel-post failed
+/// States:
+///   "ok"     — writer healthy; key is ABSENT from the response (compact ok = no key)
+///   "failed" — last write or channel-post failed; key present with value "failed"
 ///
-/// This test exercises the `disabled` state: when `with_usage_writer` is not called
-/// (the default for `with_explicit_graph`), `usage_sender` is `None` and the response
-/// must carry `health["usage_write"] = "disabled"`, never an absent key.
+/// This test exercises the "ok" state: when no writer is wired (the default for
+/// `with_explicit_graph` test constructors), the health cell starts at `HEALTH_OK`.
+/// The response must NOT include `health["usage_write"]` since the key is only
+/// injected on failure (absent = ok).
 #[tokio::test]
-async fn compile_context_reports_usage_write_disabled_when_no_writer_is_wired() {
+async fn compile_context_omits_usage_write_health_key_when_writer_is_ok() {
     let _env_guard = env_guard::configure_scope_env();
-    // No `.with_usage_writer(...)` call — usage_sender stays None, triggering disabled state.
+    // No `.with_usage_writer(...)` call — usage_sender is None; health cell starts ok.
     let server = McpServerApp::with_explicit_graph(
         Arc::new(DeterministicEmbeddingService::healthy()),
         seeded_graph(),
@@ -694,7 +694,7 @@ async fn compile_context_reports_usage_write_disabled_when_no_writer_is_wired() 
     let response = server
         .compile_context(CompileContextRequest {
             prompt: "how do i read a file in rust".to_owned(),
-            session_id: "session-usage-disabled".to_owned(),
+            session_id: "session-usage-ok".to_owned(),
             repo_path: test_repo_path(),
             trigger: None,
         })
@@ -702,9 +702,8 @@ async fn compile_context_reports_usage_write_disabled_when_no_writer_is_wired() 
 
     let usage_write_status = response.health.get("usage_write").map(String::as_str);
     assert_eq!(
-        usage_write_status,
-        Some("disabled"),
-        "compile_context response must include health[\"usage_write\"] = \"disabled\" when no writer is wired; \
+        usage_write_status, None,
+        "compile_context must omit health[\"usage_write\"] when health is ok; \
          got: {usage_write_status:?}"
     );
 }

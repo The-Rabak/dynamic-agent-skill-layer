@@ -10,13 +10,15 @@ use serde_json::json;
 use thiserror::Error;
 use uuid::Uuid;
 
+use domain::ScopeRoot;
+
 use crate::{
     graph::{
         build::{BuiltSkill, GraphBuildError, build_skills_from_scope_roots},
         communities::{CommunityAssignment, assign_communities},
         embeddings::DeterministicEmbeddingGenerator,
     },
-    watcher::{ScopeRoot, SkillFileChange},
+    watcher::SkillFileChange,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -5,10 +5,10 @@ use std::{
 
 use chrono::{DateTime, Utc};
 use domain::{
-    DomainId, ExtractedSkillCandidate, ExtractionResult, LifecycleStatus, ScopeType,
+    DomainId, ExtractedSkillCandidate, ExtractionResult, LifecycleStatus, ScopeRoot, ScopeType,
     pending_default_expires_at, pending_default_warning_at,
 };
-use graph_builder::{ScopeRoot, SkillFileChangeKind, SkillWatcher};
+use graph_builder::{SkillFileChangeKind, SkillWatcher};
 use maintenance::{PendingWarningScanner, cleanup::ReproposalBlock};
 use serde_yaml::Value;
 use session_extractor::{
