@@ -330,10 +330,10 @@ fn call_compile_context<'a>(
     Box::pin(async move {
         // Validate session_id before deserializing the full request so a bad id
         // returns a structured invalid_params error rather than a generic serde message.
-        if let Some(session_id) = arguments.get("session_id").and_then(Value::as_str) {
-            if let Err(reason) = validate_session_id(session_id) {
-                return JsonRpcResponse::error(id, -32602, format!("invalid params: {reason}"));
-            }
+        if let Some(session_id) = arguments.get("session_id").and_then(Value::as_str)
+            && let Err(reason) = validate_session_id(session_id)
+        {
+            return JsonRpcResponse::error(id, -32602, format!("invalid params: {reason}"));
         }
         app.invoke_typed_tool(
             id,
@@ -366,28 +366,28 @@ fn call_extract_session<'a>(
     Box::pin(async move {
         // Validate session_id at the param boundary to prevent separator collision and
         // Redis glob injection on the subsequent clear_session call in extract_session.
-        if let Some(session_id) = arguments.get("session_id").and_then(Value::as_str) {
-            if let Err(reason) = validate_session_id(session_id) {
-                return JsonRpcResponse::error(id, -32602, format!("invalid params: {reason}"));
-            }
+        if let Some(session_id) = arguments.get("session_id").and_then(Value::as_str)
+            && let Err(reason) = validate_session_id(session_id)
+        {
+            return JsonRpcResponse::error(id, -32602, format!("invalid params: {reason}"));
         }
 
         // Preflight the inline transcript size before the transport layer can reject the
         // request with a bare HTTP 413 (which the caller cannot distinguish from a crash).
         // Returning a structured result here gives the agent a machine-legible reason_code
         // and a clear recovery path (switch to transcript_ref for larger payloads).
-        if let Some(inline) = arguments.get("transcript_inline").and_then(Value::as_str) {
-            if inline.len() > MCP_BODY_LIMIT_BYTES {
-                return JsonRpcResponse::ok(
-                    id,
-                    json!({
-                        "status": "failed",
-                        "reason_code": "payload_too_large",
-                        "job_id": null,
-                        "provider": null
-                    }),
-                );
-            }
+        if let Some(inline) = arguments.get("transcript_inline").and_then(Value::as_str)
+            && inline.len() > MCP_BODY_LIMIT_BYTES
+        {
+            return JsonRpcResponse::ok(
+                id,
+                json!({
+                    "status": "failed",
+                    "reason_code": "payload_too_large",
+                    "job_id": null,
+                    "provider": null
+                }),
+            );
         }
 
         app.invoke_typed_tool(

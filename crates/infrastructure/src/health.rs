@@ -291,7 +291,17 @@ impl DependencyFactory {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Mutex;
+
     use super::*;
+
+    /// Serializes tests that mutate the process-wide `MCP_USAGE_LOGGING` env var.
+    ///
+    /// `std::env::set_var` / `remove_var` are process-global and unsound when
+    /// called from concurrent threads. Tests that touch `MCP_USAGE_LOGGING` must
+    /// hold this lock for their entire duration (set → run → unset) to prevent
+    /// a racing sibling test from reading a contaminated env state.
+    static USAGE_LOGGING_ENV_LOCK: Mutex<()> = Mutex::new(());
 
     #[tokio::test]
     async fn empty_health_checker_reports_healthy_with_no_components() {
@@ -374,9 +384,16 @@ mod tests {
     ///
     /// Guards the three-state contract (disabled / enabled / failed): an agent must be
     /// able to distinguish `disabled` from `healthy` on the `/health` endpoint.
+    ///
+    /// Holds `USAGE_LOGGING_ENV_LOCK` for the full duration to prevent concurrent tests
+    /// from racing on the process-global `MCP_USAGE_LOGGING` env var.
     #[test]
     fn build_health_checker_injects_usage_write_disabled_when_flag_is_off() {
-        // SAFETY: serial test isolation — we set then immediately unset the var.
+        let _env_lock = USAGE_LOGGING_ENV_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+
+        // SAFETY: held under USAGE_LOGGING_ENV_LOCK for the full set→check→unset window.
         unsafe {
             std::env::set_var("MCP_USAGE_LOGGING", "off");
         }
@@ -407,9 +424,17 @@ mod tests {
 
     /// Proves that `build_health_checker_from_environment` injects `usage_write: "enabled"`
     /// when the rollback flag is not set.
+    ///
+    /// Holds `USAGE_LOGGING_ENV_LOCK` so this test cannot race with the `_when_flag_is_off`
+    /// sibling that sets `MCP_USAGE_LOGGING=off`.
     #[test]
     fn build_health_checker_injects_usage_write_enabled_when_flag_is_not_set() {
+        let _env_lock = USAGE_LOGGING_ENV_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+
         // Ensure flag is absent.
+        // SAFETY: held under USAGE_LOGGING_ENV_LOCK for the full remove→check window.
         unsafe {
             std::env::remove_var("MCP_USAGE_LOGGING");
         }

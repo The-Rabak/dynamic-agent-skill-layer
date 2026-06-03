@@ -98,7 +98,22 @@ fn set_ok(health: &UsageWriteHealth) {
     health.store(HEALTH_OK, Ordering::Relaxed);
 }
 
-/// Spawns the background usage-writer task and returns the channel sender.
+/// The spawned writer task and the sender used to post records to it.
+///
+/// Returned by [`spawn_usage_writer`] so callers can both post records on the
+/// hot path and deterministically drain the task during teardown.
+pub struct UsageWriterHandle {
+    /// Hot-path sender; clone-able so multiple callers can post records.
+    pub sender: mpsc::Sender<SessionUsageRecord>,
+    /// Join handle for the background writer task.
+    ///
+    /// Drop `sender` first (signalling the channel closure), then `.await`
+    /// this handle to ensure all in-flight writes complete before the PG pool
+    /// is closed or `TRUNCATE` is issued in test teardown.
+    pub join_handle: tokio::task::JoinHandle<()>,
+}
+
+/// Spawns the background usage-writer task and returns a [`UsageWriterHandle`].
 ///
 /// Returns `None` when usage logging is disabled via [`USAGE_LOGGING_FLAG`].
 /// The caller (`McpServerApp`) stores the sender as `Option<mpsc::Sender<…>>`
@@ -107,10 +122,17 @@ fn set_ok(health: &UsageWriteHealth) {
 /// The background task runs until the sender side is dropped (server shutdown).
 /// All failures are logged and update the shared health cell — they are never
 /// re-panicked or propagated.
+///
+/// # Teardown contract
+///
+/// To deterministically drain the writer before closing the PG pool or issuing
+/// a `TRUNCATE`:
+/// 1. Drop the `sender` field (signals end-of-channel to the task).
+/// 2. `.await` `join_handle` (waits for the task to flush and exit).
 pub fn spawn_usage_writer(
     writer: Arc<dyn UsagePersistencePort>,
     health: UsageWriteHealth,
-) -> Option<mpsc::Sender<SessionUsageRecord>> {
+) -> Option<UsageWriterHandle> {
     if std::env::var(USAGE_LOGGING_FLAG).as_deref() == Ok("off") {
         warn!(
             flag = USAGE_LOGGING_FLAG,
@@ -122,7 +144,7 @@ pub fn spawn_usage_writer(
     let (tx, mut rx) = mpsc::channel::<SessionUsageRecord>(USAGE_WRITE_CHANNEL_CAPACITY);
     let health_clone = health.clone();
 
-    tokio::spawn(async move {
+    let join_handle = tokio::spawn(async move {
         while let Some(record) = rx.recv().await {
             match writer.write_session_usage(record).await {
                 Ok(()) => set_ok(&health_clone),
@@ -133,7 +155,10 @@ pub fn spawn_usage_writer(
         }
     });
 
-    Some(tx)
+    Some(UsageWriterHandle {
+        sender: tx,
+        join_handle,
+    })
 }
 
 /// Posts a usage record to the background writer channel.
@@ -210,10 +235,10 @@ mod tests {
     async fn write_failure_sets_health_marker_to_failed_and_never_propagates() {
         let health = new_usage_write_health();
         let writer = Arc::new(FailingUsageWriter);
-        let sender = spawn_usage_writer(writer, health.clone());
-        let sender = sender.expect("writer should be spawned when flag is not off");
+        let handle = spawn_usage_writer(writer, health.clone())
+            .expect("writer should be spawned when flag is not off");
 
-        post_usage_record(&sender, sample_record(), &health);
+        post_usage_record(&handle.sender, sample_record(), &health);
 
         // Drain the channel so the task has time to process.
         tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
@@ -255,10 +280,9 @@ mod tests {
         let writer = Arc::new(CapturingUsageWriter {
             records: records.clone(),
         });
-        let sender = spawn_usage_writer(writer, health.clone());
-        let sender = sender.expect("writer should be spawned");
+        let handle = spawn_usage_writer(writer, health.clone()).expect("writer should be spawned");
 
-        post_usage_record(&sender, sample_record(), &health);
+        post_usage_record(&handle.sender, sample_record(), &health);
         tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
 
         assert_eq!(read_usage_write_health(&health), "ok");

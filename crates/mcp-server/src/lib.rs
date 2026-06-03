@@ -61,8 +61,8 @@ use tracing::{debug, info, warn};
 use crate::graph_refresh_subscriber::{GraphReloader, run_graph_refresh_loop};
 use crate::state::{CompiledContextCache, SessionSuppressionState};
 use crate::usage_writer::{
-    UsageWriteHealth, new_usage_write_health, post_usage_record, read_usage_write_health,
-    spawn_usage_writer,
+    UsageWriteHealth, UsageWriterHandle, new_usage_write_health, post_usage_record,
+    read_usage_write_health, spawn_usage_writer,
 };
 
 #[derive(Clone)]
@@ -132,17 +132,35 @@ impl McpServerApp {
         self
     }
 
-    /// Wires the background usage writer (T06).
+    /// Wires the background usage writer (T06) and returns the join handle.
     ///
     /// Spawns the bounded-channel writer task and stores the sender so every
     /// `compile_context` call can post usage records off the hot path. Builder-style
     /// so test/in-memory constructors stay free of Postgres. When not called (or when
     /// `MCP_USAGE_LOGGING=off`), usage writes are silently skipped and the health
     /// marker stays `"ok"`.
-    pub fn with_usage_writer(mut self, writer: Arc<dyn UsagePersistencePort>) -> Self {
+    ///
+    /// Returns `Option<JoinHandle<()>>` so the caller (e.g. `build_live_server`) can
+    /// stash the handle on `LiveServerComponents` for deterministic drain during
+    /// teardown. Dropping the sender signals end-of-channel; awaiting the handle waits
+    /// for the last in-flight write to complete — must be done BEFORE `TRUNCATE` to
+    /// avoid the RowExclusive vs ACCESS EXCLUSIVE deadlock.
+    pub fn with_usage_writer(
+        mut self,
+        writer: Arc<dyn UsagePersistencePort>,
+    ) -> (Self, Option<tokio::task::JoinHandle<()>>) {
         let health = self.usage_write_health.clone();
-        self.usage_sender = spawn_usage_writer(writer, health);
-        self
+        let join_handle = if let Some(UsageWriterHandle {
+            sender,
+            join_handle,
+        }) = spawn_usage_writer(writer, health)
+        {
+            self.usage_sender = Some(sender);
+            Some(join_handle)
+        } else {
+            None
+        };
+        (self, join_handle)
     }
 
     /// Builds a server from an explicit in-memory [`RetrievalSnapshot`].
@@ -174,6 +192,19 @@ impl McpServerApp {
             admin_runtime_dependencies.graph_reader,
             redis_client,
         )
+    }
+
+    /// Drops the `usage_sender` to signal channel closure to the background writer task.
+    ///
+    /// Called by `LiveServerComponents::teardown` before awaiting the writer join handle
+    /// to ensure the task sees end-of-channel and exits cleanly. Must be called before
+    /// `truncate_all_tables` to release RowExclusive locks held by in-flight writes.
+    ///
+    /// Gated on `test-utils` — this is a test-teardown seam; production servers run
+    /// until process exit, at which point the OS reclaims all resources.
+    #[cfg(any(test, feature = "test-utils"))]
+    pub fn close_usage_sender(&mut self) {
+        drop(self.usage_sender.take());
     }
 
     /// Builds the production server from the runtime environment.
@@ -375,7 +406,11 @@ pub enum TranscriptIngestOutcome {
 /// LiveServerComponents bundles the fully-wired live server graph.
 /// The `teardown()` method is gated to test builds only to prevent
 /// accidental destructive operations in production.
-#[derive(Clone)]
+///
+/// The `usage_writer_join_handle` field holds the join handle for the background
+/// usage-writer task so teardown can drain it (drop the sender, then await the
+/// handle) before issuing TRUNCATE, preventing the RowExclusive vs ACCESS EXCLUSIVE
+/// deadlock between the writer and teardown.
 pub struct LiveServerComponents {
     pub app: McpServerApp,
     pub embedding_service: Arc<OllamaEmbeddingService>,
@@ -384,18 +419,44 @@ pub struct LiveServerComponents {
     pub redis_adapter: Arc<RedisStreamsAdapter>,
     pub pg_adapter: Arc<PostgresAdapter>,
     pub rebuild_coordinator: Arc<PostgresRebuildCoordinator>,
+    /// Join handle for the background usage-writer task.
+    ///
+    /// `None` when usage logging was disabled at boot. Teardown must drop
+    /// `app.usage_sender` then await this handle before calling `truncate_all_tables`.
+    #[cfg(any(test, feature = "test-utils"))]
+    pub usage_writer_join_handle: Option<tokio::task::JoinHandle<()>>,
 }
 
 impl LiveServerComponents {
     /// Destructive teardown for test isolation.
+    ///
+    /// Drains the background usage-writer before truncating PG tables to prevent
+    /// the RowExclusive vs ACCESS EXCLUSIVE deadlock: the writer task holds
+    /// RowExclusive locks on `session_logs`/`skill_usage` while TRUNCATE … CASCADE
+    /// requires ACCESS EXCLUSIVE. Drain sequence: drop the sender (signals
+    /// end-of-channel), then await the join handle (waits for in-flight writes).
+    ///
     /// Continues cleanup even if individual steps fail, reporting all errors at the end.
     ///
     /// Gated to `#[cfg(any(test, feature = "test-utils"))]` so production builds have zero destructive
     /// teardown surface.
     #[cfg(any(test, feature = "test-utils"))]
     #[tracing::instrument(skip_all)]
-    pub async fn teardown(self) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn teardown(mut self) -> Result<(), Box<dyn std::error::Error>> {
         let mut errors: Vec<String> = Vec::new();
+
+        // Drain the usage writer before TRUNCATE to release RowExclusive locks.
+        // Drop the sender (signals channel closure to the writer task) then abort and
+        // await the task handle (ensures the task is no longer holding DB locks).
+        self.app.close_usage_sender();
+        if let Some(handle) = self.usage_writer_join_handle.take() {
+            // Abort-and-await is safe: the task caught all Result paths and never
+            // holds application state that requires graceful flushing. The abort
+            // ensures we do not wait indefinitely if a write is in progress; the
+            // await guarantees the OS-level task resources are reclaimed.
+            handle.abort();
+            let _ = handle.await;
+        }
 
         if let Err(e) = self.pg_adapter.truncate_all_tables().await {
             errors.push(format!("pg truncate failed: {e}"));
@@ -472,7 +533,7 @@ async fn build_live_server(
     let usage_writer: Arc<dyn UsagePersistencePort> =
         Arc::new(PostgresUsageWriter::new(pg_adapter.pool().clone()));
 
-    let app = McpServerApp::new_with_admin(
+    let app_builder = McpServerApp::new_with_admin(
         retriever.clone(),
         admin_runtime_dependencies.rebuild_trigger,
         admin_runtime_dependencies.graph_reader,
@@ -480,9 +541,16 @@ async fn build_live_server(
     )
     // Back the localhost `/ingest/transcript` endpoint with the live PG pool so
     // host capture hooks can push transcript content into the durable queue.
-    .with_transcript_ingest(TranscriptIngestQueue::new(pg_adapter.pool().clone()))
+    .with_transcript_ingest(TranscriptIngestQueue::new(pg_adapter.pool().clone()));
+
     // Wire the background usage writer so compile_context records usage (T06).
-    .with_usage_writer(usage_writer);
+    // In test/test-utils builds the join handle is stashed on `LiveServerComponents`
+    // so teardown can drain the writer before TRUNCATE (prevents deadlock). In
+    // production builds the handle variable is elided via #[cfg].
+    #[cfg(any(test, feature = "test-utils"))]
+    let (app, usage_writer_join_handle) = app_builder.with_usage_writer(usage_writer);
+    #[cfg(not(any(test, feature = "test-utils")))]
+    let (app, _usage_writer_join_handle) = app_builder.with_usage_writer(usage_writer);
 
     // Online refresh-without-restart (T02): subscribe to `graph.rebuilt`
     // and atomically swap the in-memory read model. Spawned on its own
@@ -505,6 +573,8 @@ async fn build_live_server(
         redis_adapter: redis_streams,
         pg_adapter,
         rebuild_coordinator: Arc::new(rebuild_coordinator),
+        #[cfg(any(test, feature = "test-utils"))]
+        usage_writer_join_handle,
     })
 }
 

@@ -422,7 +422,7 @@ async fn compile_context_parallel_burst_under_live_infra_stays_within_contract_s
         .expect("should connect to live infrastructure");
     builder.record_latency("server_bootstrap", start.elapsed().as_millis() as u64);
 
-    // Seed 3 known skills.
+    // Seed 3 known skills into PG via components.rebuild_coordinator.
     let seed_start = std::time::Instant::now();
     seed_live_skill(
         &*components.rebuild_coordinator,
@@ -445,36 +445,39 @@ async fn compile_context_parallel_burst_under_live_infra_stays_within_contract_s
         vec!["auth".to_owned(), "security".to_owned()],
     )
     .await;
-    seed_live_skill(
-        &*components.rebuild_coordinator,
-        "live-stress-async-tokio",
-        "Async tokio patterns for stress testing",
-        vec!["rust".to_owned(), "async".to_owned(), "tokio".to_owned()],
-    )
-    .await;
-    seed_live_skill(
-        &*components.rebuild_coordinator,
-        "live-stress-auth-playbook",
-        "Auth security playbook for stress testing",
-        vec!["auth".to_owned(), "security".to_owned()],
-    )
-    .await;
     builder.record_latency("seed_skills", seed_start.elapsed().as_millis() as u64);
 
-    // Brief consistency wait.
-    tokio::time::sleep(Duration::from_millis(300)).await;
+    // Build a fresh server AFTER seeding so its in-memory snapshot includes the seeded
+    // skills. The burst test uses this server for all compile_context calls.
+    // This mirrors the pattern in test_live_data_plane_roundtrip where components2 is
+    // built post-seed to guarantee the seeded skills are in the loaded graph snapshot.
+    let fresh = McpServerApp::from_environment(retrieval_config_stress())
+        .await
+        .expect("fresh server after seeding should connect");
 
     let repo_path = test_repo_path();
     let session_count = 24usize;
     let calls_per_session = 4usize;
     let total_calls = session_count * calls_per_session;
 
+    // Burst prompt set: mix of relevant prompts (expect Ok) and irrelevant prompts
+    // (expect NoMatch). The irrelevant prompts are taken from the negative fixtures in
+    // tests/fixtures/retrieval_corpus.json — completely unrelated to Rust/Docker/git skills.
+    // This ensures deterministic mixed-status output: ok_count > 0 AND no_match_count > 0.
+    let irrelevant_prompts = [
+        "how to make a cappuccino with an espresso machine",
+        "what is the capital of france",
+    ];
+
     let mut futures = Vec::with_capacity(total_calls);
     for s in 0..session_count {
         let session_id = format!("live-stress-session-{s:03}");
         for c in 0..calls_per_session {
-            let request = CompileContextRequest {
-                prompt: format!(
+            // Last call per session uses an irrelevant prompt to guarantee NoMatch entries.
+            let prompt = if c == calls_per_session - 1 {
+                irrelevant_prompts[s % irrelevant_prompts.len()].to_owned()
+            } else {
+                format!(
                     "rust {} stress query {c}",
                     if s % 3 == 0 {
                         "file io"
@@ -483,12 +486,18 @@ async fn compile_context_parallel_burst_under_live_infra_stays_within_contract_s
                     } else {
                         "auth security"
                     }
-                ),
+                )
+            };
+            let request = CompileContextRequest {
+                prompt,
                 session_id: session_id.clone(),
                 repo_path: repo_path.clone(),
                 trigger: None,
             };
-            let app = components.app.clone();
+            // Use the fresh server (built after seeding) so its in-memory snapshot includes
+            // the seeded skills. Using the original `components` would return all NoMatch
+            // because its snapshot was loaded before seeding.
+            let app = fresh.app.clone();
             futures.push(async move {
                 let req_start = std::time::Instant::now();
                 let response = app.compile_context(request.clone()).await;
@@ -582,7 +591,7 @@ async fn compile_context_parallel_burst_under_live_infra_stays_within_contract_s
     let dup_start = std::time::Instant::now();
     let mut dup_set = JoinSet::new();
     for session_id in sessions_to_retry {
-        let app = components.app.clone();
+        let app = fresh.app.clone();
         let repo_path = repo_path.clone();
         dup_set.spawn(async move {
             let request = CompileContextRequest {
@@ -630,10 +639,16 @@ async fn compile_context_parallel_burst_under_live_infra_stays_within_contract_s
     let report_json = serde_json::to_string_pretty(&report).expect("report should serialize");
     std::fs::write(&report_path, report_json).expect("report should be writable");
 
+    // Tear down fresh first (it has the usage writer active), then components
+    // (used only for seeding; its usage writer was never wired for burst calls).
+    fresh
+        .teardown()
+        .await
+        .expect("fresh teardown should succeed");
     components
         .teardown()
         .await
-        .expect("teardown should succeed");
+        .expect("components teardown should succeed");
 }
 
 #[ignore = "requires live containers"]
