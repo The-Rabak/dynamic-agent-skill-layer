@@ -2,7 +2,7 @@
 ticket_id: T10b
 title: First-run activation proof (doctor + demo + time-to-wow)
 kind: hardening # tracer-bullet | expansion | hardening | infra-track | fix-batch
-status: in_progress # ready | in_progress | blocked | completed — impl landed session work-2026-06-04-074635; 2 fidelity concerns (degraded compile_context / inflated pending count) pending review+triage
+status: completed # ready | in_progress | blocked | completed — impl session work-2026-06-04-074635; review (143-153) + triage resolved both fidelity concerns. Demo now exercises real retrieval (live `### Why These Skills`, graph_version>0) + honest pending count; compile_context returns honest `degraded` in-container (musl image has no git → project-scope; follow-up #154, out of scope). doctor+demo green (RESULT: warn, exit 0).
 plan_ref: docs/plans/2026-05-31-feat-skill-layer-v1-5-close-the-loop-plan.md
 tickets_ref: docs/tickets/2026-05-31-skill-layer-v1-5/index.md
 architecture_ref: docs/architecture/2026-05-31-skill-layer-v1-5-close-the-loop-architecture.md
