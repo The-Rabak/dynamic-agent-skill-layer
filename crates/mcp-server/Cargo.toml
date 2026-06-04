@@ -84,6 +84,11 @@ path = "../../tests/e2e/test_dream_state_contract.rs"
 required-features = ["test-utils"]
 
 [[test]]
+name = "test_project_scope_container"
+path = "../../tests/e2e/test_project_scope_container.rs"
+required-features = ["test-utils"]
+
+[[test]]
 name = "test_watcher_churn_reconciliation"
 path = "../../tests/e2e/test_watcher_churn_reconciliation.rs"
 required-features = ["test-utils"]
@@ -91,6 +96,11 @@ required-features = ["test-utils"]
 [[test]]
 name = "test_pg_source_paths_roundtrip"
 path = "../../tests/e2e/test_pg_source_paths_roundtrip.rs"
+required-features = ["test-utils"]
+
+[[test]]
+name = "test_support_harness_smoke"
+path = "../../tests/e2e/test_support_harness_smoke.rs"
 required-features = ["test-utils"]
 
 [[test]]

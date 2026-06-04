@@ -55,7 +55,7 @@ pub use resilience::{
     CircuitBreaker, CircuitState, ResilienceError, RetryPolicy, execute_with_resilience,
     retry_with_backoff,
 };
-pub use scope::{EnvPathGlobalResolver, GitRootProjectResolver};
+pub use scope::{EnvPathGlobalResolver, FsMarkerProjectResolver, GitRootProjectResolver};
 pub use streaming::redis::{
     EventEnvelope, RedisStreamError, RedisStreamsAdapter, RedisStreamsConfig,
     SKILL_LAYER_CONSUMER_GROUP, SKILL_LAYER_STREAM_KEY, StreamMessage,

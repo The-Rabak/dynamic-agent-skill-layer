@@ -37,7 +37,7 @@ use domain::{EmbeddingService, ScopeResolver};
 #[cfg(any(test, feature = "test-utils"))]
 use infrastructure::OutboxVectorStore;
 use infrastructure::{
-    EnvPathGlobalResolver, GitRootProjectResolver, OllamaEmbeddingConfig, OllamaEmbeddingService,
+    EnvPathGlobalResolver, FsMarkerProjectResolver, OllamaEmbeddingConfig, OllamaEmbeddingService,
     PostgresAdapter, PostgresConfig, PostgresGraphSnapshotStore, PostgresGraphWriteCoordinator,
     PostgresPool, PostgresRebuildCoordinator, PostgresUsageSampleStore, PostgresUsageWriter,
     QdrantAdapter, QdrantConfig, RedisClient, RedisStreamsAdapter, RedisStreamsConfig,
@@ -173,7 +173,7 @@ impl McpServerApp {
         let admin_runtime_dependencies = admin_wiring::live_admin_runtime_dependencies();
         let start_dir = std::env::current_dir().unwrap_or_else(|_| ".".into());
         let project_resolver: Arc<dyn ScopeResolver> =
-            Arc::new(GitRootProjectResolver::new(start_dir));
+            Arc::new(FsMarkerProjectResolver::new(start_dir));
         let global_resolver: Arc<dyn ScopeResolver> = Arc::new(EnvPathGlobalResolver::default());
         let scope_resolver = DualScopeResolver::new(project_resolver, global_resolver);
 
@@ -509,7 +509,8 @@ async fn build_live_server(
 
     let admin_runtime_dependencies = admin_wiring::live_admin_runtime_dependencies();
     let start_dir = std::env::current_dir().unwrap_or_else(|_| ".".into());
-    let project_resolver: Arc<dyn ScopeResolver> = Arc::new(GitRootProjectResolver::new(start_dir));
+    let project_resolver: Arc<dyn ScopeResolver> =
+        Arc::new(FsMarkerProjectResolver::new(start_dir));
     let global_resolver: Arc<dyn ScopeResolver> = Arc::new(EnvPathGlobalResolver::default());
     let scope_resolver = DualScopeResolver::new(project_resolver, global_resolver);
 

@@ -1,8 +1,88 @@
-use std::{collections::BTreeMap, env, fs, path::PathBuf};
+use std::{
+    collections::BTreeMap,
+    env, fs,
+    path::{Path, PathBuf},
+};
 
 use async_trait::async_trait;
 use domain::{ScopeDescriptor, ScopeError, ScopeResolver, ScopeType};
 use tokio::process::Command;
+
+/// Filesystem-walk project-root resolver.
+///
+/// Starts at `start_dir` (or the `repo_path` argument when provided) and
+/// walks up toward the filesystem root looking for a `.git` directory **or**
+/// a path named by the `SKILL_PROJECT_MARKER` environment variable.  The
+/// first ancestor directory that contains either marker is returned as the
+/// project root.
+///
+/// This resolver works without a `git` binary in `PATH`, making it suitable
+/// for musl-compiled static containers and any other environment where
+/// spawning a subprocess is either unavailable or undesirable.
+///
+/// Fallback: when neither `.git` nor the custom marker is found anywhere up
+/// the tree, returns [`ScopeError::ResolverUnavailable`] so callers can fall
+/// back to global-scope-only context (unchanged behaviour compared to
+/// [`GitRootProjectResolver`] in a git-free environment).
+#[derive(Debug, Clone)]
+pub struct FsMarkerProjectResolver {
+    start_dir: PathBuf,
+}
+
+impl FsMarkerProjectResolver {
+    pub fn new(start_dir: impl Into<PathBuf>) -> Self {
+        Self {
+            start_dir: start_dir.into(),
+        }
+    }
+
+    /// Walks ancestor directories of `start` looking for `.git` or the path
+    /// named by `SKILL_PROJECT_MARKER`.  Returns the first matching root.
+    fn walk_to_project_root(start: &Path) -> Option<PathBuf> {
+        let custom_marker = env::var("SKILL_PROJECT_MARKER").ok();
+        let mut current = start;
+
+        loop {
+            let has_git = current.join(".git").exists();
+            let has_custom = custom_marker
+                .as_deref()
+                .map(|name| current.join(name).exists())
+                .unwrap_or(false);
+
+            if has_git || has_custom {
+                return Some(current.to_owned());
+            }
+
+            match current.parent() {
+                Some(parent) => current = parent,
+                None => return None,
+            }
+        }
+    }
+}
+
+#[async_trait]
+impl ScopeResolver for FsMarkerProjectResolver {
+    async fn resolve(&self, repo_path: Option<&str>) -> Result<Vec<ScopeDescriptor>, ScopeError> {
+        let start = repo_path
+            .map(PathBuf::from)
+            .unwrap_or_else(|| self.start_dir.clone());
+
+        let root = Self::walk_to_project_root(&start).ok_or_else(|| {
+            ScopeError::ResolverUnavailable(format!(
+                "no .git directory or SKILL_PROJECT_MARKER found walking up from `{}`",
+                start.display()
+            ))
+        })?;
+
+        Ok(vec![ScopeDescriptor {
+            scope_id: "project".to_owned(),
+            scope_type: ScopeType::Project,
+            paths: vec![root],
+            config: BTreeMap::from([("resolver".to_owned(), "fs-marker".to_owned())]),
+        }])
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct GitRootProjectResolver {
@@ -187,6 +267,112 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
+
+    // --- FsMarkerProjectResolver tests (Red phase: struct does not exist yet) ---
+
+    #[tokio::test]
+    async fn fs_marker_resolver_finds_git_dir_walking_up_from_nested_child() {
+        // The repo has a .git at its root. Start from a deeply nested dir and
+        // expect the resolver to walk up and return the repo root.
+        let nested = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src");
+        let expected_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .canonicalize()
+            .expect("repo root should canonicalize");
+        let resolver = FsMarkerProjectResolver::new(nested);
+
+        let scopes = resolver
+            .resolve(None)
+            .await
+            .expect("fs-marker resolver should find .git root");
+
+        assert_eq!(scopes.len(), 1);
+        assert_eq!(scopes[0].scope_type, ScopeType::Project);
+        assert_eq!(scopes[0].scope_id, "project");
+        assert_eq!(
+            scopes[0].config.get("resolver").map(String::as_str),
+            Some("fs-marker")
+        );
+        assert_eq!(
+            scopes[0].paths[0]
+                .canonicalize()
+                .expect("resolved path should canonicalize"),
+            expected_root
+        );
+    }
+
+    #[tokio::test]
+    async fn fs_marker_resolver_returns_unavailable_when_no_git_or_marker_exists() {
+        // A temp dir with no .git anywhere up the tree should yield ResolverUnavailable.
+        // We create a directory whose parents are all within /tmp, which has no .git.
+        let sandbox = std::env::temp_dir().join(format!(
+            "fs-marker-no-git-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system clock should be after unix epoch")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&sandbox).expect("sandbox should be creatable");
+
+        let resolver = FsMarkerProjectResolver::new(sandbox.clone());
+
+        let error = resolver
+            .resolve(None)
+            .await
+            .expect_err("resolver should return unavailable when no .git or marker found");
+
+        assert!(
+            matches!(error, ScopeError::ResolverUnavailable(_)),
+            "expected ResolverUnavailable, got {error:?}"
+        );
+
+        std::fs::remove_dir_all(sandbox).expect("sandbox cleanup should succeed");
+    }
+
+    #[tokio::test]
+    async fn fs_marker_resolver_honors_skill_project_marker_env_when_git_absent() {
+        // A sandbox dir with no .git but with a custom marker file named by SKILL_PROJECT_MARKER
+        // should resolve to the directory that contains the marker.
+        let sandbox = std::env::temp_dir().join(format!(
+            "fs-marker-custom-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system clock should be after unix epoch")
+                .as_nanos()
+        ));
+        let nested = sandbox.join("sub").join("deeper");
+        let marker_name = ".skillroot";
+        std::fs::create_dir_all(&nested).expect("nested sandbox should be creatable");
+        // Create the marker at the sandbox root (not in nested).
+        std::fs::write(sandbox.join(marker_name), "marker").expect("marker should be writable");
+
+        // SAFETY: test-scoped environment mutation.
+        unsafe {
+            env::set_var("SKILL_PROJECT_MARKER", marker_name);
+        }
+
+        let resolver = FsMarkerProjectResolver::new(nested.clone());
+        let scopes = resolver
+            .resolve(None)
+            .await
+            .expect("resolver should find custom marker");
+
+        // SAFETY: test-scoped environment cleanup.
+        unsafe {
+            env::remove_var("SKILL_PROJECT_MARKER");
+        }
+
+        std::fs::remove_dir_all(sandbox).expect("sandbox cleanup should succeed");
+
+        assert_eq!(scopes.len(), 1);
+        assert_eq!(scopes[0].scope_type, ScopeType::Project);
+        assert_eq!(
+            scopes[0].config.get("resolver").map(String::as_str),
+            Some("fs-marker")
+        );
+    }
+
+    // --- end FsMarkerProjectResolver tests ---
 
     #[tokio::test]
     async fn git_root_project_resolver_returns_repository_root() {

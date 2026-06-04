@@ -207,6 +207,16 @@ async fn dependency_chaos_matrix_preserves_degraded_semantics_and_fast_recovery(
         "expected Ok or NoMatch at healthy baseline, got {:?}",
         r_baseline.status
     );
+    builder.assert_contract(
+        "healthy_baseline_ok_or_no_match",
+        matches!(
+            r_baseline.status,
+            CompileContextStatus::Ok | CompileContextStatus::NoMatch
+        ),
+        "Ok | NoMatch",
+        &format!("{:?}", r_baseline.status),
+        "compile_context at healthy baseline must return Ok or NoMatch",
+    );
     builder.record_degradation_event("all", false, "healthy baseline");
 
     // --- Phase 2: Qdrant stopped — read path must be unaffected (Option A CQRS) ---
@@ -276,6 +286,16 @@ async fn dependency_chaos_matrix_preserves_degraded_semantics_and_fast_recovery(
          (read path uses in-memory snapshot, not Qdrant); got {:?}",
         r_qdrant_down.status
     );
+    builder.assert_contract(
+        "option_a_cqrs_qdrant_down_read_path_unaffected",
+        matches!(
+            r_qdrant_down.status,
+            CompileContextStatus::Ok | CompileContextStatus::NoMatch
+        ),
+        "Ok | NoMatch (read path must be decoupled from write store)",
+        &format!("{:?}", r_qdrant_down.status),
+        "Option A: in-memory snapshot is the read model; Qdrant down must not degrade compile_context",
+    );
     builder.record_degradation_event(
         "qdrant",
         false,
@@ -337,6 +357,21 @@ async fn dependency_chaos_matrix_preserves_degraded_semantics_and_fast_recovery(
         !r_both_down.reason_code.as_deref().unwrap_or("").is_empty(),
         "Degraded response must carry a reason_code"
     );
+    builder.assert_contract(
+        "ollama_down_yields_degraded",
+        r_both_down.status == CompileContextStatus::Degraded,
+        "Degraded",
+        &format!("{:?}", r_both_down.status),
+        "Ollama down (embedding unavailable) must produce Degraded status",
+    );
+    let has_reason_code = !r_both_down.reason_code.as_deref().unwrap_or("").is_empty();
+    builder.assert_contract(
+        "degraded_carries_non_empty_reason_code",
+        has_reason_code,
+        "non-empty reason_code",
+        r_both_down.reason_code.as_deref().unwrap_or("(none)"),
+        "every Degraded response must carry a machine-parseable reason_code",
+    );
     builder.record_degradation_event("both", true, "ollama stopped — Degraded as expected");
 
     // --- Phase 4: Full recovery ---
@@ -396,6 +431,16 @@ async fn dependency_chaos_matrix_preserves_degraded_semantics_and_fast_recovery(
         ),
         "expected Ok or NoMatch after full recovery; got {:?}",
         r_recovered.status
+    );
+    builder.assert_contract(
+        "full_recovery_restores_ok_or_no_match",
+        matches!(
+            r_recovered.status,
+            CompileContextStatus::Ok | CompileContextStatus::NoMatch
+        ),
+        "Ok | NoMatch",
+        &format!("{:?}", r_recovered.status),
+        "after Qdrant + Ollama restart, compile_context must recover to Ok or NoMatch",
     );
     builder.record_degradation_event("all", true, "recovered to healthy");
 
@@ -481,11 +526,16 @@ async fn outbox_backlog_replays_without_data_loss_after_multi_restart_sequence()
         CompileContextStatus::Ok | CompileContextStatus::NoMatch
     ));
 
-    builder.add_contract_assertion(report::ContractAssertion {
-        contract_name: "outbox_replay_durability".to_owned(),
-        status: report::AssertionResult::Passed,
-        details: format!("graph_version before={version_before}, after={fresh_version}"),
-    });
+    // assert_contract derives pass/fail from the condition rather than hardcoding Passed.
+    // The prior Rust asserts would have panicked on failure, but the report artifact
+    // must also carry the real outcome so it cannot masquerade as Passed.
+    builder.assert_contract(
+        "outbox_replay_durability",
+        fresh_version >= version_after,
+        "fresh_version >= version_after",
+        &format!("fresh_version={fresh_version}, version_after={version_after}"),
+        &format!("graph_version before={version_before}, after={fresh_version}"),
+    );
 
     let report = builder.build();
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/e2e/reports");
@@ -548,11 +598,14 @@ async fn qdrant_pg_drift_detection_and_reconciliation_closes_all_gaps() {
         .expect("version");
     assert!(version > 0);
 
-    builder.add_contract_assertion(report::ContractAssertion {
-        contract_name: "qdrant_pg_drift".to_owned(),
-        status: report::AssertionResult::Passed,
-        details: format!("graph_version={version}"),
-    });
+    // assert_contract derives pass/fail from the condition rather than hardcoding Passed.
+    builder.assert_contract(
+        "qdrant_pg_drift",
+        version > 0,
+        "version > 0",
+        &format!("version={version}"),
+        &format!("graph_version={version}"),
+    );
 
     let report = builder.build();
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/e2e/reports");
@@ -614,6 +667,11 @@ async fn sustained_watcher_and_extraction_saturation_keeps_eventual_consistency(
     }
     assert!(ok_count + no_match_count > 0);
 
+    // TODO(2.x): replace with a brutal assertion on ok_count + no_match_count thresholds
+    // (slice 2.x owns the per-scenario saturation rewrite). The Rust-level assert! above
+    // guarantees we cannot reach this line with a zero count, so the section status is
+    // implicitly proven by surviving to here; but the report artifact should carry the
+    // explicit computed condition rather than a hardcoded Passed.
     builder.push_action(
         "saturation",
         report::ReportedAction {
@@ -707,6 +765,10 @@ async fn high_qps_compile_context_load_meets_p95_and_error_budget_targets() {
     let max = latencies.last().copied().unwrap_or(0);
     let min = latencies.first().copied().unwrap_or(0);
 
+    // TODO(2.x): replace with a brutal assertion on p95 and error-budget thresholds
+    // (slice 2.x owns the per-scenario QPS rewrite). We cannot reach this line if any
+    // request panicked; the section Passed status is implicitly proven, but the report
+    // artifact should carry explicit latency-budget conditions.
     builder.push_action(
         "latency",
         report::ReportedAction {
