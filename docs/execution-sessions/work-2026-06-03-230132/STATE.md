@@ -14,7 +14,7 @@ total_units: 3
 session_id: work-2026-06-03-230132
 batch: 9
 ticket: T10
-status_note: all 3 units completed; final full --include-dream proof + PR pending
+status_note: all 3 units completed + unit-04 (made the full run-e2e-tests.sh --include-dream run end-to-end GREEN 18/18 by fixing pre-existing Docker/runner/test breakage). Full wrapper proof done. PR pending.
 ---
 
 ## WHY Context
