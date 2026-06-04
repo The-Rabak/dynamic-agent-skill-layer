@@ -74,6 +74,23 @@ Fault injection uses `docker compose stop/start` of existing services (commands,
 - Seams: trait-level rollback for resolver; feature-flag/bounded-pool revert for embedding concurrency.
 - Review guidance: production fixes (resolver, embedding) need security-sentinel/performance-oracle/architecture-strategist.
 
+## RESUME CHECKPOINT (2026-06-04, latest)
+**Where we are:** `/workflows:work` on `docs/plans/2026-06-04-test-brutal-real-infra-e2e-suite-plan.md`, branch
+`feat/v-1-5-1` (nothing pushed). Pivoted to TRUE real-app e2e per user. Real stack is UP & healthy (mcp-server :3001,
+graph-builder, postgres :15432, redis :16379, qdrant :16333, ollama :11444) — **leave it running**.
+**Done + committed:** 1.1 git-free resolver; 1.2 honest report.rs; 1.3 in-process harness (superseded); 2.1/2.2/2.3
+in-process DS rewrites (superseded → rework on harness); **1.0 real-app harness `tests/e2e/harness/` (live-green)**;
+**#156 + #157 FIXED (loop closes, golden-path RED→GREEN live)**. Contract: `docs/reference/e2e-harness-contract.md`.
+Commits: 3adc494, 3a6604c, e8b10df, 2478df3, cc19153, bb89b2f, bc159e2 (+ STATE updates).
+**Open bug found, NOT yet fixed:** **#158 (P1)** — graph-builder write path uses 8-dim `DeterministicEmbeddingGenerator`
+stub → Qdrant (768-dim) 400s every `vector.upsert` → Qdrant always 0 points. Blocks DS-005/DS-003 write-side. Awaiting
+user go to fix (wire real OllamaEmbeddingService into graph-builder write path). Last user Q answered (why 0 qdrant points).
+**Next dominoes:** (1) fix #158 → Qdrant points 0→N live; (2) prove real project-scoped Ok over HTTP (#154 e2e);
+(3) rework DS-003..007 on the harness (real docker-kill faults, real drift, HTTP retrieval); (4) migrate existing
+in-process suite onto harness; (5) promote DS-002(HTTP only; no stdio)/DS-008/hostile-input. Open todos: 156,157 RESOLVED; 158 PENDING(P1).
+**Execution rule:** delegate each unit to a sonnet execution-agent; validate LIVE against the running stack; human-gate any
+compose/Dockerfile/env/migration change (none so far); no stubs/fakes/in-process — real app end-to-end.
+
 ## PIVOT — 2026-06-04 (user directive: TRUE end-to-end)
 User: *"real infra and live logic paths. no in-memory simulations, no stubs and no fakes. it's not e2e if we're not
 actually using the app END TO END … build the actual proper e2e test harness first which will use the real bloody app
@@ -113,6 +130,13 @@ Drove the REAL `mcp-server` :3001 over HTTP after seeding a new global SKILL.md 
 - **Implication:** #156 blocks a GREEN golden path. Sequencing: build harness (golden path reproduces #156 as honest RED)
   → fix #156/#157 → golden path GREEN. Harness golden-path asserts SUBSTANCE (served graph_version advances + seeded
   skill present/top-ranked in compile_context over HTTP), not overall status==ok.
+
+## LIVE FINDING #2 (2026-06-04) — Qdrant write-side is dead (stub embedder in prod)
+Answering "why 0 Qdrant points?": graph-builder write path embeds via `DeterministicEmbeddingGenerator` (8-dim token-hash
+STUB, `crates/graph-builder/src/graph/embeddings.rs`). Qdrant `skills` is 768-dim → every `vector.upsert` 400s → all events
+`failed` → Qdrant always empty. Retrieval works only because the mcp-server READ path re-embeds from PG with real Ollama
+768-dim (Option-A CQRS; Qdrant never read). → **#158 (P1)**. BLOCKS DS-005 (PG↔Qdrant drift/reconcile) + DS-003 qdrant_write_side
+— those scenarios are moot until the graph-builder write path uses real 768-dim Ollama embeddings (read/write parity).
 
 ## Work Status
 | # | Unit | Kind | Serves / Unlocks | Status | Attempts | Session File |
