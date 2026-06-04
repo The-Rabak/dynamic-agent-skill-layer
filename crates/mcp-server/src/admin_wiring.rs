@@ -4,7 +4,8 @@ use admin::tools::{
     FilesystemGraphRebuildTrigger, GraphRebuildTrigger, GraphSnapshotReader,
     PostgresGraphSnapshotReader,
 };
-use domain::{ScopeRoot, ScopeType};
+use domain::{EmbeddingService, ScopeRoot, ScopeType};
+use infrastructure::{OllamaEmbeddingConfig, OllamaEmbeddingService};
 
 /// Runtime dependencies that wire admin tools into the MCP transport surface.
 ///
@@ -18,13 +19,36 @@ pub(crate) struct AdminRuntimeDependencies {
 pub(crate) fn live_admin_runtime_dependencies() -> AdminRuntimeDependencies {
     let graph_reader = Arc::new(PostgresGraphSnapshotReader::with_default_database_env())
         as Arc<dyn GraphSnapshotReader>;
-    let rebuild_trigger = Arc::new(FilesystemGraphRebuildTrigger::new(default_scope_roots()))
-        as Arc<dyn GraphRebuildTrigger>;
+
+    let embedding_service = build_embedding_service();
+    let rebuild_trigger = Arc::new(FilesystemGraphRebuildTrigger::new(
+        default_scope_roots(),
+        embedding_service,
+    )) as Arc<dyn GraphRebuildTrigger>;
 
     AdminRuntimeDependencies {
         rebuild_trigger,
         graph_reader,
     }
+}
+
+/// Builds a real Ollama embedding service from the `OLLAMA_URL` environment variable.
+///
+/// Panics at boot when `OLLAMA_URL` is unset — production must not continue without
+/// a real embedder. There is no silent fallback.
+fn build_embedding_service() -> Arc<dyn EmbeddingService> {
+    let base_url = std::env::var("OLLAMA_URL")
+        .expect("OLLAMA_URL must be set to connect to the embedding service");
+    let config = OllamaEmbeddingConfig {
+        base_url,
+        model: "nomic-embed-text".to_owned(),
+        timeout_ms: 5_000,
+        batch_timeout_ms: 10_000,
+        max_concurrency: 4,
+    };
+    let service = OllamaEmbeddingService::from_config(config)
+        .expect("OllamaEmbeddingService construction must succeed with a valid config");
+    Arc::new(service) as Arc<dyn EmbeddingService>
 }
 
 /// Build the default project and global scope roots used by the filesystem

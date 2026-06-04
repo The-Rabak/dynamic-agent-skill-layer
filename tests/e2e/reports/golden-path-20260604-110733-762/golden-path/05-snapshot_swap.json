@@ -1,0 +1,31 @@
+{
+  "timestamp": "2026-06-04T11:07:40.535254753+00:00",
+  "stage": "snapshot_swap",
+  "input": {
+    "bug": "#156 — graph.rebuilt not published due to outbox idempotency conflict",
+    "prev_graph_version": 21,
+    "timeout_secs": 90
+  },
+  "output": {
+    "detail": "graph version advanced from v21 to v23; served version confirmed",
+    "elapsed_ms": 4744,
+    "ok": true,
+    "pg_graph_version_after": 23
+  },
+  "infra_snapshot": {
+    "captured_at": "2026-06-04T11:07:40.519687509+00:00",
+    "pg_graph_version": 23,
+    "pg_table_counts": {
+      "communities": 6,
+      "community_skills": 7,
+      "outbox_events": 8,
+      "skill_subunits": 18,
+      "skills": 7,
+      "subunits": 18,
+      "transcript_ingest_queue": 1
+    },
+    "qdrant_points_count": 0,
+    "qdrant_status": "green",
+    "redis_stream_len": 8
+  }
+}

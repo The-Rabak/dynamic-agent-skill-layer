@@ -12,7 +12,8 @@ use graph_builder::{
     SkillWatcher, WatcherRecovery, watcher::build_snapshot,
 };
 use infrastructure::{
-    EventEnvelope, OutboxVectorStore, PostgresGraphSnapshotStore, RebuildCoordinator,
+    EventEnvelope, OllamaEmbeddingConfig, OllamaEmbeddingService, OutboxVectorStore,
+    PostgresGraphSnapshotStore, RebuildCoordinator,
 };
 use mcp_server::McpServerApp;
 use retrieval::RetrievalConfig;
@@ -158,9 +159,11 @@ async fn watcher_churn_and_reconciliation_preserve_contracts_under_heavy_file_ac
 
     observed_changes.extend(recovered_first);
 
+    let embedder = graph_builder::graph::embeddings::DeterministicEmbeddingService::default();
     let mut durable_state = InMemoryDurableGraphState::with_synthetic_outbox_drain();
     let mut published_events: Vec<EventEnvelope> = Vec::new();
-    let mut orchestrator = GraphRebuildOrchestrator::new(&mut durable_state, &mut published_events);
+    let mut orchestrator =
+        GraphRebuildOrchestrator::new(&mut durable_state, &mut published_events, &embedder);
     let outcome = orchestrator
         .rebuild_from_changes(&scopes, &observed_changes)
         .await
@@ -334,10 +337,23 @@ async fn watcher_churn_and_reconciliation_converges_to_correct_graph_state_under
 
     let rebuild_start = std::time::Instant::now();
 
+    let ollama_url = std::env::var("OLLAMA_URL").expect("OLLAMA_URL must be set for live e2e");
+    let embedding_service = infrastructure::OllamaEmbeddingService::from_config(
+        infrastructure::OllamaEmbeddingConfig {
+            base_url: ollama_url,
+            model: "nomic-embed-text".to_owned(),
+            timeout_ms: 5_000,
+            batch_timeout_ms: 10_000,
+            max_concurrency: 4,
+        },
+    )
+    .expect("OllamaEmbeddingService should build with valid config");
+
     let skills = graph_builder::graph::build::build_skills_from_scope_roots(
         &scopes,
-        &graph_builder::graph::embeddings::DeterministicEmbeddingGenerator,
+        &embedding_service,
     )
+    .await
     .expect("build should succeed");
 
     let communities = graph_builder::graph::communities::assign_communities(&skills);

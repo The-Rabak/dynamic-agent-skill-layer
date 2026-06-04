@@ -10,13 +10,12 @@ use serde_json::json;
 use thiserror::Error;
 use uuid::Uuid;
 
-use domain::ScopeRoot;
+use domain::{EmbeddingService, ScopeRoot};
 
 use crate::{
     graph::{
         build::{BuiltSkill, GraphBuildError, build_skills_from_scope_roots},
         communities::{CommunityAssignment, assign_communities},
-        embeddings::DeterministicEmbeddingGenerator,
     },
     watcher::SkillFileChange,
 };
@@ -69,16 +68,22 @@ where
 {
     durable_state: &'a mut T,
     published_events: &'a mut Vec<EventEnvelope>,
+    embedding_service: &'a dyn EmbeddingService,
 }
 
 impl<'a, T> GraphRebuildOrchestrator<'a, T>
 where
     T: DurableGraphState,
 {
-    pub fn new(durable_state: &'a mut T, published_events: &'a mut Vec<EventEnvelope>) -> Self {
+    pub fn new(
+        durable_state: &'a mut T,
+        published_events: &'a mut Vec<EventEnvelope>,
+        embedding_service: &'a dyn EmbeddingService,
+    ) -> Self {
         Self {
             durable_state,
             published_events,
+            embedding_service,
         }
     }
 
@@ -87,7 +92,7 @@ where
         scope_roots: &[ScopeRoot],
         file_changes: &[SkillFileChange],
     ) -> Result<GraphRebuildOutcome, GraphRebuildError> {
-        let skills = build_skills_from_scope_roots(scope_roots, &DeterministicEmbeddingGenerator)?;
+        let skills = build_skills_from_scope_roots(scope_roots, self.embedding_service).await?;
         let communities = assign_communities(&skills);
         let audits = file_changes
             .iter()
@@ -322,6 +327,7 @@ mod tests {
     use domain::{ScopeRoot, ScopeType};
 
     use super::*;
+    use crate::graph::embeddings::DeterministicEmbeddingService;
 
     #[tokio::test]
     async fn in_memory_durable_state_fails_closed_without_explicit_synthetic_drain_opt_in() {
@@ -359,12 +365,14 @@ mod tests {
         );
         let scope_roots = vec![scope];
         let changes: Vec<SkillFileChange> = vec![];
+        let embedder = DeterministicEmbeddingService::default();
 
         let mut state = InMemoryDurableGraphState::with_synthetic_outbox_drain();
         let mut published_events: Vec<EventEnvelope> = Vec::new();
 
         let first_outcome = {
-            let mut orchestrator = GraphRebuildOrchestrator::new(&mut state, &mut published_events);
+            let mut orchestrator =
+                GraphRebuildOrchestrator::new(&mut state, &mut published_events, &embedder);
             orchestrator
                 .rebuild_from_changes(&scope_roots, &changes)
                 .await
@@ -385,7 +393,8 @@ mod tests {
 
         // Second rebuild with the same scope (simulates an unchanged skill set).
         let second_outcome = {
-            let mut orchestrator = GraphRebuildOrchestrator::new(&mut state, &mut published_events);
+            let mut orchestrator =
+                GraphRebuildOrchestrator::new(&mut state, &mut published_events, &embedder);
             orchestrator
                 .rebuild_from_changes(&scope_roots, &changes)
                 .await

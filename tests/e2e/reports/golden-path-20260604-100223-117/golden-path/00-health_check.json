@@ -1,0 +1,47 @@
+{
+  "timestamp": "2026-06-04T10:02:23.124087891+00:00",
+  "stage": "health_check",
+  "input": {
+    "url": "http://127.0.0.1:3001/health"
+  },
+  "output": {
+    "body": {
+      "checked_at": "2026-06-04T10:02:23.123236387Z",
+      "components": [
+        {
+          "detail": "enabled",
+          "healthy": true,
+          "name": "usage_write"
+        },
+        {
+          "detail": "ollama",
+          "healthy": true,
+          "name": "extraction_provider"
+        },
+        {
+          "detail": "reachable",
+          "healthy": true,
+          "name": "postgres"
+        },
+        {
+          "detail": "reachable",
+          "healthy": true,
+          "name": "redis"
+        },
+        {
+          "detail": "reachable",
+          "healthy": true,
+          "name": "ollama"
+        },
+        {
+          "detail": "reachable",
+          "healthy": true,
+          "name": "qdrant_write_side"
+        }
+      ],
+      "healthy": true
+    },
+    "status_code": 200
+  },
+  "infra_snapshot": null
+}

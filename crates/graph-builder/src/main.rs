@@ -7,9 +7,10 @@ use graph_builder::{
 };
 use infrastructure::{
     CircuitState, DependencyFactory, EventEnvelope, HealthReport, InfrastructureHealthChecker,
-    PostgresAdapter, PostgresConfig, PostgresGraphWriteCoordinator, PostgresRebuildCoordinator,
-    QdrantAdapter, QdrantConfig, RebuildCoordinator, RedisStreamError, RedisStreamsAdapter,
-    RedisStreamsConfig, logging::init_logging,
+    OllamaEmbeddingConfig, OllamaEmbeddingService, PostgresAdapter, PostgresConfig,
+    PostgresGraphWriteCoordinator, PostgresRebuildCoordinator, QdrantAdapter, QdrantConfig,
+    RebuildCoordinator, RedisStreamError, RedisStreamsAdapter, RedisStreamsConfig,
+    logging::init_logging,
 };
 use serde::Serialize;
 use tokio::{
@@ -191,6 +192,22 @@ async fn maybe_replay_graph_rebuilt(
     }
 }
 
+/// Builds a real Ollama embedding service from the `OLLAMA_URL` environment variable.
+///
+/// Fails loud when `OLLAMA_URL` is unset — there is no fallback embedder in production.
+fn build_embedding_service() -> Result<OllamaEmbeddingService, Box<dyn std::error::Error>> {
+    let base_url = std::env::var("OLLAMA_URL")
+        .map_err(|_| "OLLAMA_URL must be set to connect to the embedding service")?;
+    let config = OllamaEmbeddingConfig {
+        base_url,
+        model: "nomic-embed-text".to_owned(),
+        timeout_ms: 5_000,
+        batch_timeout_ms: 10_000,
+        max_concurrency: 4,
+    };
+    OllamaEmbeddingService::from_config(config).map_err(|e| e.to_string().into())
+}
+
 async fn run_rebuild_cycle(
     watcher: &mut SkillWatcher,
     recovery: &mut WatcherRecovery,
@@ -318,9 +335,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )
     .map_err(|error| error.to_string())?;
 
+    let embedding_service = build_embedding_service()?;
+
     let _ = pg_adapter.run_migrations().await;
     qdrant_adapter
-        .ensure_collection(&qdrant_adapter.config.collection_name, 8)
+        .ensure_collection(&qdrant_adapter.config.collection_name, 768)
         .await
         .map_err(|error| format!("qdrant collection setup: {error}"))?;
 
@@ -366,8 +385,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // borrows the durable state and the buffer) and lets the loop own the
         // buffer it must publish from.
         let cycle_result = {
-            let mut orchestrator =
-                GraphRebuildOrchestrator::new(&mut durable_state, &mut published_events);
+            let mut orchestrator = GraphRebuildOrchestrator::new(
+                &mut durable_state,
+                &mut published_events,
+                &embedding_service,
+            );
             run_rebuild_cycle(&mut watcher, &mut recovery, &mut orchestrator).await
         };
         match cycle_result {

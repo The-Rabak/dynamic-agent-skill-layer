@@ -1,0 +1,31 @@
+{
+  "timestamp": "2026-06-04T10:44:17.968671163+00:00",
+  "stage": "snapshot_swap",
+  "input": {
+    "bug": "#156 — graph.rebuilt not published due to outbox idempotency conflict",
+    "prev_graph_version": 9,
+    "timeout_secs": 90
+  },
+  "output": {
+    "detail": "snapshot did not advance from v9 within 90s — see #156\nPG graph_version=10, served graph_version=2\nRoot cause: graph-builder bumps graph_state then errors on outbox idempotency conflict before publishing graph.rebuilt, so the mcp-server refresh subscriber never fires.",
+    "elapsed_ms": 90099,
+    "ok": false,
+    "pg_graph_version_after": 10
+  },
+  "infra_snapshot": {
+    "captured_at": "2026-06-04T10:44:17.953773452+00:00",
+    "pg_graph_version": 10,
+    "pg_table_counts": {
+      "communities": 6,
+      "community_skills": 7,
+      "outbox_events": 6,
+      "skill_subunits": 18,
+      "skills": 7,
+      "subunits": 18,
+      "transcript_ingest_queue": 1
+    },
+    "qdrant_points_count": 0,
+    "qdrant_status": "green",
+    "redis_stream_len": 1
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "timestamp": "2026-06-04T10:00:16.780471619+00:00",
+  "stage": "retrieval_request",
+  "input": {
+    "prompt": "harness golden-path sidecar ingestion harness-golden-1780567124055",
+    "repo_path": "/tmp",
+    "session_id": "golden-path-retrieval-1780567216780"
+  },
+  "output": null,
+  "infra_snapshot": null
+}

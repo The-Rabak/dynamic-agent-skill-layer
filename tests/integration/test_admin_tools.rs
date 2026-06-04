@@ -16,7 +16,7 @@ use admin::tools::{
 };
 use async_trait::async_trait;
 use chrono::Utc;
-use domain::{ScopeRoot, ScopeType};
+use domain::{EmbeddingService, ScopeRoot, ScopeType};
 use infrastructure::{
     LiveGraphSnapshotMutation, PostgresAdapter, PostgresConfig, RebuildCoordinator, RebuildError,
 };
@@ -348,12 +348,16 @@ async fn rebuild_graph_uses_graph_builder_full_rebuild_workflow() {
     write_skill_file(&global_root, "global-skill", "Global Skill");
 
     let coordinator = Arc::new(RecordingRebuildCoordinator::default());
+    let embedding_service: Arc<dyn EmbeddingService> = Arc::new(
+        graph_builder::graph::embeddings::DeterministicEmbeddingService::default(),
+    );
     let rebuild_trigger = FilesystemGraphRebuildTrigger::with_rebuild_coordinator(
         vec![
             ScopeRoot::new("project", ScopeType::Project, project_root.clone()),
             ScopeRoot::new("global", ScopeType::Global, global_root.clone()),
         ],
         coordinator.clone(),
+        embedding_service,
     );
     let app = build_admin_app(
         Arc::new(rebuild_trigger),
@@ -452,11 +456,17 @@ async fn inspect_skill_and_list_communities_read_live_postgres_state_after_rebui
     write_skill_file(&global_root, "global-skill", "Global Skill");
     let project_skill_id = persisted_skill_id(project_root.join("project-skill/SKILL.md"));
 
+    let embedding_service: Arc<dyn EmbeddingService> = Arc::new(
+        graph_builder::graph::embeddings::DeterministicEmbeddingService::default(),
+    );
     let app = build_admin_app(
-        Arc::new(FilesystemGraphRebuildTrigger::new(vec![
-            ScopeRoot::new("project", ScopeType::Project, project_root),
-            ScopeRoot::new("global", ScopeType::Global, global_root),
-        ])),
+        Arc::new(FilesystemGraphRebuildTrigger::new(
+            vec![
+                ScopeRoot::new("project", ScopeType::Project, project_root),
+                ScopeRoot::new("global", ScopeType::Global, global_root),
+            ],
+            embedding_service,
+        )),
         Arc::new(PostgresGraphSnapshotReader::with_default_database_env()),
     );
 

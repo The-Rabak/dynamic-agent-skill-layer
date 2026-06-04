@@ -680,9 +680,11 @@ async fn graph_rebuilt_is_not_emitted_when_outbox_drain_fails() {
         idempotency_key: "ordering:hash-ordering".to_owned(),
     };
 
+    let embedder = graph_builder::graph::embeddings::DeterministicEmbeddingService::default();
     let mut durable_state = OutboxDrainRequiredState::default();
     let mut published_events = Vec::new();
-    let mut orchestrator = GraphRebuildOrchestrator::new(&mut durable_state, &mut published_events);
+    let mut orchestrator =
+        GraphRebuildOrchestrator::new(&mut durable_state, &mut published_events, &embedder);
 
     let result = orchestrator
         .rebuild_from_changes(&[scope], &[file_change])
@@ -761,9 +763,11 @@ async fn graph_rebuilt_ordering_persist_then_outbox_drain_then_version_then_even
         idempotency_key: "ordering:hash".to_owned(),
     };
 
+    let embedder = graph_builder::graph::embeddings::DeterministicEmbeddingService::default();
     let mut durable_state = RelayBackedState::default();
     let mut published_events = Vec::new();
-    let mut orchestrator = GraphRebuildOrchestrator::new(&mut durable_state, &mut published_events);
+    let mut orchestrator =
+        GraphRebuildOrchestrator::new(&mut durable_state, &mut published_events, &embedder);
 
     let _outcome = orchestrator
         .rebuild_from_changes(&[scope], &[file_change])
@@ -806,6 +810,7 @@ async fn graph_rebuilt_fails_when_outbox_drain_reports_pending_items() {
         idempotency_key: "backlog:hash".to_owned(),
     };
 
+    let embedder = graph_builder::graph::embeddings::DeterministicEmbeddingService::default();
     let mut durable_state = RelayBackedState {
         operation_log: Vec::new(),
         graph_version: 0,
@@ -813,7 +818,8 @@ async fn graph_rebuilt_fails_when_outbox_drain_reports_pending_items() {
         outbox_pending_count: 3,
     };
     let mut published_events = Vec::new();
-    let mut orchestrator = GraphRebuildOrchestrator::new(&mut durable_state, &mut published_events);
+    let mut orchestrator =
+        GraphRebuildOrchestrator::new(&mut durable_state, &mut published_events, &embedder);
 
     let result = orchestrator
         .rebuild_from_changes(&[scope], &[file_change])

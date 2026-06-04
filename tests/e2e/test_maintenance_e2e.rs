@@ -98,11 +98,11 @@ fn merge_pass_detects_cross_scope_duplicate_skills_finds_merges_and_writes_pendi
         ScopeRoot::new("global", ScopeType::Global, global_root.clone()),
     ];
 
-    let built = build_skills_from_scope_roots(
-        &scopes,
-        &graph_builder::graph::embeddings::DeterministicEmbeddingGenerator,
-    )
-    .expect("build should succeed");
+    let embedder = graph_builder::graph::embeddings::DeterministicEmbeddingService::default();
+    let built = tokio::runtime::Runtime::new()
+        .expect("tokio runtime should build")
+        .block_on(build_skills_from_scope_roots(&scopes, &embedder))
+        .expect("build should succeed");
     assert_eq!(built.len(), 3);
 
     let snapshots = to_snapshots(built);
@@ -169,11 +169,11 @@ fn merge_pass_no_duplicates_produces_no_proposals() {
         ScopeRoot::new("global", ScopeType::Global, global_root.clone()),
     ];
 
-    let built = build_skills_from_scope_roots(
-        &scopes,
-        &graph_builder::graph::embeddings::DeterministicEmbeddingGenerator,
-    )
-    .expect("build should succeed");
+    let embedder = graph_builder::graph::embeddings::DeterministicEmbeddingService::default();
+    let built = tokio::runtime::Runtime::new()
+        .expect("tokio runtime should build")
+        .block_on(build_skills_from_scope_roots(&scopes, &embedder))
+        .expect("build should succeed");
 
     let snapshots = to_snapshots(built);
     let verifier = TextOverlapMergeSemanticVerifier::default();

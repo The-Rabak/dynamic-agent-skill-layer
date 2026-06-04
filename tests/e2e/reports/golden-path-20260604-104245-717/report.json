@@ -1,0 +1,72 @@
+{
+  "test_name": "golden-path",
+  "test_id": "20260604104418",
+  "started_at": "2026-06-04T10:42:45.717861708+00:00",
+  "duration_ms": 1139,
+  "outcome": {
+    "status": "Failed",
+    "reason": "one or more contract assertions failed"
+  },
+  "sections": [
+    {
+      "name": "seed",
+      "status": {
+        "status": "Passed"
+      },
+      "actions": [
+        {
+          "description": "approved harness-golden-1780569765717/SKILL.md.pending → SKILL.md",
+          "status": {
+            "result": "Passed"
+          },
+          "side_effects": [],
+          "duration_ms": 1094
+        }
+      ],
+      "duration_ms": 1094
+    },
+    {
+      "name": "retrieval",
+      "status": {
+        "status": "Passed"
+      },
+      "actions": [
+        {
+          "description": "compile_context for matching prompt: status=Ok(\"degraded\")",
+          "status": {
+            "result": "Passed"
+          },
+          "side_effects": [],
+          "duration_ms": 45
+        }
+      ],
+      "duration_ms": 45
+    }
+  ],
+  "environment": {
+    "pg_version": "unknown",
+    "qdrant_version": "unknown",
+    "ollama_model": "nomic-embed-text",
+    "redis_version": "unknown"
+  },
+  "contract_assertions": [
+    {
+      "contract_name": "loop_closes_after_seed",
+      "status": {
+        "result": "Failed",
+        "expected": "graph_version > v9 within 90s",
+        "actual": "snapshot did not advance from v9 within 90s — see #156\nPG graph_version=10, served graph_version=2\nRoot cause: graph-builder bumps graph_state then errors on outbox idempotency conflict before publishing graph.rebuilt, so the mcp-server refresh subscriber never fires."
+      },
+      "details": "Bug #156: graph-builder bumps graph_state.graph_version then errors on outbox idempotency conflict before publishing graph.rebuilt. The mcp-server refresh subscriber never fires. This assertion is RED by design — it is the regression guard for the #156 fix.\nprev_version=9, elapsed_ms=90099"
+    },
+    {
+      "contract_name": "seeded_skill_retrievable",
+      "status": {
+        "result": "Passed"
+      },
+      "details": "With #156 open the served graph snapshot never advances, so the seeded skill does not appear in retrieval results.\nskill_slug=harness-golden-1780569765717, prev_version=9, served_version=2"
+    }
+  ],
+  "degradation_events": [],
+  "latency_samples": []
+}

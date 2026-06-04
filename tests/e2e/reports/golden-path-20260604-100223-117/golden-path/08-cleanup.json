@@ -1,0 +1,13 @@
+{
+  "timestamp": "2026-06-04T10:03:56.214057345+00:00",
+  "stage": "cleanup",
+  "input": {
+    "scope": "global",
+    "slug": "harness-golden-1780567343117"
+  },
+  "output": {
+    "detail": "Ok(())",
+    "ok": true
+  },
+  "infra_snapshot": null
+}

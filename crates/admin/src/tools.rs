@@ -7,10 +7,9 @@ use std::{
 };
 
 use async_trait::async_trait;
-use domain::ScopeType;
+use domain::{EmbeddingService, ScopeType};
 use graph_builder::{
     ScopeRoot, graph::build::build_skills_from_scope_roots, graph::communities::assign_communities,
-    graph::embeddings::DeterministicEmbeddingGenerator,
 };
 use infrastructure::{
     LiveGraphCommunityRecord, LiveGraphSkillRecord, LiveGraphSnapshotMutation,
@@ -211,36 +210,42 @@ pub struct FilesystemGraphRebuildTrigger {
     scope_roots: Vec<ScopeRoot>,
     database_url_env: String,
     rebuild_coordinator: Option<Arc<dyn RebuildCoordinator>>,
+    embedding_service: Arc<dyn EmbeddingService>,
 }
 
 impl FilesystemGraphRebuildTrigger {
-    pub fn new(scope_roots: Vec<ScopeRoot>) -> Self {
+    pub fn new(scope_roots: Vec<ScopeRoot>, embedding_service: Arc<dyn EmbeddingService>) -> Self {
         Self {
             scope_roots,
             database_url_env: "DATABASE_URL".to_owned(),
             rebuild_coordinator: None,
+            embedding_service,
         }
     }
 
     pub fn with_database_url_env(
         scope_roots: Vec<ScopeRoot>,
         database_url_env: impl Into<String>,
+        embedding_service: Arc<dyn EmbeddingService>,
     ) -> Self {
         Self {
             scope_roots,
             database_url_env: database_url_env.into(),
             rebuild_coordinator: None,
+            embedding_service,
         }
     }
 
     pub fn with_rebuild_coordinator(
         scope_roots: Vec<ScopeRoot>,
         rebuild_coordinator: Arc<dyn RebuildCoordinator>,
+        embedding_service: Arc<dyn EmbeddingService>,
     ) -> Self {
         Self {
             scope_roots,
             database_url_env: "DATABASE_URL".to_owned(),
             rebuild_coordinator: Some(rebuild_coordinator),
+            embedding_service,
         }
     }
 }
@@ -249,7 +254,8 @@ impl FilesystemGraphRebuildTrigger {
 impl GraphRebuildTrigger for FilesystemGraphRebuildTrigger {
     async fn trigger_full_rebuild(&self) -> Result<GraphRebuildSnapshot, AdminToolError> {
         let skills =
-            build_skills_from_scope_roots(&self.scope_roots, &DeterministicEmbeddingGenerator)
+            build_skills_from_scope_roots(&self.scope_roots, self.embedding_service.as_ref())
+                .await
                 .map_err(|error| AdminToolError::Failed(error.to_string()))?;
         let communities = assign_communities(&skills);
         let skills_count = skills.len();

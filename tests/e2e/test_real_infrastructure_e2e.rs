@@ -10,9 +10,9 @@ use graph_builder::{
     graph::build::build_skills_from_scope_roots, watcher::FileChangeSource,
 };
 use infrastructure::{
-    EventEnvelope, OutboxVectorStore, PostgresAdapter, PostgresConfig,
-    PostgresGraphWriteCoordinator, PostgresRebuildCoordinator, QdrantAdapter, QdrantConfig,
-    RebuildCoordinator,
+    EventEnvelope, OllamaEmbeddingConfig, OllamaEmbeddingService, OutboxVectorStore,
+    PostgresAdapter, PostgresConfig, PostgresGraphWriteCoordinator, PostgresRebuildCoordinator,
+    QdrantAdapter, QdrantConfig, RebuildCoordinator,
 };
 
 fn fixture_root() -> PathBuf {
@@ -81,9 +81,21 @@ async fn setup_qdrant() -> QdrantAdapter {
     )
     .expect("Qdrant should be reachable");
     let _ = qdrant
-        .ensure_collection(&qdrant.config.collection_name, 8)
+        .ensure_collection(&qdrant.config.collection_name, 768)
         .await;
     qdrant
+}
+
+fn setup_embedding_service() -> OllamaEmbeddingService {
+    let base_url = std::env::var("OLLAMA_URL").expect("OLLAMA_URL must be set for live e2e");
+    OllamaEmbeddingService::from_config(OllamaEmbeddingConfig {
+        base_url,
+        model: "nomic-embed-text".to_owned(),
+        timeout_ms: 5_000,
+        batch_timeout_ms: 10_000,
+        max_concurrency: 4,
+    })
+    .expect("OllamaEmbeddingService should build with valid config")
 }
 
 #[tokio::test]
@@ -103,18 +115,21 @@ async fn graph_builder_rebuild_persists_to_pg_and_enqueues_outbox_events_then_dr
         ScopeRoot::new("global", ScopeType::Global, global_root.clone()),
     ];
 
+    let embedding_service = setup_embedding_service();
     let rebuild_coordinator = PostgresRebuildCoordinator::new(pg.pool().clone());
     let outbox_coordinator = PostgresGraphWriteCoordinator::new(pg.pool().clone());
     let mut durable_state =
         PostgresDurableGraphState::new(&rebuild_coordinator, &outbox_coordinator, &qdrant);
     let mut published_events: Vec<EventEnvelope> = Vec::new();
-    let mut orchestrator = GraphRebuildOrchestrator::new(&mut durable_state, &mut published_events);
+    let mut orchestrator = GraphRebuildOrchestrator::new(
+        &mut durable_state,
+        &mut published_events,
+        &embedding_service,
+    );
 
-    let skills = build_skills_from_scope_roots(
-        &scopes,
-        &graph_builder::graph::embeddings::DeterministicEmbeddingGenerator,
-    )
-    .expect("build should succeed");
+    let skills = build_skills_from_scope_roots(&scopes, &embedding_service)
+        .await
+        .expect("build should succeed");
     assert!(!skills.is_empty(), "should discover fixture skills");
 
     let file_changes: Vec<graph_builder::SkillFileChange> = skills
@@ -181,17 +196,20 @@ async fn full_roundtrip_filesystem_to_graph_builder_to_pg_and_qdrant() {
         ScopeRoot::new("global", ScopeType::Global, global_root.clone()),
     ];
 
+    let embedding_service = setup_embedding_service();
     let rebuild_coordinator = PostgresRebuildCoordinator::new(pg.pool().clone());
     let outbox_coordinator = PostgresGraphWriteCoordinator::new(pg.pool().clone());
     let mut durable_state =
         PostgresDurableGraphState::new(&rebuild_coordinator, &outbox_coordinator, &qdrant);
     let mut published_events: Vec<EventEnvelope> = Vec::new();
-    let mut orchestrator = GraphRebuildOrchestrator::new(&mut durable_state, &mut published_events);
-    let skills = build_skills_from_scope_roots(
-        &scopes,
-        &graph_builder::graph::embeddings::DeterministicEmbeddingGenerator,
-    )
-    .expect("build should succeed");
+    let mut orchestrator = GraphRebuildOrchestrator::new(
+        &mut durable_state,
+        &mut published_events,
+        &embedding_service,
+    );
+    let skills = build_skills_from_scope_roots(&scopes, &embedding_service)
+        .await
+        .expect("build should succeed");
     let file_changes: Vec<graph_builder::SkillFileChange> = skills
         .iter()
         .map(|skill| graph_builder::SkillFileChange {

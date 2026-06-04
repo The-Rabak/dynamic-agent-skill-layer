@@ -2,9 +2,10 @@ use std::{sync::Arc, time::Duration};
 
 use async_trait::async_trait;
 use chrono::Utc;
+use domain::EmbeddingService;
 use infrastructure::{
-    PostgresAdapter, PostgresConfig, PostgresGraphSnapshotStore, PostgresUsageSampleStore,
-    TranscriptIngestQueue, UsageSampleStore,
+    OllamaEmbeddingConfig, OllamaEmbeddingService, PostgresAdapter, PostgresConfig,
+    PostgresGraphSnapshotStore, PostgresUsageSampleStore, TranscriptIngestQueue, UsageSampleStore,
     logging::{ServiceLoggingConfig, init_service_logging},
 };
 use session_extractor::SessionExtractor;
@@ -56,6 +57,7 @@ where
     pub snapshot_store: PostgresGraphSnapshotStore,
     pub scope_roots: Vec<std::path::PathBuf>,
     audit_sink: A,
+    embedding_service: Arc<dyn EmbeddingService>,
 }
 
 impl LiveMergePassRunner<PostgresMaintenanceAuditSink> {
@@ -63,11 +65,13 @@ impl LiveMergePassRunner<PostgresMaintenanceAuditSink> {
         snapshot_store: PostgresGraphSnapshotStore,
         scope_roots: Vec<std::path::PathBuf>,
         audit_adapter: &PostgresAdapter,
+        embedding_service: Arc<dyn EmbeddingService>,
     ) -> Self {
         Self {
             snapshot_store,
             scope_roots,
             audit_sink: PostgresMaintenanceAuditSink::from_pool(audit_adapter.pool().clone()),
+            embedding_service,
         }
     }
 }
@@ -80,11 +84,13 @@ where
         snapshot_store: PostgresGraphSnapshotStore,
         scope_roots: Vec<std::path::PathBuf>,
         audit_sink: A,
+        embedding_service: Arc<dyn EmbeddingService>,
     ) -> Self {
         Self {
             snapshot_store,
             scope_roots,
             audit_sink,
+            embedding_service,
         }
     }
 }
@@ -98,8 +104,10 @@ where
         &mut self,
         now: chrono::DateTime<Utc>,
     ) -> Result<Vec<MergeProposal>, CronError> {
-        let skills = load_skill_snapshots(&self.scope_roots)
-            .map_err(|e| CronError::MergePass(e.to_string()))?;
+        let skills =
+            load_skill_snapshots(&self.scope_roots, self.embedding_service.as_ref())
+                .await
+                .map_err(|e| CronError::MergePass(e.to_string()))?;
         if skills.len() < 2 {
             return Ok(Vec::new());
         }
@@ -123,6 +131,7 @@ where
     pub scope_roots: Vec<std::path::PathBuf>,
     pub retirement_config: RetirementConfig,
     audit_sink: A,
+    embedding_service: Arc<dyn EmbeddingService>,
     /// Optional usage store for real retirement scoring (T06).
     ///
     /// When `Some`, `run_retirement_pass` queries real usage aggregates so
@@ -141,12 +150,14 @@ impl LiveRetirementPassRunner<PostgresMaintenanceAuditSink> {
         retirement_config: RetirementConfig,
         audit_adapter: &PostgresAdapter,
         usage_store: Arc<dyn UsageSampleStore>,
+        embedding_service: Arc<dyn EmbeddingService>,
     ) -> Self {
         Self {
             snapshot_store,
             scope_roots,
             retirement_config,
             audit_sink: PostgresMaintenanceAuditSink::from_pool(audit_adapter.pool().clone()),
+            embedding_service,
             usage_store: Some(usage_store),
         }
     }
@@ -161,12 +172,14 @@ where
         scope_roots: Vec<std::path::PathBuf>,
         retirement_config: RetirementConfig,
         audit_sink: A,
+        embedding_service: Arc<dyn EmbeddingService>,
     ) -> Self {
         Self {
             snapshot_store,
             scope_roots,
             retirement_config,
             audit_sink,
+            embedding_service,
             usage_store: None,
         }
     }
@@ -190,8 +203,10 @@ where
         &mut self,
         now: chrono::DateTime<Utc>,
     ) -> Result<Vec<RetirementProposal>, CronError> {
-        let skills = load_skill_snapshots(&self.scope_roots)
-            .map_err(|e| CronError::RetirementPass(e.to_string()))?;
+        let skills =
+            load_skill_snapshots(&self.scope_roots, self.embedding_service.as_ref())
+                .await
+                .map_err(|e| CronError::RetirementPass(e.to_string()))?;
         if skills.is_empty() {
             return Ok(Vec::new());
         }
@@ -240,12 +255,20 @@ where
     }
 }
 
-fn load_skill_snapshots(scope_roots: &[std::path::PathBuf]) -> Result<Vec<SkillSnapshot>, String> {
+/// Loads skill snapshots by walking the given scope-root paths and embedding their text.
+///
+/// Returns an empty slice immediately when `scope_roots` is empty, avoiding
+/// an unnecessary `embed_batch` call (which the real embedder rejects for empty inputs).
+async fn load_skill_snapshots(
+    scope_roots: &[std::path::PathBuf],
+    embedding_service: &dyn EmbeddingService,
+) -> Result<Vec<SkillSnapshot>, String> {
     use domain::{ScopeRoot, ScopeType};
-    use graph_builder::{
-        graph::build::build_skills_from_scope_roots,
-        graph::embeddings::DeterministicEmbeddingGenerator,
-    };
+    use graph_builder::graph::build::build_skills_from_scope_roots;
+
+    if scope_roots.is_empty() {
+        return Ok(Vec::new());
+    }
 
     let roots: Vec<ScopeRoot> = scope_roots
         .iter()
@@ -261,7 +284,8 @@ fn load_skill_snapshots(scope_roots: &[std::path::PathBuf]) -> Result<Vec<SkillS
         })
         .collect();
 
-    let built = build_skills_from_scope_roots(&roots, &DeterministicEmbeddingGenerator)
+    let built = build_skills_from_scope_roots(&roots, embedding_service)
+        .await
         .map_err(|e| e.to_string())?;
 
     Ok(built
@@ -393,14 +417,22 @@ pub async fn run_maintenance_worker_from_environment() -> Result<(), Maintenance
     let usage_store: Arc<dyn UsageSampleStore> =
         Arc::new(PostgresUsageSampleStore::new(pg_adapter.pool().clone()));
 
-    let mut merge_runner =
-        LiveMergePassRunner::new(snapshot_store.clone(), scope_roots.clone(), &pg_adapter);
+    let embedding_service = build_embedding_service_from_environment()
+        .map_err(|e| MaintenanceRuntimeError::InvalidConfiguration(e.to_string()))?;
+
+    let mut merge_runner = LiveMergePassRunner::new(
+        snapshot_store.clone(),
+        scope_roots.clone(),
+        &pg_adapter,
+        Arc::clone(&embedding_service),
+    );
     let mut retirement_runner = LiveRetirementPassRunner::new_with_usage_store(
         snapshot_store,
         scope_roots,
         RetirementConfig::default(),
         &pg_adapter,
         usage_store,
+        embedding_service,
     );
 
     let transcript_drain = build_transcript_drain(&pg_adapter);
@@ -442,6 +474,25 @@ fn build_transcript_drain(pg_adapter: &PostgresAdapter) -> Option<TranscriptQueu
         extractor,
         DEFAULT_TRANSCRIPT_DRAIN_BATCH,
     ))
+}
+
+/// Builds a real Ollama embedding service from `OLLAMA_URL`.
+///
+/// Returns an error (causing the worker to fail at boot) when `OLLAMA_URL` is unset.
+/// There is no silent fallback — missing configuration must surface loudly.
+fn build_embedding_service_from_environment() -> Result<Arc<dyn EmbeddingService>, String> {
+    let base_url =
+        std::env::var("OLLAMA_URL").map_err(|_| "OLLAMA_URL must be set".to_owned())?;
+    let config = OllamaEmbeddingConfig {
+        base_url,
+        model: "nomic-embed-text".to_owned(),
+        timeout_ms: 5_000,
+        batch_timeout_ms: 10_000,
+        max_concurrency: 4,
+    };
+    let service = OllamaEmbeddingService::from_config(config)
+        .map_err(|e| format!("OllamaEmbeddingService init failed: {e}"))?;
+    Ok(Arc::new(service) as Arc<dyn EmbeddingService>)
 }
 
 fn build_scope_roots_from_environment() -> Vec<std::path::PathBuf> {
@@ -655,11 +706,15 @@ mod tests {
         let snapshot_store = PostgresGraphSnapshotStore::new(pool);
 
         let usage_store: Arc<dyn UsageSampleStore> = Arc::new(EmptyUsageSampleStore);
+        let embedding_service: Arc<dyn EmbeddingService> = Arc::new(
+            graph_builder::graph::embeddings::DeterministicEmbeddingService::default(),
+        );
         let mut runner = LiveRetirementPassRunner::with_audit_sink(
             snapshot_store,
             Vec::new(), // empty scope_roots: load_skill_snapshots returns [] -> early return
             RetirementConfig::default(),
             crate::audit::NoopMaintenanceAuditSink,
+            embedding_service,
         )
         .with_usage_store(usage_store);
 

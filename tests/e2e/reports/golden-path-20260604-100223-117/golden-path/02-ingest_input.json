@@ -1,0 +1,13 @@
+{
+  "timestamp": "2026-06-04T10:02:23.259915695+00:00",
+  "stage": "ingest_input",
+  "input": {
+    "scope": "global",
+    "skill_md": "# harness-golden-1780567343117\ntags: golden-path, harness, e2e\n\nA harness-seeded skill for the golden-path E2E test. This skill demonstrates correct sidecar ingestion, graph rebuild, and retrieval for the harness tracer bullet.\n\n## Procedures\n- Seed a skill via the sidecar volume writer\n- Approve the pending file to trigger graph-builder pickup\n- Verify the mcp-server serves the updated graph version\n\n## Conventions\n- Always use unique slugs to prevent cross-run dedup\n- Remove seeded skills after the test to keep the volume clean\n",
+    "skill_name": "harness golden 1780567343117",
+    "slug": "harness-golden-1780567343117",
+    "volume": "dynamic-agent-skill-layer_test-global-skills"
+  },
+  "output": null,
+  "infra_snapshot": null
+}

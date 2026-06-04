@@ -8,7 +8,7 @@ use chrono::{Duration, TimeZone, Utc};
 use domain::{ScopeType, ScopeType::Project};
 use graph_builder::{
     ScopeRoot,
-    graph::{build::build_skills_from_scope_roots, embeddings::DeterministicEmbeddingGenerator},
+    graph::build::build_skills_from_scope_roots,
     watcher::build_snapshot,
 };
 use maintenance::{
@@ -125,11 +125,14 @@ fn retirement_workflow_creates_non_destructive_retired_proposal_marker() {
         "retired artifacts remain filesystem-observable"
     );
 
-    let active_skills = build_skills_from_scope_roots(
-        std::slice::from_ref(&scope_root),
-        &DeterministicEmbeddingGenerator,
-    )
-    .expect("graph build should process active skills");
+    let embedder = graph_builder::graph::embeddings::DeterministicEmbeddingService::default();
+    let active_skills = tokio::runtime::Runtime::new()
+        .expect("tokio runtime should build")
+        .block_on(build_skills_from_scope_roots(
+            std::slice::from_ref(&scope_root),
+            &embedder,
+        ))
+        .expect("graph build should process active skills");
     let mut active_names = active_skills
         .iter()
         .map(|skill| skill.name.as_str())
