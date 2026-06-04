@@ -45,6 +45,7 @@ criterion = { version = "0.5.1", features = ["async_tokio"] }
 graph-builder = { path = "../graph-builder" }
 infrastructure = { path = "../infrastructure", features = ["test-utils"] }
 maintenance = { path = "../maintenance" }
+redis = { version = "0.32.7", features = ["aio", "tokio-comp"] }
 serde_yaml = "0.9.34"
 sqlx = { version = "0.8.6", default-features = false, features = ["runtime-tokio-rustls", "postgres"] }
 uuid = { version = "1.18.1", features = ["v7"] }
@@ -101,6 +102,11 @@ required-features = ["test-utils"]
 [[test]]
 name = "test_support_harness_smoke"
 path = "../../tests/e2e/test_support_harness_smoke.rs"
+required-features = ["test-utils"]
+
+[[test]]
+name = "test_golden_path_real_app"
+path = "../../tests/e2e/test_golden_path_real_app.rs"
 required-features = ["test-utils"]
 
 [[test]]
