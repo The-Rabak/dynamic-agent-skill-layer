@@ -76,11 +76,23 @@ PY
 
     [ -z "$body" ] && exit 0
 
+    # Write the optional secret header to a mode-600 temp file and pass it via
+    # `curl -H @file` (curl 7.55+) so the secret never appears in the process
+    # argument vector (/proc/<pid>/cmdline), which is readable by any same-UID
+    # process. The file is wiped on any exit path via the trap below.
+    secret_header_file="$(mktemp)"
+    chmod 600 "$secret_header_file"
+    trap 'rm -f "$secret_header_file"' EXIT
+
+    if [ -n "${SKILL_LAYER_INGEST_SECRET:-}" ]; then
+        printf 'X-Ingest-Secret: %s\r\n' "$SKILL_LAYER_INGEST_SECRET" >"$secret_header_file"
+    fi
+
     # -m 5 bounds the call; failures are swallowed (the durable queue +
     # maintenance backstop tolerate a missed push, and nothing is waiting on us).
     curl -sS -m 5 -X POST "${SKILL_LAYER_INGEST_URL:-http://127.0.0.1:3001/ingest/transcript}" \
         -H "Content-Type: application/json" \
-        ${SKILL_LAYER_INGEST_SECRET:+-H "X-Ingest-Secret: $SKILL_LAYER_INGEST_SECRET"} \
+        ${SKILL_LAYER_INGEST_SECRET:+-H @"$secret_header_file"} \
         --data-binary "$body" >/dev/null 2>&1 || true
     exit 0
 fi

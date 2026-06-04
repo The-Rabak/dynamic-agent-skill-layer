@@ -190,26 +190,27 @@ When the circuit is **Open**:
 
 **Why:** Claude Code only fires `SessionEnd` on clean termination (`clear`, `resume`, `logout`, `prompt_input_exit`, `other`). Crash paths bypass the hook entirely.
 
-**Recovery:** T07 (level-triggered reconcile loop) reconciles sessions that lacked a `SessionEnd` event on the next startup by replaying extraction from the session transcript. **Until T07 is deployed, manual re-triggering is required:**
+**Recovery:** The durable ingest queue (shipped in V1.5) acts as the reconciliation path: the queue row survives crashes and the maintenance worker drains it on next startup, replacing the T07 filesystem-scan approach. **If the ingest queue row was also lost (e.g., the host was killed before any capture point), manual re-triggering is required** using the shipped `POST /ingest/transcript` path:
 
 ```bash
-# Re-trigger extraction for a specific session via the MCP server
-curl -s -X POST http://localhost:3001/mcp \
+# Re-trigger extraction by POSTing transcript content directly to the ingest endpoint.
+# Reads the transcript file on the host (where the path is valid) and enqueues it.
+curl -s -X POST http://127.0.0.1:3001/ingest/transcript \
   -H 'Content-Type: application/json' \
+  -H 'X-Ingest-Secret: <your-TRANSCRIPT_INGEST_SECRET>' \
   -d '{
-    "jsonrpc": "2.0",
-    "id": 1,
-    "method": "tools/call",
-    "params": {
-      "name": "extract_session",
-      "arguments": {
-        "transcript_ref": "<session-transcript-filename>.jsonl",
-        "session_id": "<session-id>",
-        "repo_path": "/path/to/repo"
-      }
-    }
+    "session_id": "<session-id>",
+    "repo_path": "/path/to/repo",
+    "source": "reconcile",
+    "content": '"$(cat /path/to/<session-transcript>.jsonl | python3 -c 'import sys,json; print(json.dumps(sys.stdin.read()))')"'
   }'
+# Alternatively, run capture-transcript.sh manually against the transcript file:
+#   SKILL_LAYER_INGEST_URL=http://127.0.0.1:3001/ingest/transcript \
+#   SKILL_LAYER_INGEST_SECRET=<secret> \
+#   config/claude-code/capture-transcript.sh session_end < <(echo '{"transcript_path":"/path/to/<session>.jsonl","session_id":"<id>","repo_path":"/path/to/repo"}')
 ```
+
+**Note on the V1.4 path:** The previous wiring called the `extract_session` MCP tool with `transcript_ref: "{{transcript_path}}"`. That path is broken — `validate_ref` rejects absolute host paths and the container cannot resolve them. Use `POST /ingest/transcript` with inline `content` as shown above. See `docs/reference/transcript-ingress.md` for the full ingress contract.
 
 **Important:** `SessionEnd` extraction produces only `.pending` files. No auto-approval occurs. Human rename (`.pending` → `.md`) is required.
 
@@ -237,6 +238,8 @@ curl -s -X POST http://localhost:3001/mcp \
 ## First-Run Failure Modes (run-demo.sh / doctor.sh)
 
 These failure modes are surfaced by `scripts/doctor.sh` and may block `scripts/run-demo.sh`.
+
+**`run-demo.sh` execution model:** The script runs the maintenance binary **natively on the host** (via `cargo build -p maintenance` and a direct binary exec), not inside a container. It sets `SKILL_GLOBAL_PATHS=$SANDBOX_DIR` and host-mapped ports (e.g., Postgres on `127.0.0.1:15432`, Redis on `127.0.0.1:16379`) for that native run. This is a developer shortcut that avoids the full containerized production setup — the production worker runs inside the `maintenance` container with internal Docker network addresses and volume-mounted skill paths.
 
 ### Missing Ollama Model
 
@@ -283,9 +286,12 @@ docker compose -f docker-compose.test.yml port qdrant 6333
 ingest probe receives a non-401 response or the POST is rejected silently.
 
 **Why:** When `TRANSCRIPT_INGEST_SECRET` is set, the `/ingest/transcript` endpoint requires a
-matching `X-Ingest-Secret` header. Without it, unauthenticated POSTs are accepted (no secret
-configured = open ingest endpoint). Neither is wrong, but the doctor flags the unset state so
-you are aware of the posture.
+matching `X-Ingest-Secret` header. Without it, the endpoint relies on the loopback binding
+alone (`127.0.0.1`) and logs a warning. An unset secret is acceptable for **local developer
+use on loopback only** — the loopback binding prevents off-host access in that case. However,
+any deployment that exposes the MCP server beyond localhost (e.g., in a shared environment or
+behind a reverse proxy) **MUST** set `TRANSCRIPT_INGEST_SECRET` to prevent unauthenticated
+transcript ingestion. The doctor flags the unset state so you are aware of the exposure.
 
 **Fix:**
 ```bash

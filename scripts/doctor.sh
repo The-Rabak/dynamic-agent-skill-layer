@@ -17,7 +17,7 @@
 #   Postgres      : 127.0.0.1:15432        (POSTGRES_PORT or 15432)
 #   Redis         : 127.0.0.1:16379        (REDIS_PORT or 16379)
 #   Ollama        : http://127.0.0.1:11444  (OLLAMA_PORT or 11444)
-set -uo pipefail
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
@@ -33,7 +33,18 @@ QDRANT_GRPC_PORT="${QDRANT_GRPC_PORT:-16334}"
 POSTGRES_PORT="${POSTGRES_PORT:-15432}"
 REDIS_PORT="${REDIS_PORT:-16379}"
 
+# Ollama model names — used in Sections 4 and 7.
 OLLAMA_MODEL="${OLLAMA_MODEL:-nomic-embed-text}"
+# EXTRACT_MODEL is the LLM used by session-extractor/maintenance to produce .pending drafts.
+# Its absence is the most common cause of zero .pending files on a first run.
+# Override via OLLAMA_EXTRACTION_MODEL to match whatever run-demo.sh / maintenance uses.
+EXTRACT_MODEL="${OLLAMA_EXTRACTION_MODEL:-granite4:3b}"
+
+# Postgres connection details — used in Section 7 and referenced via docker compose exec.
+# These must stay in sync with docker-compose.test.yml POSTGRES_* env vars.
+POSTGRES_USER="${POSTGRES_USER:-skill_layer}"
+POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-skill_layer}"
+POSTGRES_DB="${POSTGRES_DB:-skill_layer_test}"
 
 # ---------------------------------------------------------------------------
 # Reporting helpers
@@ -69,7 +80,7 @@ check_http_ok() {
 echo ""
 echo "==> [1] Docker / Compose"
 if command -v docker >/dev/null 2>&1; then
-    report_ok "docker found: $(docker --version 2>/dev/null | head -1)"
+    report_ok "docker found: $(docker --version 2>/dev/null | head -1 || true)"
 else
     report_fail "docker not found — install Docker Desktop or Docker Engine"
 fi
@@ -147,12 +158,23 @@ echo "==> [4] Ollama"
 if check_http_ok "http://127.0.0.1:${OLLAMA_PORT}/"; then
     report_ok "Ollama HTTP server reachable on port $OLLAMA_PORT"
 
-    # Check the embedding model is available.
+    # Fetch the model list once; reuse for both embedding and extraction checks.
     OLLAMA_TAGS="$(curl -sSf --max-time 10 "http://127.0.0.1:${OLLAMA_PORT}/api/tags" 2>/dev/null || true)"
+
+    # Check the embedding model (used by graph-builder for vector search).
     if echo "$OLLAMA_TAGS" | grep -q "\"${OLLAMA_MODEL}\""; then
-        report_ok "Ollama model '$OLLAMA_MODEL' is available"
+        report_ok "Ollama embedding model '$OLLAMA_MODEL' is available"
     else
-        report_warn "Ollama model '$OLLAMA_MODEL' not found — pull it with: curl -X POST http://127.0.0.1:${OLLAMA_PORT}/api/pull -d '{\"name\":\"${OLLAMA_MODEL}\"}'"
+        report_warn "Ollama embedding model '$OLLAMA_MODEL' not found — pull it with: curl -X POST http://127.0.0.1:${OLLAMA_PORT}/api/pull -d '{\"name\":\"${OLLAMA_MODEL}\"}'"
+    fi
+
+    # Check the extraction model (used by session-extractor / maintenance to produce
+    # .pending drafts). Its absence is the most common cause of zero .pending files
+    # on a first run (warn-only; extraction is not required for compile_context).
+    if echo "$OLLAMA_TAGS" | grep -q "\"${EXTRACT_MODEL}\""; then
+        report_ok "Ollama extraction model '$EXTRACT_MODEL' is available"
+    else
+        report_warn "Ollama extraction model '$EXTRACT_MODEL' not found — first-run users get zero .pending drafts without it; pull with: curl -X POST http://127.0.0.1:${OLLAMA_PORT}/api/pull -d '{\"name\":\"${EXTRACT_MODEL}\"}'"
     fi
 else
     report_fail "Ollama not reachable on http://127.0.0.1:$OLLAMA_PORT — run: docker compose -f docker-compose.test.yml up -d ollama"
@@ -182,18 +204,29 @@ fi
 echo ""
 echo "==> [6] Ingest secret posture"
 
+# Probe strategy: send a deliberately INVALID source value with a wrong shared secret.
+#
+# The mcp-server handler checks auth (check_ingest_secret) BEFORE calling app.ingest_transcript.
+# Axum parses the JSON body before the handler runs, but source-value validation runs
+# inside ingest_transcript (after the auth check). This gives us two distinct outcomes:
+#
+#   - TRANSCRIPT_INGEST_SECRET enforced on server → auth rejects the wrong secret → 401
+#     (ingest_transcript is never called; no row is written)
+#   - Server is open (no secret configured) → auth passes → source "__invalid__" fails
+#     contract validation inside ingest_transcript → 400 (no row written to queue)
+#
+# Using an invalid source guarantees no queue row is written in either path.
 INGEST_PROBE="$(curl -sS --max-time 5 -o /dev/null -w "%{http_code}" \
     -X POST "http://127.0.0.1:${MCP_SERVER_PORT}/ingest/transcript" \
     -H "Content-Type: application/json" \
     -H "X-Ingest-Secret: wrong-probe-secret" \
-    -d '{"session_id":"doctor-probe","source":"session_end","content":"probe"}' 2>/dev/null || true)"
+    -d '{"session_id":"doctor-probe","source":"__invalid__","content":"probe"}' 2>/dev/null || true)"
 
 if [ "$INGEST_PROBE" = "401" ]; then
     report_ok "Ingest endpoint rejects wrong secret with 401 (TRANSCRIPT_INGEST_SECRET enforced)"
-elif [ "$INGEST_PROBE" = "202" ] || [ "$INGEST_PROBE" = "200" ]; then
-    # Server accepted the request — TRANSCRIPT_INGEST_SECRET is not configured on
-    # this server instance, so the endpoint is open to any caller on loopback.
-    # This is a posture warning, not a blocker; loopback-only exposure limits risk.
+elif [ "$INGEST_PROBE" = "400" ]; then
+    # Auth passed (no secret configured on the server); source validation rejected the probe.
+    # The endpoint is open to any caller on loopback — posture warning, not a blocker.
     report_warn "Ingest endpoint is open (no TRANSCRIPT_INGEST_SECRET on server) — set TRANSCRIPT_INGEST_SECRET in the server environment to gate access"
 elif [ "$INGEST_PROBE" = "000" ] || [ -z "$INGEST_PROBE" ]; then
     report_warn "Ingest endpoint not reachable — MCP server may not be running"
@@ -210,17 +243,20 @@ echo "==> [7] graph_version"
 # Use docker compose exec to query Postgres — avoids requiring a local psql install.
 GRAPH_VERSION_READABLE=0
 if check_tcp_port "127.0.0.1" "$POSTGRES_PORT"; then
+    # NOTE: This query uses 'docker compose exec' against docker-compose.test.yml.
+    # If Postgres was started outside that compose context the exec will fail and
+    # the || true will silence the error — the warn below names the assumption.
     GRAPH_VERSION="$(docker compose --ansi never -f "${REPO_ROOT}/docker-compose.test.yml" \
         exec -T postgres \
-        psql -U "${POSTGRES_USER:-skill_layer}" \
-             -d "${POSTGRES_DB:-skill_layer_test}" \
+        psql -U "${POSTGRES_USER}" \
+             -d "${POSTGRES_DB}" \
              -tAc "SELECT graph_version FROM graph_state WHERE singleton=true LIMIT 1" \
         2>/dev/null | tr -d '[:space:]' || true)"
     if [ -n "$GRAPH_VERSION" ]; then
         report_ok "graph_version readable from Postgres: $GRAPH_VERSION"
         GRAPH_VERSION_READABLE=1
     else
-        report_warn "graph_version not readable (Postgres up but graph_state empty — mcp-server runs migrations on first start)"
+        report_warn "graph_version not readable — Postgres is reachable but graph_state is empty or the postgres container is not managed by docker-compose.test.yml (mcp-server runs migrations on first start)"
     fi
 else
     report_warn "graph_version check skipped — Postgres not reachable"
@@ -236,7 +272,11 @@ HOOK_CONFIG="$HOME/.claude/settings.json"
 HOOK_EXAMPLE="${REPO_ROOT}/config/claude-code/hooks.example.json"
 
 if [ -f "$HOOK_CONFIG" ]; then
-    if python3 -c "import json; d=json.load(open('$HOOK_CONFIG')); assert 'hooks' in d or 'mcpServers' in d" >/dev/null 2>&1; then
+    # Pass the path via an environment variable so filenames with spaces or quotes
+    # cannot escape the Python string literal and cause a syntax or injection error.
+    if DOCTOR_HOOK_CONFIG_PATH="$HOOK_CONFIG" python3 -c \
+        "import json, os; d=json.load(open(os.environ['DOCTOR_HOOK_CONFIG_PATH'])); assert 'hooks' in d or 'mcpServers' in d" \
+        >/dev/null 2>&1; then
         report_ok "Claude Code hook config found at $HOOK_CONFIG with hooks/mcpServers key"
     else
         report_warn "$HOOK_CONFIG exists but missing 'hooks' or 'mcpServers' — copy from $HOOK_EXAMPLE"

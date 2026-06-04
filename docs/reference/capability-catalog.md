@@ -2,7 +2,7 @@
 
 Reference for all MCP tools, events, lifecycle states, and degraded reason codes in the Dynamic Agent Skill Layer V1.5.
 
-**First-run activation path:** run `scripts/doctor.sh` (stack diagnostics) then `scripts/run-demo.sh` (live product demo) to prove the full loop — compiled context in, self-grown `.pending` skill out — in under 10 minutes. See `tests/e2e/reports/activation-demo.md` for the run report and `docs/runbooks/degraded-state.md` for failure-mode examples.
+**First-run activation path:** run `scripts/doctor.sh` (stack diagnostics) then `scripts/run-demo.sh` (live product demo) to prove the full loop — compiled context in, self-grown `.pending` skill out — in under 10 minutes. Note: `compile_context` may return `degraded` if the embedding model or graph is not yet ready — see `docs/runbooks/degraded-state.md` for diagnosis and recovery. See `tests/e2e/reports/activation-demo.md` for the run report.
 
 Deep architecture reference: [`docs/architecture/2026-05-31-skill-layer-v1-5-close-the-loop-architecture.md`](../architecture/2026-05-31-skill-layer-v1-5-close-the-loop-architecture.md)
 
@@ -53,9 +53,11 @@ Each hook entry in `config/claude-code/hooks.example.json` carries a `result_pol
 | `inject_additional_context_on` | `ok`, `degraded` | Inject `additional_context` from the tool response into the conversation as additional context before Claude's next turn |
 | `suppress_duplicate_on_healthy` | `ok`, `no_match` | Mark the session as already compiled; subsequent calls to the same hook within the same session return `duplicate_suppressed` without re-running retrieval |
 | `retry_on` | `degraded` | Re-invoke the tool (once, immediately) when the listed status is returned — used on `UserPromptSubmit` to retry on transient degradation |
-| `ignore_on` | `duplicate_suppressed`, `no_match`, `processing`, `failed`, `degraded` (hook-dependent) | Silently discard the tool result — no context injection, no retry, no error surfaced to Claude |
+| `ignore_on` | `duplicate_suppressed`, `no_match`, `processing`, `failed`, `degraded` (hook-dependent) | Silently absorb the tool result — no error surfaced to Claude, no retry triggered. Context injection is still governed independently by `inject_additional_context_on`; a status in both lists means context IS injected AND the status is silently absorbed. |
 
 Canonical status values: `ok`, `no_match`, `degraded`, `duplicate_suppressed`, `processing`, `failed`.
+
+**`inject_additional_context_on` and `ignore_on` are independent axes, not mutually exclusive.** `inject_additional_context_on` controls whether the `additional_context` field from the tool result is injected into Claude's context window. `ignore_on` controls whether the harness surfaces the result as an error or warning to Claude (silently absorbing it instead). When a status such as `degraded` appears in **both** lists (as in the `SessionStart` and `PreCompact` hooks in `config/claude-code/hooks.example.json`), both effects apply simultaneously: the partial `additional_context` from the degraded response IS injected into Claude's context window, AND the degraded status is silently absorbed — no error message, no retry, no block. The `ignore_on` does not suppress context injection; it only suppresses error/warning surfacing to Claude.
 
 ### Compaction re-injection
 
@@ -156,7 +158,7 @@ The `trigger` field is optional. Omit it (or pass `null`) for all calls except p
 - `health`: per-dependency status map for the compile_context read path — keys are `ollama`, `skill_snapshot_sync`, `filesystem_index`, `usage_write`. Note: `qdrant_write_side` appears only on the infrastructure `/health` endpoint (it is the durable write-side store, not a read-path dependency).
   - `health["usage_write"]`: `"ok"` — background writer active and last DB write succeeded (key may be omitted when healthy for brevity); `"disabled"` — `MCP_USAGE_LOGGING=off` at startup, `usage_sender` is `None`, no rows written; `"failed"` — writer active but the most recent DB write or channel post failed (always emits a `warn` log; never propagates to the caller or affects latency).
 - `scopes_considered`: list of scope IDs searched
-- `graph_version`: current graph version at time of request
+- `graph_version`: current graph version at time of request. `graph_version: 0` is the cold-start sentinel — it means no successful graph rebuild has completed yet. A value `> 0` confirms at least one rebuild has succeeded and the snapshot is populated.
 - `latency_ms`: end-to-end latency in milliseconds
 - `source`: origin of the response — `"retrieval"` (fresh), `"cache"` (cached hit), or `"suppression"` (duplicate suppressed). Compaction-bypass calls always return `"retrieval"` regardless of prior suppression state.
 
