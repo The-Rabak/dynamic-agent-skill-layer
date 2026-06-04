@@ -2,8 +2,8 @@
 plan_ref: docs/plans/2026-05-31-feat-skill-layer-v1-5-close-the-loop-plan.md
 architecture_ref: docs/architecture/2026-05-31-skill-layer-v1-5-close-the-loop-architecture.md
 execution_shape: vertical-slices
-ticket_set_status: in_progress # ready | in_progress | blocked | completed
-last_completed_batch: 9 # batches 1–5 done; batch 6 (T07) superseded → todo 103; batch 7 (T08) done 2026-06-03; batch 8 (T09) done 2026-06-03 (session work-2026-06-03-073851; migration renumbered 004→005); batch 9 (T10) done 2026-06-04 (session work-2026-06-03-230132: live suite green under default config, teardown deadlock resolved, DS-003 Option-A rewrite, latest-summary.md generator, live-e2e CI gate, all 4 V1.5 rollback flags retired). Post-batch commits bcfa9de/d8e45f3/295bfef extended T05 after batch 4 closed (see Batch 4 note below)
+ticket_set_status: completed # ready | in_progress | blocked | completed
+last_completed_batch: 10 # ALL 10 BATCHES DONE. batches 1–5 done; batch 6 (T07) superseded → todo 103; batch 7 (T08) done 2026-06-03; batch 8 (T09) done 2026-06-03 (session work-2026-06-03-073851; migration renumbered 004→005); batch 9 (T10) done 2026-06-04 (session work-2026-06-03-230132); batch 10 (T10b) done 2026-06-04 (session work-2026-06-04-074635: doctor.sh + run-demo.sh activation proof; /workflows:review→triage resolved findings 143-153; demo exercises real retrieval, hardened scripts; follow-ups #154 container-no-git, #155 dream-state test strength). Full `run-e2e-tests.sh --include-dream` GREEN (36/39 passed, 0 failed). Post-batch commits bcfa9de/d8e45f3/295bfef extended T05 after batch 4 closed (see Batch 4 note below)
 total_batches: 10 # re-batched 2026-05-31; T10b activation proof added 2026-06-02 as post-gate adoption slice
 ---
 
