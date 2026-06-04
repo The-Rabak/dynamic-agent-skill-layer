@@ -25,6 +25,13 @@ pub struct OllamaExtractionConfig {
     pub max_entries: usize,
     pub max_entry_chars: usize,
     pub max_total_chars: usize,
+    /// Optional temperature override for the Ollama generation request.
+    ///
+    /// `None` (the default) leaves temperature unset so the model uses its own
+    /// default. Set to `0.0` for fully deterministic (greedy) output — useful in
+    /// tests where stochastic sampling produces nondeterministic extraction results.
+    /// Override at runtime via `OLLAMA_EXTRACTION_TEMPERATURE` (float 0.0–2.0).
+    pub temperature: Option<f32>,
 }
 
 impl Default for OllamaExtractionConfig {
@@ -45,6 +52,9 @@ impl Default for OllamaExtractionConfig {
             max_entries: 2_000,
             max_entry_chars: 8_192,
             max_total_chars: 1_000_000,
+            // None = use the model's default temperature (stochastic sampling).
+            // Override via OLLAMA_EXTRACTION_TEMPERATURE.
+            temperature: None,
         }
     }
 }
@@ -77,12 +87,28 @@ impl OllamaExtractor {
     }
 }
 
+/// Inference options forwarded to Ollama's `/api/generate` `options` field.
+///
+/// Only fields that are explicitly `Some` are serialized; `None` values are
+/// omitted so Ollama uses its model-default for the unset parameters.
+#[derive(Debug, Serialize)]
+struct OllamaGenerateOptions {
+    /// Sampling temperature. Set to `0.0` for deterministic (greedy) output.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    temperature: Option<f32>,
+}
+
 #[derive(Debug, Serialize)]
 struct OllamaExtractionRequest {
     model: String,
     stream: bool,
     format: String,
     prompt: String,
+    /// Forwarded to Ollama's `options` field. Omitted entirely when all fields
+    /// are `None` so existing behavior is unchanged for callers that do not
+    /// override inference options.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    options: Option<OllamaGenerateOptions>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -112,11 +138,15 @@ impl TranscriptSkillExtractionService for OllamaExtractor {
         let transcript_lines = render_sanitized_transcript_lines(transcript);
         let prompt = build_text_json_extraction_prompt(&transcript_lines);
 
+        let options = self.config.temperature.map(|temperature| OllamaGenerateOptions {
+            temperature: Some(temperature),
+        });
         let request = OllamaExtractionRequest {
             model: self.config.model.clone(),
             stream: false,
             format: "json".to_owned(),
             prompt,
+            options,
         };
 
         let raw: OllamaExtractionResponse = post_json_with_timeout(
@@ -154,6 +184,13 @@ mod tests {
             config.timeout_ms >= 60_000,
             "inner timeout must be realistic for CPU inference (>=60s), got {}ms",
             config.timeout_ms
+        );
+        // Default temperature must be None so production inference uses the model's
+        // built-in default sampling (stochastic). Callers that need deterministic
+        // output (e.g. e2e tests) must explicitly set temperature=0.0.
+        assert!(
+            config.temperature.is_none(),
+            "default temperature must be None (model default), not an override"
         );
     }
 

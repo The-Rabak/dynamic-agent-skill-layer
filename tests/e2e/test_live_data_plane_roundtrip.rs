@@ -251,9 +251,27 @@ async fn wait_for_published_event_count(
     panic!("expected at least {expected} published `{event_type}` events");
 }
 
+/// Returns a substantive JSONL transcript encoding a focused Rust async-debugging
+/// workflow with a named failure mode, numbered diagnostic procedures, and a
+/// project-level primitive convention.
+///
+/// The content is intentionally concrete — a specific error message, named commands,
+/// step-by-step recovery, and an explicit project convention — so that the real LLM
+/// extraction model can distill ≥1 skill candidate. A contentless or generic transcript
+/// (the original 2-line fixture) produces zero candidates from a correctly-implemented
+/// model, which is also correct behavior (see the root-cause note in todo #162 and the
+/// verification doc).
+///
+/// Kept to a single focused Q&A exchange so CPU inference completes within the 150s
+/// inner timeout. The test pins `gemma4:e4b` with `temperature=0` (greedy/deterministic)
+/// — observed ~34s warm / ~90s cold on the reference host. `granite4:3b` was rejected
+/// because it nondeterministically returns zero candidates even from concrete content.
 fn inline_transcript_jsonl() -> String {
-    r#"{"speaker":"user","content":"extract a rust workflow"}
-{"speaker":"assistant","content":"here is a reusable flow"}"#
+    // Each line is a standalone JSON object with "speaker" and "content" keys.
+    // The exchange captures: diagnosing a Tokio WouldBlock error under load, with
+    // concrete commands, failure modes, and a repeatable resolution workflow.
+    r#"{"speaker":"user","content":"We keep hitting `Os { code: 35, kind: WouldBlock }` panics when spawning Tokio tasks under load. How do we diagnose and fix this?"}
+{"speaker":"assistant","content":"WouldBlock (OS error 35) under Tokio task spawn is almost always file-descriptor exhaustion. Here is a step-by-step diagnostic and fix workflow. Step 1: before starting the app run `ulimit -n 65536` to raise the FD ceiling — this alone resolves the panic in most cases. Step 2: add `console_subscriber::init()` at the top of main (tokio-console crate) and run `tokio-console` in a separate terminal; it shows live task counts, poll durations, and which tasks are stuck waiting. Step 3: run `grep -rn 'std::sync::Mutex' src/` to find every Mutex in the codebase; any Mutex held across an `.await` point blocks the executor thread and causes task pile-up — replace those with `tokio::sync::Mutex<T>` and change `.lock().unwrap()` to `.lock().await`. Keep `std::sync::Mutex` only for pure synchronous critical sections. Step 4: add `#[tokio::test(flavor = \"multi_thread\", worker_threads = 4)]` to integration tests so they match production concurrency and expose contention early. Convention in this project: async paths always use `tokio::sync` primitives; sync-only paths use `std::sync`. Add a comment above every Mutex declaration — `// async: tokio::sync` or `// sync: std::sync` — so reviewers know which regime applies without reading the surrounding code."}"#
         .to_owned()
 }
 
@@ -595,7 +613,18 @@ async fn extract_session_live_inline_payload_writes_pending_and_emits_completion
     unsafe {
         std::env::set_var("CLAUDE_TRANSCRIPT_ROOT", &sandbox);
         std::env::set_var("EXTRACT_SESSION_PROVIDER", "ollama");
-        std::env::set_var("OLLAMA_EXTRACTION_MODEL", "granite4:3b");
+        // gemma4:e4b is the project-default extraction model (9.6GB). It reliably
+        // extracts candidates from a substantive transcript unlike granite4:3b (2.1GB)
+        // which nondeterministically returns zero candidates even from concrete content.
+        std::env::set_var("OLLAMA_EXTRACTION_MODEL", "gemma4:e4b");
+        // temperature=0: greedy (deterministic) decoding prevents the model from
+        // stochastically returning zero candidates on some runs. Live e2e tests must
+        // not be flaky due to sampling randomness in an otherwise-healthy extractor.
+        std::env::set_var("OLLAMA_EXTRACTION_TEMPERATURE", "0");
+        // 150s inner timeout: wider than the observed ~34s warm greedy run on this
+        // CPU host (temp=0 is faster than sampling), narrower than the 180s outer
+        // pool timeout so a stalled model is correctly killed before the pool gives up.
+        std::env::set_var("OLLAMA_EXTRACTION_TIMEOUT_MS", "150000");
     }
 
     let mut builder = report::ReportBuilder::new(
@@ -637,11 +666,13 @@ async fn extract_session_live_inline_payload_writes_pending_and_emits_completion
         },
     );
 
-    // Bounded readiness poll: wait up to 120 s for extraction to complete.
-    // Live Ollama models (e.g. granite4:3b) can take 60+ seconds on CPU-only hosts
-    // for a full transcript extraction; 25ms × 120 = 3s is far too short in practice.
+    // Bounded readiness poll: wait up to 180 s for extraction to complete.
+    // gemma4:e4b on CPU-only hosts takes ~37s warm / ~66s cold start; a dense
+    // multi-turn transcript can push past 120s. 180s = 360 × 500ms matches the
+    // worker pool's outer timeout (DEFAULT_TIMEOUT_SECS=180) so the poll never
+    // outlasts the extraction.
     let wait_start = std::time::Instant::now();
-    for iteration in 0..240 {
+    for iteration in 0..360 {
         let completed = tool
             .lifecycle_events()
             .iter()
@@ -655,7 +686,7 @@ async fn extract_session_live_inline_payload_writes_pending_and_emits_completion
         if completed >= 1 || failed >= 1 {
             break;
         }
-        if iteration == 239 {
+        if iteration == 359 {
             let events: Vec<_> = tool
                 .lifecycle_events()
                 .iter()
@@ -720,6 +751,19 @@ async fn extract_session_live_inline_payload_writes_pending_and_emits_completion
     // UNCONDITIONALLY — if extraction wrote no draft (pending_files empty), the whole
     // `extract_session_inline_live` contract still "passed" while the system produced
     // nothing. Derive the contract status from the real artifact instead.
+    //
+    // Explicit candidate-count gate: one .pending file is written per extracted candidate
+    // (see crates/session-extractor/src/writer.rs). Zero files means zero candidates —
+    // the extraction ran but the model found nothing to distill. A future regression
+    // (contentless transcript, model degradation, parser breakage) must be visible here
+    // with a reason, not a silent "empty success".
+    let candidate_count = pending_files.len();
+    assert!(
+        candidate_count > 0,
+        "live extraction must yield ≥1 skill candidate from a substantive transcript; \
+         got candidate_count=0 — the model extracted nothing (check transcript content, \
+         model capability, or Ollama response parsing)"
+    );
     let pending_written = !pending_files.is_empty();
     let origin_ok = pending_written
         && std::fs::read_to_string(&pending_files[0])
@@ -729,13 +773,16 @@ async fn extract_session_live_inline_payload_writes_pending_and_emits_completion
     assert!(
         extract_contract_ok,
         "live extraction must write a .pending draft tagged 'origin: session_extraction'; \
-         pending_written={pending_written} origin_ok={origin_ok} (no draft = extraction produced nothing)"
+         pending_written={pending_written} origin_ok={origin_ok} candidate_count={candidate_count} \
+         (no draft = extraction produced nothing)"
     );
     builder.assert_contract(
         "extract_session_inline_live",
         extract_contract_ok,
         "a .pending draft tagged 'origin: session_extraction' is written",
-        &format!("pending_written={pending_written} origin_ok={origin_ok}"),
+        &format!(
+            "pending_written={pending_written} origin_ok={origin_ok} candidate_count={candidate_count}"
+        ),
         "live extraction with inline payload completes and writes a pending draft",
     );
 
