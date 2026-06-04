@@ -51,3 +51,47 @@ and cannot be re-wired without re-adding a deleted type. Verified against the re
 _Note: maintenance merge/retire path is fixed in code (real embedder injected, fails loud on missing `OLLAMA_URL`)
 and unit-green, but is not exercised by the test stack (the `maintenance-worker` runs only in the prod compose);
 its live exercise is out of scope for this stack._
+
+---
+
+## #155 — strengthen DS-003..007 dream-state tests — ⚠️ PARTIAL (honesty core done + verified; deep brutalization remains)
+
+This todo mixes two layers. The **test-honesty core** (the "no more lies" part) is fixed and verified live.
+The **architectural brutalization** (migrate DS-003..007 off in-process `from_environment` onto the real-app
+HTTP harness; real PG/Redis/process-kill fault injection; drift-at-scale; the actual p95 perf fix) is a large
+V2 effort — effectively the full brutal-suite plan — and is honestly NOT done here.
+
+### Honesty defects — FIXED + verified
+- **`report.rs::build()`** already derives the overall outcome from real assertion results (failed assertion
+  → Failed; failed section → Failed; nothing-recorded → Failed; else Passed) and exposes `assert_contract`
+  for inline derivation. Verified by reading `tests/e2e/report.rs:202-229` — the keystone honesty was already
+  in place (prior #095/#145 work). No hardcoded outcome remains in the builder.
+- **DS-003 silent-skip** (the `if let Some(qdrant_write_component)` flagged by the sweep) is already safe: a
+  hard `assert!(qdrant_write_component_present, …)` at `test_dream_state_contract.rs:304` runs BEFORE the
+  `if let`, so the health-degradation assertion can never be silently skipped; the 2s sleep was already
+  replaced by `poll_until` bounded polling.
+- **DS-006** (`sustained_watcher_and_extraction_saturation…`): replaced `assert!(ok_count + no_match_count > 0)`
+  (which masked the ok=0/no_match=N failure mode) with a brutal `assert!(ok_count > 0, …)` + an
+  `assert_contract("saturation_yields_ok_retrievals", …)`; removed the hardcoded `AssertionResult::Passed`.
+- **DS-007** (`high_qps_compile_context_load_meets_p95_and_error_budget_targets`): replaced the `TODO(2.x)` +
+  hardcoded `Passed` with explicit, fail-able assertions on a p95 budget (500ms) AND an error budget (0
+  Degraded under fault-free load), both recorded via `assert_contract` and enforced with `assert!`.
+
+### Live verification (real stack, `--ignored`, env per scripts/run-e2e-tests.sh)
+- `cargo build --tests` → green.
+- **DS-006 live → PASS**: the `ok_count > 0` brutal assert holds (saturation yields real OK retrievals).
+  `test result: ok. 1 passed`.
+- **DS-007 live → FAIL (honest, intended)**: the new p95 assert fires on a REAL measurement —
+  `p95 latency 1147ms exceeds the 500ms warm-path budget (p50=682ms p99=1191ms max=1191ms min=170ms)`.
+  Previously this scenario ALWAYS passed (hardcoded). It now correctly fails, exposing the serialized
+  embedding hot-path bottleneck. Per the mandate, it stays red until the perf is actually fixed. (Default CI
+  runs `--skip ignored`, so this does not break the default gate; the `--ignored` live tier shows the true gap.)
+
+### Remaining (large, NOT done — tracked, keep #155 open)
+- Migrate DS-003..007 off in-process `McpServerApp::from_environment` onto the real-app HTTP harness
+  (`tests/e2e/harness/`, drive the real mcp-server :3001) — the "really e2e" requirement.
+- Real fault injection: DS-003 PG+Redis faults; DS-004 real process-kill + multi-restart of relay/server with a
+  real backlog (assert replayed==enqueued, 0 lost/dup, seeded skills retrievable); DS-005 inject known PG/Qdrant
+  divergences + real `OutboxReconciler::reconcile_once`, assert gaps_closed==gaps_injected at scale.
+- DS-007 PERFORMANCE FIX: the actual embedding hot-path remediation (cache / warmed session-start) so the p95
+  budget is met, plus explicit warm-vs-cold regime separation. The honest test above now drives this work.

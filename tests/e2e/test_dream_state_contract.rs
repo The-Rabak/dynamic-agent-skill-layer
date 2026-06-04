@@ -1472,21 +1472,21 @@ async fn sustained_watcher_and_extraction_saturation_keeps_eventual_consistency(
             CompileContextStatus::DuplicateSuppressed => {}
         }
     }
-    assert!(ok_count + no_match_count > 0);
-
-    // TODO(2.x): replace with a brutal assertion on ok_count + no_match_count thresholds
-    // (slice 2.x owns the per-scenario saturation rewrite). The Rust-level assert! above
-    // guarantees we cannot reach this line with a zero count, so the section status is
-    // implicitly proven by surviving to here; but the report artifact should carry the
-    // explicit computed condition rather than a hardcoded Passed.
-    builder.push_action(
-        "saturation",
-        report::ReportedAction {
-            description: format!("ok={ok_count} no_match={no_match_count}").to_owned(),
-            status: report::AssertionResult::Passed,
-            side_effects: vec![],
-            duration_ms: 0,
-        },
+    // Brutal, fail-loud assertion: saturation must yield at least one REAL OK retrieval.
+    // The previous `ok_count + no_match_count > 0` masked the ok=0/no_match=N failure mode
+    // (retrieval silently returning nothing for every request still counted as success).
+    let saturation_yields_ok = ok_count > 0;
+    assert!(
+        saturation_yields_ok,
+        "saturation must yield at least one OK retrieval; got ok={ok_count} no_match={no_match_count} \
+         (ok=0 means retrieval returned nothing for every concurrent request — the masked failure mode)"
+    );
+    builder.assert_contract(
+        "saturation_yields_ok_retrievals",
+        saturation_yields_ok,
+        "ok_count > 0 under concurrent saturation",
+        &format!("ok={ok_count} no_match={no_match_count}"),
+        "concurrent compile_context saturation must produce real OK retrievals, not all-NoMatch",
     );
 
     let report = builder.build();
@@ -1553,17 +1553,17 @@ async fn high_qps_compile_context_load_meets_p95_and_error_budget_targets() {
         });
     }
     let mut latencies = Vec::with_capacity(total_requests);
+    let mut degraded_count = 0usize;
     while let Some(result) = set.join_next().await {
         let (r, lat) = result.expect("task");
         latencies.push(lat);
         builder.record_latency(&format!("req-{}", latencies.len() - 1), lat);
-        assert!(matches!(
-            r.status,
-            CompileContextStatus::Ok
-                | CompileContextStatus::NoMatch
-                | CompileContextStatus::Degraded
-                | CompileContextStatus::DuplicateSuppressed
-        ));
+        // Under fault-free read load every request should resolve to Ok / NoMatch /
+        // DuplicateSuppressed. A Degraded response means the read path failed (e.g.
+        // embedding unavailable) and counts against the error budget below.
+        if matches!(r.status, CompileContextStatus::Degraded) {
+            degraded_count += 1;
+        }
     }
     latencies.sort();
     let p50 = latencies[latencies.len() / 2];
@@ -1572,19 +1572,37 @@ async fn high_qps_compile_context_load_meets_p95_and_error_budget_targets() {
     let max = latencies.last().copied().unwrap_or(0);
     let min = latencies.first().copied().unwrap_or(0);
 
-    // TODO(2.x): replace with a brutal assertion on p95 and error-budget thresholds
-    // (slice 2.x owns the per-scenario QPS rewrite). We cannot reach this line if any
-    // request panicked; the section Passed status is implicitly proven, but the report
-    // artifact should carry explicit latency-budget conditions.
-    builder.push_action(
-        "latency",
-        report::ReportedAction {
-            description: format!("p50={p50}ms p95={p95}ms p99={p99}ms max={max}ms min={min}ms")
-                .to_owned(),
-            status: report::AssertionResult::Passed,
-            side_effects: vec![],
-            duration_ms: 0,
-        },
+    // Explicit, FAIL-ABLE contract thresholds (warm in-process read path). If the real
+    // measured p95 or error rate exceeds budget the scenario FAILS — no hardcoded Passed.
+    // P95 target: <500ms-class warm path (docs/reference/online-retrieval-cqrs.md, DS-007).
+    // Error budget: zero Degraded tolerated under fault-free read load.
+    const P95_BUDGET_MS: u64 = 500;
+    const DEGRADED_BUDGET: usize = 0;
+    let p95_within_budget = p95 <= P95_BUDGET_MS;
+    let errors_within_budget = degraded_count <= DEGRADED_BUDGET;
+    builder.assert_contract(
+        "high_qps_p95_within_budget",
+        p95_within_budget,
+        &format!("p95 <= {P95_BUDGET_MS}ms"),
+        &format!("p95={p95}ms (p50={p50}ms p99={p99}ms max={max}ms min={min}ms)"),
+        "warm in-process read path must meet the p95 latency budget under concurrent QPS",
+    );
+    builder.assert_contract(
+        "high_qps_error_budget",
+        errors_within_budget,
+        &format!("degraded_count <= {DEGRADED_BUDGET}"),
+        &format!("degraded_count={degraded_count} of {total_requests}"),
+        "concurrent QPS must stay within the error budget (no Degraded under fault-free load)",
+    );
+    assert!(
+        p95_within_budget,
+        "p95 latency {p95}ms exceeds the {P95_BUDGET_MS}ms warm-path budget \
+         (p50={p50}ms p99={p99}ms max={max}ms min={min}ms)"
+    );
+    assert!(
+        errors_within_budget,
+        "error budget exceeded: {degraded_count} Degraded responses of {total_requests} \
+         under fault-free read load (budget {DEGRADED_BUDGET})"
     );
 
     let report = builder.build();
