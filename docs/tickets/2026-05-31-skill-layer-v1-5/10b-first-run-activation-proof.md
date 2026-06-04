@@ -2,7 +2,7 @@
 ticket_id: T10b
 title: First-run activation proof (doctor + demo + time-to-wow)
 kind: hardening # tracer-bullet | expansion | hardening | infra-track | fix-batch
-status: ready # ready | in_progress | blocked | completed
+status: in_progress # ready | in_progress | blocked | completed — impl landed session work-2026-06-04-074635; 2 fidelity concerns (degraded compile_context / inflated pending count) pending review+triage
 plan_ref: docs/plans/2026-05-31-feat-skill-layer-v1-5-close-the-loop-plan.md
 tickets_ref: docs/tickets/2026-05-31-skill-layer-v1-5/index.md
 architecture_ref: docs/architecture/2026-05-31-skill-layer-v1-5-close-the-loop-architecture.md

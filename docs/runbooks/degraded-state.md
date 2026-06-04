@@ -234,6 +234,123 @@ curl -s -X POST http://localhost:3001/mcp \
 
 **Recovery:** Copy `config/claude-code/hooks.example.json` to `~/.claude/settings.json` and restart the session.
 
+## First-Run Failure Modes (run-demo.sh / doctor.sh)
+
+These failure modes are surfaced by `scripts/doctor.sh` and may block `scripts/run-demo.sh`.
+
+### Missing Ollama Model
+
+**Symptom:** `doctor.sh` reports `warn  Ollama model 'nomic-embed-text' not found`.
+`run-demo.sh` compile_context call returns `status: degraded` or times out.
+
+**Check:**
+```bash
+curl -s http://127.0.0.1:11444/api/tags | python3 -m json.tool | grep name
+```
+
+**Fix:**
+```bash
+# Pull the embedding model (docker-compose.test.yml exposes Ollama on port 11444)
+curl -X POST http://127.0.0.1:11444/api/pull -d '{"name":"nomic-embed-text"}'
+# Wait for the pull to complete, then rerun:
+scripts/run-demo.sh
+```
+
+### Wrong Qdrant Port
+
+**Symptom:** `doctor.sh` reports `FAIL  Qdrant REST not reachable on http://127.0.0.1:16333`.
+
+**Why:** The canonical REST port is **16333**. The gRPC port is 16334. A common mistake is
+using 16334 for REST calls — this produces `hyper::Parse(Version)` errors.
+
+**Check:**
+```bash
+curl http://127.0.0.1:16333/collections   # REST — should return 200 OK
+# (gRPC on 16334 is binary-framed; a plain curl there is expected to return garbage)
+```
+
+**Fix:**
+```bash
+# Ensure docker-compose.test.yml maps 16333 → 6333 for REST
+docker compose -f docker-compose.test.yml up -d qdrant
+# Verify the port mapping:
+docker compose -f docker-compose.test.yml port qdrant 6333
+```
+
+### No Ingest Secret (`TRANSCRIPT_INGEST_SECRET` not set)
+
+**Symptom:** `doctor.sh` warns `TRANSCRIPT_INGEST_SECRET not set`. `run-demo.sh` transcript
+ingest probe receives a non-401 response or the POST is rejected silently.
+
+**Why:** When `TRANSCRIPT_INGEST_SECRET` is set, the `/ingest/transcript` endpoint requires a
+matching `X-Ingest-Secret` header. Without it, unauthenticated POSTs are accepted (no secret
+configured = open ingest endpoint). Neither is wrong, but the doctor flags the unset state so
+you are aware of the posture.
+
+**Fix:**
+```bash
+# Set a real shared secret in your shell or .env:
+export TRANSCRIPT_INGEST_SECRET="my-local-ingest-secret"
+# Update hooks.example.json → ~/.claude/settings.json with the same value.
+```
+
+### MCP Server Down
+
+**Symptom:** `doctor.sh` reports `FAIL  MCP server not reachable on http://127.0.0.1:3001`.
+`run-demo.sh` cannot call `compile_context` and exits early.
+
+**Check:**
+```bash
+curl http://127.0.0.1:3001/health
+docker compose -f docker-compose.test.yml ps mcp-server
+docker compose -f docker-compose.test.yml logs mcp-server | tail -30
+```
+
+**Fix:**
+```bash
+# Build and start the MCP server (requires postgres, redis, qdrant, ollama to be healthy first):
+docker compose -f docker-compose.test.yml build mcp-server
+docker compose -f docker-compose.test.yml up -d mcp-server
+# Wait for health check (~30s first boot):
+until curl -sf http://127.0.0.1:3001/health >/dev/null; do sleep 2; done
+echo "MCP server ready"
+```
+
+### No Matching Skills (Empty Graph)
+
+**Symptom:** `compile_context` returns `status: no_match` — no skills matched the prompt.
+`run-demo.sh` reports `compile_context: no_match`.
+
+**Why:** The graph is empty (no skills have been seeded or the graph-builder has not rebuilt
+yet). `run-demo.sh` seeds skills into a sandbox directory, but the MCP server container uses
+its own mounted `/skills/global` volume. If you are using a persistent stack (not the demo
+stack), you may need to add skills manually.
+
+**Check:**
+```bash
+# With the demo stack (run-demo.sh): the sandbox is written to target/demo-sandbox-*/
+# With a persistent stack:
+curl -s -X POST http://127.0.0.1:3001/mcp \
+  -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"find_skill","arguments":{"prompt":"rust async file io"}}}'
+```
+
+**Fix for demo stack:**
+```bash
+# Re-run the demo which seeds the corpus into a fresh sandbox:
+scripts/run-demo.sh
+```
+
+**Fix for persistent stack:**
+```bash
+# Copy a skill from the fixture corpus into the global skills volume:
+mkdir -p /path/to/your/global-skills/rust-tokio-async-file-io
+# Write a SKILL.md with the skill content, then trigger a rebuild:
+curl -X POST http://127.0.0.1:3001/mcp \
+  -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"rebuild_graph","arguments":{}}}'
+```
+
 ## Monitoring Checklist
 
 - [ ] `docker compose ps` shows all services healthy
@@ -242,7 +359,8 @@ curl -s -X POST http://localhost:3001/mcp \
 - [ ] Ollama responds to `api/tags` within 5 seconds
 - [ ] Redis responds to `PING`
 - [ ] PostgreSQL responds to `pg_isready`
-- [ ] Qdrant responds to `/collections`
+- [ ] Qdrant responds to `/collections` on port 16333 (REST, not gRPC 16334)
 - [ ] No `circuit_state: "Open"` in graph-builder health
 - [ ] `SessionEnd` hook configured in `~/.claude/settings.json`
 - [ ] `PreCompact` hook includes `"trigger": "compact"` argument
+- [ ] `scripts/doctor.sh` exits 0

@@ -2,6 +2,8 @@
 
 Reference for all MCP tools, events, lifecycle states, and degraded reason codes in the Dynamic Agent Skill Layer V1.5.
 
+**First-run activation path:** run `scripts/doctor.sh` (stack diagnostics) then `scripts/run-demo.sh` (live product demo) to prove the full loop — compiled context in, self-grown `.pending` skill out — in under 10 minutes. See `tests/e2e/reports/activation-demo.md` for the run report and `docs/runbooks/degraded-state.md` for failure-mode examples.
+
 Deep architecture reference: [`docs/architecture/2026-05-31-skill-layer-v1-5-close-the-loop-architecture.md`](../architecture/2026-05-31-skill-layer-v1-5-close-the-loop-architecture.md)
 
 ## Claude Code Session Lifecycle Hook Contract

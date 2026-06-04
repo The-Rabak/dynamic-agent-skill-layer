@@ -16,6 +16,22 @@ A local-first, self-growing skill context layer that automatically compiles task
 - Docker + Docker Compose
 - Rust 1.85+ (for local development)
 
+### First-Run Activation (recommended starting point)
+
+Two scripts give you a verified stack and a live product demo in under 10 minutes (excluding model download):
+
+```bash
+# 1. Check that the stack is ready (ok|warn|fail diagnostics)
+scripts/doctor.sh
+
+# 2. Seed skills, call compile_context, and prove the self-growth loop end-to-end
+scripts/run-demo.sh
+```
+
+`doctor.sh` checks Docker, required env vars, PG/Redis/Qdrant/Ollama reachability, MCP `/health`, and Claude Code hook config. It exits non-zero only for blockers.
+
+`run-demo.sh` seeds ≥2 realistic skills from `tests/fixtures/retrieval_corpus.json`, calls `compile_context`, posts a transcript through the shipped ingest path, and shows the resulting `.pending` draft. It prints elapsed time and writes `tests/e2e/reports/activation-demo.md`. Default path makes **zero cloud calls** (local Ollama only).
+
 ### Stand Up the Stack
 
 ```bash
@@ -44,6 +60,9 @@ cargo test --workspace
 
 # Integration tests with containers
 docker compose -f docker-compose.test.yml up --abort-on-container-exit
+
+# Full live E2E suite (18/18 green as of 2026-06-04)
+scripts/run-e2e-tests.sh --include-dream
 
 # Benchmarks
 cargo bench
