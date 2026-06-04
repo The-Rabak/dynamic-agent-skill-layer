@@ -17,6 +17,8 @@ use std::path::PathBuf;
 mod env_guard;
 #[path = "report.rs"]
 mod report;
+#[path = "support/mod.rs"]
+mod support;
 
 #[derive(Debug)]
 struct DreamContractCase {
@@ -146,20 +148,23 @@ fn mcp_transport_roundtrip_over_stdio_and_http_is_lossless() {
 /// DS-003: Option A CQRS resilience proof.
 ///
 /// Under the ratified Option A architecture (ADR-0001), `compile_context` reads
-/// from the in-memory `RetrievalSnapshot` — Qdrant is the durable write-side store
-/// only and is NEVER queried at read time. This means:
+/// from the in-memory `RetrievalSnapshot` — Qdrant, Postgres, and Redis are all
+/// write-side concerns and are NEVER queried at read time. This means:
 ///
 /// - Qdrant down → `compile_context` still returns `Ok`/`NoMatch` (read path unaffected)
-/// - The infrastructure health checker surfaces `qdrant_write_side` as degraded
-/// - Ollama down → embedding unavailable → `Degraded` (embedding IS a read-path dependency)
-/// - Full recovery → `compile_context` returns `Ok`/`NoMatch` again
+/// - The infrastructure health checker surfaces `qdrant_write_side` as degraded (HARD assertion)
+/// - Ollama down → embedding unavailable → `Degraded` + non-empty `reason_code`
+/// - Postgres down → `compile_context` still returns `Ok`/`NoMatch` (write-side only)
+/// - Redis down → `compile_context` still returns `Ok`/`NoMatch` (event bus, write-side)
+/// - Full recovery → `compile_context` returns `Ok`/`NoMatch`; recovery latency is recorded
 ///
-/// This test explicitly does NOT assert `Degraded` on Qdrant stop. That assertion was
-/// the stale pre-Option-A contract; it has been replaced with this proof of CQRS resilience.
+/// This test explicitly does NOT assert `Degraded` on Qdrant, Postgres, or Redis stop.
+/// That would be the stale pre-Option-A contract. This scenario proves CQRS resilience for
+/// all write-side services. Recovery latency is measured and asserted within a bounded budget.
 #[ignore = "requires live containers"]
 #[tokio::test]
 async fn dependency_chaos_matrix_preserves_degraded_semantics_and_fast_recovery() {
-    use std::process::Command;
+    use std::time::Instant;
     let _env_guard = env_guard::configure_scope_env();
     let mut builder = report::ReportBuilder::new("DS-003_dependency_chaos_matrix");
     let docker_compose = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -199,20 +204,18 @@ async fn dependency_chaos_matrix_preserves_degraded_semantics_and_fast_recovery(
             trigger: None,
         })
         .await;
+    let baseline_ok = matches!(
+        r_baseline.status,
+        CompileContextStatus::Ok | CompileContextStatus::NoMatch
+    );
     assert!(
-        matches!(
-            r_baseline.status,
-            CompileContextStatus::Ok | CompileContextStatus::NoMatch
-        ),
+        baseline_ok,
         "expected Ok or NoMatch at healthy baseline, got {:?}",
         r_baseline.status
     );
     builder.assert_contract(
         "healthy_baseline_ok_or_no_match",
-        matches!(
-            r_baseline.status,
-            CompileContextStatus::Ok | CompileContextStatus::NoMatch
-        ),
+        baseline_ok,
         "Ok | NoMatch",
         &format!("{:?}", r_baseline.status),
         "compile_context at healthy baseline must return Ok or NoMatch",
@@ -224,47 +227,32 @@ async fn dependency_chaos_matrix_preserves_degraded_semantics_and_fast_recovery(
     // Under Option A the in-memory snapshot is the read model. Qdrant being down
     // does NOT degrade `compile_context`; it only degrades the write side (vector
     // store outbox drain). The infrastructure health checker surfaces this via the
-    // `qdrant_write_side` component.
-    Command::new("docker")
-        .args([
-            "compose",
-            "-f",
-            docker_compose.to_string_lossy().as_ref(),
-            "stop",
-            "qdrant",
-        ])
-        .output()
+    // `qdrant_write_side` component, which MUST be present and reported as unhealthy.
+    support::infra::compose_stop_service(&docker_compose, "qdrant")
         .expect("docker compose stop qdrant");
 
     // Bounded readiness poll: wait up to 10 s for the container to actually stop.
-    // Fixed sleeps are non-deterministic; polling on the health marker is the
-    // correct contract here.
-    let qdrant_down_confirmed = {
-        let http = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_millis(500))
-            .build()
-            .expect("http client");
-        let qdrant_url =
-            std::env::var("QDRANT_URL").unwrap_or_else(|_| "http://localhost:16333".to_owned());
-        let mut confirmed = false;
-        for _ in 0..20 {
-            if http
-                .get(format!("{}/collections", qdrant_url.trim_end_matches('/')))
-                .send()
-                .await
-                .is_err()
-            {
-                confirmed = true;
-                break;
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-        }
-        confirmed
-    };
-    assert!(
-        qdrant_down_confirmed,
-        "qdrant container did not stop within polling window"
-    );
+    // Fixed sleeps are non-deterministic; polling on the observable health marker
+    // is the correct contract here.
+    let qdrant_url =
+        std::env::var("QDRANT_URL").unwrap_or_else(|_| "http://localhost:16333".to_owned());
+    let http = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_millis(500))
+        .build()
+        .expect("http client");
+    let qdrant_url_for_poll = qdrant_url.clone();
+    let http_for_poll = http.clone();
+    support::poll::poll_until(
+        move || {
+            let http = http_for_poll.clone();
+            let url = format!("{}/collections", qdrant_url_for_poll.trim_end_matches('/'));
+            async move { http.get(&url).send().await.is_err() }
+        },
+        std::time::Duration::from_secs(10),
+        std::time::Duration::from_millis(500),
+    )
+    .await
+    .expect("qdrant container did not stop within polling window");
 
     // Option A proof: compile_context reads from in-memory snapshot — Qdrant down
     // must NOT cause Degraded. The read path is decoupled from the write store.
@@ -277,21 +265,19 @@ async fn dependency_chaos_matrix_preserves_degraded_semantics_and_fast_recovery(
             trigger: None,
         })
         .await;
+    let qdrant_down_read_unaffected = matches!(
+        r_qdrant_down.status,
+        CompileContextStatus::Ok | CompileContextStatus::NoMatch
+    );
     assert!(
-        matches!(
-            r_qdrant_down.status,
-            CompileContextStatus::Ok | CompileContextStatus::NoMatch
-        ),
+        qdrant_down_read_unaffected,
         "Option A CQRS: compile_context must NOT degrade when Qdrant is down \
          (read path uses in-memory snapshot, not Qdrant); got {:?}",
         r_qdrant_down.status
     );
     builder.assert_contract(
         "option_a_cqrs_qdrant_down_read_path_unaffected",
-        matches!(
-            r_qdrant_down.status,
-            CompileContextStatus::Ok | CompileContextStatus::NoMatch
-        ),
+        qdrant_down_read_unaffected,
         "Ok | NoMatch (read path must be decoupled from write store)",
         &format!("{:?}", r_qdrant_down.status),
         "Option A: in-memory snapshot is the read model; Qdrant down must not degrade compile_context",
@@ -302,8 +288,10 @@ async fn dependency_chaos_matrix_preserves_degraded_semantics_and_fast_recovery(
         "qdrant stopped — read path unaffected (Option A CQRS contract)",
     );
 
-    // Write-side health proof: the infrastructure health checker must report
-    // `qdrant_write_side` as unhealthy when Qdrant is unreachable.
+    // Write-side health proof: the infrastructure health checker MUST surface
+    // `qdrant_write_side` as a component AND it must be unhealthy. Absence of the
+    // component is itself a contract failure — it means the health checker was not
+    // configured to probe Qdrant, which breaks operational observability.
     let health_while_qdrant_down = DependencyFactory::build_health_checker_from_environment()
         .check()
         .await;
@@ -311,12 +299,40 @@ async fn dependency_chaos_matrix_preserves_degraded_semantics_and_fast_recovery(
         .components
         .iter()
         .find(|c| c.name == "qdrant_write_side");
+    let qdrant_write_component_present = qdrant_write_component.is_some();
+    assert!(
+        qdrant_write_component_present,
+        "qdrant_write_side health component must be present in the health report; \
+         QDRANT_URL env var may be unset or the health checker was not configured to probe Qdrant"
+    );
+    builder.assert_contract(
+        "qdrant_write_side_health_component_present",
+        qdrant_write_component_present,
+        "qdrant_write_side component present in health report",
+        if qdrant_write_component_present {
+            "present"
+        } else {
+            "absent"
+        },
+        "health checker must always expose qdrant_write_side for operational observability",
+    );
     if let Some(component) = qdrant_write_component {
+        let qdrant_write_unhealthy = !component.healthy;
         assert!(
-            !component.healthy,
+            qdrant_write_unhealthy,
             "qdrant_write_side health component must be unhealthy when Qdrant is stopped; \
              got healthy=true detail='{}'",
             component.detail
+        );
+        builder.assert_contract(
+            "qdrant_write_side_health_degraded_when_qdrant_stopped",
+            qdrant_write_unhealthy,
+            "healthy=false (Qdrant is stopped)",
+            &format!(
+                "healthy={} detail='{}'",
+                component.healthy, component.detail
+            ),
+            "qdrant_write_side must be degraded in health report when the Qdrant container is down",
         );
     }
     builder.record_degradation_event(
@@ -325,96 +341,314 @@ async fn dependency_chaos_matrix_preserves_degraded_semantics_and_fast_recovery(
         "qdrant_write_side health marker degraded as expected",
     );
 
-    // --- Phase 3: Ollama stopped too — embedding is unavailable → Degraded ---
-    Command::new("docker")
-        .args([
-            "compose",
-            "-f",
-            docker_compose.to_string_lossy().as_ref(),
-            "stop",
-            "ollama",
-        ])
-        .output()
+    // --- Phase 3: Ollama stopped — embedding is unavailable → Degraded ---
+    //
+    // Qdrant is still down. Ollama is a READ-PATH dependency (vectorises the query
+    // prompt). Stopping Ollama must cause `compile_context` to return `Degraded`.
+    support::infra::compose_stop_service(&docker_compose, "ollama")
         .expect("docker compose stop ollama");
-    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
 
-    let r_both_down = components
+    // Bounded poll: wait until Ollama is actually unreachable (replaces fixed 2s sleep).
+    let ollama_url =
+        std::env::var("OLLAMA_URL").unwrap_or_else(|_| "http://localhost:11444".to_owned());
+    let ollama_url_for_poll = ollama_url.clone();
+    let http_for_ollama_poll = http.clone();
+    support::poll::poll_until(
+        move || {
+            let h = http_for_ollama_poll.clone();
+            let url = format!("{}/api/tags", ollama_url_for_poll.trim_end_matches('/'));
+            async move { h.get(&url).send().await.is_err() }
+        },
+        std::time::Duration::from_secs(10),
+        std::time::Duration::from_millis(500),
+    )
+    .await
+    .expect("ollama container did not stop within polling window");
+
+    let r_ollama_down = components
         .app
         .compile_context(CompileContextRequest {
             prompt: "rust file".to_owned(),
-            session_id: "ds003-both-down".to_owned(),
+            session_id: "ds003-ollama-down".to_owned(),
             repo_path: repo.clone(),
             trigger: None,
         })
         .await;
-    assert_eq!(
-        r_both_down.status,
-        CompileContextStatus::Degraded,
-        "expected Degraded when Ollama is down (embedding unavailable); got {:?}",
-        r_both_down.status
-    );
+    let ollama_down_degraded = r_ollama_down.status == CompileContextStatus::Degraded;
     assert!(
-        !r_both_down.reason_code.as_deref().unwrap_or("").is_empty(),
-        "Degraded response must carry a reason_code"
+        ollama_down_degraded,
+        "expected Degraded when Ollama is down (embedding unavailable); got {:?}",
+        r_ollama_down.status
+    );
+    let ollama_down_has_reason_code = !r_ollama_down
+        .reason_code
+        .as_deref()
+        .unwrap_or("")
+        .is_empty();
+    assert!(
+        ollama_down_has_reason_code,
+        "Degraded response must carry a non-empty reason_code"
     );
     builder.assert_contract(
         "ollama_down_yields_degraded",
-        r_both_down.status == CompileContextStatus::Degraded,
+        ollama_down_degraded,
         "Degraded",
-        &format!("{:?}", r_both_down.status),
+        &format!("{:?}", r_ollama_down.status),
         "Ollama down (embedding unavailable) must produce Degraded status",
     );
-    let has_reason_code = !r_both_down.reason_code.as_deref().unwrap_or("").is_empty();
     builder.assert_contract(
         "degraded_carries_non_empty_reason_code",
-        has_reason_code,
+        ollama_down_has_reason_code,
         "non-empty reason_code",
-        r_both_down.reason_code.as_deref().unwrap_or("(none)"),
+        r_ollama_down.reason_code.as_deref().unwrap_or("(none)"),
         "every Degraded response must carry a machine-parseable reason_code",
     );
     builder.record_degradation_event("both", true, "ollama stopped — Degraded as expected");
 
-    // --- Phase 4: Full recovery ---
-    Command::new("docker")
-        .args([
-            "compose",
-            "-f",
-            docker_compose.to_string_lossy().as_ref(),
-            "start",
-            "qdrant",
-            "ollama",
-        ])
-        .output()
+    // --- Phase 4: Postgres stopped — write-side only; read path must survive ---
+    //
+    // Postgres is the canonical skill graph store (write side). The in-memory
+    // RetrievalSnapshot was already loaded; Postgres being down must NOT degrade
+    // compile_context (it cannot trigger a graph rebuild right now either, but the
+    // existing snapshot is authoritative for reads).
+    support::infra::compose_stop_service(&docker_compose, "postgres")
+        .expect("docker compose stop postgres");
+
+    // Poll until Postgres health check in the infra checker reports unhealthy.
+    // This is more reliable than polling TCP directly since sqlx uses lazy connect.
+    support::poll::poll_until(
+        || async {
+            let health = DependencyFactory::build_health_checker_from_environment()
+                .check()
+                .await;
+            health
+                .components
+                .iter()
+                .find(|c| c.name == "postgres")
+                .map(|c| !c.healthy)
+                .unwrap_or(false)
+        },
+        std::time::Duration::from_secs(15),
+        std::time::Duration::from_millis(500),
+    )
+    .await
+    .expect("postgres container did not report unhealthy within polling window");
+
+    let r_pg_down = components
+        .app
+        .compile_context(CompileContextRequest {
+            prompt: "auth middleware".to_owned(),
+            session_id: "ds003-pg-down".to_owned(),
+            repo_path: repo.clone(),
+            trigger: None,
+        })
+        .await;
+    let pg_down_read_unaffected = matches!(
+        r_pg_down.status,
+        CompileContextStatus::Ok | CompileContextStatus::NoMatch
+    );
+    assert!(
+        pg_down_read_unaffected,
+        "Option A CQRS: compile_context must NOT degrade when Postgres is down \
+         (read path uses in-memory snapshot); got {:?}",
+        r_pg_down.status
+    );
+    builder.assert_contract(
+        "option_a_cqrs_postgres_down_read_path_unaffected",
+        pg_down_read_unaffected,
+        "Ok | NoMatch (Postgres is write-side only)",
+        &format!("{:?}", r_pg_down.status),
+        "Postgres is the write-side graph store; its downtime must not degrade compile_context reads",
+    );
+    builder.record_degradation_event(
+        "postgres",
+        false,
+        "postgres stopped — read path unaffected (Option A CQRS contract)",
+    );
+
+    // Restart Postgres before proceeding.
+    support::infra::compose_start_services(&docker_compose, &["postgres"])
+        .expect("docker compose start postgres");
+    support::poll::poll_until(
+        || async {
+            let health = DependencyFactory::build_health_checker_from_environment()
+                .check()
+                .await;
+            health
+                .components
+                .iter()
+                .find(|c| c.name == "postgres")
+                .map(|c| c.healthy)
+                .unwrap_or(false)
+        },
+        std::time::Duration::from_secs(30),
+        std::time::Duration::from_millis(500),
+    )
+    .await
+    .expect("postgres did not recover within polling window");
+    builder.record_degradation_event("postgres", true, "postgres restarted and healthy");
+
+    // --- Phase 5: Redis stopped — write-side event bus; read path must survive ---
+    //
+    // Redis carries the `graph.rebuilt` event stream (write side). The in-memory
+    // snapshot was already loaded; Redis being down must NOT degrade compile_context.
+    support::infra::compose_stop_service(&docker_compose, "redis")
+        .expect("docker compose stop redis");
+
+    support::poll::poll_until(
+        || async {
+            let health = DependencyFactory::build_health_checker_from_environment()
+                .check()
+                .await;
+            health
+                .components
+                .iter()
+                .find(|c| c.name == "redis")
+                .map(|c| !c.healthy)
+                .unwrap_or(false)
+        },
+        std::time::Duration::from_secs(15),
+        std::time::Duration::from_millis(500),
+    )
+    .await
+    .expect("redis container did not report unhealthy within polling window");
+
+    let r_redis_down = components
+        .app
+        .compile_context(CompileContextRequest {
+            prompt: "rust file async".to_owned(),
+            session_id: "ds003-redis-down".to_owned(),
+            repo_path: repo.clone(),
+            trigger: None,
+        })
+        .await;
+    let redis_down_read_unaffected = matches!(
+        r_redis_down.status,
+        CompileContextStatus::Ok | CompileContextStatus::NoMatch
+    );
+    assert!(
+        redis_down_read_unaffected,
+        "Option A CQRS: compile_context must NOT degrade when Redis is down \
+         (read path uses in-memory snapshot, Redis is the event bus only); got {:?}",
+        r_redis_down.status
+    );
+    builder.assert_contract(
+        "option_a_cqrs_redis_down_read_path_unaffected",
+        redis_down_read_unaffected,
+        "Ok | NoMatch (Redis is write-side event bus only)",
+        &format!("{:?}", r_redis_down.status),
+        "Redis carries graph.rebuilt events (write-side bus); its downtime must not degrade compile_context reads",
+    );
+    builder.record_degradation_event(
+        "redis",
+        false,
+        "redis stopped — read path unaffected (Option A CQRS contract)",
+    );
+
+    // Restart Redis before full recovery phase.
+    support::infra::compose_start_services(&docker_compose, &["redis"])
+        .expect("docker compose start redis");
+    support::poll::poll_until(
+        || async {
+            let health = DependencyFactory::build_health_checker_from_environment()
+                .check()
+                .await;
+            health
+                .components
+                .iter()
+                .find(|c| c.name == "redis")
+                .map(|c| c.healthy)
+                .unwrap_or(false)
+        },
+        std::time::Duration::from_secs(30),
+        std::time::Duration::from_millis(500),
+    )
+    .await
+    .expect("redis did not recover within polling window");
+    builder.record_degradation_event("redis", true, "redis restarted and healthy");
+
+    // --- Phase 6: Full recovery — restart Qdrant + Ollama, measure recovery latency ---
+    //
+    // All write-side services are now up (Postgres, Redis). Restart the remaining
+    // stopped services (Qdrant, Ollama) and poll until compile_context recovers to
+    // Ok/NoMatch. Recovery latency is measured from the moment the start command
+    // returns to the first successful Ok/NoMatch response.
+    support::infra::compose_start_services(&docker_compose, &["qdrant", "ollama"])
         .expect("docker compose start qdrant ollama");
 
-    // Bounded readiness poll: wait up to 30 s for Qdrant + Ollama to be reachable.
-    {
-        let http = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(2))
-            .build()
-            .expect("http client");
-        let qdrant_url =
-            std::env::var("QDRANT_URL").unwrap_or_else(|_| "http://localhost:16333".to_owned());
-        let ollama_url =
-            std::env::var("OLLAMA_URL").unwrap_or_else(|_| "http://localhost:11444".to_owned());
-        for _ in 0..60 {
-            let qdrant_ok = http
-                .get(format!("{}/collections", qdrant_url.trim_end_matches('/')))
-                .send()
-                .await
-                .is_ok();
-            let ollama_ok = http
-                .get(format!("{}/api/tags", ollama_url.trim_end_matches('/')))
-                .send()
-                .await
-                .is_ok();
-            if qdrant_ok && ollama_ok {
+    let recovery_start = Instant::now();
+
+    // Bounded readiness poll: wait for both Qdrant and Ollama to be network-reachable.
+    let qdrant_url_for_recovery = qdrant_url.clone();
+    let ollama_url_for_recovery = ollama_url.clone();
+    let http_for_recovery = http.clone();
+    support::poll::poll_until(
+        move || {
+            let h = http_for_recovery.clone();
+            let q_url = format!(
+                "{}/collections",
+                qdrant_url_for_recovery.trim_end_matches('/')
+            );
+            let o_url = format!("{}/api/tags", ollama_url_for_recovery.trim_end_matches('/'));
+            async move {
+                let qdrant_ok = h.get(&q_url).send().await.is_ok();
+                let ollama_ok = h.get(&o_url).send().await.is_ok();
+                qdrant_ok && ollama_ok
+            }
+        },
+        std::time::Duration::from_secs(60),
+        std::time::Duration::from_millis(500),
+    )
+    .await
+    .expect("qdrant and ollama did not recover within 60s polling window");
+
+    // Poll compile_context itself until it returns Ok/NoMatch, then record latency.
+    // This proves the full read-path recovery is observable, not just network reachability.
+    let recovery_latency_ms = {
+        let mut latency_ms = 0u64;
+        let mut recovered = false;
+        for _ in 0..120 {
+            let r = components
+                .app
+                .compile_context(CompileContextRequest {
+                    prompt: "rust file async".to_owned(),
+                    session_id: "ds003-recovery-poll".to_owned(),
+                    repo_path: repo.clone(),
+                    trigger: None,
+                })
+                .await;
+            if matches!(
+                r.status,
+                CompileContextStatus::Ok | CompileContextStatus::NoMatch
+            ) {
+                latency_ms = recovery_start.elapsed().as_millis() as u64;
+                recovered = true;
                 break;
             }
             tokio::time::sleep(std::time::Duration::from_millis(500)).await;
         }
-    }
+        assert!(
+            recovered,
+            "compile_context did not recover to Ok/NoMatch within 60s after Qdrant+Ollama restart"
+        );
+        latency_ms
+    };
 
+    builder.record_latency("recovery", recovery_latency_ms);
+
+    // Assert recovery within a 60 s budget. The budget is generous because Ollama
+    // model loading can be slow in CI environments, but a timeout here means the
+    // recovery polling was exhausted — a real contract failure.
+    let recovery_within_budget = recovery_latency_ms <= 60_000;
+    builder.assert_contract(
+        "recovery_latency_within_60s_budget",
+        recovery_within_budget,
+        "recovery_latency_ms <= 60000",
+        &format!("recovery_latency_ms={recovery_latency_ms}"),
+        "compile_context must recover to Ok/NoMatch within 60s of Qdrant+Ollama restart",
+    );
+
+    // Final post-recovery check with a stable session id.
     let r_recovered = components
         .app
         .compile_context(CompileContextRequest {
@@ -424,23 +658,21 @@ async fn dependency_chaos_matrix_preserves_degraded_semantics_and_fast_recovery(
             trigger: None,
         })
         .await;
+    let fully_recovered = matches!(
+        r_recovered.status,
+        CompileContextStatus::Ok | CompileContextStatus::NoMatch
+    );
     assert!(
-        matches!(
-            r_recovered.status,
-            CompileContextStatus::Ok | CompileContextStatus::NoMatch
-        ),
+        fully_recovered,
         "expected Ok or NoMatch after full recovery; got {:?}",
         r_recovered.status
     );
     builder.assert_contract(
         "full_recovery_restores_ok_or_no_match",
-        matches!(
-            r_recovered.status,
-            CompileContextStatus::Ok | CompileContextStatus::NoMatch
-        ),
+        fully_recovered,
         "Ok | NoMatch",
         &format!("{:?}", r_recovered.status),
-        "after Qdrant + Ollama restart, compile_context must recover to Ok or NoMatch",
+        "after all services restarted, compile_context must return Ok or NoMatch",
     );
     builder.record_degradation_event("all", true, "recovered to healthy");
 
