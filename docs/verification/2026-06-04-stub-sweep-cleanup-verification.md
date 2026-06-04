@@ -95,3 +95,28 @@ V2 effort — effectively the full brutal-suite plan — and is honestly NOT don
   divergences + real `OutboxReconciler::reconcile_once`, assert gaps_closed==gaps_injected at scale.
 - DS-007 PERFORMANCE FIX: the actual embedding hot-path remediation (cache / warmed session-start) so the p95
   budget is met, plus explicit warm-vs-cold regime separation. The honest test above now drives this work.
+
+---
+
+## #159 — measurement-ground the two unmeasured placeholder timeout constants — ✅ RESOLVED
+
+**Fix:** The two production timeout constants previously self-documented as "UNMEASURED placeholders" are now
+grounded in a REAL measurement on the reference host and reframed as deliberate conservative ceilings (not
+latency targets). Also fixed a model-name inconsistency (`granite4:3b` → `gemma4:e4b`, the actual default).
+
+**Measurement (live stack, host Ollama :11444, `gemma4:e4b` ~9.6GB CPU, moderate extraction prompt, num_predict=256):**
+- cold-start (model load) generation: **65.6s**
+- warm generation: **37.2s, 37.2s** (consistent across runs)
+
+This validates `timeout_ms: 120_000` (inner extraction ceiling) as ~1.8× observed cold-start headroom, and
+`DEFAULT_TIMEOUT_SECS: 180` (outer worker-pool) as the required 1.5× margin. Values unchanged — they were
+defensible; only the "unmeasured/placeholder" framing and the stale model name were wrong.
+
+**Files:** `crates/infrastructure/src/extraction/ollama.rs:37-42` (comment rewritten with the measurement),
+`crates/session-extractor/src/worker_pool.rs:8-13` (comment rewritten, model fixed). Env/builder overrides
+verified real: `OLLAMA_EXTRACTION_TIMEOUT_MS` (providers/ollama.rs:17) and
+`ExtractionWorkerPoolConfig::with_timeout` (worker_pool.rs:45).
+
+**Verification:** `rg -ni 'unmeasured|placeholder' crates/*/src | grep -iv test` → only the benign
+`rebuild.rs:256` comment that describes using a real version *instead of* a hardcoded placeholder.
+`cargo build -p infrastructure -p session-extractor` → green.

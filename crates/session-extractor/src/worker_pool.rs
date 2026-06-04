@@ -7,9 +7,10 @@ const DEFAULT_QUEUE_DEPTH: usize = 64;
 const DEFAULT_MAX_CONCURRENT: usize = 4;
 /// Worker-pool (outer) per-job timeout. Must stay >= 1.5x the provider's inner
 /// timeout so a slow-but-progressing extraction is not cut off prematurely. The
-/// Ollama default inner timeout is 120s (CPU `granite4:3b`), so 180s = 1.5x.
-/// This inner number is an UNMEASURED placeholder (see ollama.rs) — confirm both
-/// values against the target host.
+/// inner Ollama extraction ceiling is 120s (CPU `gemma4:e4b`), grounded in a real
+/// host measurement (warm ~37s, cold-start ~66s; see `OllamaExtractionConfig::default`
+/// in infrastructure/src/extraction/ollama.rs), so 180s = 1.5x preserves the margin.
+/// Override per deployment via `ExtractionWorkerPoolConfig::with_timeout`.
 const DEFAULT_TIMEOUT_SECS: u64 = 180;
 
 #[derive(Debug, Clone)]

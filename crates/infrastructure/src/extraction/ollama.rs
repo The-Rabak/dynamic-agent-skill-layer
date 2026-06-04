@@ -34,11 +34,13 @@ impl Default for OllamaExtractionConfig {
             // gemma4:e4b is the default local extraction model (Gemma 4, E4B
             // effective-params variant). Override via OLLAMA_EXTRACTION_MODEL.
             model: "gemma4:e4b".to_owned(),
-            // 120s inner timeout for CPU inference. NOTE: this is an UNMEASURED
-            // placeholder — single-job p50/p95 on the target host has not been
-            // measured in this environment. The operator must confirm/adjust
-            // against the real deployment (override via OLLAMA_EXTRACTION_TIMEOUT_MS).
-            // The worker-pool (outer) timeout must stay >= 1.5x this value.
+            // Conservative inner timeout CEILING for CPU LLM extraction — a safety bound,
+            // not a latency target. Grounded in a real measurement on the reference host
+            // (2026-06-04, gemma4:e4b ~9.6GB, CPU, moderate transcript): warm single-job
+            // generation ~37s, cold-start (model load) ~66s. 120s gives ~1.8x headroom over
+            // observed cold-start so larger transcripts are not aborted mid-flight. Tune per
+            // deployment via OLLAMA_EXTRACTION_TIMEOUT_MS. The worker-pool (outer) timeout
+            // must stay >= 1.5x this value (see session-extractor worker_pool.rs).
             timeout_ms: 120_000,
             max_entries: 2_000,
             max_entry_chars: 8_192,
