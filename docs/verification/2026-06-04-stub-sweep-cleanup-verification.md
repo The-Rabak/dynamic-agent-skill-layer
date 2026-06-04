@@ -199,3 +199,23 @@ when an admin rebuild is actually triggered — not to build the router.
 build. The pre-existing `--features test-utils` lint debt in a few untouched mcp-server e2e test files
 (`test_project_scope_container`, `test_transcript_ingest_queue_e2e`) is out of scope (not gated by the CI clippy
 command, which runs without `test-utils`) and left for separate cleanup.
+
+### #161 follow-up — NoopMaintenanceAuditSink foot-gun fully closed (commit `9f73849`)
+The one fake that couldn't be cfg-gated (it was the default generic param of two production structs) is now
+closed via "option 2": removed the `MergeProposalWriter`/`RetirementProposalWriter` `::new()` Noop-default
+constructors and the `S = NoopMaintenanceAuditSink` default type param, so a forgotten audit sink is now a
+COMPILE ERROR (every writer must use `with_audit_sink(...)`). With the default param gone, `NoopMaintenanceAuditSink`
+is no longer named in production signatures and IS gated behind `test-utils` like the rest. The three tests that
+used `::new()` now pass an explicit `&NoopMaintenanceAuditSink` (the "no audit" choice is loud at the call site).
+Production unaffected (Live*PassRunner already default to the real `PostgresMaintenanceAuditSink`). Verified:
+`cargo build --workspace` green; maintenance lib 23 / merge 10 / retire 3 pass with test-utils; CI clippy clean.
+
+### #162 root cause CONFIRMED (for next-session handoff)
+Live diagnostic (instrumented + reverted) on the now-honest live inline extraction test:
+`completed=1 failed=0 pending_written=false`. The REAL Ollama extraction (`gemma4:e4b`, via
+`SessionExtractor::from_environment` at test line 612) **completes but returns zero skill candidates**, so the
+draft writer correctly writes nothing. Cause: the test fixture `inline_transcript_jsonl()` is a near-contentless
+2-line transcript (`"extract a rust workflow"` / `"here is a reusable flow"`) — nothing substantive for a real
+model to distill. It only ever "passed" because of the hardcoded `AssertionResult::Passed` (removed in #160). Fix
+(per #162): give the test a substantive transcript so real extraction yields ≥1 candidate and a real `.pending`
+draft — never by relaxing the assertion; optionally assert `candidate_count > 0` explicitly. Full ticket: `todos/162`.
