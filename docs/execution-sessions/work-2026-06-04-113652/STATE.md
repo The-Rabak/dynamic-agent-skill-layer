@@ -97,6 +97,23 @@ per-run/per-stage input+output file logs). ALL existing + future e2e tests adopt
 - 2.1 DS-003 / 2.2 DS-004 / 2.3 DS-005 — built on in-process `from_environment`; concepts carry over but bodies REWORK
   onto the harness (faults = real docker kill; drift = real interruption; retrieval over HTTP). Marked needs-rework.
 
+## LIVE FINDINGS — first real-app E2E probe (2026-06-04, full stack up)
+Drove the REAL `mcp-server` :3001 over HTTP after seeding a new global SKILL.md through the real volume→graph-builder loop:
+- ✅ Real HTTP JSON-RPC transport works; real Ollama 768-dim embeddings score semantically (`semantic=0.576`…).
+- ✅ White-box observation works (PG graph_version, Qdrant points, skills table, Redis stream).
+- 🔴 **#156 (P1): self-growing loop BROKEN.** graph-builder bumps `graph_version` 2→3 in PG, then the rebuild cycle
+  ERRORS on `outbox idempotency conflict for key graph.rebuild:vector:<hash>` (re-emits a vector event for every
+  unchanged skill; UNIQUE conflict) — AFTER the bump, BEFORE publishing `graph.rebuilt`. Redis stuck at `graph.rebuilt:2`;
+  mcp-server snapshot frozen at v2; new skill never retrievable. Any change after the first rebuild breaks ingestion.
+  The in-process suite hid this (it uses `replace_snapshot_and_bump_version` + manual swap). → `todos/156-...md`.
+- 🔴 **#157 (P2): graph-builder crashes on cold start** with Qdrant `409 Conflict` racing mcp-server on
+  `ensure_collection`. Worked around by restarting graph-builder. → `todos/157-...md`.
+- ⚠️ global-only query (repo_path with no `.git`/marker) returns `status: degraded` / `project_scope_resolution_failed`
+  — overall `ok` requires project scope to resolve (the #154 path; needs a `.git`/marker repo mounted in the container).
+- **Implication:** #156 blocks a GREEN golden path. Sequencing: build harness (golden path reproduces #156 as honest RED)
+  → fix #156/#157 → golden path GREEN. Harness golden-path asserts SUBSTANCE (served graph_version advances + seeded
+  skill present/top-ranked in compile_context over HTTP), not overall status==ok.
+
 ## Work Status
 | # | Unit | Kind | Serves / Unlocks | Status | Attempts | Session File |
 |---|------|------|------------------|--------|----------|--------------|
