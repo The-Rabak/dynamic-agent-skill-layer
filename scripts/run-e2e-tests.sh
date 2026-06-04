@@ -58,7 +58,8 @@ if [[ "${SKIP_INFRA}" -eq 0 ]]; then
   cargo test -p graph-builder --test test_real_infrastructure_e2e
 
   echo "==> Running maintenance real-infrastructure E2E tests"
-  cargo test -p maintenance --test test_maintenance_e2e
+  # test_maintenance_e2e requires the `test-utils` feature (gated test doubles, #161).
+  cargo test -p maintenance --features test-utils --test test_maintenance_e2e
 
   if [[ "${SKIP_LIVE}" -eq 0 ]]; then
     echo "==> Building mcp-server and graph-builder test images"
@@ -102,7 +103,8 @@ cargo test -p mcp-server --features test-utils \
   --test test_concurrency_stress
 
 echo "==> Running realistic graph-builder E2E tests"
-cargo test -p graph-builder \
+# test_watcher_rebuild requires the `test-utils` feature (gated test doubles, #161).
+cargo test -p graph-builder --features test-utils \
   --test test_watcher_rebuild
 # test_watcher_churn_reconciliation is registered under mcp-server (needs test-utils),
 # not graph-builder — see crates/mcp-server/Cargo.toml.

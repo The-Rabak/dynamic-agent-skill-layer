@@ -30,7 +30,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::super::report::{
-    AssertionResult, ContractAssertion, E2EReport, ReportBuilder, ReportOutcome, ReportedAction,
+    ContractAssertion, ReportBuilder, ReportedAction,
 };
 
 /// A single stage log entry persisted to disk.

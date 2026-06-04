@@ -16,14 +16,19 @@ path = "src/main.rs"
 [[test]]
 name = "test_watcher_rebuild"
 path = "../../tests/integration/test_watcher_rebuild.rs"
+required-features = ["test-utils"]
 
 [[test]]
 name = "test_outbox_consistency"
 path = "../../tests/integration/test_outbox_consistency.rs"
+required-features = ["test-utils"]
 
 [[test]]
 name = "test_real_infrastructure_e2e"
 path = "../../tests/e2e/test_real_infrastructure_e2e.rs"
+
+[features]
+test-utils = []
 
 [dependencies]
 async-trait = "0.1.89"

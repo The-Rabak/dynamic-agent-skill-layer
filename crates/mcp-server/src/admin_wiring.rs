@@ -17,10 +17,23 @@ pub(crate) struct AdminRuntimeDependencies {
 }
 
 pub(crate) fn live_admin_runtime_dependencies() -> AdminRuntimeDependencies {
+    // Production boot: build the real Ollama embedder up front and FAIL LOUD if
+    // `OLLAMA_URL` is unset (no fallback embedder in production).
+    admin_runtime_dependencies_with_embedder(build_embedding_service())
+}
+
+/// Builds admin runtime deps with a caller-provided embedder.
+///
+/// Used by the explicit-graph / test constructors so that building the router does
+/// NOT require a live `OLLAMA_URL`: the embedder is only exercised when an admin
+/// rebuild is actually triggered, so it is correct to defer the live requirement to
+/// production boot (`live_admin_runtime_dependencies`) and let tests pass their own.
+pub(crate) fn admin_runtime_dependencies_with_embedder(
+    embedding_service: Arc<dyn EmbeddingService>,
+) -> AdminRuntimeDependencies {
     let graph_reader = Arc::new(PostgresGraphSnapshotReader::with_default_database_env())
         as Arc<dyn GraphSnapshotReader>;
 
-    let embedding_service = build_embedding_service();
     let rebuild_trigger = Arc::new(FilesystemGraphRebuildTrigger::new(
         default_scope_roots(),
         embedding_service,

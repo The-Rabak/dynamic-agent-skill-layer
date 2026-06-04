@@ -146,9 +146,13 @@ impl ExtractionEventPublisher for RedisExtractionEventPublisher {
     }
 }
 
+// Only constructed by the gated `new_for_tests_with_publisher` test constructor, so it
+// is gated to the same configs to avoid a dead-code warning in default/release builds.
+#[cfg(any(test, feature = "test-utils"))]
 #[derive(Clone, Default)]
 pub(crate) struct NoopExtractionEventPublisher;
 
+#[cfg(any(test, feature = "test-utils"))]
 #[async_trait]
 impl ExtractionEventPublisher for NoopExtractionEventPublisher {
     async fn publish(&self, _envelope: &EventEnvelope) -> Result<(), LifecycleEventPublishError> {
@@ -283,6 +287,7 @@ impl SessionExtractor {
     }
 
     /// Constructs a fully-injected extractor for deterministic tests.
+    #[cfg(any(test, feature = "test-utils"))]
     pub fn new_for_tests(
         provider: ExtractionProvider,
         extractor: Arc<dyn TranscriptSkillExtractionService>,
@@ -299,6 +304,7 @@ impl SessionExtractor {
     }
 
     /// Constructs a fully-injected extractor and lifecycle publisher for tests.
+    #[cfg(any(test, feature = "test-utils"))]
     pub fn new_for_tests_with_publisher(
         provider: ExtractionProvider,
         extractor: Arc<dyn TranscriptSkillExtractionService>,

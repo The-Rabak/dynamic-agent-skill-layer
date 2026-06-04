@@ -12,7 +12,7 @@ use graph_builder::{
     SkillWatcher, WatcherRecovery, watcher::build_snapshot,
 };
 use infrastructure::{
-    EventEnvelope, OllamaEmbeddingConfig, OllamaEmbeddingService, OutboxVectorStore,
+    EventEnvelope, OutboxVectorStore,
     PostgresGraphSnapshotStore, RebuildCoordinator,
 };
 use mcp_server::McpServerApp;
@@ -159,7 +159,7 @@ async fn watcher_churn_and_reconciliation_preserve_contracts_under_heavy_file_ac
 
     observed_changes.extend(recovered_first);
 
-    let embedder = graph_builder::graph::embeddings::DeterministicEmbeddingService::default();
+    let embedder = graph_builder::graph::embeddings::DeterministicEmbeddingService;
     let mut durable_state = InMemoryDurableGraphState::with_synthetic_outbox_drain();
     let mut published_events: Vec<EventEnvelope> = Vec::new();
     let mut orchestrator =

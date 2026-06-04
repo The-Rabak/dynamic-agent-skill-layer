@@ -170,7 +170,13 @@ impl McpServerApp {
     where
         E: EmbeddingService + Send + Sync + 'static,
     {
-        let admin_runtime_dependencies = admin_wiring::live_admin_runtime_dependencies();
+        // Explicit-graph constructor (tests/benches): reuse the caller's embedder for the
+        // admin rebuild trigger instead of demanding a live OLLAMA_URL. The embedder is only
+        // exercised if an admin rebuild is triggered; production boot uses the fail-loud
+        // `live_admin_runtime_dependencies` path instead.
+        let admin_runtime_dependencies = admin_wiring::admin_runtime_dependencies_with_embedder(
+            embedding_service.clone() as Arc<dyn EmbeddingService>,
+        );
         let start_dir = std::env::current_dir().unwrap_or_else(|_| ".".into());
         let project_resolver: Arc<dyn ScopeResolver> =
             Arc::new(FsMarkerProjectResolver::new(start_dir));

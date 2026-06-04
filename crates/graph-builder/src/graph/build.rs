@@ -42,18 +42,9 @@ pub async fn build_skills_from_scope_roots(
     scope_roots: &[ScopeRoot],
     embedding_service: &dyn EmbeddingService,
 ) -> Result<Vec<BuiltSkill>, GraphBuildError> {
-    // Collect metadata and embedding text together so a single batch call can embed
-    // all skills in one round-trip, preserving order for zip assembly.
-    let mut metas: Vec<(
-        String,   // stable id
-        String,   // scope_id
-        ScopeType,
-        PathBuf,  // source_path
-        String,   // name
-        String,   // description
-        Vec<String>, // tags
-        Vec<ExtractedSubunit>,
-    )> = Vec::new();
+    // Collect the skills (with their embedding text) so a single batch call can embed
+    // them all in one round-trip; the embedding field is filled in by index afterwards.
+    let mut skills: Vec<BuiltSkill> = Vec::new();
     let mut texts_owned: Vec<String> = Vec::new();
 
     for scope in scope_roots {
@@ -92,21 +83,23 @@ pub async fn build_skills_from_scope_roots(
             let id = blake3::hash(path.display().to_string().as_bytes())
                 .to_hex()
                 .to_string();
-            metas.push((
+            skills.push(BuiltSkill {
                 id,
-                scope.scope_id.clone(),
-                scope.scope_type,
-                path.to_path_buf(),
-                extraction.skill_name,
-                extraction.description,
-                extraction.tags,
-                extraction.subunits,
-            ));
+                scope_id: scope.scope_id.clone(),
+                scope_type: scope.scope_type,
+                source_path: path.to_path_buf(),
+                name: extraction.skill_name,
+                description: extraction.description,
+                tags: extraction.tags,
+                subunits: extraction.subunits,
+                // Filled in by the single batch embed call below, by index.
+                embedding: Vec::new(),
+            });
             texts_owned.push(text_for_embedding);
         }
     }
 
-    if metas.is_empty() {
+    if skills.is_empty() {
         return Ok(Vec::new());
     }
 
@@ -118,36 +111,19 @@ pub async fn build_skills_from_scope_roots(
             message: error.to_string(),
         })?;
 
-    if embeddings.len() != metas.len() {
+    if embeddings.len() != skills.len() {
         return Err(GraphBuildError::Embedding {
             message: format!(
                 "embedding count mismatch: expected {}, got {}",
-                metas.len(),
+                skills.len(),
                 embeddings.len()
             ),
         });
     }
 
-    let mut skills: Vec<BuiltSkill> = metas
-        .into_iter()
-        .zip(embeddings)
-        .map(
-            |(
-                (id, scope_id, scope_type, source_path, name, description, tags, subunits),
-                embedding,
-            )| BuiltSkill {
-                id,
-                scope_id,
-                scope_type,
-                source_path,
-                name,
-                description,
-                tags,
-                subunits,
-                embedding,
-            },
-        )
-        .collect();
+    for (skill, embedding) in skills.iter_mut().zip(embeddings) {
+        skill.embedding = embedding;
+    }
 
     skills.sort_by(|left, right| left.id.cmp(&right.id));
     Ok(skills)

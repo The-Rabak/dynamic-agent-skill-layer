@@ -1,7 +1,6 @@
 use std::{
     collections::HashSet,
     path::PathBuf,
-    process::Command,
     sync::{Arc, Mutex},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -28,7 +27,7 @@ use session_extractor::{
 use tokio::task::JoinSet;
 
 use infrastructure::{
-    LiveGraphCommunityRecord, LiveGraphSkillRecord, LiveGraphSnapshotMutation,
+    LiveGraphSkillRecord, LiveGraphSnapshotMutation,
     LiveGraphSubunitRecord, RebuildCoordinator,
 };
 
@@ -744,7 +743,7 @@ async fn compile_context_and_rebuild_concurrent_activity_stays_consistent() {
     for response in &responses {
         if response.status != CompileContextStatus::Ok {
             assert!(
-                response.reason_code.as_deref().unwrap_or("").len() > 0,
+                !response.reason_code.as_deref().unwrap_or("").is_empty(),
                 "non-Ok response must carry reason_code"
             );
         }

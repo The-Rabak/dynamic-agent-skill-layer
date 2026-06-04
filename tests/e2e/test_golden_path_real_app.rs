@@ -39,7 +39,7 @@ use harness::{
     app::{CompileContextArgs, McpClient},
     observe::{InfraSnapshot, PgObserver, QdrantObserver, RedisObserver},
     poll::wait_for_rebuild,
-    seed::{SkillScope, seed_and_approve},
+    seed::SkillScope,
     stagelog::StageLogger,
 };
 use report::{AssertionResult, ContractAssertion, ReportedAction};

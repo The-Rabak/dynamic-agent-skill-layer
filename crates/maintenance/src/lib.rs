@@ -29,9 +29,10 @@ pub use retire::{
 };
 pub use runtime::{
     LiveMergePassRunner, LiveRetirementPassRunner, MaintenanceRuntimeError,
-    MaintenanceWorkerConfig, NoopMergePassRunner, NoopRetirementPassRunner, run_maintenance_worker,
-    run_maintenance_worker_from_environment,
+    MaintenanceWorkerConfig, run_maintenance_worker, run_maintenance_worker_from_environment,
 };
+#[cfg(any(test, feature = "test-utils"))]
+pub use runtime::{NoopMergePassRunner, NoopRetirementPassRunner};
 pub use transcript_drain::{
     DEFAULT_TRANSCRIPT_DRAIN_BATCH, TranscriptDrainError, TranscriptDrainReport,
     TranscriptQueueDrain,

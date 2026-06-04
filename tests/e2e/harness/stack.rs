@@ -193,15 +193,12 @@ impl Stack {
 
         let deadline = std::time::Instant::now() + timeout;
         loop {
-            if let Ok(resp) = client.get(format!("{MCP_SERVER_URL}/health")).send().await {
-                if resp.status().is_success() {
-                    if let Ok(body) = resp.json::<serde_json::Value>().await {
-                        if body.get("healthy") == Some(&serde_json::Value::Bool(true)) {
+            if let Ok(resp) = client.get(format!("{MCP_SERVER_URL}/health")).send().await
+                && resp.status().is_success()
+                    && let Ok(body) = resp.json::<serde_json::Value>().await
+                        && body.get("healthy") == Some(&serde_json::Value::Bool(true)) {
                             return;
                         }
-                    }
-                }
-            }
             if std::time::Instant::now() >= deadline {
                 panic!(
                     "mcp-server did not become healthy within {}s",

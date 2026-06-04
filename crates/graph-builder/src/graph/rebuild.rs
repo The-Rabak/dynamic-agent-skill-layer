@@ -137,6 +137,7 @@ where
     }
 }
 
+#[cfg(any(test, feature = "test-utils"))]
 #[derive(Debug, Default)]
 pub struct InMemoryDurableGraphState {
     pub operation_log: Vec<String>,
@@ -145,6 +146,7 @@ pub struct InMemoryDurableGraphState {
     allow_synthetic_outbox_drain: bool,
 }
 
+#[cfg(any(test, feature = "test-utils"))]
 impl InMemoryDurableGraphState {
     pub fn with_synthetic_outbox_drain() -> Self {
         Self {
@@ -154,6 +156,7 @@ impl InMemoryDurableGraphState {
     }
 }
 
+#[cfg(any(test, feature = "test-utils"))]
 #[async_trait]
 impl DurableGraphState for InMemoryDurableGraphState {
     async fn persist_graph_mutation(
@@ -365,7 +368,7 @@ mod tests {
         );
         let scope_roots = vec![scope];
         let changes: Vec<SkillFileChange> = vec![];
-        let embedder = DeterministicEmbeddingService::default();
+        let embedder = DeterministicEmbeddingService;
 
         let mut state = InMemoryDurableGraphState::with_synthetic_outbox_drain();
         let mut published_events: Vec<EventEnvelope> = Vec::new();
@@ -419,3 +422,4 @@ mod tests {
         );
     }
 }
+

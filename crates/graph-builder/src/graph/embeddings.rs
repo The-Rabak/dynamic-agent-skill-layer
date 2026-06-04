@@ -1,7 +1,10 @@
-/// Test-support only — deterministic 768-dim embeddings for tests without a live Ollama. (#161 will feature-gate this.)
+/// Test-support only — deterministic 768-dim embeddings for tests without a live Ollama.
+/// Gated behind `test-utils` feature to prevent accidental production use.
+#[cfg(any(test, feature = "test-utils"))]
 #[derive(Debug, Default, Clone, Copy)]
 pub struct DeterministicEmbeddingService;
 
+#[cfg(any(test, feature = "test-utils"))]
 impl DeterministicEmbeddingService {
     /// Produces a deterministic 768-dim vector from text without any network calls.
     ///
@@ -31,6 +34,7 @@ impl DeterministicEmbeddingService {
     }
 }
 
+#[cfg(any(test, feature = "test-utils"))]
 #[async_trait::async_trait]
 impl domain::EmbeddingService for DeterministicEmbeddingService {
     async fn embed_text(&self, text: &str) -> Result<Vec<f32>, domain::EmbeddingError> {

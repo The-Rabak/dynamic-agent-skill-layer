@@ -79,12 +79,14 @@ pub trait GraphSnapshotReader: Send + Sync {
 }
 
 /// Deterministic static reader for seeded tests and in-memory graphs.
+#[cfg(any(test, feature = "test-utils"))]
 #[derive(Debug, Clone, Default)]
 pub struct StaticGraphSnapshotReader {
     skills: Vec<SkillSnapshot>,
     communities: Vec<CommunitySnapshot>,
 }
 
+#[cfg(any(test, feature = "test-utils"))]
 impl StaticGraphSnapshotReader {
     pub fn new(skills: Vec<SkillSnapshot>, communities: Vec<CommunitySnapshot>) -> Self {
         Self {
@@ -94,6 +96,7 @@ impl StaticGraphSnapshotReader {
     }
 }
 
+#[cfg(any(test, feature = "test-utils"))]
 #[async_trait]
 impl GraphSnapshotReader for StaticGraphSnapshotReader {
     async fn list_skills(&self) -> Result<Vec<SkillSnapshot>, AdminToolError> {
@@ -191,10 +194,12 @@ impl GraphSnapshotReader for PostgresGraphSnapshotReader {
     }
 }
 
-/// Fail-closed rebuild trigger for explicitly unavailable rebuild wiring.
+/// Fail-closed rebuild trigger for tests where rebuild wiring is not needed.
+#[cfg(any(test, feature = "test-utils"))]
 #[derive(Debug, Clone, Default)]
 pub struct NoopGraphRebuildTrigger;
 
+#[cfg(any(test, feature = "test-utils"))]
 #[async_trait]
 impl GraphRebuildTrigger for NoopGraphRebuildTrigger {
     async fn trigger_full_rebuild(&self) -> Result<GraphRebuildSnapshot, AdminToolError> {

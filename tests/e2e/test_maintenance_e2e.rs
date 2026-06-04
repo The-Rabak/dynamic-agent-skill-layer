@@ -98,7 +98,7 @@ fn merge_pass_detects_cross_scope_duplicate_skills_finds_merges_and_writes_pendi
         ScopeRoot::new("global", ScopeType::Global, global_root.clone()),
     ];
 
-    let embedder = graph_builder::graph::embeddings::DeterministicEmbeddingService::default();
+    let embedder = graph_builder::graph::embeddings::DeterministicEmbeddingService;
     let built = tokio::runtime::Runtime::new()
         .expect("tokio runtime should build")
         .block_on(build_skills_from_scope_roots(&scopes, &embedder))
@@ -169,7 +169,7 @@ fn merge_pass_no_duplicates_produces_no_proposals() {
         ScopeRoot::new("global", ScopeType::Global, global_root.clone()),
     ];
 
-    let embedder = graph_builder::graph::embeddings::DeterministicEmbeddingService::default();
+    let embedder = graph_builder::graph::embeddings::DeterministicEmbeddingService;
     let built = tokio::runtime::Runtime::new()
         .expect("tokio runtime should build")
         .block_on(build_skills_from_scope_roots(&scopes, &embedder))

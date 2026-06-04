@@ -303,9 +303,12 @@ async fn load_skill_snapshots(
         .collect())
 }
 
+/// No-op merge runner for tests that need a `MergePassRunner` but no real merge work.
+#[cfg(any(test, feature = "test-utils"))]
 #[derive(Debug, Default)]
 pub struct NoopMergePassRunner;
 
+#[cfg(any(test, feature = "test-utils"))]
 #[async_trait]
 impl MergePassRunner for NoopMergePassRunner {
     async fn run_merge_pass(
@@ -316,9 +319,12 @@ impl MergePassRunner for NoopMergePassRunner {
     }
 }
 
+/// No-op retirement runner for tests that need a `RetirementPassRunner` but no real retirement work.
+#[cfg(any(test, feature = "test-utils"))]
 #[derive(Debug, Default)]
 pub struct NoopRetirementPassRunner;
 
+#[cfg(any(test, feature = "test-utils"))]
 #[async_trait]
 impl RetirementPassRunner for NoopRetirementPassRunner {
     async fn run_retirement_pass(
@@ -707,7 +713,7 @@ mod tests {
 
         let usage_store: Arc<dyn UsageSampleStore> = Arc::new(EmptyUsageSampleStore);
         let embedding_service: Arc<dyn EmbeddingService> = Arc::new(
-            graph_builder::graph::embeddings::DeterministicEmbeddingService::default(),
+            graph_builder::graph::embeddings::DeterministicEmbeddingService,
         );
         let mut runner = LiveRetirementPassRunner::with_audit_sink(
             snapshot_store,

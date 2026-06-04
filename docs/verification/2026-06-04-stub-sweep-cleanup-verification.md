@@ -149,3 +149,53 @@ verified real: `OLLAMA_EXTRACTION_TIMEOUT_MS` (providers/ollama.rs:17) and
 
 **Net:** #160's honesty scope is complete and verified (no silent pass, no fixed sleeps, no unbacked Passed).
 The one now-failing test is the honest surfacing of #162, not a regression introduced by this change.
+
+---
+
+## #161 — gate exported test fakes behind the `test-utils` feature — ✅ RESOLVED (+ caught/fixed a #158 regression)
+
+**Fix:** Gated every test-only fake exported from a production crate behind `#[cfg(any(test, feature = "test-utils"))]`
+(reusing the existing `test-utils` feature convention, not a new one), so they cannot compile into a default/release
+build and can never be wired into production by mistake.
+
+**Gated:** `StaticGraphSnapshotReader`, `NoopGraphRebuildTrigger` (admin); `NoopMergePassRunner`,
+`NoopRetirementPassRunner` (maintenance); `DeterministicEmbeddingService`, `InMemoryDurableGraphState`
+(graph-builder); `new_for_tests`/`new_for_tests_with_publisher` + `NoopExtractionEventPublisher`
+(session-extractor); `new_for_tests` (mcp-server). Added `test-utils` features to admin/graph-builder/
+session-extractor; maintenance propagates `graph-builder/test-utils`; `required-features = ["test-utils"]`
+added to the consuming `[[test]]` targets; the e2e runner (`scripts/run-e2e-tests.sh`) updated to pass
+`--features test-utils` for the graph-builder/maintenance test invocations that now require it.
+
+**Honest correction:** `NoopMaintenanceAuditSink` was listed as a fake but is NOT — it is the default generic
+type parameter (`S = NoopMaintenanceAuditSink`) for the production `MergeProposalWriter`/`RetirementProposalWriter`
+`::new()` constructors (a legitimate "no-audit" production sink). Gating it would break production, so it was
+correctly left ungated. The #161 todo is updated to reflect this.
+
+**Regression caught & fixed (from #158):** #161's broader verification ran the mcp-server lib tests, which my
+#158 verification had not. They failed (5/28): my #158 `admin_wiring.rs` change made `live_admin_runtime_dependencies()`
+`.expect("OLLAMA_URL")` at router-construction time, panicking the in-process `with_explicit_graph` test/bench
+constructor whenever `OLLAMA_URL` was unset. Fixed by adding `admin_runtime_dependencies_with_embedder(embedder)`:
+`with_explicit_graph` now reuses its own (caller-provided) embedder, while production boot
+(`build_live_server`) keeps the fail-loud `live_admin_runtime_dependencies()` path. The embedder is only required
+when an admin rebuild is actually triggered — not to build the router.
+
+### Verification
+- All 6 fakes confirmed gated (`rg -B2 'pub struct <fake>'` shows the cfg gate); negative proof: referencing
+  `DeterministicEmbeddingService` from a default-built file fails to compile ("the item is gated here").
+- `cargo build --workspace` (default features) → green: the fakes are excluded from normal builds.
+- **EXACT CI command** `cargo clippy --workspace --all-targets -- -D warnings` → clean. (This also required fixing
+  two clippy regressions from #158: the complex tuple type in `build.rs` — refactored to fill embeddings by index;
+  and `DeterministicEmbeddingService::default()` → unit literal — plus gating `NoopExtractionEventPublisher` which
+  became dead code.)
+- `cargo clippy -p graph-builder -p maintenance --features test-utils --all-targets -- -D warnings` → clean.
+- Test suites compile with `test-utils` (mirrors run-e2e-tests.sh): graph-builder/maintenance/mcp-server/
+  session-extractor/infrastructure all `--no-run` green.
+- `cargo test --workspace --lib` → all crates green (admin/compiler/domain/graph_builder/infrastructure/
+  maintenance/mcp_server/retrieval/session_extractor). (Note: one pre-existing flaky session-extractor lib test
+  failed once then passed on re-run — unrelated to these changes; flagged for separate attention.)
+- Gated crates' lib tests pass WITH the feature: graph-builder 8, maintenance 23.
+
+**Net:** the no-stubs mandate is now compile-time enforced — test fakes physically cannot link into a release
+build. The pre-existing `--features test-utils` lint debt in a few untouched mcp-server e2e test files
+(`test_project_scope_container`, `test_transcript_ingest_queue_e2e`) is out of scope (not gated by the CI clippy
+command, which runs without `test-utils`) and left for separate cleanup.

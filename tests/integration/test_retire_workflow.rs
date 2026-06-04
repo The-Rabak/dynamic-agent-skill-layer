@@ -125,7 +125,7 @@ fn retirement_workflow_creates_non_destructive_retired_proposal_marker() {
         "retired artifacts remain filesystem-observable"
     );
 
-    let embedder = graph_builder::graph::embeddings::DeterministicEmbeddingService::default();
+    let embedder = graph_builder::graph::embeddings::DeterministicEmbeddingService;
     let active_skills = tokio::runtime::Runtime::new()
         .expect("tokio runtime should build")
         .block_on(build_skills_from_scope_roots(

@@ -5,6 +5,9 @@ edition = "2024"
 license = "MIT"
 description = "Session-end transcript extraction and pending draft generation"
 
+[features]
+test-utils = []
+
 [dependencies]
 async-channel = "2.5.0"
 async-trait = "0.1.89"

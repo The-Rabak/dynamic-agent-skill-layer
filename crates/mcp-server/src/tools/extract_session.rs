@@ -30,6 +30,7 @@ impl ExtractSessionTool {
         }
     }
 
+    #[cfg(any(test, feature = "test-utils"))]
     pub fn new_for_tests(extractor: SessionExtractor) -> Self {
         Self {
             runtime: Arc::new(Mutex::new(Some(Ok(extractor)))),

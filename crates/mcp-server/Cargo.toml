@@ -37,12 +37,12 @@ blake3 = "1.8.2"
 uuid = { version = "1.18.1", features = ["v7"] }
 
 [features]
-test-utils = ["infrastructure/test-utils"]
+test-utils = ["infrastructure/test-utils", "admin/test-utils", "session-extractor/test-utils"]
 
 [dev-dependencies]
 chrono = { version = "0.4.42", features = ["clock"] }
 criterion = { version = "0.5.1", features = ["async_tokio"] }
-graph-builder = { path = "../graph-builder" }
+graph-builder = { path = "../graph-builder", features = ["test-utils"] }
 infrastructure = { path = "../infrastructure", features = ["test-utils"] }
 maintenance = { path = "../maintenance" }
 redis = { version = "0.32.7", features = ["aio", "tokio-comp"] }
@@ -58,6 +58,7 @@ path = "../../tests/integration/test_dual_scope.rs"
 [[test]]
 name = "test_extract_session"
 path = "../../tests/integration/test_extract_session.rs"
+required-features = ["test-utils"]
 
 [[test]]
 name = "test_live_data_plane_roundtrip"
@@ -112,6 +113,7 @@ required-features = ["test-utils"]
 [[test]]
 name = "test_admin_tools"
 path = "../../tests/integration/test_admin_tools.rs"
+required-features = ["test-utils"]
 
 [[test]]
 name = "test_resilience"
