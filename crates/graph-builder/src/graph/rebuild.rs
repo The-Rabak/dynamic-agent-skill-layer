@@ -1,8 +1,8 @@
 use async_trait::async_trait;
 use chrono::Utc;
 use infrastructure::{
-    EventEnvelope, GraphWriteCoordinator, LiveGraphCommunityRecord, LiveGraphSkillRecord,
-    LiveGraphSnapshotMutation, LiveGraphSubunitRecord, OutboxEvent, OutboxRelay, OutboxVectorStore,
+    EventEnvelope, LiveGraphCommunityRecord, LiveGraphSkillRecord, LiveGraphSnapshotMutation,
+    LiveGraphSubunitRecord, OutboxEvent, OutboxRelay, OutboxVectorStore,
     PostgresGraphWriteCoordinator, PostgresRebuildCoordinator, RebuildCoordinator,
     VECTOR_UPSERT_EVENT_TYPE,
 };
@@ -273,14 +273,19 @@ where
             let outbox_event = OutboxEvent {
                 event_id: Uuid::now_v7(),
                 event_type: VECTOR_UPSERT_EVENT_TYPE.to_owned(),
+                // The correlation_id on a skipped (already-published) event would
+                // not match this rebuild, so it only matters for newly-inserted rows.
                 correlation_id: self.rebuild_correlation_id,
+                // Content-addressed key: same skill content always produces the
+                // same key. A key that already exists means the vector is already
+                // enqueued/published — skipping is correct and safe.
                 idempotency_key: format!("graph.rebuild:vector:{}", skill.id),
                 schema_version: 1,
                 timestamp: Utc::now(),
                 payload: vector_payload,
             };
             self.outbox_coordinator
-                .append_outbox_event(&outbox_event)
+                .append_outbox_event_idempotent(&outbox_event)
                 .await
                 .map_err(|error| {
                     GraphRebuildError::DurableWrite(format!(
@@ -312,6 +317,10 @@ where
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
+    use domain::{ScopeRoot, ScopeType};
+
     use super::*;
 
     #[tokio::test]
@@ -331,6 +340,73 @@ mod tests {
         assert!(
             state.operation_log.is_empty(),
             "failed drain should not log synthetic completion"
+        );
+    }
+
+    /// Proves that `InMemoryDurableGraphState` can run multiple consecutive rebuilds
+    /// without erroring.
+    ///
+    /// The `InMemoryDurableGraphState` does not simulate outbox idempotency conflicts —
+    /// it is a boundary test proving the orchestrator flow completes correctly for
+    /// repeated rebuilds when the durable state layer is permissive (as it must be
+    /// after the idempotent-enqueue fix in `PostgresDurableGraphState`).
+    #[tokio::test]
+    async fn orchestrator_rebuild_is_idempotent_across_consecutive_cycles() {
+        let scope = ScopeRoot::new(
+            "project",
+            ScopeType::Project,
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")),
+        );
+        let scope_roots = vec![scope];
+        let changes: Vec<SkillFileChange> = vec![];
+
+        let mut state = InMemoryDurableGraphState::with_synthetic_outbox_drain();
+        let mut published_events: Vec<EventEnvelope> = Vec::new();
+
+        let first_outcome = {
+            let mut orchestrator = GraphRebuildOrchestrator::new(&mut state, &mut published_events);
+            orchestrator
+                .rebuild_from_changes(&scope_roots, &changes)
+                .await
+        };
+        assert!(
+            first_outcome.is_ok(),
+            "first rebuild should succeed: {:?}",
+            first_outcome
+        );
+        assert_eq!(
+            published_events.len(),
+            1,
+            "first rebuild should push one graph.rebuilt envelope"
+        );
+
+        // Clear published_events to simulate the drain that follows in the real loop.
+        published_events.clear();
+
+        // Second rebuild with the same scope (simulates an unchanged skill set).
+        let second_outcome = {
+            let mut orchestrator = GraphRebuildOrchestrator::new(&mut state, &mut published_events);
+            orchestrator
+                .rebuild_from_changes(&scope_roots, &changes)
+                .await
+        };
+        assert!(
+            second_outcome.is_ok(),
+            "second rebuild on same skill set must not error (idempotency contract): {:?}",
+            second_outcome
+        );
+        assert_eq!(
+            published_events.len(),
+            1,
+            "second rebuild should push one graph.rebuilt envelope"
+        );
+
+        // Version must advance on each successful rebuild.
+        let first_version = first_outcome.unwrap().graph_version;
+        let second_version = second_outcome.unwrap().graph_version;
+        assert!(
+            second_version > first_version,
+            "graph_version must advance on each rebuild: first={first_version}, second={second_version}"
         );
     }
 }

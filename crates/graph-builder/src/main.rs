@@ -8,8 +8,8 @@ use graph_builder::{
 use infrastructure::{
     CircuitState, DependencyFactory, EventEnvelope, HealthReport, InfrastructureHealthChecker,
     PostgresAdapter, PostgresConfig, PostgresGraphWriteCoordinator, PostgresRebuildCoordinator,
-    QdrantAdapter, QdrantConfig, RedisStreamError, RedisStreamsAdapter, RedisStreamsConfig,
-    logging::init_logging,
+    QdrantAdapter, QdrantConfig, RebuildCoordinator, RedisStreamError, RedisStreamsAdapter,
+    RedisStreamsConfig, logging::init_logging,
 };
 use serde::Serialize;
 use tokio::{
@@ -70,11 +70,15 @@ fn build_redis_streams_adapter() -> Result<RedisStreamsAdapter, RedisStreamError
 /// published prefix is drained in one shot (`drain(..published_count)`) and
 /// the failed envelope is left at the front so the next cycle retries it.
 /// Failures are logged but never panic — the rebuild loop keeps running.
+///
+/// Returns the highest `graph_version` extracted from any successfully
+/// published `graph.rebuilt` envelope, or `None` if none were published.
 async fn drain_published_events(
     redis_streams: &RedisStreamsAdapter,
     published_events: &mut Vec<EventEnvelope>,
-) {
+) -> Option<i64> {
     let mut published_count = 0;
+    let mut max_published_graph_version: Option<i64> = None;
     for envelope in published_events.iter() {
         match redis_streams.publish(envelope).await {
             Ok(stream_id) => {
@@ -84,6 +88,15 @@ async fn drain_published_events(
                     %stream_id,
                     "published graph event to redis stream"
                 );
+                if envelope.event_type == "graph.rebuilt"
+                    && let Some(version) = envelope
+                        .payload
+                        .get("graph_version")
+                        .and_then(|v| v.as_i64())
+                {
+                    max_published_graph_version =
+                        Some(max_published_graph_version.unwrap_or(0).max(version));
+                }
                 published_count += 1;
             }
             Err(error) => {
@@ -98,6 +111,7 @@ async fn drain_published_events(
     }
     // Remove the successfully published prefix in one allocation-free drain.
     published_events.drain(..published_count);
+    max_published_graph_version
 }
 
 #[derive(Debug, Clone, Default)]
@@ -114,6 +128,67 @@ struct GraphBuilderHealthResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     last_rebuild_error: Option<String>,
     dependencies: HealthReport,
+}
+
+/// Replays a `graph.rebuilt` event to Redis if PG `graph_version` is ahead of
+/// the last version we published.
+///
+/// Addresses bug #156 replay-safety: if a previous cycle advanced PG
+/// `graph_state.graph_version` but failed before publishing `graph.rebuilt`
+/// (e.g. due to the outbox idempotency conflict), the mcp-server's snapshot
+/// freezes indefinitely. On the next cycle start, this function detects the
+/// gap and re-publishes the current version.
+///
+/// The mcp-server `graph_refresh_subscriber` and `swap_graph` are idempotent
+/// for same-or-older versions, so replaying is always safe.
+async fn maybe_replay_graph_rebuilt(
+    rebuild_coordinator: &PostgresRebuildCoordinator,
+    redis_streams: &RedisStreamsAdapter,
+    last_published_version: &mut i64,
+) {
+    let pg_version = match rebuild_coordinator.current_graph_version().await {
+        Ok(version) => version,
+        Err(error) => {
+            tracing::warn!(%error, "could not read PG graph_version for replay check; skipping");
+            return;
+        }
+    };
+
+    if pg_version <= *last_published_version {
+        return;
+    }
+
+    tracing::warn!(
+        pg_version,
+        last_published_version = *last_published_version,
+        "PG graph_version is ahead of last published version; replaying graph.rebuilt"
+    );
+
+    let envelope = EventEnvelope::new(
+        "graph.rebuilt",
+        format!("graph.rebuilt:{pg_version}"),
+        serde_json::json!({
+            "graph_version": pg_version,
+            "replayed": true,
+        }),
+    );
+    match redis_streams.publish(&envelope).await {
+        Ok(stream_id) => {
+            tracing::info!(
+                pg_version,
+                %stream_id,
+                "replayed graph.rebuilt to redis for frozen snapshot recovery"
+            );
+            *last_published_version = pg_version;
+        }
+        Err(error) => {
+            tracing::error!(
+                pg_version,
+                %error,
+                "failed to replay graph.rebuilt; will retry next cycle"
+            );
+        }
+    }
 }
 
 async fn run_rebuild_cycle(
@@ -252,6 +327,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut durable_state =
         PostgresDurableGraphState::new(&rebuild_coordinator, &outbox_coordinator, &qdrant_adapter);
     let mut published_events: Vec<EventEnvelope> = Vec::new();
+    // Tracks the highest `graph_version` for which we have successfully published
+    // a `graph.rebuilt` event to Redis. Used by `maybe_replay_graph_rebuilt` to
+    // detect and recover from cycles that advanced PG version but failed before
+    // publishing (bug #156 replay-safety).
+    let mut last_published_graph_version: i64 = 0;
 
     let redis_streams = build_redis_streams_adapter()?;
     redis_streams.ensure_consumer_group().await?;
@@ -270,6 +350,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     loop {
+        // Replay-safety (bug #156): if PG graph_version is ahead of the last version
+        // we published to Redis, re-publish graph.rebuilt so the mcp-server snapshot
+        // can unfreeze even after a previous cycle that advanced PG but failed before
+        // publishing. Safe to call every cycle — it exits immediately when versions match.
+        maybe_replay_graph_rebuilt(
+            &rebuild_coordinator,
+            &redis_streams,
+            &mut last_published_graph_version,
+        )
+        .await;
+
         // Scope the orchestrator so its borrow of `published_events` ends before
         // the drain below. A fresh orchestrator per cycle is cheap (it only
         // borrows the durable state and the buffer) and lets the loop own the
@@ -290,7 +381,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         // Publish the freshly-pushed `graph.rebuilt` envelope(s) to Redis so the
         // online server's subscriber can refresh without a restart (R-2 fix).
-        drain_published_events(&redis_streams, &mut published_events).await;
+        if let Some(version) = drain_published_events(&redis_streams, &mut published_events).await {
+            last_published_graph_version = last_published_graph_version.max(version);
+        }
 
         sleep(polling_interval()).await;
     }

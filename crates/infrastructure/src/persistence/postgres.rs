@@ -86,6 +86,12 @@ impl PostgresAdapter {
                 .max_connections(config.max_connections)
                 .min_connections(config.min_connections)
                 .acquire_timeout(Duration::from_secs(config.acquire_timeout_secs))
+                // Test connections before checkout. This evicts connections that are in
+                // an "idle in transaction (aborted)" state — e.g. left dirty after a
+                // failed multi-statement migration run. Without this guard, the pool
+                // can recycle a dirty connection and every subsequent query fails with
+                // "current transaction is aborted".
+                .test_before_acquire(true)
                 .connect(&config.database_url),
         )
         .await

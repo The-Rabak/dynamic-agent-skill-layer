@@ -462,6 +462,50 @@ async fn insert_outbox_event(
     }
 }
 
+/// Inserts an outbox event using `ON CONFLICT (idempotency_key) DO NOTHING`.
+///
+/// A content-addressed key that already exists in `outbox_events` means the
+/// vector is either enqueued or already published — skipping is correct.
+/// This variant exists ONLY for paths where replaying the same content-addressed
+/// event is safe by design (e.g. rebuild vector emission). Do NOT replace
+/// `insert_outbox_event` with this for the general case: the strict
+/// `IdempotencyConflict` error is intentional for duplicate-detection elsewhere.
+async fn insert_outbox_event_idempotent(
+    executor: impl sqlx::Executor<'_, Database = Postgres>,
+    event: &OutboxEvent,
+    schema_version: i32,
+) -> Result<bool, OutboxError> {
+    let result = sqlx::query(
+        r#"
+        INSERT INTO outbox_events (
+            event_id,
+            event_type,
+            correlation_id,
+            idempotency_key,
+            schema_version,
+            payload,
+            occurred_at,
+            available_at,
+            status
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), 'pending')
+        ON CONFLICT (idempotency_key) DO NOTHING
+        "#,
+    )
+    .bind(event.event_id)
+    .bind(&event.event_type)
+    .bind(event.correlation_id)
+    .bind(&event.idempotency_key)
+    .bind(schema_version)
+    .bind(&event.payload)
+    .bind(event.timestamp)
+    .execute(executor)
+    .await
+    .map_err(OutboxError::Persistence)?;
+
+    // rows_affected == 0 means the key already existed and was skipped (benign).
+    Ok(result.rows_affected() > 0)
+}
+
 #[async_trait]
 impl GraphWriteCoordinator for PostgresGraphWriteCoordinator {
     async fn begin_outbox_transaction(
@@ -733,6 +777,28 @@ impl OutboxInspection for PostgresGraphWriteCoordinator {
         }
 
         Ok(records)
+    }
+}
+
+impl PostgresGraphWriteCoordinator {
+    /// Appends an outbox event, silently skipping if the idempotency key already exists.
+    ///
+    /// Returns `true` if the row was newly inserted, `false` if a row with the
+    /// same `idempotency_key` already existed and the insert was skipped.
+    ///
+    /// Use this ONLY for content-addressed events where replaying the same key is
+    /// safe by design (e.g. rebuild vector emission). The standard
+    /// `append_outbox_event` preserves strict exactly-once semantics and must
+    /// NOT be replaced by this method for the general outbox case.
+    pub async fn append_outbox_event_idempotent(
+        &self,
+        event: &OutboxEvent,
+    ) -> Result<bool, OutboxError> {
+        let schema_version = validate_outbox_event(event)?;
+        let mut tx = self.begin_outbox_transaction().await?;
+        let inserted = insert_outbox_event_idempotent(&mut *tx, event, schema_version).await?;
+        tx.commit().await?;
+        Ok(inserted)
     }
 }
 

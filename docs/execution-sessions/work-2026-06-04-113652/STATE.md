@@ -118,6 +118,7 @@ Drove the REAL `mcp-server` :3001 over HTTP after seeding a new global SKILL.md 
 | # | Unit | Kind | Serves / Unlocks | Status | Attempts | Session File |
 |---|------|------|------------------|--------|----------|--------------|
 | 0 | 1.0 Proper real-app E2E harness (drives real containers; per-stage logs) | tracer-bullet/foundation | ALL e2e tests; the TRUE-e2e bar | completed (harness green live; golden-path RED reproduces #156) | 1 | unit-00-slice-1.0-real-app-e2e-harness.md |
+| 0b | Fix #156 (rebuild idempotency/publish-atomicity) + #157 (ensure_collection 409) | bugfix/prod | unblocks self-growing loop; golden-path RED→GREEN | completed (LIVE green; both resolved) | 1 | unit-0b-fix-156-157-self-growing-loop.md |
 | 1 | 1.1 Real project-scoped Ok in-container (#154 git-free resolver) | tracer-bullet | SC#3 + secondary story | completed | 1 | unit-01-slice-1.1-git-free-resolver.md |
 | 2 | 1.2 Honest reporting — outcome from real assertions | hardening | SC#1 (prereq for all) | completed | 1 | unit-02-slice-1.2-honest-reporting.md |
 | 3 | 1.3 Real-infra fault-injection harness | hardening | enables DS-003..008 | completed | 2 | unit-03-slice-1.3-fault-injection-harness.md |
