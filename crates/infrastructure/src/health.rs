@@ -367,14 +367,16 @@ mod tests {
     ///
     /// The startup-time health signal is always "enabled"; actual write failures
     /// surface at runtime via compile_context health markers.
-    #[test]
-    fn build_health_checker_always_injects_usage_write_enabled() {
+    #[tokio::test]
+    async fn build_health_checker_always_injects_usage_write_enabled() {
+        // Must run inside a Tokio runtime: `build_health_checker_from_environment`
+        // constructs sqlx pools whose connection-reaper task requires an ambient
+        // runtime at build time. The previous form called the factory OUTSIDE the
+        // runtime (before `block_on`), which panicked "requires a Tokio context"
+        // once sibling tests shifted the in-binary scheduling.
         let checker = DependencyFactory::build_health_checker_from_environment();
 
-        let report = tokio::runtime::Builder::new_current_thread()
-            .build()
-            .expect("tokio rt")
-            .block_on(checker.check());
+        let report = checker.check().await;
 
         let usage = report
             .components

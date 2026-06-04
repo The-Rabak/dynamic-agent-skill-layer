@@ -7,7 +7,7 @@ brainstorm_ref: ""
 started: 2026-06-04T20:32:20Z
 status: in_progress
 execution_shape: fix-batch
-current_unit: 2
+current_unit: 3
 total_units: 6
 session_id: work-2026-06-04-203220
 ---
@@ -73,7 +73,7 @@ enforced assertions; poll real conditions, never fixed sleeps.
 | # | Unit | Kind | Serves / Unlocks | Status | Attempts | Session File |
 |---|------|------|------------------|--------|----------|--------------|
 | 1 | #162 live extraction→draft proof | fix-item | extraction guarantee is real | completed | 2 | unit-01-162-live-extraction-draft.md |
-| 2 | #141 schema_migrations tracking table | fix-item | migration safety at scale | pending | -- | -- |
+| 2 | #141 schema_migrations tracking table | fix-item | migration safety at scale | completed | 2 | unit-02-141-schema-migrations-table.md |
 | 3 | #155 DS-003..007 harness migration (HTTP) | hardening | kills the in-process purity gap | pending | -- | -- |
 | 4 | #155 DS-004 real kill/restart + real seed | hardening | durability proof is real | pending | -- | -- |
 | 5 | #155 DS-006 real watcher loop + convergence | hardening | eventual-consistency proof is real | pending | -- | -- |

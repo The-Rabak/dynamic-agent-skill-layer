@@ -13,18 +13,25 @@ const MIGRATION_004: &str = include_str!("../../migrations/004_session_logs_stat
 /// and fall back to the scope-root behavior in `build_graph_from_pg`.
 const MIGRATION_005: &str = include_str!("../../migrations/005_skill_source_paths.sql");
 
-/// Ordered migration set applied on every boot. Each entry is idempotent
-/// (`IF NOT EXISTS` / `ADD COLUMN IF NOT EXISTS`) so re-running is safe; ordering
-/// matters because later migrations depend on objects created by earlier ones
-/// (e.g. 002 reuses the `set_updated_at_timestamp()` function from 001, and
-/// 003 adds typed columns to tables declared by 001, 004 adds a CHECK constraint
-/// to session_logs, 005 adds the source_paths provenance column to skills).
-const MIGRATIONS: &[&str] = &[
-    MIGRATION_001,
-    MIGRATION_002,
-    MIGRATION_003,
-    MIGRATION_004,
-    MIGRATION_005,
+/// Ordered migration set: each entry is `(stable_id, sql)`.
+///
+/// `stable_id` is the migration filename stem (e.g. `"001_initial_schema"`) and
+/// serves as the primary key in the `schema_migrations` tracking table.  Ids are
+/// stable — they must never change once a migration has shipped.
+///
+/// Ordering matters because later migrations depend on objects created by earlier
+/// ones (002 reuses the trigger function from 001; 003 adds columns to tables from
+/// 001; 004 adds a constraint to session_logs; 005 adds a column to skills).
+///
+/// Individual migrations remain idempotent (`IF NOT EXISTS` / `ADD COLUMN IF NOT
+/// EXISTS`) as a belt-and-braces safety net, but the tracking table is the primary
+/// guard against re-execution.
+const MIGRATIONS: &[(&str, &str)] = &[
+    ("001_initial_schema", MIGRATION_001),
+    ("002_transcript_ingest_queue", MIGRATION_002),
+    ("003_usage_fields", MIGRATION_003),
+    ("004_session_logs_status_check", MIGRATION_004),
+    ("005_skill_source_paths", MIGRATION_005),
 ];
 
 #[derive(Debug, Clone)]
@@ -113,13 +120,105 @@ impl PostgresAdapter {
         Ok(())
     }
 
+    /// Applies any unapplied migrations in `MIGRATIONS` order and records each
+    /// one in the `schema_migrations` tracking table.
+    ///
+    /// Bootstrap: creates `schema_migrations` idempotently before the loop so the
+    /// table is always present when the loop queries it.
+    ///
+    /// Per-migration transactionality: the runner owns the transaction.  Each
+    /// migration file is expected to be wrapped in `BEGIN;` / `COMMIT;`; the runner
+    /// strips those outer statements and executes only the inner DDL body inside its
+    /// own `pool.begin()` transaction, followed by `INSERT INTO schema_migrations`.
+    /// Both steps commit together — a failure rolls everything back and leaves no
+    /// partial state or unrecorded id.
+    ///
+    /// This is genuinely atomic because the migration body never issues its own
+    /// `COMMIT;` or `BEGIN;`.  Dollar-quoted `BEGIN … END` blocks (PL/pgSQL) are
+    /// NOT transaction-control and are left untouched.
+    ///
+    /// A migration file whose SQL does not begin with `BEGIN;` and end with
+    /// `COMMIT;` is rejected immediately with `PostgresError::Migration` — the
+    /// runner refuses to proceed rather than silently lose the atomicity guarantee.
+    ///
+    /// Skip logic: migrations whose `id` is already present in `schema_migrations`
+    /// are skipped entirely.  The idempotency guards (`IF NOT EXISTS` etc.) in each
+    /// SQL file remain as a belt-and-braces safety net but are not the primary gate.
+    ///
+    /// Failures surface as `PostgresError::Migration` — no errors are swallowed.
     pub async fn run_migrations(&self) -> Result<(), PostgresError> {
-        for migration in MIGRATIONS {
-            sqlx::raw_sql(migration)
-                .execute(&self.pool)
+        // Bootstrap the tracking table. Created outside of any application
+        // migration transaction so it is always available for the loop query.
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS schema_migrations (
+                id         TEXT        PRIMARY KEY,
+                applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            )",
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|err| PostgresError::Migration(format!("bootstrap schema_migrations: {err}")))?;
+
+        // Collect the ids that have already been applied so we only hit the DB once.
+        let applied_ids: Vec<String> =
+            sqlx::query_scalar("SELECT id FROM schema_migrations")
+                .fetch_all(&self.pool)
                 .await
-                .map_err(|error| PostgresError::Migration(error.to_string()))?;
+                .map_err(|err| {
+                    PostgresError::Migration(format!("query schema_migrations: {err}"))
+                })?;
+
+        for (migration_id, migration_sql) in MIGRATIONS {
+            if applied_ids.iter().any(|applied| applied == migration_id) {
+                continue;
+            }
+
+            self.apply_and_record(migration_id, migration_sql).await?;
         }
+
+        Ok(())
+    }
+
+    /// Strips the `BEGIN;` / `COMMIT;` wrapper from a migration SQL file and
+    /// executes the inner body together with an `INSERT INTO schema_migrations`
+    /// inside a single runner-owned transaction.
+    ///
+    /// Because the runner owns the transaction, neither step can commit
+    /// independently: a failure in the DDL body or in the record step rolls back
+    /// both, leaving no partial state and no phantom id in `schema_migrations`.
+    ///
+    /// Returns `PostgresError::Migration` if the SQL does not match the expected
+    /// wrapper convention, or if either database step fails.
+    async fn apply_and_record(
+        &self,
+        migration_id: &str,
+        migration_sql: &str,
+    ) -> Result<(), PostgresError> {
+        let inner_body = strip_begin_commit_wrapper(migration_id, migration_sql)?;
+
+        let mut tx = self.pool.begin().await.map_err(|err| {
+            PostgresError::Migration(format!("begin transaction for {migration_id}: {err}"))
+        })?;
+
+        // Execute the inner DDL body (no BEGIN;/COMMIT; statements).  The runner's
+        // transaction spans this execution plus the id record below.
+        sqlx::raw_sql(&inner_body)
+            .execute(&mut *tx)
+            .await
+            .map_err(|err| PostgresError::Migration(format!("apply {migration_id}: {err}")))?;
+
+        sqlx::query("INSERT INTO schema_migrations (id) VALUES ($1)")
+            .bind(migration_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|err| {
+                PostgresError::Migration(format!("record {migration_id}: {err}"))
+            })?;
+
+        tx.commit().await.map_err(|err| {
+            PostgresError::Migration(format!("commit {migration_id}: {err}"))
+        })?;
+
         Ok(())
     }
 
@@ -138,6 +237,58 @@ impl PostgresAdapter {
         .await?;
         Ok(())
     }
+}
+
+/// Strips the mandatory `BEGIN;` / `COMMIT;` wrapper from a migration SQL file,
+/// returning only the inner body for execution inside a runner-owned transaction.
+///
+/// # Convention
+///
+/// Every migration file is expected to start with the literal text `BEGIN;` (as
+/// the first non-whitespace content) and end with the literal text `COMMIT;` (as
+/// the last non-whitespace content).  This mirrors the format of the five bundled
+/// migration files.
+///
+/// Dollar-quoted `BEGIN … END` blocks (e.g. PL/pgSQL `DO $$` / function bodies)
+/// are NOT transaction-control statements and are not affected — only the
+/// outermost `BEGIN;` line and `COMMIT;` line are removed.
+///
+/// # Errors
+///
+/// Returns `PostgresError::Migration` if:
+/// - The SQL does not start with `BEGIN;` after trimming leading whitespace.
+/// - The SQL does not end with `COMMIT;` after trimming trailing whitespace.
+///
+/// The migration id is included in the error message so the caller can surface
+/// exactly which file violated the convention.
+fn strip_begin_commit_wrapper(
+    migration_id: &str,
+    sql: &str,
+) -> Result<String, PostgresError> {
+    let trimmed = sql.trim();
+
+    // Validate and strip the leading `BEGIN;`.
+    let after_begin = trimmed
+        .strip_prefix("BEGIN;")
+        .ok_or_else(|| {
+            PostgresError::Migration(format!(
+                "migration {migration_id} is not wrapped in BEGIN;/COMMIT; — \
+                 cannot guarantee atomic apply+record (expected first token: BEGIN;)"
+            ))
+        })?;
+
+    // Validate and strip the trailing `COMMIT;`.
+    let inner = after_begin
+        .trim_end()
+        .strip_suffix("COMMIT;")
+        .ok_or_else(|| {
+            PostgresError::Migration(format!(
+                "migration {migration_id} is not wrapped in BEGIN;/COMMIT; — \
+                 cannot guarantee atomic apply+record (expected last token: COMMIT;)"
+            ))
+        })?;
+
+    Ok(inner.to_owned())
 }
 
 #[cfg(test)]
@@ -179,16 +330,139 @@ mod tests {
 
     #[test]
     fn migration_set_is_ordered_001_through_005() {
+        // MIGRATIONS is now &[(&str, &str)] — (stable_id, sql). Assert that
+        // the ids and sql content appear in the correct 001..005 order.
+        let ids: Vec<&str> = MIGRATIONS.iter().map(|(id, _)| *id).collect();
         assert_eq!(
-            MIGRATIONS,
+            ids,
+            &[
+                "001_initial_schema",
+                "002_transcript_ingest_queue",
+                "003_usage_fields",
+                "004_session_logs_status_check",
+                "005_skill_source_paths",
+            ],
+            "migration ids must appear in 001..005 order"
+        );
+
+        let sqls: Vec<&str> = MIGRATIONS.iter().map(|(_, sql)| *sql).collect();
+        assert_eq!(
+            sqls,
             &[
                 MIGRATION_001,
                 MIGRATION_002,
                 MIGRATION_003,
                 MIGRATION_004,
-                MIGRATION_005
-            ]
+                MIGRATION_005,
+            ],
+            "migration sql bodies must match the include_str! constants in 001..005 order"
         );
+    }
+
+    /// Live Postgres: proves that `run_migrations` applies all five migrations on
+    /// a fresh schema and records them in `schema_migrations`, then proves that a
+    /// second call skips all five by asserting `applied_at` timestamps are UNCHANGED.
+    ///
+    /// A re-applied migration would re-INSERT or UPDATE the row (changing the
+    /// timestamp). A truly skipped migration leaves the row exactly as it was.
+    ///
+    /// Isolation: runs in a dedicated scratch schema (`test_schema_migrations_<ts>`)
+    /// that is dropped on completion, so the shared `skill_layer_test` schema is
+    /// never touched.
+    #[tokio::test]
+    #[ignore = "requires live postgres"]
+    async fn live_run_migrations_applies_then_skips_on_second_boot() {
+        let db_url = std::env::var("DATABASE_URL")
+            .expect("DATABASE_URL must be set for live postgres tests");
+
+        // Connect to the default database to create and drop the scratch schema.
+        let admin_pool = sqlx::PgPool::connect(&db_url)
+            .await
+            .expect("admin pool connect");
+
+        let scratch_schema = format!(
+            "test_schema_migrations_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        );
+
+        // Create isolated scratch schema.
+        sqlx::query(&format!("CREATE SCHEMA {scratch_schema}"))
+            .execute(&admin_pool)
+            .await
+            .expect("create scratch schema");
+
+        // Point the adapter at the scratch schema via search_path.
+        let scratch_url = format!("{db_url}?options=-csearch_path%3D{scratch_schema}");
+        let config = PostgresConfig {
+            database_url: scratch_url,
+            max_connections: 2,
+            min_connections: 1,
+            connect_timeout_secs: 5,
+            acquire_timeout_secs: 5,
+        };
+        let adapter = PostgresAdapter::connect(&config)
+            .await
+            .expect("scratch adapter connect");
+
+        // ---- First boot: all five migrations must be applied ----
+        adapter
+            .run_migrations()
+            .await
+            .expect("first run_migrations must succeed");
+
+        let first_run_rows: Vec<(String, chrono::DateTime<chrono::Utc>)> =
+            sqlx::query_as("SELECT id, applied_at FROM schema_migrations ORDER BY id")
+                .fetch_all(adapter.pool())
+                .await
+                .expect("query schema_migrations after first run");
+
+        let first_run_ids: Vec<&str> = first_run_rows.iter().map(|(id, _)| id.as_str()).collect();
+        assert_eq!(
+            first_run_ids,
+            &[
+                "001_initial_schema",
+                "002_transcript_ingest_queue",
+                "003_usage_fields",
+                "004_session_logs_status_check",
+                "005_skill_source_paths",
+            ],
+            "first boot must record all five migration ids"
+        );
+
+        let first_applied_ats: Vec<chrono::DateTime<chrono::Utc>> =
+            first_run_rows.iter().map(|(_, ts)| *ts).collect();
+
+        // ---- Second boot: all five must be SKIPPED (applied_at unchanged) ----
+        adapter
+            .run_migrations()
+            .await
+            .expect("second run_migrations must succeed");
+
+        let second_run_rows: Vec<(String, chrono::DateTime<chrono::Utc>)> =
+            sqlx::query_as("SELECT id, applied_at FROM schema_migrations ORDER BY id")
+                .fetch_all(adapter.pool())
+                .await
+                .expect("query schema_migrations after second run");
+
+        let second_applied_ats: Vec<chrono::DateTime<chrono::Utc>> =
+            second_run_rows.iter().map(|(_, ts)| *ts).collect();
+
+        assert_eq!(
+            first_applied_ats, second_applied_ats,
+            "applied_at timestamps must be UNCHANGED on second boot — \
+             any difference proves a migration was re-applied rather than skipped"
+        );
+
+        // Cleanup: drop the scratch schema.
+        sqlx::query(&format!("DROP SCHEMA {scratch_schema} CASCADE"))
+            .execute(&admin_pool)
+            .await
+            .expect("drop scratch schema");
+
+        admin_pool.close().await;
     }
 
     #[test]
@@ -220,5 +494,156 @@ mod tests {
              session_logs, skill_usage CASCADE";
         assert!(sql.contains("session_logs"));
         assert!(sql.contains("skill_usage"));
+    }
+
+    #[test]
+    fn strip_begin_commit_wrapper_removes_outer_transaction_control() {
+        // Valid wrapped SQL: stripped body should contain neither the leading
+        // BEGIN; nor the trailing COMMIT;.
+        let sql = "BEGIN;\n\nCREATE TABLE foo(id INT);\n\nCOMMIT;\n";
+        let body = strip_begin_commit_wrapper("test_migration", sql).unwrap();
+        assert!(!body.starts_with("BEGIN"), "body must not start with BEGIN");
+        assert!(!body.trim_end().ends_with("COMMIT;"), "body must not end with COMMIT;");
+        assert!(body.contains("CREATE TABLE foo(id INT);"), "body must retain inner DDL");
+    }
+
+    #[test]
+    fn strip_begin_commit_wrapper_preserves_dollar_quoted_begin_end() {
+        // PL/pgSQL BEGIN…END inside $$…$$ must not be touched.
+        let sql = "BEGIN;\n\nDO $$\nBEGIN\n  RAISE NOTICE 'hi';\nEND\n$$;\n\nCOMMIT;\n";
+        let body = strip_begin_commit_wrapper("004", sql).unwrap();
+        assert!(body.contains("DO $$\nBEGIN\n  RAISE NOTICE 'hi';\nEND\n$$;"),
+            "dollar-quoted BEGIN…END block must be preserved verbatim");
+        assert!(!body.trim_start().starts_with("BEGIN"), "outer BEGIN; must be stripped");
+    }
+
+    #[test]
+    fn strip_begin_commit_wrapper_rejects_unwrapped_sql() {
+        // SQL that doesn't start with BEGIN; must be rejected with a loud error.
+        let sql = "CREATE TABLE foo(id INT);\n";
+        let result = strip_begin_commit_wrapper("999_bad", sql);
+        assert!(result.is_err(), "unwrapped SQL must produce an error");
+        let msg = result.unwrap_err().to_string();
+        assert!(
+            msg.contains("999_bad") && msg.contains("BEGIN;"),
+            "error must name the migration id and mention the expected wrapper: {msg}"
+        );
+    }
+
+    #[test]
+    fn strip_begin_commit_wrapper_rejects_missing_commit() {
+        // SQL that starts with BEGIN; but has no trailing COMMIT; must be rejected.
+        let sql = "BEGIN;\n\nCREATE TABLE foo(id INT);\n";
+        let result = strip_begin_commit_wrapper("999_no_commit", sql);
+        assert!(result.is_err(), "SQL missing trailing COMMIT; must produce an error");
+        let msg = result.unwrap_err().to_string();
+        assert!(
+            msg.contains("999_no_commit") && msg.contains("COMMIT;"),
+            "error must name the migration id and mention the expected wrapper: {msg}"
+        );
+    }
+
+    /// Live Postgres: proves that a failing migration body is rolled back atomically.
+    ///
+    /// A migration that creates a table and then hits an intentional error must
+    /// leave (a) no row in `schema_migrations`, (b) the created table absent from
+    /// the schema — proving the apply-DDL and record-id steps are genuinely atomic.
+    ///
+    /// This test is the RED/GREEN gate for the wrapper-stripping atomicity fix.
+    #[tokio::test]
+    #[ignore = "requires live postgres"]
+    async fn live_failing_migration_rolls_back_atomically() {
+        let db_url = std::env::var("DATABASE_URL")
+            .expect("DATABASE_URL must be set for live postgres tests");
+
+        let admin_pool = sqlx::PgPool::connect(&db_url)
+            .await
+            .expect("admin pool connect");
+
+        let scratch_schema = format!(
+            "test_rollback_atomicity_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        );
+
+        sqlx::query(&format!("CREATE SCHEMA {scratch_schema}"))
+            .execute(&admin_pool)
+            .await
+            .expect("create scratch schema");
+
+        let scratch_url = format!("{db_url}?options=-csearch_path%3D{scratch_schema}");
+        let config = PostgresConfig {
+            database_url: scratch_url,
+            max_connections: 2,
+            min_connections: 1,
+            connect_timeout_secs: 5,
+            acquire_timeout_secs: 5,
+        };
+        let adapter = PostgresAdapter::connect(&config)
+            .await
+            .expect("scratch adapter connect");
+
+        // Bootstrap schema_migrations so the adapter can record (or fail to record).
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS schema_migrations (
+                id         TEXT        PRIMARY KEY,
+                applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            )",
+        )
+        .execute(adapter.pool())
+        .await
+        .expect("bootstrap schema_migrations");
+
+        // A migration body that creates a table, then hits a syntax error.
+        // The table creation must be rolled back along with the failed record-id step.
+        let failing_sql = "BEGIN;\n\nCREATE TABLE atomic_probe_table (id INT);\n\
+                           SELECT boom_intentional_error_column_does_not_exist;\n\nCOMMIT;\n";
+        let migration_id = "test_atomic_rollback";
+
+        // Call the internal helper directly to test the atomic apply-and-record.
+        let result = adapter.apply_and_record(migration_id, failing_sql).await;
+
+        // (a) apply_and_record must return Err.
+        assert!(
+            result.is_err(),
+            "a failing migration must return Err; got Ok instead"
+        );
+
+        // (b) schema_migrations must have NO row for this id.
+        let recorded: Option<String> =
+            sqlx::query_scalar("SELECT id FROM schema_migrations WHERE id = $1")
+                .bind(migration_id)
+                .fetch_optional(adapter.pool())
+                .await
+                .expect("query schema_migrations");
+        assert!(
+            recorded.is_none(),
+            "schema_migrations must NOT record a failed migration id; found: {recorded:?}"
+        );
+
+        // (c) the partial DDL (table creation) must have been rolled back.
+        let table_exists: bool = sqlx::query_scalar(
+            "SELECT EXISTS (
+                SELECT 1 FROM information_schema.tables
+                WHERE table_schema = current_schema()
+                  AND table_name = 'atomic_probe_table'
+             )",
+        )
+        .fetch_one(adapter.pool())
+        .await
+        .expect("check table existence");
+        assert!(
+            !table_exists,
+            "atomic_probe_table must NOT exist after a rolled-back migration"
+        );
+
+        // Cleanup.
+        sqlx::query(&format!("DROP SCHEMA {scratch_schema} CASCADE"))
+            .execute(&admin_pool)
+            .await
+            .expect("drop scratch schema");
+        admin_pool.close().await;
     }
 }
