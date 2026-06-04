@@ -126,12 +126,12 @@ impl PostgresAdapter {
     /// Bootstrap: creates `schema_migrations` idempotently before the loop so the
     /// table is always present when the loop queries it.
     ///
-    /// Per-migration transactionality: the runner owns the transaction.  Each
-    /// migration file is expected to be wrapped in `BEGIN;` / `COMMIT;`; the runner
-    /// strips those outer statements and executes only the inner DDL body inside its
-    /// own `pool.begin()` transaction, followed by `INSERT INTO schema_migrations`.
-    /// Both steps commit together — a failure rolls everything back and leaves no
-    /// partial state or unrecorded id.
+    /// Per-migration transactionality: each migration file is expected to be wrapped
+    /// in `BEGIN;` / `COMMIT;`; the runner strips those outer statements and executes
+    /// the inner DDL body together with `INSERT INTO schema_migrations` as one
+    /// multi-statement batch, which Postgres runs in a single implicit transaction
+    /// (see `apply_and_record`). DDL and id record commit together — a failure rolls
+    /// the whole batch back, leaving no partial state or unrecorded id.
     ///
     /// This is genuinely atomic because the migration body never issues its own
     /// `COMMIT;` or `BEGIN;`.  Dollar-quoted `BEGIN … END` blocks (PL/pgSQL) are
@@ -180,15 +180,36 @@ impl PostgresAdapter {
     }
 
     /// Strips the `BEGIN;` / `COMMIT;` wrapper from a migration SQL file and
-    /// executes the inner body together with an `INSERT INTO schema_migrations`
-    /// inside a single runner-owned transaction.
+    /// executes the inner DDL body together with an `INSERT INTO schema_migrations`
+    /// as one multi-statement `raw_sql` batch on the pool.
     ///
-    /// Because the runner owns the transaction, neither step can commit
-    /// independently: a failure in the DDL body or in the record step rolls back
-    /// both, leaving no partial state and no phantom id in `schema_migrations`.
+    /// Atomicity comes from Postgres's *implicit* transaction for a multi-statement
+    /// simple-query message: when several statements are sent in a single query
+    /// string with NO explicit transaction control, Postgres wraps them in one
+    /// implicit transaction. If any statement fails, the entire batch rolls back —
+    /// no partial DDL is committed and no id is recorded — and the connection is
+    /// left clean (verified live: an aborted implicit transaction does not leave
+    /// the connection in the `25P02` "current transaction is aborted" state, unlike
+    /// an explicit `BEGIN` whose `COMMIT` is never reached).
+    ///
+    /// This is why the migration's own `BEGIN;`/`COMMIT;` wrapper is stripped first:
+    /// an explicit `COMMIT` mid-batch would commit early (defeating atomicity of the
+    /// id record), and an explicit `BEGIN` left open on error would strand the
+    /// connection in an aborted-transaction state.
+    ///
+    /// Why a pool batch rather than a held `sqlx::Transaction`: executing via
+    /// `&mut *tx` (`&mut PgConnection: Executor`) introduces a higher-ranked
+    /// obligation that tips rustc's trait solver into "Send is not general enough"
+    /// for downstream crates that hold `&PostgresAdapter` across `.await` (e.g.
+    /// `admin`'s snapshot reader). The pool batch keeps the same atomicity guarantee
+    /// without that obligation.
+    ///
+    /// `migration_id` is a trusted compile-time constant (the `MIGRATIONS` filename
+    /// stem, `[a-z0-9_]` only) — never user input — so interpolating it into the
+    /// `INSERT` is safe.
     ///
     /// Returns `PostgresError::Migration` if the SQL does not match the expected
-    /// wrapper convention, or if either database step fails.
+    /// wrapper convention, or if the batch fails.
     async fn apply_and_record(
         &self,
         migration_id: &str,
@@ -196,28 +217,15 @@ impl PostgresAdapter {
     ) -> Result<(), PostgresError> {
         let inner_body = strip_begin_commit_wrapper(migration_id, migration_sql)?;
 
-        let mut tx = self.pool.begin().await.map_err(|err| {
-            PostgresError::Migration(format!("begin transaction for {migration_id}: {err}"))
-        })?;
+        // One simple-query message → one implicit transaction over both the DDL and
+        // the id record. No explicit BEGIN/COMMIT (see the doc block above).
+        let batch =
+            format!("{inner_body}\nINSERT INTO schema_migrations (id) VALUES ('{migration_id}');");
 
-        // Execute the inner DDL body (no BEGIN;/COMMIT; statements).  The runner's
-        // transaction spans this execution plus the id record below.
-        sqlx::raw_sql(&inner_body)
-            .execute(&mut *tx)
+        sqlx::raw_sql(&batch)
+            .execute(&self.pool)
             .await
             .map_err(|err| PostgresError::Migration(format!("apply {migration_id}: {err}")))?;
-
-        sqlx::query("INSERT INTO schema_migrations (id) VALUES ($1)")
-            .bind(migration_id)
-            .execute(&mut *tx)
-            .await
-            .map_err(|err| {
-                PostgresError::Migration(format!("record {migration_id}: {err}"))
-            })?;
-
-        tx.commit().await.map_err(|err| {
-            PostgresError::Migration(format!("commit {migration_id}: {err}"))
-        })?;
 
         Ok(())
     }

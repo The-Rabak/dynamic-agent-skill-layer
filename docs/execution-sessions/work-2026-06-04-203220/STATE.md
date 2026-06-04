@@ -88,7 +88,13 @@ asserts on those same scenarios. #154 is DEFERRED this session (needs design —
   even from concrete content). Use gemma4:e4b + `temperature=0` for deterministic live extraction tests.
 - [infra] Ollama optional inference params go in `options` with `skip_serializing_if = Option::is_none` so the wire
   format is unchanged when unset — the pattern for adding inference knobs without changing production behavior.
-- [e2e/test-fragility] `infrastructure::health::tests::build_health_checker_always_injects_usage_write_enabled` is a
-  sync `#[test]` that builds a sqlx pool; it panics "requires a Tokio context" only under cross-crate parallel test
-  runs (`cargo test -p infrastructure -p session-extractor --lib`). Run changed crates' lib tests one crate at a
-  time to avoid the false alarm. Candidate for a future todo (make it `#[tokio::test]` or lazy-init the pool).
+- [e2e/test-fragility] `infrastructure::health::tests::build_health_checker_always_injects_usage_write_enabled` was a
+  sync `#[test]` building a sqlx pool outside a runtime → "requires a Tokio context" under scheduling pressure. FIXED
+  in Unit 2 by converting to `#[tokio::test]`.
+- [rust/sqlx] `&mut PgConnection: Executor` (i.e. `self.pool.begin()` + `.execute(&mut *tx)`) can tip rustc's trait
+  solver into "Send is not general enough" for OTHER crates that hold `&PostgresAdapter` across `.await` (admin). It
+  breaks the build in a SEEMINGLY unrelated crate. Prefer pool-executor batches for simple atomic work. ALWAYS run
+  `cargo build --workspace` after touching `infrastructure` — a `-p infrastructure` build alone hides downstream breaks.
+- [postgres] A multi-statement `raw_sql` simple-query message runs in ONE implicit transaction: atomic, auto-rollback
+  on error, and leaves the connection CLEAN. An explicit `BEGIN` whose `COMMIT` isn't reached strands the connection
+  in `25P02` aborted-tx. For atomic apply+record without a held Transaction, send both statements in one un-bracketed batch.

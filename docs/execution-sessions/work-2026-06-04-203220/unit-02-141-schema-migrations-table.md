@@ -40,6 +40,17 @@ its id record via `apply_and_record`: `strip_begin_commit_wrapper` removes the m
 - **Fix:** made it `#[tokio::test]` so the factory runs within an ambient runtime. This also resolved the cross-crate
   parallel flake noted in Unit 1.
 
+### Problem 3 (caught in orchestrator review): committed work broke the `admin` crate build
+- **Root cause:** the first atomic implementation used `self.pool.begin()` + `.execute(&mut *tx)`. The
+  `&mut PgConnection: Executor` higher-ranked obligation tipped rustc's trait solver into "Send is not general
+  enough" for `admin`'s pre-existing borderline async-trait methods (`list_skills`/`list_communities`/
+  `trigger_full_rebuild`). `cargo build --workspace` went red — bisected by reverting only `postgres.rs`.
+- **Fix:** rewrote `apply_and_record` to run the DDL body + id INSERT as ONE multi-statement `raw_sql` batch on the
+  pool (no held `sqlx::Transaction`, no `&mut *tx`). Postgres runs a multi-statement simple-query message in a single
+  IMPLICIT transaction: on error the whole batch rolls back AND the connection stays clean (no `25P02` aborted-tx —
+  verified live; an explicit `BEGIN` whose `COMMIT` is never reached strands the connection aborted). Stripping the
+  migration's own `BEGIN;`/`COMMIT;` is essential so there's no explicit transaction control in the batch.
+
 ## Patterns Discovered
 - Postgres has NO nested transactions: a `BEGIN;` inside an open tx warns and is a no-op; a `COMMIT;` ends the whole
   tx (NOT a savepoint). Any runner executing self-`BEGIN;/COMMIT;`-wrapped SQL inside an outer tx silently loses
