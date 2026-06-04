@@ -83,7 +83,7 @@ if [[ "${SKIP_INFRA}" -eq 0 ]]; then
     # defaults to :11434, which nothing serves in this topology. Point it at the
     # real Ollama so live extraction actually runs (todo 103).
     export OLLAMA_EXTRACTION_ENDPOINT="http://localhost:${OLLAMA_PORT}/api/generate"
-    cargo test -p mcp-server --test test_live_data_plane_roundtrip -- --ignored
+    cargo test -p mcp-server --features test-utils --test test_live_data_plane_roundtrip -- --ignored
 
     echo "==> Running transcript ingest queue E2E test (todo 103: shipped hook → queue → drain → .pending)"
     cargo test -p mcp-server --features test-utils --test test_transcript_ingest_queue_e2e -- --ignored
@@ -94,7 +94,7 @@ if [[ "${SKIP_INFRA}" -eq 0 ]]; then
 fi
 
 echo "==> Running realistic MCP E2E tests"
-cargo test -p mcp-server \
+cargo test -p mcp-server --features test-utils \
   --test test_compile_context \
   --test test_dual_scope \
   --test test_extract_session \
@@ -103,30 +103,36 @@ cargo test -p mcp-server \
 
 echo "==> Running realistic graph-builder E2E tests"
 cargo test -p graph-builder \
-  --test test_watcher_rebuild \
+  --test test_watcher_rebuild
+# test_watcher_churn_reconciliation is registered under mcp-server (needs test-utils),
+# not graph-builder — see crates/mcp-server/Cargo.toml.
+cargo test -p mcp-server --features test-utils \
   --test test_watcher_churn_reconciliation
 
 echo "==> Validating dream-state contract tests compile and register"
-cargo test -p mcp-server --test test_dream_state_contract -- --skip ignored
+cargo test -p mcp-server --features test-utils --test test_dream_state_contract -- --skip ignored
 
 if [[ "${INCLUDE_DREAM}" -eq 1 ]]; then
   echo "==> Running promoted dream-state contract tests (DS-003 through DS-007)"
-  cargo test -p mcp-server --test test_dream_state_contract \
+  # cargo accepts only ONE positional TESTNAME before `--`; the libtest harness
+  # after `--` accepts multiple filter substrings (OR-matched), so the five
+  # promoted-contract names go after `-- --ignored`.
+  cargo test -p mcp-server --features test-utils --test test_dream_state_contract \
+    -- --ignored \
     dependency_chaos_matrix \
     outbox_backlog_replays \
     qdrant_pg_drift \
     sustained_watcher_and_extraction \
-    high_qps_compile_context \
-    -- --ignored
+    high_qps_compile_context
 
   echo "==> Running watcher churn live E2E test"
-  cargo test -p graph-builder --test test_watcher_churn_reconciliation watcher_churn_and_reconciliation_converges_to_correct_graph_state_under_live_pg_qdrant -- --ignored
+  cargo test -p mcp-server --features test-utils --test test_watcher_churn_reconciliation watcher_churn_and_reconciliation_converges_to_correct_graph_state_under_live_pg_qdrant -- --ignored
 
   echo "==> Running concurrency stress live E2E tests"
-  cargo test -p mcp-server --test test_concurrency_stress -- --ignored
+  cargo test -p mcp-server --features test-utils --test test_concurrency_stress -- --ignored
 
   echo "==> Running all live data plane E2E tests"
-  cargo test -p mcp-server --test test_live_data_plane_roundtrip -- --ignored
+  cargo test -p mcp-server --features test-utils --test test_live_data_plane_roundtrip -- --ignored
 fi
 
 echo "==> All selected E2E suites completed"

@@ -483,7 +483,7 @@ async fn watcher_churn_and_reconciliation_converges_to_correct_graph_state_under
     });
 
     let report = builder.build();
-    let report_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../tests/e2e/reports");
+    let report_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/e2e/reports");
     fs::create_dir_all(&report_dir).expect("reports dir should exist");
     let report_path = report_dir.join(format!("{}__{}.json", report.test_name, report.test_id));
     let report_json = serde_json::to_string_pretty(&report).expect("report should serialize");

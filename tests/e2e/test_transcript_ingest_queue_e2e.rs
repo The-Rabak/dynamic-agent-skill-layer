@@ -410,7 +410,7 @@ async fn shipped_command_hook_payload_round_trips_through_queue_to_pending() {
 
     // --- Report + teardown ---
     let report_doc = builder.build();
-    let report_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../tests/e2e/reports");
+    let report_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/e2e/reports");
     std::fs::create_dir_all(&report_dir).expect("reports dir should exist");
     let report_path = report_dir.join(format!(
         "{}__{}.json",

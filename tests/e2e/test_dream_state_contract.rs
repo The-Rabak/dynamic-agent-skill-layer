@@ -400,7 +400,7 @@ async fn dependency_chaos_matrix_preserves_degraded_semantics_and_fast_recovery(
     builder.record_degradation_event("all", true, "recovered to healthy");
 
     let report = builder.build();
-    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../tests/e2e/reports");
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/e2e/reports");
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(
         dir.join(format!("{}__{}.json", report.test_name, report.test_id)),
@@ -488,7 +488,7 @@ async fn outbox_backlog_replays_without_data_loss_after_multi_restart_sequence()
     });
 
     let report = builder.build();
-    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../tests/e2e/reports");
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/e2e/reports");
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(
         dir.join(format!("{}__{}.json", report.test_name, report.test_id)),
@@ -555,7 +555,7 @@ async fn qdrant_pg_drift_detection_and_reconciliation_closes_all_gaps() {
     });
 
     let report = builder.build();
-    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../tests/e2e/reports");
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/e2e/reports");
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(
         dir.join(format!("{}__{}.json", report.test_name, report.test_id)),
@@ -625,7 +625,7 @@ async fn sustained_watcher_and_extraction_saturation_keeps_eventual_consistency(
     );
 
     let report = builder.build();
-    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../tests/e2e/reports");
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/e2e/reports");
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(
         dir.join(format!("{}__{}.json", report.test_name, report.test_id)),
@@ -719,7 +719,7 @@ async fn high_qps_compile_context_load_meets_p95_and_error_budget_targets() {
     );
 
     let report = builder.build();
-    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../tests/e2e/reports");
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/e2e/reports");
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(
         dir.join(format!("{}__{}.json", report.test_name, report.test_id)),

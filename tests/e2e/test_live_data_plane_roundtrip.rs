@@ -560,7 +560,7 @@ async fn test_live_data_plane_roundtrip() {
     });
 
     let report = builder.build();
-    let report_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../tests/e2e/reports");
+    let report_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/e2e/reports");
     std::fs::create_dir_all(&report_dir).expect("reports dir should exist");
     let report_path = report_dir.join(format!("{}__{}.json", report.test_name, report.test_id));
     let report_json = serde_json::to_string_pretty(&report).expect("report should serialize");
@@ -739,7 +739,7 @@ async fn extract_session_live_inline_payload_writes_pending_and_emits_completion
     });
 
     let report = builder.build();
-    let report_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../tests/e2e/reports");
+    let report_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/e2e/reports");
     std::fs::create_dir_all(&report_dir).expect("reports dir should exist");
     let report_path = report_dir.join(format!("{}__{}.json", report.test_name, report.test_id));
     let report_json = serde_json::to_string_pretty(&report).expect("report should serialize");
@@ -860,7 +860,7 @@ async fn extract_session_live_ref_payload_loads_from_transcript_volume() {
     });
 
     let report = builder.build();
-    let report_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../tests/e2e/reports");
+    let report_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/e2e/reports");
     std::fs::create_dir_all(&report_dir).expect("reports dir should exist");
     let report_path = report_dir.join(format!("{}__{}.json", report.test_name, report.test_id));
     let report_json = serde_json::to_string_pretty(&report).expect("report should serialize");
@@ -1163,7 +1163,7 @@ async fn degraded_and_recovery_cycle_preserves_reason_codes_and_recovers_cleanly
     });
 
     let report = builder.build();
-    let report_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../tests/e2e/reports");
+    let report_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/e2e/reports");
     std::fs::create_dir_all(&report_dir).expect("reports dir should exist");
     let report_path = report_dir.join(format!("{}__{}.json", report.test_name, report.test_id));
     let report_json = serde_json::to_string_pretty(&report).expect("report should serialize");
