@@ -1400,6 +1400,7 @@ dependencies = [
  "graph-builder",
  "infrastructure",
  "maintenance",
+ "redis",
  "reqwest",
  "retrieval",
  "serde",
