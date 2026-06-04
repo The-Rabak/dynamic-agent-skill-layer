@@ -74,9 +74,33 @@ Fault injection uses `docker compose stop/start` of existing services (commands,
 - Seams: trait-level rollback for resolver; feature-flag/bounded-pool revert for embedding concurrency.
 - Review guidance: production fixes (resolver, embedding) need security-sentinel/performance-oracle/architecture-strategist.
 
+## PIVOT — 2026-06-04 (user directive: TRUE end-to-end)
+User: *"real infra and live logic paths. no in-memory simulations, no stubs and no fakes. it's not e2e if we're not
+actually using the app END TO END … build the actual proper e2e test harness first which will use the real bloody app
+and all existing and future e2e tests will use … it shouldn't be a completely black box … detailed file logs for every
+test run covering all inputs and outputs for all stages."*
+
+**Root cause found:** the ENTIRE existing "live" e2e suite uses `McpServerApp::from_environment` IN-PROCESS against
+backing stores — it never drives the real `mcp-server`/`graph-builder` containers (`:3001`). That is not e2e. My
+slices 2.2/2.3 compounded it with synthetic vectors + hand-injected drift.
+
+**Decision:** build ONE canonical real-app E2E harness FIRST (drives the running containers over real transport,
+real embeddings, real ingest→approve→rebuild→retrieve loop, real `docker kill` faults; white-box observes real infra;
+per-run/per-stage input+output file logs). ALL existing + future e2e tests adopt it. Contract authored at
+`docs/reference/e2e-harness-contract.md`. **Docker IS available here (27.4.0) → harness validated LIVE.**
+
+**Status of prior units under the new bar:**
+- 1.1 FsMarkerProjectResolver — PRODUCTION FIX, still valid/needed. KEEP. (its in-process e2e test migrates later)
+- 1.2 honest report.rs — valid; the stage logger extends it. KEEP/INTEGRATE.
+- 1.3 in-process fault harness — SUPERSEDED by the real-app harness (poll/container-stop reusable; direct sqlx/qdrant
+  injection + synthetic vectors are the "fakes" to drop).
+- 2.1 DS-003 / 2.2 DS-004 / 2.3 DS-005 — built on in-process `from_environment`; concepts carry over but bodies REWORK
+  onto the harness (faults = real docker kill; drift = real interruption; retrieval over HTTP). Marked needs-rework.
+
 ## Work Status
 | # | Unit | Kind | Serves / Unlocks | Status | Attempts | Session File |
 |---|------|------|------------------|--------|----------|--------------|
+| 0 | 1.0 Proper real-app E2E harness (drives real containers; per-stage logs) | tracer-bullet/foundation | ALL e2e tests; the TRUE-e2e bar | in_progress | -- | -- |
 | 1 | 1.1 Real project-scoped Ok in-container (#154 git-free resolver) | tracer-bullet | SC#3 + secondary story | completed | 1 | unit-01-slice-1.1-git-free-resolver.md |
 | 2 | 1.2 Honest reporting — outcome from real assertions | hardening | SC#1 (prereq for all) | completed | 1 | unit-02-slice-1.2-honest-reporting.md |
 | 3 | 1.3 Real-infra fault-injection harness | hardening | enables DS-003..008 | completed | 2 | unit-03-slice-1.3-fault-injection-harness.md |

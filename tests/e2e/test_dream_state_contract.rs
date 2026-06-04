@@ -6,7 +6,8 @@
 use domain::SubunitType;
 use infrastructure::{
     DependencyFactory, GraphWriteCoordinator, LiveGraphSkillRecord, LiveGraphSnapshotMutation,
-    LiveGraphSubunitRecord, OutboxEvent, OutboxRelay, RebuildCoordinator, VECTOR_UPSERT_EVENT_TYPE,
+    LiveGraphSubunitRecord, OutboxEvent, OutboxReconciler, OutboxRelay, OutboxVectorStore,
+    RebuildCoordinator, VECTOR_UPSERT_EVENT_TYPE,
 };
 use mcp_server::McpServerApp;
 use mcp_server::tools::compile_context::{CompileContextRequest, CompileContextStatus};
@@ -815,8 +816,10 @@ async fn outbox_backlog_replays_without_data_loss_after_multi_restart_sequence()
     let enqueued: usize = backlog_skill_ids.len();
 
     // Use a synthetic but valid vector payload. The relay validates the payload shape
-    // before publishing; a real vector (e.g. 384 floats of 0.1) passes the check.
-    let synthetic_vector: Vec<f32> = vec![0.1_f32; 384];
+    // before publishing; the production "skills" collection is 768-dim
+    // (ensure_collection("skills", 768)), so the vector MUST be 768 floats or Qdrant
+    // rejects the upsert at relay time.
+    let synthetic_vector: Vec<f32> = vec![0.1_f32; 768];
     let synthetic_vector_json: Vec<serde_json::Value> = synthetic_vector
         .iter()
         .map(|v| serde_json::Value::from(*v as f64))
@@ -1121,62 +1124,294 @@ async fn outbox_backlog_replays_without_data_loss_after_multi_restart_sequence()
     crash_restart_2.teardown().await.expect("teardown");
 }
 
+/// DS-005: Qdrant/PG drift injection, reconciliation, and convergence at scale.
+///
+/// This test proves the full drift-detect-and-repair contract at N≥100 divergences:
+///
+/// 1. **Missing-vector direction (≥50)**: Outbox events are inserted as `published`
+///    with valid `vector.upsert` payloads but no matching Qdrant point. The reconciler
+///    must detect these, enqueue repairs, and the relay must push them to Qdrant.
+///
+/// 2. **Orphaned-vector direction (≥50)**: Qdrant vectors are injected directly with
+///    no published outbox event. The reconciler must identify and delete them.
+///
+/// 3. **Convergence**: After a bounded reconcile+relay loop, both directions are closed.
+///    The durable invariant — published-vector outbox count == Qdrant vector count —
+///    is asserted as the final contract.
+///
+/// Fail-ability: without `reconcile_once`, `missing_vectors` and `orphaned_vectors_deleted`
+/// stay at zero; the store-count equality assertion fails because orphan vectors remain
+/// in Qdrant and missing repairs are never enqueued.
 #[ignore = "requires live containers"]
 #[tokio::test]
 async fn qdrant_pg_drift_detection_and_reconciliation_closes_all_gaps() {
+    use chrono::Utc;
+    use serde_json::json;
+    use uuid::Uuid;
+
+    // Number of divergences in each direction. Total = 2 * DRIFT_COUNT ≥ 100.
+    const MISSING_VECTOR_COUNT: usize = 50;
+    const ORPHAN_VECTOR_COUNT: usize = 50;
+    // Total divergences injected in both directions.
+    let gaps_injected = MISSING_VECTOR_COUNT + ORPHAN_VECTOR_COUNT;
+
+    // The production collection uses 768-dimensional nomic-embed-text vectors.
+    const VECTOR_DIM: usize = 768;
+    // The production Qdrant collection name.
+    const COLLECTION_NAME: &str = "skills";
+    // scan_limit must exceed the total published-event count to ensure `expected_set_is_complete`
+    // is true, which is required for the reconciler to delete orphans.
+    const RECONCILER_SCAN_LIMIT: i64 = 500;
+    // Maximum reconcile+relay cycles before declaring convergence failure.
+    const MAX_CONVERGENCE_CYCLES: u32 = 20;
+
     let _env_guard = env_guard::configure_scope_env();
     let mut builder = report::ReportBuilder::new("DS-005_qdrant_pg_drift");
 
     let components = McpServerApp::from_environment(dream_retrieval_config())
         .await
-        .expect("live");
-    dream_seed_skills(
-        components.rebuild_coordinator.as_ref(),
-        &[
-            (
-                "ds005-drift-skill-1",
-                "Drift detection skill one",
-                &["drift", "one"],
-            ),
-            (
-                "ds005-drift-skill-2",
-                "Drift detection skill two",
-                &["drift", "two"],
-            ),
-        ],
-    )
-    .await;
+        .expect("DS-005: live server components must be reachable");
 
-    let repo = test_repo_path();
-    // Verify compile_context works
-    let r = components
-        .app
-        .compile_context(CompileContextRequest {
-            prompt: "drift detection".to_owned(),
-            session_id: "ds005-session".to_owned(),
-            repo_path: repo.clone(),
-            trigger: None,
-        })
-        .await;
-    assert!(matches!(
-        r.status,
-        CompileContextStatus::Ok | CompileContextStatus::NoMatch
-    ));
+    let pool = components.pg_adapter.pool().clone();
+    let qdrant_url =
+        std::env::var("QDRANT_URL").unwrap_or_else(|_| "http://localhost:16333".to_owned());
 
-    let version = components
-        .rebuild_coordinator
-        .current_graph_version()
+    // --- Phase 1: Inject missing-vector drift ---
+    //
+    // Insert `outbox_events` rows with status='published' and valid vector.upsert payloads,
+    // but never upsert the corresponding Qdrant vectors. The reconciler sees these as
+    // published events with no Qdrant counterpart and enqueues repair events.
+    //
+    // Each row gets a unique content_hash; the Qdrant point_id is derived from the hash
+    // using the same `qdrant_point_id_from_content_hash` logic that production uses.
+    // We do NOT insert a Qdrant vector, so the reconciler must detect the gap.
+    let correlation_id = Uuid::now_v7();
+    let mut injected_published_event_ids: Vec<Uuid> = Vec::with_capacity(MISSING_VECTOR_COUNT);
+
+    for i in 0..MISSING_VECTOR_COUNT {
+        let event_id = Uuid::now_v7();
+        let content_hash = format!("ds005-missing-{i}-{}", event_id);
+        // Build a minimal 768-dim vector in payload form. Values are deterministic and bounded.
+        let vector: Vec<f32> = (0..VECTOR_DIM)
+            .map(|j| (i as f32 * 0.001 + j as f32 * 0.0001) % 1.0)
+            .collect();
+        let vector_json: Vec<serde_json::Value> = vector.iter().map(|v| json!(*v)).collect();
+        let payload = json!({
+            "content_hash": content_hash,
+            "vector": vector_json,
+            "payload": {
+                "drift_marker": format!("ds005-missing-{i}"),
+                "skill_name": format!("ds005-missing-skill-{i}")
+            }
+        });
+        let idempotency_key = format!("ds005:missing:{i}:{}", event_id);
+
+        // Insert directly as 'published' so the reconciler treats this as an event that
+        // has already been relayed to Qdrant — but we deliberately skip the actual upsert.
+        sqlx::query(
+            r#"
+            INSERT INTO outbox_events (
+                event_id, event_type, correlation_id, idempotency_key,
+                schema_version, payload, occurred_at, available_at, status,
+                stream_id, published_at
+            ) VALUES ($1, $2, $3, $4, 1, $5, $6, $6, 'published',
+                      'ds005-drift-inject', $6)
+            "#,
+        )
+        .bind(event_id)
+        .bind(VECTOR_UPSERT_EVENT_TYPE)
+        .bind(correlation_id)
+        .bind(&idempotency_key)
+        .bind(&payload)
+        .bind(Utc::now())
+        .execute(&pool)
         .await
-        .expect("version");
-    assert!(version > 0);
+        .expect("DS-005: insert published outbox event for missing-vector drift");
 
-    // assert_contract derives pass/fail from the condition rather than hardcoding Passed.
+        injected_published_event_ids.push(event_id);
+    }
+
     builder.assert_contract(
-        "qdrant_pg_drift",
-        version > 0,
-        "version > 0",
-        &format!("version={version}"),
-        &format!("graph_version={version}"),
+        "missing_vector_drift_injected",
+        injected_published_event_ids.len() == MISSING_VECTOR_COUNT,
+        &format!("injected_count == {MISSING_VECTOR_COUNT}"),
+        &format!("injected_count={}", injected_published_event_ids.len()),
+        "All missing-vector drift rows must be inserted before reconcile begins",
+    );
+
+    // --- Phase 2: Inject orphaned-vector drift ---
+    //
+    // Upsert Qdrant vectors with no published outbox event. The reconciler sees these as
+    // point IDs not in the expected set and deletes them.
+    let injected_orphans = support::drift::inject_qdrant_vectors_without_pg_rows(
+        &qdrant_url,
+        COLLECTION_NAME,
+        VECTOR_DIM,
+        ORPHAN_VECTOR_COUNT,
+    )
+    .await
+    .expect("DS-005: inject orphan vectors into Qdrant");
+
+    builder.assert_contract(
+        "orphan_vector_drift_injected",
+        injected_orphans.len() == ORPHAN_VECTOR_COUNT,
+        &format!("injected_count == {ORPHAN_VECTOR_COUNT}"),
+        &format!("injected_count={}", injected_orphans.len()),
+        "All orphan-vector drift rows must be injected before reconcile begins",
+    );
+
+    // Record total gaps injected before any reconciliation.
+    builder.record_latency("gaps_injected", gaps_injected as u64);
+
+    // --- Phase 3: Run reconcile+relay loop until convergence ---
+    //
+    // Each cycle:
+    // 1. `reconcile_once` detects missing vectors (enqueues repairs) and deletes orphans.
+    // 2. `relay_once` processes any newly-enqueued repair events, pushing vectors to Qdrant.
+    //
+    // Convergence is reached when a full reconcile cycle reports zero missing_vectors
+    // and zero orphaned_vectors_deleted — meaning both directions are fully closed.
+    //
+    // The relay constructor takes (coordinator, vector_store, claim_limit, retry_after_secs).
+    let reconciler = OutboxReconciler::new(
+        components.write_coordinator.as_ref(),
+        components.qdrant_adapter.as_ref(),
+        RECONCILER_SCAN_LIMIT,
+    )
+    .expect("DS-005: OutboxReconciler construction must succeed with positive scan_limit");
+
+    let relay = OutboxRelay::new(
+        components.write_coordinator.as_ref(),
+        components.qdrant_adapter.as_ref(),
+        // claim_limit covers all injected missing-vector repairs in one cycle.
+        (MISSING_VECTOR_COUNT as i64) * 2,
+        0,
+    )
+    .expect("DS-005: OutboxRelay construction must succeed");
+
+    // Accumulated reconciliation totals across all convergence cycles.
+    let mut total_missing_vectors_detected: usize = 0;
+    let mut total_repair_enqueued: usize = 0;
+    let mut total_orphans_deleted: usize = 0;
+    let mut convergence_cycles_used: u32 = 0;
+
+    for cycle in 0..MAX_CONVERGENCE_CYCLES {
+        let report = reconciler
+            .reconcile_once()
+            .await
+            .expect("DS-005: reconcile_once must not error with live infrastructure");
+
+        total_missing_vectors_detected += report.missing_vectors;
+        total_repair_enqueued += report.repair_enqueued;
+        total_orphans_deleted += report.orphaned_vectors_deleted;
+        convergence_cycles_used = cycle + 1;
+
+        // Run the relay to process repair events enqueued by this reconcile cycle.
+        // This pushes repaired vectors to Qdrant so subsequent reconcile sees them.
+        let _ = relay
+            .relay_once()
+            .await
+            .expect("DS-005: relay_once must not error with live infrastructure");
+
+        // Convergence: reconcile sees no remaining gaps in either direction.
+        if report.missing_vectors == 0 && report.orphaned_vectors_deleted == 0 {
+            break;
+        }
+    }
+
+    builder.record_latency("convergence_cycles", convergence_cycles_used as u64);
+
+    // --- Phase 4: Assert convergence contract assertions ---
+    //
+    // (4a) missing-vector direction: all 50 injected events had their gap detected and repair enqueued.
+    let missing_direction_closed = total_missing_vectors_detected >= MISSING_VECTOR_COUNT;
+    builder.assert_contract(
+        "missing_vector_direction_closed",
+        missing_direction_closed,
+        &format!("total_missing_detected >= {MISSING_VECTOR_COUNT}"),
+        &format!("total_missing_detected={total_missing_vectors_detected}"),
+        "Reconciler must detect all injected missing-vector gaps across convergence cycles",
+    );
+
+    let repairs_enqueued_for_all_missing = total_repair_enqueued >= MISSING_VECTOR_COUNT;
+    builder.assert_contract(
+        "repairs_enqueued_for_all_missing_vectors",
+        repairs_enqueued_for_all_missing,
+        &format!("total_repair_enqueued >= {MISSING_VECTOR_COUNT}"),
+        &format!("total_repair_enqueued={total_repair_enqueued}"),
+        "Reconciler must enqueue repairs for every missing-vector gap detected",
+    );
+
+    // (4b) orphaned-vector direction: all 50 injected orphan vectors deleted.
+    let orphan_direction_closed = total_orphans_deleted >= ORPHAN_VECTOR_COUNT;
+    builder.assert_contract(
+        "orphan_vector_direction_closed",
+        orphan_direction_closed,
+        &format!("total_orphans_deleted >= {ORPHAN_VECTOR_COUNT}"),
+        &format!("total_orphans_deleted={total_orphans_deleted}"),
+        "Reconciler must delete all injected orphan Qdrant vectors across convergence cycles",
+    );
+
+    // (4c) total gaps closed == total gaps injected (both directions).
+    // gaps_closed = missing detected + orphans deleted (the two halves of the contract).
+    let gaps_closed = total_missing_vectors_detected.min(MISSING_VECTOR_COUNT)
+        + total_orphans_deleted.min(ORPHAN_VECTOR_COUNT);
+    let all_gaps_closed = gaps_closed == gaps_injected;
+    builder.assert_contract(
+        "gaps_closed_equals_gaps_injected",
+        all_gaps_closed,
+        &format!("gaps_closed == {gaps_injected}"),
+        &format!("gaps_closed={gaps_closed}"),
+        "All injected divergences (both directions) must be resolved by the reconciler",
+    );
+
+    // --- Phase 5: Post-reconcile store-count equality (the durable invariant) ---
+    //
+    // After full convergence: the count of Qdrant vectors must equal the count of
+    // published vector.upsert outbox events. This is the fundamental consistency
+    // invariant: every published event must have a live vector, and every live vector
+    // must have a published event.
+    //
+    // We measure both counts from the real stores.
+    let published_event_count: i64 = sqlx::query_scalar(
+        r#"
+        SELECT COUNT(*)
+        FROM outbox_events
+        WHERE status = 'published'
+          AND event_type = $1
+        "#,
+    )
+    .bind(VECTOR_UPSERT_EVENT_TYPE)
+    .fetch_one(&pool)
+    .await
+    .expect("DS-005: count published vector.upsert events");
+
+    let qdrant_listing = components
+        .qdrant_adapter
+        .list_point_ids()
+        .await
+        .expect("DS-005: list Qdrant point IDs for final count assertion");
+
+    let qdrant_vector_count = qdrant_listing.point_ids.len() as i64;
+
+    // The equality is only meaningful when the Qdrant listing is complete (no pagination).
+    // If the listing is paginated, the test cannot make a reliable count comparison.
+    assert!(
+        qdrant_listing.is_complete,
+        "DS-005: Qdrant listing must be complete for post-reconcile count assertion; \
+         increase the list_point_ids page limit if needed"
+    );
+
+    let store_counts_equal = published_event_count == qdrant_vector_count;
+    builder.assert_contract(
+        "post_reconcile_pg_published_count_equals_qdrant_vector_count",
+        store_counts_equal,
+        "published_event_count == qdrant_vector_count",
+        &format!(
+            "published_event_count={published_event_count} qdrant_vector_count={qdrant_vector_count}"
+        ),
+        "After reconciliation, every published vector.upsert event must have a live Qdrant vector \
+         and every live Qdrant vector must have a published event — the fundamental consistency invariant",
     );
 
     let report = builder.build();
@@ -1187,7 +1422,7 @@ async fn qdrant_pg_drift_detection_and_reconciliation_closes_all_gaps() {
         serde_json::to_string_pretty(&report).unwrap(),
     )
     .unwrap();
-    components.teardown().await.expect("teardown");
+    components.teardown().await.expect("DS-005: teardown");
 }
 
 #[ignore = "requires live containers"]
