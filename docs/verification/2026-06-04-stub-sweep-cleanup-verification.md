@@ -120,3 +120,32 @@ verified real: `OLLAMA_EXTRACTION_TIMEOUT_MS` (providers/ollama.rs:17) and
 **Verification:** `rg -ni 'unmeasured|placeholder' crates/*/src | grep -iv test` → only the benign
 `rebuild.rs:256` comment that describes using a real version *instead of* a hardcoded placeholder.
 `cargo build -p infrastructure -p session-extractor` → green.
+
+---
+
+## #160 — live data-plane suite: silent pass + fixed sleeps — ✅ RESOLVED (honesty); surfaced real bug #162
+
+**Fix (`tests/e2e/test_live_data_plane_roundtrip.rs`):**
+- **Silent pass:** the `extract_session_inline_live` contract was recorded `Passed` UNCONDITIONALLY even when
+  no `.pending` draft was written. Replaced with a real derivation: `pending_written && origin_ok` →
+  `assert!` + `assert_contract` (fails loud when no draft).
+- **Fixed sleeps:** replaced all three `thread::sleep(Duration::from_secs(2))` (qdrant-stopped, ollama-stopped,
+  qdrant-restarted) with bounded polls on the real condition (Qdrant `/collections` / Ollama `/api/tags`
+  reachable/unreachable, 30 × 500ms), mirroring the existing Phase-5 readiness poll. Removed the now-unused
+  `thread` import.
+- **Unbacked claim:** Phase 4 recorded a hardcoded `Passed` describing "compile_context still Degraded" without
+  checking. Added a real `compile_context` call + `assert!` + `assert_contract`
+  (`qdrant_restore_alone_does_not_recover_read_path`) that proves it.
+
+**Live verification (real stack, `--ignored`):** `test result: FAILED. 4 passed; 1 failed`.
+- **4 PASS** — including `degraded_and_recovery_cycle_preserves_reason_codes_and_recovers_cleanly`, which
+  exercises ALL THREE new bounded-poll fault injections AND the new Phase-4 still-Degraded check. The sleep→poll
+  and unbacked-claim fixes are verified working.
+- **1 FAIL (intended, honest)** — `extract_session_live_inline_payload_writes_pending_and_emits_completion_events`
+  now fails loud: `pending_written=false … extraction produced nothing`. The previously-hardcoded `Passed` was
+  hiding that **live inline extraction writes no `.pending` draft**. This is a REAL defect the honesty fix
+  exposed; filed as **#162** (P1). Per the no-stubs mandate, the test stays red until the real extraction bug is
+  fixed — not by relaxing the assertion.
+
+**Net:** #160's honesty scope is complete and verified (no silent pass, no fixed sleeps, no unbacked Passed).
+The one now-failing test is the honest surfacing of #162, not a regression introduced by this change.

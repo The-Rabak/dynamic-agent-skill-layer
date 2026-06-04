@@ -2,7 +2,6 @@ use std::{
     path::PathBuf,
     process::Command,
     sync::{Arc, Mutex},
-    thread,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
@@ -716,27 +715,29 @@ async fn extract_session_live_inline_payload_writes_pending_and_emits_completion
         collect_pending(&pending_root, &mut pending_files);
     }
 
-    if !pending_files.is_empty() {
-        let pending_body =
-            std::fs::read_to_string(&pending_files[0]).expect("pending file readable");
-        assert!(pending_body.contains("origin: session_extraction"));
-        builder.push_action(
-            "verify_pending",
-            report::ReportedAction {
-                description: "pending draft contains origin: session_extraction".to_owned(),
-                status: report::AssertionResult::Passed,
-                side_effects: vec![],
-                duration_ms: 0,
-            },
-        );
-    }
-
-    builder.add_contract_assertion(report::ContractAssertion {
-        contract_name: "extract_session_inline_live".to_owned(),
-        status: report::AssertionResult::Passed,
-        details: "live extraction with inline payload completes and writes pending draft"
-            .to_owned(),
-    });
+    // Brutal, fail-loud check: live extraction MUST write a .pending draft tagged
+    // `origin: session_extraction`. The previous code recorded the contract as Passed
+    // UNCONDITIONALLY — if extraction wrote no draft (pending_files empty), the whole
+    // `extract_session_inline_live` contract still "passed" while the system produced
+    // nothing. Derive the contract status from the real artifact instead.
+    let pending_written = !pending_files.is_empty();
+    let origin_ok = pending_written
+        && std::fs::read_to_string(&pending_files[0])
+            .map(|body| body.contains("origin: session_extraction"))
+            .unwrap_or(false);
+    let extract_contract_ok = pending_written && origin_ok;
+    assert!(
+        extract_contract_ok,
+        "live extraction must write a .pending draft tagged 'origin: session_extraction'; \
+         pending_written={pending_written} origin_ok={origin_ok} (no draft = extraction produced nothing)"
+    );
+    builder.assert_contract(
+        "extract_session_inline_live",
+        extract_contract_ok,
+        "a .pending draft tagged 'origin: session_extraction' is written",
+        &format!("pending_written={pending_written} origin_ok={origin_ok}"),
+        "live extraction with inline payload completes and writes a pending draft",
+    );
 
     let report = builder.build();
     let report_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/e2e/reports");
@@ -941,7 +942,31 @@ async fn degraded_and_recovery_cycle_preserves_reason_codes_and_recovers_cleanly
     );
     let qdrant_stop_elapsed = qdrant_stop_start.elapsed().as_millis() as u64;
     builder.record_degradation_event("qdrant", false, "stopped to verify Option A CQRS contract");
-    thread::sleep(Duration::from_secs(2));
+    // Bounded poll: wait until Qdrant is actually unreachable (replaces a fixed 2s sleep —
+    // fixed sleeps race on slow hosts and can assert before the container has stopped).
+    let qdrant_url =
+        std::env::var("QDRANT_URL").unwrap_or_else(|_| "http://localhost:16333".to_owned());
+    let fault_http = reqwest::Client::builder()
+        .timeout(Duration::from_secs(2))
+        .build()
+        .expect("reqwest client should build");
+    let mut qdrant_down = false;
+    for _ in 0..30 {
+        if fault_http
+            .get(format!("{}/collections", qdrant_url.trim_end_matches('/')))
+            .send()
+            .await
+            .is_err()
+        {
+            qdrant_down = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+    assert!(
+        qdrant_down,
+        "Qdrant did not become unreachable within 15s after docker compose stop qdrant"
+    );
 
     let degraded1_req = CompileContextRequest {
         prompt: "rust auth middleware".to_owned(),
@@ -995,7 +1020,29 @@ async fn degraded_and_recovery_cycle_preserves_reason_codes_and_recovers_cleanly
     );
     let ollama_stop_elapsed = ollama_stop_start.elapsed().as_millis() as u64;
     builder.record_degradation_event("ollama", false, "stopped for degraded phase");
-    thread::sleep(Duration::from_secs(2));
+    // Bounded poll: wait until Ollama is actually unreachable (replaces a fixed 2s sleep).
+    let ollama_url_for_down =
+        std::env::var("OLLAMA_URL").unwrap_or_else(|_| "http://localhost:11444".to_owned());
+    let mut ollama_down = false;
+    for _ in 0..30 {
+        if fault_http
+            .get(format!(
+                "{}/api/tags",
+                ollama_url_for_down.trim_end_matches('/')
+            ))
+            .send()
+            .await
+            .is_err()
+        {
+            ollama_down = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+    assert!(
+        ollama_down,
+        "Ollama did not become unreachable within 15s after docker compose stop ollama"
+    );
 
     let degraded2_req = CompileContextRequest {
         prompt: "rust file io patterns".to_owned(),
@@ -1066,17 +1113,51 @@ async fn degraded_and_recovery_cycle_preserves_reason_codes_and_recovers_cleanly
         true,
         "restored (write-side only; Ollama still down)",
     );
-    // Brief wait for Qdrant to accept connections again.
-    thread::sleep(Duration::from_secs(2));
+    // Bounded poll: wait until Qdrant accepts connections again (replaces a fixed 2s sleep).
+    let mut qdrant_back = false;
+    for _ in 0..30 {
+        if fault_http
+            .get(format!("{}/collections", qdrant_url.trim_end_matches('/')))
+            .send()
+            .await
+            .is_ok()
+        {
+            qdrant_back = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+    assert!(
+        qdrant_back,
+        "Qdrant did not become reachable within 15s after docker compose start qdrant"
+    );
     let qdrant_start_elapsed = qdrant_start_start.elapsed().as_millis() as u64;
-    builder.push_action(
-        "recover_qdrant_write_side",
-        report::ReportedAction {
-            description: "qdrant restored (write-side only); Ollama still down — compile_context still Degraded".to_owned(),
-            status: report::AssertionResult::Passed,
-            side_effects: vec![],
-            duration_ms: qdrant_start_elapsed,
-        },
+
+    // Back the Phase-4 contract claim with a REAL check: with Qdrant restored but Ollama
+    // still down, compile_context must STILL be Degraded (restoring the write-side alone
+    // does not recover the read path). The previous code asserted nothing and recorded a
+    // hardcoded Passed describing "still Degraded" without ever verifying it.
+    let still_degraded = components
+        .app
+        .compile_context(CompileContextRequest {
+            prompt: "rust error handling".to_owned(),
+            session_id: "live-qdrant-back-ollama-down".to_owned(),
+            repo_path: repo_path.clone(),
+            trigger: None,
+        })
+        .await;
+    let still_degraded_ok = still_degraded.status == CompileContextStatus::Degraded;
+    assert!(
+        still_degraded_ok,
+        "compile_context must stay Degraded after Qdrant restore while Ollama is down; got {:?}",
+        still_degraded.status
+    );
+    builder.assert_contract(
+        "qdrant_restore_alone_does_not_recover_read_path",
+        still_degraded_ok,
+        "compile_context still Degraded (Ollama down) after Qdrant write-side restored",
+        &format!("status={:?}", still_degraded.status),
+        "Option A: restoring the Qdrant write-side must not flip compile_context back to healthy while embedding is unavailable",
     );
 
     // Phase 5: Restore ollama, wait for readiness via bounded polling, then compile_context.
