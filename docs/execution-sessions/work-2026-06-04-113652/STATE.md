@@ -9,7 +9,7 @@ brainstorm_ref: null
 started: 2026-06-04T11:36:52Z
 status: in_progress
 execution_shape: vertical-slices
-current_unit: 3
+current_unit: 5
 total_units: 11
 session_id: work-2026-06-04-113652
 ---
@@ -80,8 +80,8 @@ Fault injection uses `docker compose stop/start` of existing services (commands,
 | 1 | 1.1 Real project-scoped Ok in-container (#154 git-free resolver) | tracer-bullet | SC#3 + secondary story | completed | 1 | unit-01-slice-1.1-git-free-resolver.md |
 | 2 | 1.2 Honest reporting — outcome from real assertions | hardening | SC#1 (prereq for all) | completed | 1 | unit-02-slice-1.2-honest-reporting.md |
 | 3 | 1.3 Real-infra fault-injection harness | hardening | enables DS-003..008 | completed | 2 | unit-03-slice-1.3-fault-injection-harness.md |
-| 4 | 2.1 DS-003 dependency_chaos_matrix — deepen Option-A proof | hardening | SC#8 | pending | -- | -- |
-| 5 | 2.2 DS-004 outbox_backlog_replay — kill/restart + no loss | hardening | SC#4 | pending | -- | -- |
+| 4 | 2.1 DS-003 dependency_chaos_matrix — deepen Option-A proof | hardening | SC#8 | completed | 1 | unit-04-slice-2.1-ds003-chaos-matrix.md |
+| 5 | 2.2 DS-004 outbox_backlog_replay — kill/restart + no loss | hardening | SC#4 (partial: in-process crash, OS-SIGKILL deferred) | completed | 1 | unit-05-slice-2.2-ds004-outbox-replay.md |
 | 6 | 2.3 DS-005 qdrant_pg_drift — inject/reconcile/converge | hardening | SC#5 | pending | -- | -- |
 | 7 | 2.4 DS-006 watcher_extraction_saturation — real loop convergence | hardening | SC#6 | pending | -- | -- |
 | 8 | 2.5 DS-007 high_qps_compile_context — concurrency + bounded hot path | hardening+perf | SC#7 | pending | -- | -- |
@@ -114,5 +114,13 @@ Fault injection uses `docker compose stop/start` of existing services (commands,
 - **[clippy debt]** `cargo clippy --all-targets -D warnings` is RED on HEAD baseline (pre-existing dead_code/len_zero in
   test_concurrency_stress.rs, report.rs `record_degradation_event`, etc.). NOT our regression. Fix only what your slice touches;
   DS-003 rewrite (2.1) will naturally consume `record_degradation_event`. Validate per-target, not `--all-targets`.
+- **[ARCH: in-process e2e]** The "live container" dream-state tests run server logic IN-PROCESS (`McpServerApp::from_environment`)
+  against containerized PG/Redis/Qdrant/Ollama — they do NOT drive the containerized mcp-server over its transport. So
+  "real process kill" of the server is NOT available in these tests (DS-004 simulates crash via `drop()` without `.teardown()`,
+  which preserves PG rows). True OS-SIGKILL + transport-driven crash belongs to DS-002/slice 3.1 (real MCP transport) or a
+  follow-up. Relevant for 2.4 (watcher churn is in-process) and 3.1 (which DOES use the real transport: stdio + HTTP).
+- **[outbox API]** Enqueue via `write_coordinator.append_outbox_event(OutboxEvent{...})`; drain via `OutboxRelay::relay_once()`
+  loop; `VECTOR_UPSERT_EVENT_TYPE`. Scope per-test counts with a `correlation_id` UUID + raw sqlx to avoid cross-test interference.
+  `drop(components)` (no `.teardown()`) = crash sim; `.teardown()` TRUNCATEs. `PgPool` is Arc-backed — clone before drop keeps it alive.
 - **[live e2e]** No docker stack in the agent sandbox → live tests are `#[ignore="requires live containers"]` and PENDING-LIVE;
   the real proof runs via `scripts/run-e2e-tests.sh`. Agents must NOT fake green; write correct code, run non-live checks, document the live command.
