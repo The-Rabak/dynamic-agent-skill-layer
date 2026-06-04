@@ -9,7 +9,7 @@ use chrono::{DateTime, Duration, Utc};
 use thiserror::Error;
 
 use crate::audit::{
-    MaintenanceAuditEvent, MaintenanceAuditSink, NoopMaintenanceAuditSink,
+    MaintenanceAuditEvent, MaintenanceAuditSink,
     RetirementProposalAuditEvent,
 };
 use crate::merge::SkillSnapshot;
@@ -47,22 +47,12 @@ impl Default for RetirementConfig {
 }
 
 /// Scores stale skills and writes non-destructive `.retired` proposal markers.
-pub struct RetirementProposalWriter<'s, S = NoopMaintenanceAuditSink>
+pub struct RetirementProposalWriter<'s, S>
 where
     S: MaintenanceAuditSink,
 {
     config: RetirementConfig,
     audit_sink: &'s S,
-}
-
-impl<'s> RetirementProposalWriter<'s, NoopMaintenanceAuditSink> {
-    /// Creates a retirement workflow with explicit scoring settings.
-    pub fn new(config: RetirementConfig) -> Self {
-        Self {
-            config,
-            audit_sink: &NoopMaintenanceAuditSink,
-        }
-    }
 }
 
 impl<'s, S> RetirementProposalWriter<'s, S>

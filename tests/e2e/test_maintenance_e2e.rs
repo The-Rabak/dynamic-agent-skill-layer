@@ -7,7 +7,8 @@ use std::{
 use domain::{ScopeRoot, ScopeType};
 use graph_builder::graph::build::build_skills_from_scope_roots;
 use maintenance::{
-    MergeProposalWriter, SkillSnapshot, merge_verifier::TextOverlapMergeSemanticVerifier,
+    MergeProposalWriter, NoopMaintenanceAuditSink, SkillSnapshot,
+    merge_verifier::TextOverlapMergeSemanticVerifier,
 };
 
 fn _requires_docker_services() -> bool {
@@ -107,7 +108,7 @@ fn merge_pass_detects_cross_scope_duplicate_skills_finds_merges_and_writes_pendi
 
     let snapshots = to_snapshots(built);
     let verifier = TextOverlapMergeSemanticVerifier::default();
-    let writer = MergeProposalWriter::new(maintenance::MergeConfig::default(), verifier);
+    let writer = MergeProposalWriter::with_audit_sink(maintenance::MergeConfig::default(), verifier, &NoopMaintenanceAuditSink);
 
     let proposals = writer
         .propose(&snapshots, chrono::Utc::now())
@@ -177,7 +178,7 @@ fn merge_pass_no_duplicates_produces_no_proposals() {
 
     let snapshots = to_snapshots(built);
     let verifier = TextOverlapMergeSemanticVerifier::default();
-    let writer = MergeProposalWriter::new(maintenance::MergeConfig::default(), verifier);
+    let writer = MergeProposalWriter::with_audit_sink(maintenance::MergeConfig::default(), verifier, &NoopMaintenanceAuditSink);
 
     let proposals = writer
         .propose(&snapshots, chrono::Utc::now())

@@ -13,7 +13,7 @@ use serde::Serialize;
 use thiserror::Error;
 
 use crate::audit::{
-    MaintenanceAuditEvent, MaintenanceAuditSink, MergeProposalAuditEvent, NoopMaintenanceAuditSink,
+    MaintenanceAuditEvent, MaintenanceAuditSink, MergeProposalAuditEvent,
 };
 
 /// Boundary projection for adapting external seeded-skill models into maintenance snapshots.
@@ -136,7 +136,7 @@ pub trait MergeSemanticVerifier: Send + Sync {
 }
 
 /// Writes merged `.pending` artifacts without mutating active source skills.
-pub struct MergeProposalWriter<'s, V, S = NoopMaintenanceAuditSink>
+pub struct MergeProposalWriter<'s, V, S>
 where
     V: MergeSemanticVerifier,
     S: MaintenanceAuditSink,
@@ -145,22 +145,6 @@ where
     scope_policy: ScopeSelectionPolicy,
     semantic_verifier: V,
     audit_sink: &'s S,
-}
-
-impl<'s, V> MergeProposalWriter<'s, V, NoopMaintenanceAuditSink>
-where
-    V: MergeSemanticVerifier,
-{
-    /// Creates a writer with explicit merge config and deterministic scope policy.
-    pub fn new(config: MergeConfig, semantic_verifier: V) -> Self {
-        static NOOP: NoopMaintenanceAuditSink = NoopMaintenanceAuditSink;
-        Self {
-            config,
-            scope_policy: ScopeSelectionPolicy::PreferProjectThenGlobal,
-            semantic_verifier,
-            audit_sink: &NOOP,
-        }
-    }
 }
 
 impl<'s, V, S> MergeProposalWriter<'s, V, S>

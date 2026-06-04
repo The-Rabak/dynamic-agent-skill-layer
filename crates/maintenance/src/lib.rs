@@ -10,8 +10,10 @@ pub mod transcript_drain;
 
 pub use audit::{
     MaintenanceAuditError, MaintenanceAuditEvent, MaintenanceAuditSink, MergeProposalAuditEvent,
-    NoopMaintenanceAuditSink, RetirementProposalAuditEvent,
+    RetirementProposalAuditEvent,
 };
+#[cfg(any(test, feature = "test-utils"))]
+pub use audit::NoopMaintenanceAuditSink;
 pub use cleanup::{
     CleanupError, MalformedPendingFileDiagnostic, PendingScanReport, PendingWarning,
     PendingWarningScanner,

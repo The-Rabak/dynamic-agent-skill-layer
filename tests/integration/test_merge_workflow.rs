@@ -8,7 +8,8 @@ use chrono::{TimeZone, Utc};
 use domain::{ScopeType, pending_default_expires_at, pending_default_warning_at};
 use maintenance::{
     MaintenanceAuditError, MaintenanceAuditEvent, MaintenanceAuditSink, MergeConfig,
-    MergeProposalWriter, MergeSemanticVerifier, SeededSkillProjection, SkillSnapshot,
+    MergeProposalWriter, MergeSemanticVerifier, NoopMaintenanceAuditSink, SeededSkillProjection,
+    SkillSnapshot,
 };
 use serde_yaml::Value;
 
@@ -252,7 +253,7 @@ fn merge_workflow_serializes_frontmatter_with_special_characters_and_newlines() 
         SkillSnapshot::from_seeded_skill_projection(seeded_project),
         SkillSnapshot::from_seeded_skill_projection(seeded_global),
     ];
-    let writer = MergeProposalWriter::new(MergeConfig::default(), EquivalentSemanticVerifier);
+    let writer = MergeProposalWriter::with_audit_sink(MergeConfig::default(), EquivalentSemanticVerifier, &NoopMaintenanceAuditSink);
 
     let proposals = writer
         .propose(&snapshots, Utc::now())
@@ -307,7 +308,7 @@ fn merge_workflow_writes_global_scoped_proposal_under_global_root_for_team_globa
         SkillSnapshot::from_seeded_skill_projection(seeded_team),
         SkillSnapshot::from_seeded_skill_projection(seeded_global),
     ];
-    let writer = MergeProposalWriter::new(MergeConfig::default(), EquivalentSemanticVerifier);
+    let writer = MergeProposalWriter::with_audit_sink(MergeConfig::default(), EquivalentSemanticVerifier, &NoopMaintenanceAuditSink);
 
     let proposals = writer
         .propose(&snapshots, Utc::now())
@@ -347,7 +348,7 @@ fn merge_workflow_rejects_filename_collision_without_overwriting_existing_propos
         SkillSnapshot::from_seeded_skill_projection(seeded_project),
         SkillSnapshot::from_seeded_skill_projection(seeded_global),
     ];
-    let writer = MergeProposalWriter::new(MergeConfig::default(), EquivalentSemanticVerifier);
+    let writer = MergeProposalWriter::with_audit_sink(MergeConfig::default(), EquivalentSemanticVerifier, &NoopMaintenanceAuditSink);
     let now = Utc::now();
 
     let first_proposals = writer
@@ -397,12 +398,13 @@ fn merge_workflow_rejects_unsafe_pending_directory_component() {
         SkillSnapshot::from_seeded_skill_projection(seeded_project),
         SkillSnapshot::from_seeded_skill_projection(seeded_global),
     ];
-    let writer = MergeProposalWriter::new(
+    let writer = MergeProposalWriter::with_audit_sink(
         MergeConfig {
             pending_directory_name: "../escape".to_owned(),
             ..MergeConfig::default()
         },
         EquivalentSemanticVerifier,
+        &NoopMaintenanceAuditSink,
     );
 
     let result = writer.propose(&snapshots, Utc::now());
@@ -449,7 +451,7 @@ fn merge_workflow_handles_high_cardinality_input_without_lookup_regressions() {
         ));
     }
 
-    let writer = MergeProposalWriter::new(MergeConfig::default(), EquivalentSemanticVerifier);
+    let writer = MergeProposalWriter::with_audit_sink(MergeConfig::default(), EquivalentSemanticVerifier, &NoopMaintenanceAuditSink);
     let proposals = writer
         .propose(&snapshots, Utc::now())
         .expect("high-cardinality proposal generation should succeed");
@@ -496,7 +498,7 @@ fn merge_workflow_rejects_symlinked_pending_root_that_escapes_scope_root() {
     std::os::unix::fs::symlink(&outside_root, &pending_symlink_path)
         .expect("pending symlink should be created");
 
-    let writer = MergeProposalWriter::new(MergeConfig::default(), EquivalentSemanticVerifier);
+    let writer = MergeProposalWriter::with_audit_sink(MergeConfig::default(), EquivalentSemanticVerifier, &NoopMaintenanceAuditSink);
     let result = writer.propose(&snapshots, Utc::now());
 
     assert!(
