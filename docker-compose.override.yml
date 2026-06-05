@@ -1,5 +1,16 @@
 services:
   ollama:
+    # NVIDIA GPU passthrough (RTX/GeForce). Requires the NVIDIA Container Toolkit
+    # on the host (the `nvidia` docker runtime). Ollama auto-detects CUDA.
+    # NOTE: NVIDIA-only. macOS/Metal has no Docker GPU passthrough — on a Mac,
+    # run Ollama natively to use Metal (or drop this block on non-NVIDIA hosts).
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     environment:
       OLLAMA_NUM_PARALLEL: ${OLLAMA_NUM_PARALLEL:-2}
       OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-5m}

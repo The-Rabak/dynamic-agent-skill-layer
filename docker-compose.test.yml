@@ -31,6 +31,19 @@ services:
 
   ollama:
     image: ollama/ollama:0.24.0
+    # NVIDIA GPU passthrough (RTX/GeForce). Requires the NVIDIA Container Toolkit
+    # on the host (the `nvidia` docker runtime). The ollama/ollama image
+    # auto-detects CUDA and runs embeddings on the GPU — dramatically faster than
+    # CPU inference (CPU batch embeds were timing out the live e2e tests).
+    # NOTE: this is NVIDIA-only. macOS/Metal cannot be used from a Linux
+    # container — Docker on Mac has no GPU passthrough; run Ollama natively there.
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     ports:
       - "11444:11434"
     volumes:
