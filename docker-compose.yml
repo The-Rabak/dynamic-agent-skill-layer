@@ -50,6 +50,12 @@ services:
   ollama:
     image: ollama/ollama:0.24.0
     container_name: ${COMPOSE_PROJECT_NAME:-skill-layer}-ollama
+    environment:
+      # Parallel request slots so concurrent compile_context embed calls are served
+      # in parallel rather than serialized — keeps the warm read path p95 under the
+      # 500ms SLA under concurrent sessions (DS-007). Pair with EMBED_MAX_CONCURRENCY
+      # on the clients. nomic-embed-text is small, so the extra loaded copies are cheap.
+      OLLAMA_NUM_PARALLEL: ${OLLAMA_NUM_PARALLEL:-4}
     # NVIDIA GPU passthrough (RTX/GeForce). Requires the NVIDIA Container Toolkit
     # on the host (the `nvidia` docker runtime). Ollama auto-detects CUDA.
     # NOTE: NVIDIA-only. macOS/Metal has no Docker GPU passthrough — on a Mac,

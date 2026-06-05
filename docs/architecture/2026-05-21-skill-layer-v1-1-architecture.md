@@ -185,7 +185,7 @@ crates/
 
 - **Seam: Embedding generation**
   - **Adapter:** `OllamaEmbeddingService` (in `infrastructure`, implements `EmbeddingService`)
-  - **Contract:** Input = text or batch of texts. Output = `Vec<f32>` of configured dimension (768). Error = `EmbeddingError::ProviderUnavailable` on Ollama failure. Must not block caller longer than timeout (500ms for sync path, 5s for batch). Must not exceed concurrency semaphore (4 concurrent calls)
+  - **Contract:** Input = text or batch of texts. Output = `Vec<f32>` of configured dimension (768). Error = `EmbeddingError::ProviderUnavailable` on Ollama failure. Must not block caller longer than timeout (500ms for sync path, 5s for batch). Concurrency is bounded by a semaphore sized via `EMBED_MAX_CONCURRENCY` (default 16, raised from the original 4 so the warm read path meets the SC-1 "<500ms under concurrent load" SLA when multiple sessions embed prompts at once; pair with `OLLAMA_NUM_PARALLEL` on the Ollama server — see DS-007).
 
 - **Seam: Session transcript → skill extraction**
   - **Adapter:** `ClaudeExtractor` (default, in `infrastructure`, implements `TranscriptSkillExtractionService`) + `OllamaExtractor` (optional, config-gated, in `infrastructure`)

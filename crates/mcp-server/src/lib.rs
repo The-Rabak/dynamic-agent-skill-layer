@@ -617,19 +617,55 @@ async fn build_qdrant_adapter()
         collection_name: collection_name.clone(),
     };
     let qdrant_adapter = QdrantAdapter::from_config(qdrant_config)?;
-    qdrant_adapter.check_connectivity().await?;
-    qdrant_adapter.ensure_collection(&collection_name, 768).await?;
+    // Qdrant boot-resilience (Option A / ADR-0001, DS-004): Qdrant is a WRITE-SIDE
+    // store only — the read path serves entirely from the in-memory snapshot. A
+    // Qdrant outage at boot must therefore NOT prevent the server from coming up and
+    // serving compile_context; it only delays outbox→Qdrant draining, which the
+    // OutboxRelay already retries per-operation (and reconciliation closes any gap).
+    // So a failed connectivity check / collection ensure is logged loudly and boot
+    // proceeds, instead of aborting. This is what lets the durability contract
+    // (relay restarts while Qdrant is down, then replays the backlog once Qdrant
+    // returns — the collection persists in Qdrant's own volume) hold.
+    if let Err(error) = qdrant_adapter.check_connectivity().await {
+        warn!(
+            %error,
+            "Qdrant unreachable at boot — starting in write-side-degraded mode (read path \
+             unaffected, Option A). Outbox draining resumes when Qdrant returns."
+        );
+    } else if let Err(error) = qdrant_adapter.ensure_collection(&collection_name, 768).await {
+        warn!(
+            %error,
+            collection = %collection_name,
+            "Qdrant reachable but ensure_collection failed at boot — the OutboxRelay will \
+             retry; read path unaffected."
+        );
+    }
     Ok(Arc::new(qdrant_adapter))
 }
 
 fn build_embedding_service()
 -> Result<Arc<OllamaEmbeddingService>, Box<dyn std::error::Error + Send + Sync>> {
+    // Concurrency cap for embedding requests. The previous hardcoded `4` throttled
+    // the warm read path: under concurrent sessions, per-request `compile_context`
+    // embed calls piled up behind a 4-permit semaphore, driving p95 latency far over
+    // the 500ms SLA even though a single embed is ~50ms and Ollama parallelizes well
+    // (DS-007). Default raised to 16 and made tunable via `EMBED_MAX_CONCURRENCY`;
+    // pair with `OLLAMA_NUM_PARALLEL` on the Ollama server for real parallelism.
+    let max_concurrency: usize = match std::env::var("EMBED_MAX_CONCURRENCY") {
+        Ok(raw) => raw.parse().map_err(|_| {
+            format!("EMBED_MAX_CONCURRENCY is set but not a valid usize: {raw:?}")
+        })?,
+        Err(_) => 16,
+    };
+    if max_concurrency == 0 {
+        return Err("EMBED_MAX_CONCURRENCY must be greater than zero".into());
+    }
     let ollama_config = OllamaEmbeddingConfig {
         base_url: env_var("OLLAMA_URL")?,
         model: "nomic-embed-text".to_owned(),
         timeout_ms: 5_000,
         batch_timeout_ms: 10_000,
-        max_concurrency: 4,
+        max_concurrency,
     };
     let embedding_service = OllamaEmbeddingService::from_config(ollama_config)
         .map_err(|e| format!("ollama init failed: {e}"))?;

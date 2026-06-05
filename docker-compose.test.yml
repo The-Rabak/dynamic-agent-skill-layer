@@ -31,6 +31,10 @@ services:
 
   ollama:
     image: ollama/ollama:0.24.0
+    environment:
+      # Parallel request slots so concurrent embed calls are served in parallel
+      # (DS-007 warm-path p95 budget). Pair with EMBED_MAX_CONCURRENCY on clients.
+      OLLAMA_NUM_PARALLEL: ${OLLAMA_NUM_PARALLEL:-4}
     # NVIDIA GPU passthrough (RTX/GeForce). Requires the NVIDIA Container Toolkit
     # on the host (the `nvidia` docker runtime). The ollama/ollama image
     # auto-detects CUDA and runs embeddings on the GPU — dramatically faster than
