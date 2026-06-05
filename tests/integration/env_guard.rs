@@ -103,8 +103,11 @@ pub(crate) fn configure_scope_env_with_graph_builder_roots(
 /// The `ENV_LOCK` is held for the guard's lifetime so the env mutation + the
 /// `from_environment` adapter build that reads it cannot race another test in the
 /// same binary. Call [`NamespaceGuard::cleanup`] at end of test to drop the
-/// sandbox schema/collection/stream; if it is skipped the leftover empty sandbox
-/// objects are harmless (they never touch the canonical namespace).
+/// sandbox schema/collection/stream on the test's own runtime; if the test
+/// panics first, the `Drop` impl runs the same teardown synchronously on a
+/// dedicated thread so the sandbox is reclaimed either way (#164). As a final
+/// backstop, [`isolated_namespace_with_global_path`] sweeps any sandbox older
+/// than [`STALE_SANDBOX_NANOS`] left behind by a hard-killed run.
 #[allow(dead_code)]
 pub(crate) struct NamespaceGuard {
     schema: String,
@@ -117,6 +120,10 @@ pub(crate) struct NamespaceGuard {
     /// so a sandbox's `suppression:`/`cache:` keys can't collide with the shared
     /// canonical ones (which caused phantom `DuplicateSuppressed` at low versions).
     key_prefix: String,
+    /// Set once the async `cleanup()` has torn the sandbox down, so the `Drop`
+    /// fallback (which repeats the teardown synchronously for the panic path)
+    /// does not run a second time.
+    cleaned: bool,
     _db_url: EnvVarGuard,
     _qdrant_collection: EnvVarGuard,
     _stream_key: EnvVarGuard,
@@ -130,6 +137,87 @@ pub(crate) struct NamespaceGuard {
     _lock: MutexGuard<'static, ()>,
 }
 
+/// The subset of sandbox identifiers needed to tear a sandbox down. Cloned out
+/// of the guard so teardown can run either async (happy path, [`NamespaceGuard::cleanup`])
+/// or on a dedicated thread from [`NamespaceGuard`]'s `Drop` (panic path).
+#[derive(Clone)]
+struct SandboxResources {
+    schema: String,
+    base_db_url: String,
+    qdrant_url: String,
+    qdrant_collection: String,
+    redis_url: String,
+    stream_key: String,
+    key_prefix: String,
+}
+
+/// Drops the sandbox PG schema, Qdrant collection, and Redis stream + prefixed
+/// keys. Best-effort and panic-free: every connect is bounded by a short timeout
+/// so a down dependency (e.g. the chaos suite stops Postgres) cannot hang
+/// teardown, and every error is swallowed since leftover sandbox objects can
+/// never touch the canonical namespace.
+async fn drop_sandbox(res: SandboxResources) {
+    use std::time::Duration;
+    const OP_TIMEOUT: Duration = Duration::from_secs(5);
+
+    // Postgres: DROP SCHEMA … CASCADE via an admin connection on the base URL.
+    if let Ok(Ok(admin)) =
+        tokio::time::timeout(OP_TIMEOUT, sqlx::PgPool::connect(&res.base_db_url)).await
+    {
+        let _ = sqlx::query(&format!("DROP SCHEMA IF EXISTS {} CASCADE", res.schema))
+            .execute(&admin)
+            .await;
+        admin.close().await;
+    }
+
+    // Qdrant: delete the sandbox collection.
+    if let Ok(client) = reqwest::Client::builder().timeout(OP_TIMEOUT).build() {
+        let _ = client
+            .delete(format!(
+                "{}/collections/{}",
+                res.qdrant_url.trim_end_matches('/'),
+                res.qdrant_collection
+            ))
+            .send()
+            .await;
+    }
+
+    // Redis: delete the sandbox stream (group goes with it) and SCAN+DEL the
+    // sandbox suppression/context-cache keys (prefixed with `key_prefix`).
+    if let Ok(redis_client) = redis::Client::open(res.redis_url.clone())
+        && let Ok(Ok(mut conn)) =
+            tokio::time::timeout(OP_TIMEOUT, redis_client.get_multiplexed_async_connection()).await
+    {
+        let _: Result<i64, _> = redis::cmd("DEL")
+            .arg(&res.stream_key)
+            .query_async(&mut conn)
+            .await;
+
+        // SCAN+DEL every `{key_prefix}*` key (suppression: + cache:).
+        let pattern = format!("{}*", res.key_prefix);
+        let mut cursor: u64 = 0;
+        loop {
+            let scan: Result<(u64, Vec<String>), _> = redis::cmd("SCAN")
+                .arg(cursor)
+                .arg("MATCH")
+                .arg(&pattern)
+                .arg("COUNT")
+                .arg(200)
+                .query_async(&mut conn)
+                .await;
+            let Ok((next, keys)) = scan else { break };
+            if !keys.is_empty() {
+                let _: Result<i64, _> =
+                    redis::cmd("DEL").arg(&keys).query_async(&mut conn).await;
+            }
+            cursor = next;
+            if cursor == 0 {
+                break;
+            }
+        }
+    }
+}
+
 #[allow(dead_code)]
 impl NamespaceGuard {
     /// The sandbox schema name (for assertions / diagnostics).
@@ -137,62 +225,57 @@ impl NamespaceGuard {
         &self.schema
     }
 
-    /// Drops the sandbox schema, Qdrant collection, and Redis stream. Best-effort:
-    /// reports nothing on failure beyond a panic-free path, since leftover sandbox
-    /// objects cannot contaminate the canonical namespace.
-    pub(crate) async fn cleanup(self) {
-        // Postgres: DROP SCHEMA … CASCADE via an admin connection on the base URL.
-        if let Ok(admin) = sqlx::PgPool::connect(&self.base_db_url).await {
-            let _ = sqlx::query(&format!("DROP SCHEMA IF EXISTS {} CASCADE", self.schema))
-                .execute(&admin)
-                .await;
-            admin.close().await;
+    fn resources(&self) -> SandboxResources {
+        SandboxResources {
+            schema: self.schema.clone(),
+            base_db_url: self.base_db_url.clone(),
+            qdrant_url: self.qdrant_url.clone(),
+            qdrant_collection: self.qdrant_collection.clone(),
+            redis_url: self.redis_url.clone(),
+            stream_key: self.stream_key.clone(),
+            key_prefix: self.key_prefix.clone(),
         }
+    }
 
-        // Qdrant: delete the sandbox collection.
-        let _ = reqwest::Client::new()
-            .delete(format!(
-                "{}/collections/{}",
-                self.qdrant_url.trim_end_matches('/'),
-                self.qdrant_collection
-            ))
-            .send()
-            .await;
+    /// Drops the sandbox schema, Qdrant collection, and Redis stream/keys on the
+    /// happy path, on the test's own async runtime. Marks the guard cleaned so
+    /// the `Drop` fallback does not repeat the work. Prefer this over relying on
+    /// `Drop`: it avoids the thread-spawn + block-on the panic path needs.
+    pub(crate) async fn cleanup(mut self) {
+        drop_sandbox(self.resources()).await;
+        self.cleaned = true;
+        // self drops here; the `Drop` impl sees `cleaned == true` and is a no-op.
+    }
+}
 
-        // Redis: delete the sandbox stream (group goes with it) and SCAN+DEL the
-        // sandbox suppression/context-cache keys (prefixed with `key_prefix`).
-        if let Ok(client) = redis::Client::open(self.redis_url.clone()) {
-            if let Ok(mut conn) = client.get_multiplexed_async_connection().await {
-                let _: Result<i64, _> = redis::cmd("DEL")
-                    .arg(&self.stream_key)
-                    .query_async(&mut conn)
-                    .await;
-
-                // SCAN+DEL every `{key_prefix}*` key (suppression: + cache:).
-                let pattern = format!("{}*", self.key_prefix);
-                let mut cursor: u64 = 0;
-                loop {
-                    let scan: Result<(u64, Vec<String>), _> = redis::cmd("SCAN")
-                        .arg(cursor)
-                        .arg("MATCH")
-                        .arg(&pattern)
-                        .arg("COUNT")
-                        .arg(200)
-                        .query_async(&mut conn)
-                        .await;
-                    let Ok((next, keys)) = scan else { break };
-                    if !keys.is_empty() {
-                        let _: Result<i64, _> =
-                            redis::cmd("DEL").arg(&keys).query_async(&mut conn).await;
-                    }
-                    cursor = next;
-                    if cursor == 0 {
-                        break;
-                    }
+impl Drop for NamespaceGuard {
+    fn drop(&mut self) {
+        // Happy path already reclaimed the sandbox — nothing to do.
+        if self.cleaned {
+            return;
+        }
+        // Panic path (or a test that forgot to call `cleanup().await`): without
+        // this, the sandbox would leak its PG schema / Qdrant collection / Redis
+        // stream forever. `Drop` is synchronous and we may be unwinding inside the
+        // test's own current-thread runtime, so we cannot `.await` here and cannot
+        // build a nested runtime on this thread. Run the async teardown on a
+        // dedicated thread with its own runtime and block on it — correct even
+        // during panic unwinding.
+        let res = self.resources();
+        if let Ok(handle) = std::thread::Builder::new()
+            .name("ns-guard-cleanup".to_owned())
+            .spawn(move || {
+                if let Ok(rt) = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                {
+                    rt.block_on(drop_sandbox(res));
                 }
-            }
+            })
+        {
+            let _ = handle.join();
         }
-        // env restored + lock released as `self` drops here.
+        // env vars restored + lock released as the remaining fields drop.
     }
 }
 
@@ -228,6 +311,11 @@ pub(crate) async fn isolated_namespace_with_global_path(global_scope: PathBuf) -
     let stream_key = format!("skill-layer-events-ns-{runid}");
     let consumer_group = format!("skill-layer-ns-{runid}");
     let key_prefix = format!("ns_{runid}:");
+
+    // Backstop GC: reclaim any sandbox left behind by a previously hard-killed run
+    // (a `SIGKILL` / `cargo test` timeout skips `Drop`). Only touches sandboxes
+    // older than STALE_SANDBOX_NANOS, so concurrent sibling sandboxes are safe.
+    sweep_stale_namespaces(&base_db_url, &qdrant_url, &redis_url, runid).await;
 
     // Create the sandbox schema BEFORE taking the lock (independent op on a unique
     // name) so no `await` is held across the lock.
@@ -271,7 +359,116 @@ pub(crate) async fn isolated_namespace_with_global_path(global_scope: PathBuf) -
         redis_url,
         stream_key,
         key_prefix,
+        cleaned: false,
         _lock: lock,
+    }
+}
+
+/// Sandbox resources older than this (by their embedded `<runid>` nanosecond
+/// timestamp) are treated as leaked by a previously hard-killed run and swept on
+/// the next [`isolated_namespace_with_global_path`] call. Far longer than any
+/// single test, so a sibling test binary's in-flight sandbox (recent runid) is
+/// never collected — the sweep is safe to run while other namespaced tests run.
+const STALE_SANDBOX_NANOS: u128 = 30 * 60 * 1_000_000_000; // 30 minutes
+
+/// Extracts the `<runid>` (nanoseconds since epoch) embedded in a sandbox object
+/// name: `test_ns_<id>`, `skills_ns_<id>`, `skill-layer-events-ns-<id>`, or a
+/// `ns_<id>:…` Redis key. Returns `None` for canonical names (no `ns` marker)
+/// so they can never be swept.
+fn parse_runid(name: &str) -> Option<u128> {
+    let after = name
+        .split_once("_ns_")
+        .or_else(|| name.split_once("-ns-"))
+        .map(|(_, rest)| rest)
+        .or_else(|| name.strip_prefix("ns_"))?;
+    let digits: String = after.chars().take_while(char::is_ascii_digit).collect();
+    digits.parse::<u128>().ok()
+}
+
+/// Best-effort sweep of sandbox resources leaked by a previously panicked or
+/// hard-killed run (the `Drop` fallback covers in-process panics, but a `SIGKILL`
+/// / `cargo test` timeout skips `Drop` entirely). Only `*ns*` objects whose
+/// runid is older than [`STALE_SANDBOX_NANOS`] are dropped; canonical names and
+/// recent sandboxes are left untouched. Never panics, never blocks on a down
+/// dependency beyond the per-op timeout.
+async fn sweep_stale_namespaces(
+    base_db_url: &str,
+    qdrant_url: &str,
+    redis_url: &str,
+    now_nanos: u128,
+) {
+    use std::time::Duration;
+    const OP_TIMEOUT: Duration = Duration::from_secs(5);
+    let is_stale =
+        |name: &str| parse_runid(name).is_some_and(|id| now_nanos.saturating_sub(id) > STALE_SANDBOX_NANOS);
+
+    // Postgres: drop stale `test_ns_*` schemas.
+    if let Ok(Ok(admin)) =
+        tokio::time::timeout(OP_TIMEOUT, sqlx::PgPool::connect(base_db_url)).await
+    {
+        if let Ok(schemas) = sqlx::query_scalar::<_, String>(
+            "SELECT nspname FROM pg_namespace WHERE nspname LIKE 'test_ns_%'",
+        )
+        .fetch_all(&admin)
+        .await
+        {
+            for schema in schemas.iter().filter(|s| is_stale(s)) {
+                let _ = sqlx::query(&format!("DROP SCHEMA IF EXISTS {schema} CASCADE"))
+                    .execute(&admin)
+                    .await;
+            }
+        }
+        admin.close().await;
+    }
+
+    // Qdrant: delete stale `skills_ns_*` collections.
+    if let Ok(client) = reqwest::Client::builder().timeout(OP_TIMEOUT).build() {
+        let base = qdrant_url.trim_end_matches('/');
+        if let Ok(resp) = client.get(format!("{base}/collections")).send().await
+            && let Ok(body) = resp.json::<serde_json::Value>().await
+            && let Some(collections) = body
+                .get("result")
+                .and_then(|r| r.get("collections"))
+                .and_then(|c| c.as_array())
+        {
+            for name in collections
+                .iter()
+                .filter_map(|c| c.get("name").and_then(|n| n.as_str()))
+                .filter(|n| n.starts_with("skills_ns_") && is_stale(n))
+            {
+                let _ = client.delete(format!("{base}/collections/{name}")).send().await;
+            }
+        }
+    }
+
+    // Redis: delete stale sandbox streams + `ns_<id>:` prefixed keys.
+    if let Ok(redis_client) = redis::Client::open(redis_url.to_owned())
+        && let Ok(Ok(mut conn)) =
+            tokio::time::timeout(OP_TIMEOUT, redis_client.get_multiplexed_async_connection()).await
+    {
+        for pattern in ["skill-layer-events-ns-*", "ns_*"] {
+            let mut cursor: u64 = 0;
+            loop {
+                let scan: Result<(u64, Vec<String>), _> = redis::cmd("SCAN")
+                    .arg(cursor)
+                    .arg("MATCH")
+                    .arg(pattern)
+                    .arg("COUNT")
+                    .arg(200)
+                    .query_async(&mut conn)
+                    .await;
+                let Ok((next, keys)) = scan else { break };
+                let stale: Vec<&String> = keys.iter().filter(|k| is_stale(k)).collect();
+                if !stale.is_empty() {
+                    let _: Result<i64, _> =
+                        redis::cmd("DEL").arg(&stale).query_async(&mut conn).await;
+                }
+                cursor = next;
+                if cursor == 0 {
+                    break;
+                }
+            }
+        }
     }
 }
 
@@ -308,4 +505,59 @@ fn scope_env_guard_restores_previous_values() {
         Some("before-roots")
     );
     assert!(env::var("SKILL_GLOBAL_PATHS").is_err());
+}
+
+#[test]
+fn parse_runid_extracts_id_from_every_sandbox_object_shape() {
+    // Each object name the namespace guard mints embeds the same `<runid>`.
+    assert_eq!(parse_runid("test_ns_1780641703958278014"), Some(1780641703958278014));
+    assert_eq!(parse_runid("skills_ns_1780641703958278014"), Some(1780641703958278014));
+    assert_eq!(
+        parse_runid("skill-layer-events-ns-1780641703958278014"),
+        Some(1780641703958278014)
+    );
+    // Redis keys carry the runid between the `ns_` prefix and the first `:`.
+    assert_eq!(
+        parse_runid("ns_1780641703958278014:suppression:sess::abcd"),
+        Some(1780641703958278014)
+    );
+    assert_eq!(
+        parse_runid("ns_1780641703958278014:cache:sess:hash:scope"),
+        Some(1780641703958278014)
+    );
+}
+
+#[test]
+fn parse_runid_returns_none_for_canonical_names_so_they_are_never_swept() {
+    // Canonical resources carry no `ns` marker — the sweep must never match them.
+    assert_eq!(parse_runid("skills"), None);
+    assert_eq!(parse_runid("skill-layer-events"), None);
+    assert_eq!(parse_runid("public"), None);
+    assert_eq!(parse_runid("suppression:sess::hash"), None);
+    assert_eq!(parse_runid("cache:sess:hash:scope"), None);
+}
+
+#[test]
+fn staleness_predicate_collects_old_but_spares_recent_and_canonical() {
+    // Mirrors the `is_stale` closure used by `sweep_stale_namespaces`.
+    let now: u128 = 2_000_000_000_000_000_000; // arbitrary "now" in ns
+    let is_stale = |name: &str| {
+        parse_runid(name).is_some_and(|id| now.saturating_sub(id) > STALE_SANDBOX_NANOS)
+    };
+
+    // Older than the 30-minute threshold → swept.
+    let old = now - STALE_SANDBOX_NANOS - 1;
+    assert!(is_stale(&format!("test_ns_{old}")));
+
+    // Younger than the threshold (a sibling test binary's live sandbox) → spared.
+    let recent = now - 1;
+    assert!(!is_stale(&format!("test_ns_{recent}")));
+
+    // A future runid (clock skew) underflows to 0 via saturating_sub → spared.
+    let future = now + STALE_SANDBOX_NANOS * 2;
+    assert!(!is_stale(&format!("test_ns_{future}")));
+
+    // Canonical names never match.
+    assert!(!is_stale("skills"));
+    assert!(!is_stale("skill-layer-events"));
 }
