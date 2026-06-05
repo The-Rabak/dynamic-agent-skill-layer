@@ -23,6 +23,41 @@ pub fn compose_start_services(compose_file: &Path, services: &[&str]) -> Result<
     run_compose_command(compose_file, "start", services)
 }
 
+/// RAII guard that restarts a set of compose services when it is dropped —
+/// including during a panic unwind.
+///
+/// Fault-injection tests stop *shared* containers (Postgres, Ollama, …). If such
+/// a test panics mid-run it would otherwise leave those containers stopped,
+/// breaking every sibling test and any concurrent work on the live stack (#172).
+/// Hold one of these for the duration of a chaos test, listing every service the
+/// test might stop; on drop it best-effort `docker compose start`s them all so
+/// the stack is always restored. `start` on an already-running service is a
+/// no-op, so the happy-path drop is harmless.
+pub struct ServiceRestoreGuard {
+    compose_file: std::path::PathBuf,
+    services: Vec<String>,
+}
+
+impl ServiceRestoreGuard {
+    /// Guards `services`, restarting them all from `compose_file` on drop.
+    pub fn new(compose_file: &Path, services: &[&str]) -> Self {
+        Self {
+            compose_file: compose_file.to_path_buf(),
+            services: services.iter().map(|s| (*s).to_owned()).collect(),
+        }
+    }
+}
+
+impl Drop for ServiceRestoreGuard {
+    fn drop(&mut self) {
+        // Best-effort: ensure every guarded service is running again, even on a
+        // panic. Errors are swallowed — there is nothing useful to do from a Drop,
+        // and a failure here must not mask the original test panic.
+        let refs: Vec<&str> = self.services.iter().map(String::as_str).collect();
+        let _ = compose_start_services(&self.compose_file, &refs);
+    }
+}
+
 /// Runs `docker compose -f <compose_file> <subcommand> [args...]`.
 ///
 /// Returns `Ok(())` on exit code 0, `Err(<combined stdout+stderr>)` otherwise.

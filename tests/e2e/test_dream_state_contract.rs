@@ -235,6 +235,15 @@ async fn dependency_chaos_matrix_preserves_degraded_semantics_and_fast_recovery(
         .canonicalize()
         .expect("compose file");
 
+    // Always restore every container this chaos test stops — even if an assertion
+    // panics mid-run. Declared after `namespace` so it drops FIRST (LIFO): the
+    // stack is brought back up before `namespace`'s own teardown runs, and sibling
+    // tests never inherit a half-stopped stack (#172).
+    let _restore_guard = support::infra::ServiceRestoreGuard::new(
+        &docker_compose,
+        &["qdrant", "ollama", "postgres", "redis"],
+    );
+
     let components = McpServerApp::from_environment(dream_retrieval_config())
         .await
         .expect("live");
@@ -467,6 +476,66 @@ async fn dependency_chaos_matrix_preserves_degraded_semantics_and_fast_recovery(
         "every Degraded response must carry a machine-parseable reason_code",
     );
     builder.record_degradation_event("both", true, "ollama stopped — Degraded as expected");
+
+    // Restore Ollama before the write-side phases. Ollama vectorises the query
+    // prompt, so it is a READ-PATH dependency: while it is down, EVERY
+    // compile_context degrades on the embedding hop. The Option-A phases below
+    // (Postgres-down, Redis-down) assert the read path is NOT degraded — only
+    // meaningful once the read path's own dependencies are healthy again. Leaving
+    // Ollama down here was the #172 bug: Phase 4/5 saw Degraded from the embedding
+    // hop, not from the write-side service actually under test.
+    support::infra::compose_start_services(&docker_compose, &["ollama"])
+        .expect("docker compose start ollama");
+
+    // Wait for Ollama to be network-reachable again.
+    let ollama_url_for_restart = ollama_url.clone();
+    let http_for_restart = http.clone();
+    support::poll::poll_until(
+        move || {
+            let h = http_for_restart.clone();
+            let url = format!("{}/api/tags", ollama_url_for_restart.trim_end_matches('/'));
+            async move { h.get(&url).send().await.is_ok() }
+        },
+        std::time::Duration::from_secs(30),
+        std::time::Duration::from_millis(500),
+    )
+    .await
+    .expect("ollama did not become reachable after restart");
+
+    // Then poll the REAL read path until the embedding hop works again (the model
+    // reloads on restart), so the write-side phases start from a healthy read
+    // path. Mirrors the Phase-6 recovery loop — a manual loop is used because
+    // `compile_context` borrows `components` and cannot move into `poll_until`.
+    let mut ollama_read_restored = false;
+    for _ in 0..120 {
+        let r = components
+            .app
+            .compile_context(CompileContextRequest {
+                prompt: "rust file async".to_owned(),
+                session_id: "ds003-ollama-recovery".to_owned(),
+                repo_path: repo.clone(),
+                trigger: None,
+            })
+            .await;
+        if matches!(
+            r.status,
+            CompileContextStatus::Ok | CompileContextStatus::NoMatch
+        ) {
+            ollama_read_restored = true;
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
+    assert!(
+        ollama_read_restored,
+        "read path did not recover after Ollama restart — the embedding hop is still failing, \
+         so the write-side phases below could not isolate their target service"
+    );
+    builder.record_degradation_event(
+        "ollama",
+        true,
+        "ollama restarted + read path healthy before write-side phases",
+    );
 
     // --- Phase 4: Postgres stopped — write-side only; read path must survive ---
     //
@@ -749,6 +818,72 @@ async fn dependency_chaos_matrix_preserves_degraded_semantics_and_fast_recovery(
     .unwrap();
     components.teardown().await.expect("teardown");
     namespace.cleanup().await;
+}
+
+/// Reports whether the `ollama` compose service is in the `running` state.
+fn ollama_container_running(compose_file: &std::path::Path) -> bool {
+    std::process::Command::new("docker")
+        .arg("compose")
+        .arg("-f")
+        .arg(compose_file)
+        .args(["ps", "--format", "{{.Service}} {{.State}}"])
+        .output()
+        .ok()
+        .map(|out| {
+            String::from_utf8_lossy(&out.stdout)
+                .lines()
+                .any(|line| line.starts_with("ollama") && line.contains("running"))
+        })
+        .unwrap_or(false)
+}
+
+/// #172 restore-guard proof: a chaos test that stops a shared container and then
+/// PANICS must still leave the stack restored, so sibling tests don't inherit a
+/// half-stopped stack. Drives a real panic through an unwinding worker that holds
+/// a [`support::infra::ServiceRestoreGuard`] over a stopped `ollama`, then asserts
+/// the container is running again. Uses `ollama` because its restart is cheap and
+/// it is already exercised by the chaos matrix.
+#[test]
+#[ignore = "requires docker compose + live test stack"]
+fn service_restore_guard_restarts_stopped_container_on_panic() {
+    let compose = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../docker-compose.test.yml")
+        .canonicalize()
+        .expect("compose file");
+
+    // Baseline: ensure ollama is up before the simulated chaos run.
+    support::infra::compose_start_services(&compose, &["ollama"]).expect("ensure ollama up");
+    support::poll::poll_until_sync(
+        || ollama_container_running(&compose),
+        std::time::Duration::from_secs(30),
+        std::time::Duration::from_millis(500),
+    )
+    .expect("ollama must be running at baseline");
+
+    // Simulate a chaos test that stops ollama and then panics while the guard is live.
+    let compose_for_worker = compose.clone();
+    let worker = std::thread::spawn(move || {
+        let _restore = support::infra::ServiceRestoreGuard::new(&compose_for_worker, &["ollama"]);
+        support::infra::compose_stop_service(&compose_for_worker, "ollama").expect("stop ollama");
+        assert!(
+            !ollama_container_running(&compose_for_worker),
+            "ollama must actually be stopped before the panic, else the proof is vacuous"
+        );
+        panic!("simulated chaos-test failure with ollama stopped");
+        // `_restore` drops here during unwinding → ollama is restarted.
+    });
+    assert!(
+        worker.join().is_err(),
+        "the worker thread must have actually panicked"
+    );
+
+    // The guard's Drop must have restarted ollama during the unwind.
+    support::poll::poll_until_sync(
+        || ollama_container_running(&compose),
+        std::time::Duration::from_secs(60),
+        std::time::Duration::from_millis(500),
+    )
+    .expect("ServiceRestoreGuard must restart ollama after the panic unwinds");
 }
 
 /// DS-004: Outbox backlog replay without data loss across multiple hard restart cycles.
