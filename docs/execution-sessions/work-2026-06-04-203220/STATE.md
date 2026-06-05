@@ -5,10 +5,13 @@ ticket_index: ""
 ticket_file: ""
 brainstorm_ref: ""
 started: 2026-06-04T20:32:20Z
-status: in_progress
+status: paused
 execution_shape: fix-batch
-current_unit: 3
+current_unit: 2
 total_units: 6
+completed_units: [1, 2]
+deferred_units: [3, 4, 5, 6]
+finished: 2026-06-05T00:00:00Z
 session_id: work-2026-06-04-203220
 ---
 
@@ -74,10 +77,22 @@ enforced assertions; poll real conditions, never fixed sleeps.
 |---|------|------|------------------|--------|----------|--------------|
 | 1 | #162 live extraction→draft proof | fix-item | extraction guarantee is real | completed | 2 | unit-01-162-live-extraction-draft.md |
 | 2 | #141 schema_migrations tracking table | fix-item | migration safety at scale | completed | 2 | unit-02-141-schema-migrations-table.md |
-| 3 | #155 DS-003..007 harness migration (HTTP) | hardening | kills the in-process purity gap | pending | -- | -- |
-| 4 | #155 DS-004 real kill/restart + real seed | hardening | durability proof is real | pending | -- | -- |
-| 5 | #155 DS-006 real watcher loop + convergence | hardening | eventual-consistency proof is real | pending | -- | -- |
-| 6 | #155 DS-007 embedding concurrency/pool perf | hardening | warm p95 budget met for real | pending | -- | -- |
+| 3 | #155 DS-003..007 harness migration (HTTP) | hardening | kills the in-process purity gap | BLOCKED | -- | -- |
+| 4 | #155 DS-004 real kill/restart + real seed | hardening | durability proof is real | BLOCKED | -- | -- |
+| 5 | #155 DS-006 real watcher loop + convergence | hardening | eventual-consistency proof is real | BLOCKED | -- | -- |
+| 6 | #155 DS-007 embedding concurrency/pool perf | hardening | warm p95 budget met for real | BLOCKED | -- | -- |
+
+### #155 BLOCKER (2026-06-04) — golden-path loop does not close at the mcp-server
+The real ingest→rebuild→retrieve loop (the foundation every DS V2 unit builds on) does not close end-to-end.
+`tests/e2e/test_golden_path_real_app.rs` is RED: after seed+approve, `wait_for_rebuild` fails within 90s.
+Evidence: graph-builder DOES rebuild + publish (`graph rebuilt v43, skills=9`; `published graph.rebuilt:43` to
+Redis), PG `graph_version=43`, Qdrant `points_count=10 (green)` — but `compile_context` over HTTP never reports the
+advanced version, so `wait_for_rebuild`'s HTTP-reflects-new-version condition fails. Strong signal the mcp-server
+`graph_refresh_subscriber` (XREADGROUP skill-layer/worker-1 → `reload_and_swap`) is not consuming/applying the
+`graph.rebuilt` event — the loop's final hop. The golden-path test comment blames #156 (marked resolved in
+bc159e2), so either #156 isn't fully closed or there's a separate reload regression. This must be diagnosed/fixed
+(its own unit, likely a #156/#158 reopen or a new mcp-server reload bug) BEFORE any DS V2 migration can pass
+honestly. Surfaced to maintainer for direction.
 
 Note: DS-003/005 hard store-count asserts are folded into Unit 3 (harness migration) since they are confirmation
 asserts on those same scenarios. #154 is DEFERRED this session (needs design — see todo). Filename housekeeping

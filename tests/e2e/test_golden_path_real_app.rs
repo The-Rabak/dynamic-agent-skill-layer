@@ -5,15 +5,18 @@
 /// 2. `seed::seed_and_approve` writes + approves a `SKILL.md` in the real global-skills volume.
 /// 3. `PgObserver`, `QdrantObserver`, `RedisObserver` read real infrastructure values.
 /// 4. `StageLogger` writes per-stage JSON + Markdown under `tests/e2e/reports/<run_id>/`.
-/// 5. `wait_for_rebuild` detects that the graph has NOT advanced (expected RED due to #156).
+/// 5. `wait_for_rebuild` confirms the loop CLOSES: after seed+approve, the
+///    graph-builder rebuilds and the mcp-server's served `graph_version` advances.
 ///
 /// # Expected outcome
-/// The test FAILS at the `wait_for_rebuild` assertion due to bug #156 (graph-builder
-/// errors on outbox idempotency conflict before publishing `graph.rebuilt`, so the
-/// mcp-server snapshot never advances).  This RED is the correct, honest outcome —
-/// it is the regression guard for the #156 fix.
+/// The test PASSES: `wait_for_rebuild` observes the served `graph_version` advance
+/// past the baseline within the bounded wait, proving the real ingest→rebuild→
+/// retrieve loop closes end-to-end on the live stack.
 ///
-/// The harness ITSELF is GREEN: HTTP calls, seed/approve, and observation all work.
+/// This is the regression guard for #163 (the mcp-server graph-refresh subscriber
+/// silently wedged with `NOGROUP` after the shared stream was deleted out from
+/// under it, and never reloaded). The adapter now self-heals the consumer group,
+/// so a real `graph.rebuilt` reaches the subscriber and the snapshot swaps.
 ///
 /// # Stage taxonomy logged
 /// - `ingest_input`       — the SKILL.md content written to the volume.
@@ -179,12 +182,12 @@ async fn golden_path_real_app() {
 
     assert!(approve_ok, "approve must succeed — {approve_detail}");
 
-    // ── Stage: wait_for_rebuild — this is expected to FAIL due to #156 ─────────
+    // ── Stage: wait_for_rebuild — the loop must CLOSE within the bounded wait ──
     //
-    // graph-builder bumps graph_state.graph_version then errors on the outbox
-    // idempotency conflict BEFORE publishing graph.rebuilt, so the mcp-server
-    // snapshot never advances.  We poll for 90 s with a bounded timeout and
-    // record the result honestly.
+    // graph-builder rebuilds, bumps graph_state.graph_version, and publishes
+    // graph.rebuilt to Redis; the mcp-server subscriber consumes it and swaps its
+    // snapshot, so the served graph_version advances. We poll for 90 s with a
+    // bounded timeout and record the result honestly.
     let rebuild_start = std::time::Instant::now();
     let rebuild_result = wait_for_rebuild(prev_version, Duration::from_secs(90)).await;
     let rebuild_elapsed = rebuild_start.elapsed().as_millis() as u64;
@@ -206,7 +209,7 @@ async fn golden_path_real_app() {
         json!({
             "prev_graph_version": prev_version,
             "timeout_secs": 90,
-            "bug": "#156 — graph.rebuilt not published due to outbox idempotency conflict",
+            "regression_guard": "#163 — subscriber must self-heal its consumer group and reload on graph.rebuilt",
         }),
         json!({
             "ok": rebuild_ok,
@@ -217,7 +220,8 @@ async fn golden_path_real_app() {
         json!(post_wait_infra),
     );
 
-    // Record the loop-closes assertion as FAILED (expected due to #156).
+    // Record the loop-closes assertion. This MUST pass: the served graph_version
+    // advances after seed+approve once the subscriber self-heals and reloads (#163).
     logger.record_contract_assertion(ContractAssertion {
         contract_name: "loop_closes_after_seed".to_owned(),
         status: if rebuild_ok {
@@ -229,11 +233,10 @@ async fn golden_path_real_app() {
             }
         },
         details: format!(
-            "Bug #156: graph-builder bumps graph_state.graph_version then errors on outbox \
-             idempotency conflict before publishing graph.rebuilt. The mcp-server \
-             refresh subscriber never fires. This assertion is RED by design — it is the \
-             regression guard for the #156 fix.\nprev_version={prev_version}, \
-             elapsed_ms={rebuild_elapsed}"
+            "Regression guard for #163: graph-builder publishes graph.rebuilt, the mcp-server \
+             graph-refresh subscriber self-heals its consumer group if needed, consumes the \
+             event, and swaps its snapshot so the served graph_version advances.\n\
+             prev_version={prev_version}, elapsed_ms={rebuild_elapsed}"
         ),
     });
 
@@ -304,10 +307,8 @@ async fn golden_path_real_app() {
         json!(final_infra),
     );
 
-    // When the loop is closed (#156 fixed), status will be "ok" and the skill
-    // will appear in additional_context.  With #156 open, the graph_version in
-    // the response will equal prev_version (not advanced) and the skill will NOT
-    // be present.
+    // With the loop closed, status is "ok", the served graph_version has advanced,
+    // and the seeded skill appears in additional_context (subject to scope match).
     logger.record_action(
         "retrieval",
         ReportedAction {
@@ -321,7 +322,7 @@ async fn golden_path_real_app() {
         },
     );
 
-    // Assert skill presence — expected to fail until #156 is fixed.
+    // Assert skill presence — the seeded skill should be retrievable once the loop closes.
     let served_version = retrieval_result
         .as_ref()
         .map(|r| r.graph_version)
@@ -345,13 +346,13 @@ async fn golden_path_real_app() {
                 expected: format!("additional_context contains '{slug}'"),
                 actual: format!(
                     "skill absent; served graph_version={served_version} \
-                     (prev_version={prev_version}) — see #156"
+                     (prev_version={prev_version})"
                 ),
             }
         },
         details: format!(
-            "With #156 open the served graph snapshot never advances, so the seeded \
-             skill does not appear in retrieval results.\n\
+            "Once the loop closes the served snapshot advances and the seeded skill \
+             becomes retrievable (subject to scope match).\n\
              skill_slug={slug}, prev_version={prev_version}, \
              served_version={served_version}"
         ),
@@ -378,25 +379,27 @@ async fn golden_path_real_app() {
     let report_path = logger.emit_report();
     println!("[golden-path] report written to: {}", report_path.display());
 
-    // ── Final assertion: the test is RED due to #156 ───────────────────────────
+    // ── Final assertion: the loop CLOSES (#163 regression guard) ────────────────
     //
-    // assert! here so the test binary's exit code is non-zero (RED), which is
-    // what CI / Ralph TDD "Red" phase requires.  The stage logs and the
-    // E2EReport capture the full evidence even when this assertion fires.
+    // assert! here so a regression (served graph_version failing to advance after
+    // a real seed+approve) makes the test binary exit non-zero. The stage logs and
+    // the E2EReport capture the full evidence either way.
     assert!(
         rebuild_ok,
         "\n\n\
-        === GOLDEN-PATH TEST FAILED (expected due to #156) ===\n\
+        === GOLDEN-PATH LOOP DID NOT CLOSE (#163 regression) ===\n\
         {rebuild_detail}\n\n\
-        Harness capabilities that DID work (Green):\n\
-          ✓ GET /health → {health_code} healthy=true\n\
-          ✓ compile_context HTTP call succeeded (status={:?}, graph_version={served_version})\n\
-          ✓ seed_and_approve wrote and approved SKILL.md in the real volume\n\
-          ✓ PgObserver read real graph_version from PG (baseline v{prev_version})\n\
-          ✓ QdrantObserver read real points_count\n\
-          ✓ RedisObserver read real stream length\n\
-          ✓ StageLogger wrote per-stage logs\n\
-        ==================================================\n",
+        The served graph_version did not advance past v{prev_version} within 90s after \
+        seed+approve. Likely the mcp-server graph-refresh subscriber is not consuming \
+        graph.rebuilt (e.g. consumer group missing and self-heal regressed) or the swap \
+        is not applying. Inspect:\n\
+          • docker logs <mcp-server> | grep -iE 'reload|swap|NOGROUP|graph refresh'\n\
+          • redis-cli XINFO GROUPS skill-layer-events  (group must exist)\n\
+        Context captured this run:\n\
+          • GET /health → {health_code}\n\
+          • compile_context status={:?}, served graph_version={served_version}\n\
+          • PG baseline v{prev_version}\n\
+        =========================================================\n",
         retrieval_result.as_ref().map(|r| &r.status),
     );
 }

@@ -3,6 +3,7 @@ use redis::{AsyncCommands, streams::StreamReadOptions};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use thiserror::Error;
+use tracing::warn;
 use uuid::Uuid;
 
 use crate::persistence::outbox::OutboxEvent;
@@ -223,7 +224,47 @@ impl RedisStreamsAdapter {
         Ok(stream_id)
     }
 
+    /// Reads the next batch for this consumer, self-healing if the consumer group
+    /// has vanished.
+    ///
+    /// Redis can lose the stream/group out from under a live consumer: a failover
+    /// to a fresh replica, an `FLUSHDB`, eviction, or an out-of-band stream
+    /// deletion (e.g. a sibling test's destructive teardown calling `DEL` on a
+    /// shared stream) all remove the group. `XREADGROUP` then fails with
+    /// `NOGROUP`. Without recovery the subscriber loop would re-issue the same
+    /// failing read forever and never reload — this is the exact mechanism behind
+    /// the #163 loop-closure stall.
+    ///
+    /// On `NOGROUP` we re-create the group at id `0` (via [`Self::ensure_consumer_group`])
+    /// so events published while the group was missing are re-read rather than
+    /// skipped, then retry the read exactly once. A second `NOGROUP` (lost a race
+    /// with a concurrent deleter) propagates so the caller's backoff applies and
+    /// the next iteration heals again — no tight loop.
     pub async fn read_group(
+        &self,
+        count: usize,
+        block_ms: usize,
+    ) -> Result<Vec<StreamMessage>, RedisStreamError> {
+        match self.read_group_once(count, block_ms).await {
+            Err(RedisStreamError::Redis(redis_error))
+                if redis_error.code() == Some("NOGROUP") =>
+            {
+                warn!(
+                    stream_key = %self.config.stream_key,
+                    consumer_group = %self.config.consumer_group,
+                    "consumer group missing (NOGROUP); recreating at id 0 and retrying read"
+                );
+                self.ensure_consumer_group().await?;
+                self.read_group_once(count, block_ms).await
+            }
+            other => other,
+        }
+    }
+
+    /// Single XREADGROUP pass: drain this consumer's pending entries first
+    /// (id `"0"`), then block for fresh deliveries (id `">"`). Split out so
+    /// [`Self::read_group`] can wrap it with `NOGROUP` self-healing.
+    async fn read_group_once(
         &self,
         count: usize,
         block_ms: usize,
