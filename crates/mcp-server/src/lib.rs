@@ -864,10 +864,18 @@ async fn build_graph_from_pg(
     // this, `seeded_skill_matches_scope` rejects every live skill against a
     // path-constrained scope and boot retrieval always returns `no_match`.
     let global_scope_paths = scope_paths_from_env("SKILL_GLOBAL_PATHS");
-    // Canonicalize the project scope path to align with the scope resolver's own
-    // canonicalization so `starts_with` scope matching succeeds at query time.
-    let project_scope_paths = std::env::current_dir()
+    // Fallback project scope root for skills with empty `source_paths`.
+    // Prefer the operator-declared `SKILL_PROJECT_ROOT` (issue #154) so this aligns
+    // with `FsMarkerProjectResolver`'s project-scope root in a container, where the
+    // working directory is `/`. Fall back to the process working directory for the
+    // host/dev case. Canonicalized to match the resolver's own canonicalization so
+    // `starts_with` scope matching succeeds at query time.
+    let project_scope_paths = std::env::var("SKILL_PROJECT_ROOT")
         .ok()
+        .map(|raw| raw.trim().to_owned())
+        .filter(|raw| !raw.is_empty())
+        .map(std::path::PathBuf::from)
+        .or_else(|| std::env::current_dir().ok())
         .and_then(|p| std::fs::canonicalize(p).ok())
         .map(|p| vec![p])
         .unwrap_or_default();

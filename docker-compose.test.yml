@@ -126,8 +126,16 @@ services:
       MCP_SERVER_ADDR: 0.0.0.0:3001
       SKILL_GLOBAL_PATHS: /skills/global
       SKILL_GLOBAL_ALLOWED_ROOTS: /skills/global
+      # Declares the in-container project scope root (issue #154) so compile_context
+      # can resolve project scope to `ok` instead of always degrading (the working
+      # directory is `/` with no marker). graph-builder builds project skills from
+      # this same mounted root, so their source_paths match it.
+      SKILL_PROJECT_ROOT: /skills/project
     volumes:
       - test-global-skills:/skills/global:ro
+      # mcp-server must see the project skills root so SKILL_PROJECT_ROOT resolves
+      # (the resolver verifies the directory exists) and project-scope matching works.
+      - test-project-skills:/skills/project:ro
       - test-transcripts:/transcripts:ro
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3001/health"]

@@ -242,3 +242,115 @@ async fn project_scoped_compile_context_returns_ok_with_fs_marker_resolver() {
         .expect("teardown should succeed");
     namespace.cleanup().await;
 }
+
+/// **Live container-shape test (#154)**: proves `compile_context` resolves project
+/// scope to a healthy (non-degraded) status via `SKILL_PROJECT_ROOT` when NO usable
+/// `repo_path` is available — the actual containerized default, where the working
+/// directory is `/` with no `.git`/marker and the client may send a host-only path
+/// that does not exist in the container.
+///
+/// Before #154 this path always returned `Degraded(project_scope_resolution_failed)`.
+/// After: an operator-declared `SKILL_PROJECT_ROOT` makes `FsMarkerProjectResolver`
+/// resolve project scope directly, so project-scoped skills are served.
+#[ignore = "requires live containers"]
+#[tokio::test]
+async fn project_scope_resolves_via_skill_project_root_without_repo_path() {
+    let namespace = env_guard::isolated_namespace().await;
+    let n = nonce();
+    let skill_name = format!("project-root-tracer-{n}");
+
+    // An existing directory that stands in for the mounted project root. The
+    // seeded skill has empty source_paths, so it falls back to this configured
+    // project root for scope matching — exactly the container's behaviour.
+    let project_root = std::env::temp_dir().join(format!("skill-project-root-{n}"));
+    std::fs::create_dir_all(&project_root).expect("project root should be creatable");
+    let project_root_str = project_root
+        .canonicalize()
+        .expect("project root should canonicalize")
+        .display()
+        .to_string();
+
+    // SAFETY: test-scoped env mutation; #[ignore] live tests run serially.
+    unsafe {
+        std::env::set_var("SKILL_PROJECT_ROOT", &project_root_str);
+    }
+
+    // Seed a project-scoped skill (empty source_paths → uses the configured root).
+    let seed_components = McpServerApp::from_environment(project_scope_retrieval_config())
+        .await
+        .expect("should connect to live infrastructure");
+    seed_components
+        .rebuild_coordinator
+        .replace_snapshot_and_bump_version(LiveGraphSnapshotMutation {
+            rebuilt_at: chrono::Utc::now(),
+            skills: vec![LiveGraphSkillRecord {
+                stable_id: skill_name.clone(),
+                name: skill_name.clone(),
+                description: "Project skill served via SKILL_PROJECT_ROOT without a repo_path"
+                    .to_owned(),
+                scope: ScopeType::Project,
+                tags: vec!["tracer".to_owned(), "skill-project-root".to_owned()],
+                source_paths: vec![],
+                subunits: vec![LiveGraphSubunitRecord {
+                    kind: domain::SubunitType::Procedure,
+                    title: "Project root tracer".to_owned(),
+                    content: "Resolve project scope from SKILL_PROJECT_ROOT with no repo_path."
+                        .to_owned(),
+                }],
+            }],
+            communities: vec![],
+        })
+        .await
+        .expect("should seed project-scoped skill");
+
+    // Reconnect so the snapshot (built with SKILL_PROJECT_ROOT as the project
+    // fallback path) includes the seeded skill.
+    let components = McpServerApp::from_environment(project_scope_retrieval_config())
+        .await
+        .expect("should reconnect after seeding");
+
+    // Empty repo_path = the container default with no usable host path. The
+    // resolver's repo_path walk fails and falls back to SKILL_PROJECT_ROOT.
+    let response = components
+        .app
+        .compile_context(CompileContextRequest {
+            prompt: "project root tracer resolve project scope".to_owned(),
+            session_id: format!("project-root-tracer-{n}"),
+            repo_path: String::new(),
+            trigger: None,
+        })
+        .await;
+
+    // SAFETY: cleanup env before assertions can unwind the test.
+    unsafe {
+        std::env::remove_var("SKILL_PROJECT_ROOT");
+    }
+    let _ = std::fs::remove_dir_all(&project_root);
+
+    // The core #154 contract: project scope must NOT degrade just because there
+    // was no usable repo_path — SKILL_PROJECT_ROOT resolved it.
+    assert_ne!(
+        response.status,
+        CompileContextStatus::Degraded,
+        "compile_context must resolve project scope via SKILL_PROJECT_ROOT without a repo_path; \
+         got status={:?} reason={:?}",
+        response.status,
+        response.reason_code,
+    );
+    assert!(
+        !response
+            .reason_code
+            .as_deref()
+            .unwrap_or("")
+            .contains("project_scope_resolution_failed"),
+        "project scope must resolve via SKILL_PROJECT_ROOT; got reason={:?}",
+        response.reason_code,
+    );
+
+    components.teardown().await.expect("teardown should succeed");
+    seed_components
+        .teardown()
+        .await
+        .expect("teardown should succeed");
+    namespace.cleanup().await;
+}

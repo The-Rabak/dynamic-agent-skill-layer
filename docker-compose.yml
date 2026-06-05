@@ -112,6 +112,13 @@ services:
       OLLAMA_URL: http://ollama:11434
       SKILL_GLOBAL_PATHS: /skills/global
       SKILL_GLOBAL_ALLOWED_ROOTS: ${SKILL_GLOBAL_ALLOWED_ROOTS:-/skills/project,/skills/global}
+      # Declares the in-container project scope root (issue #154). The container's
+      # working directory is `/` with no `.git`/marker, so without this the project
+      # resolver returns ResolverUnavailable and compile_context degrades for EVERY
+      # query. Pointing it at the mounted project skills root makes
+      # FsMarkerProjectResolver resolve project scope directly; project-scoped skills
+      # (whose source_paths live under /skills/project) then match.
+      SKILL_PROJECT_ROOT: ${SKILL_PROJECT_ROOT:-/skills/project}
       GRAPH_BUILDER_PROJECT_ROOT: ${GRAPH_BUILDER_PROJECT_ROOT:-/skills/project}
       CLAUDE_TRANSCRIPT_ROOT: ${CLAUDE_TRANSCRIPT_ROOT:-/transcripts}
       # Extraction provider for the extract_session worker pool. Ollama is the
