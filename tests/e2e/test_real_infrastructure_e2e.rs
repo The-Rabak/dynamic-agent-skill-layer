@@ -247,3 +247,104 @@ async fn full_roundtrip_filesystem_to_graph_builder_to_pg_and_qdrant() {
 
     fs::remove_dir_all(&sandbox).expect("sandbox cleanup should succeed");
 }
+
+/// Closes #165 acceptance criterion #3 at the PERSISTENCE layer: after a real
+/// rebuild (real Ollama embeddings → real HDBSCAN clustering → atomic PG write),
+/// the `community_skills` table must carry BOTH membership sources, and at least
+/// one skill must hold an `'hdbscan'` row AND a `'tag'` row simultaneously — i.e.
+/// dual membership is persisted, not just produced in memory.
+///
+/// This is robust to clustering outcome: every skill always lands in the tag layer
+/// AND in the HDBSCAN layer (a named cluster when it clusters, otherwise the
+/// per-scope `-unclustered` community — still `source='hdbscan'`), so a correctly
+/// wired write path always yields a skill with both sources. The test fails loudly
+/// if migration 006 did not apply or the `source` column is not written.
+#[tokio::test]
+#[ignore = "requires live containers"]
+async fn rebuild_persists_dual_membership_with_both_community_sources() {
+    let pg = setup_pg().await;
+    let qdrant = setup_qdrant().await;
+
+    let sandbox = fresh_sandbox("e2e-dual-membership");
+    let project_root = sandbox.join("project");
+    let global_root = sandbox.join("global");
+    copy_tree(&fixture_root().join("project"), &project_root);
+    copy_tree(&fixture_root().join("global"), &global_root);
+
+    let scopes = vec![
+        ScopeRoot::new("project", ScopeType::Project, project_root.clone()),
+        ScopeRoot::new("global", ScopeType::Global, global_root.clone()),
+    ];
+
+    let embedding_service = setup_embedding_service();
+    let rebuild_coordinator = PostgresRebuildCoordinator::new(pg.pool().clone());
+    let outbox_coordinator = PostgresGraphWriteCoordinator::new(pg.pool().clone());
+    let mut durable_state =
+        PostgresDurableGraphState::new(&rebuild_coordinator, &outbox_coordinator, &qdrant);
+    let mut published_events: Vec<EventEnvelope> = Vec::new();
+    let mut orchestrator = GraphRebuildOrchestrator::new(
+        &mut durable_state,
+        &mut published_events,
+        &embedding_service,
+    );
+
+    let skills = build_skills_from_scope_roots(&scopes, &embedding_service)
+        .await
+        .expect("build should succeed");
+    let file_changes: Vec<graph_builder::SkillFileChange> = skills
+        .iter()
+        .map(|skill| graph_builder::SkillFileChange {
+            scope_id: skill.scope_id.clone(),
+            scope_type: skill.scope_type,
+            file_path: skill.source_path.clone(),
+            idempotency_key: format!("dual-chg-{}", skill.id),
+            source: FileChangeSource::Direct,
+            kind: SkillFileChangeKind::Modified,
+            content_hash: skill.id.clone(),
+        })
+        .collect();
+
+    orchestrator
+        .rebuild_from_changes(&scopes, &file_changes, &HdbscanConfig::default())
+        .await
+        .expect("rebuild should succeed");
+
+    // Both membership sources must be present in the persisted table.
+    let (hdbscan_rows,): (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM community_skills WHERE source = 'hdbscan'")
+            .fetch_one(pg.pool())
+            .await
+            .expect("should count hdbscan membership rows");
+    let (tag_rows,): (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM community_skills WHERE source = 'tag'")
+            .fetch_one(pg.pool())
+            .await
+            .expect("should count tag membership rows");
+    assert!(
+        hdbscan_rows > 0,
+        "community_skills must contain at least one source='hdbscan' row after rebuild"
+    );
+    assert!(
+        tag_rows > 0,
+        "community_skills must contain at least one source='tag' row after rebuild"
+    );
+
+    // At least one skill must appear under BOTH sources — true dual membership at
+    // the persistence boundary.
+    let dual: Option<(String,)> = sqlx::query_as(
+        "SELECT skill_id::TEXT FROM community_skills WHERE source = 'hdbscan' \
+         INTERSECT \
+         SELECT skill_id::TEXT FROM community_skills WHERE source = 'tag' \
+         LIMIT 1",
+    )
+    .fetch_optional(pg.pool())
+    .await
+    .expect("should query dual-membership skills");
+    assert!(
+        dual.is_some(),
+        "at least one skill must hold BOTH an 'hdbscan' and a 'tag' community_skills row \
+         (dual membership must be persisted, not only computed in memory)"
+    );
+
+    fs::remove_dir_all(&sandbox).expect("sandbox cleanup should succeed");
+}

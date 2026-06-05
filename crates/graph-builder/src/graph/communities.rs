@@ -44,8 +44,11 @@ pub struct CommunityAssignment {
 ///
 /// 1. **HDBSCAN layer** (`source = Hdbscan`): runs HDBSCAN over the 768-dim
 ///    embeddings of all skills within each scope.  Each cluster becomes a community
-///    named `"{scope}-cluster-{idf_label}"` where `idf_label` is the most frequent
-///    tag across cluster members (ties broken alphabetically).  Noise skills
+///    named `"{scope}-cluster-{idf_label}"` where `idf_label` is built from the
+///    highest TF-IDF terms of the cluster members' subunit text — i.e. the terms
+///    that are frequent inside the cluster yet rare across the whole skill corpus,
+///    so the name describes what makes the cluster distinctive (ties broken
+///    alphabetically).  Noise skills
 ///    (HDBSCAN label -1) are collected into a per-scope `"{scope}-unclustered"`
 ///    community so they remain reachable.  When a scope has fewer than
 ///    `config.min_cluster_size` skills the whole scope is placed in the unclustered
@@ -129,6 +132,18 @@ fn cluster_by_hdbscan(
 
     let mut assignments: Vec<CommunityAssignment> = Vec::new();
 
+    // Corpus-wide document frequencies (one "document" per skill) drive the IDF
+    // term of every cluster label.  Computed once over the whole corpus, not
+    // per-scope, so a term's rarity is judged against all skills.
+    let corpus = CorpusIdf {
+        doc_freq: corpus_document_frequencies(skills),
+        size: skills.len(),
+    };
+
+    // Community names must be unique across the whole HDBSCAN layer: two clusters
+    // that derived the same label would collapse to one `stable_id` downstream.
+    let mut used_names: std::collections::HashSet<String> = std::collections::HashSet::new();
+
     // Sort scope keys for deterministic iteration order.
     let mut scope_keys: Vec<String> = by_scope.keys().cloned().collect();
     scope_keys.sort();
@@ -191,8 +206,9 @@ fn cluster_by_hdbscan(
                 continue;
             }
 
-            // Named cluster: derive the community name from the most-common tag
-            // across member skills so the label is human-readable and stable.
+            // Named cluster: derive the community name from the highest TF-IDF
+            // terms of the members' subunit text so the label describes what makes
+            // the cluster distinctive and stays stable across rebuilds.
             let member_skill_ids: Vec<String> = {
                 let mut ids: Vec<String> = local_indices
                     .iter()
@@ -208,6 +224,8 @@ fn cluster_by_hdbscan(
                 skills,
                 scope_prefix,
                 label,
+                &corpus,
+                &mut used_names,
             );
 
             assignments.push(CommunityAssignment {
@@ -233,40 +251,153 @@ fn cluster_by_hdbscan(
     Ok(assignments)
 }
 
-/// Derives a deterministic, human-readable community name for an HDBSCAN cluster.
+/// Derives a deterministic, human-readable community name for an HDBSCAN cluster
+/// from the highest TF-IDF terms of its members' subunit text.
 ///
-/// Picks the tag that appears most frequently among the member skills.  Ties are
-/// broken alphabetically so the result is stable across builds.  Falls back to
-/// `"{scope_prefix}-cluster-{label}"` when members have no tags at all.
+/// A term scores `tf * idf` where `tf` is its total occurrences across the
+/// cluster's subunits and `idf = ln((N + 1) / (df + 1)) + 1` over the whole skill
+/// corpus (`N` skills, `df` skills containing the term).  This favours terms that
+/// are frequent *within* the cluster yet rare *across* the corpus, so the label
+/// captures what the cluster is about rather than boilerplate shared by every
+/// skill.  Ties break alphabetically for stability.
+///
+/// The label is `"{scope_prefix}-cluster-{t1}-{t2}"` using the top two terms (one
+/// term if only one is available).  When members have no usable terms at all it
+/// falls back to `"{scope_prefix}-cluster-{label}"` (the raw HDBSCAN integer).
+///
+/// `used_names` guarantees within-layer uniqueness so two clusters can never
+/// collapse onto the same `stable_id`: on collision the label is extended with the
+/// next-best term, and as a last resort with the lexicographically smallest member
+/// skill id (unique because HDBSCAN clusters are disjoint).
 fn derive_cluster_label(
     local_indices: &[usize],
     global_indices: &[usize],
     skills: &[BuiltSkill],
     scope_prefix: &str,
     cluster_label: i32,
+    corpus: &CorpusIdf,
+    used_names: &mut std::collections::HashSet<String>,
 ) -> String {
-    let mut tag_counts: HashMap<&str, usize> = HashMap::new();
-    for &local_index in local_indices {
-        let skill = &skills[global_indices[local_index]];
-        for tag in &skill.tags {
-            *tag_counts.entry(tag.as_str()).or_default() += 1;
+    let scored = score_cluster_terms(local_indices, global_indices, skills, corpus);
+
+    let mut label = if scored.is_empty() {
+        format!("{scope_prefix}-cluster-{cluster_label}")
+    } else {
+        let core: Vec<&str> = scored.iter().take(2).map(|(term, _)| term.as_str()).collect();
+        format!("{scope_prefix}-cluster-{}", core.join("-"))
+    };
+
+    // Collision resolution 1: append further distinctive terms.
+    if used_names.contains(&label) {
+        for (term, _) in scored.iter().skip(2) {
+            let candidate = format!("{label}-{term}");
+            if !used_names.contains(&candidate) {
+                label = candidate;
+                break;
+            }
+        }
+    }
+    // Collision resolution 2 (deterministic backstop): smallest member skill id
+    // (unique because HDBSCAN clusters are disjoint).
+    if used_names.contains(&label) {
+        let anchor = local_indices
+            .iter()
+            .map(|&local_index| skills[global_indices[local_index]].id.as_str())
+            .min();
+        if let Some(anchor) = anchor {
+            label = format!("{label}-{anchor}");
         }
     }
 
-    if tag_counts.is_empty() {
-        return format!("{scope_prefix}-cluster-{cluster_label}");
+    used_names.insert(label.clone());
+    label
+}
+
+/// Corpus-wide IDF context shared by every cluster's label derivation: the
+/// document frequency of each term (skills containing it) and the corpus size.
+struct CorpusIdf {
+    doc_freq: HashMap<String, usize>,
+    size: usize,
+}
+
+/// Scores every term in a cluster's subunit text by `tf * idf`, returning terms
+/// sorted by score descending then alphabetically (deterministic).
+fn score_cluster_terms(
+    local_indices: &[usize],
+    global_indices: &[usize],
+    skills: &[BuiltSkill],
+    corpus: &CorpusIdf,
+) -> Vec<(String, f64)> {
+    let mut term_freq: HashMap<String, usize> = HashMap::new();
+    for &local_index in local_indices {
+        let skill = &skills[global_indices[local_index]];
+        for subunit in &skill.subunits {
+            for term in tokenize(&subunit.title).chain(tokenize(&subunit.content)) {
+                *term_freq.entry(term).or_default() += 1;
+            }
+        }
     }
 
-    // Most-frequent tag, alphabetical tiebreak.
-    let top_tag = tag_counts
-        .iter()
-        .max_by(|(tag_a, count_a), (tag_b, count_b)| {
-            count_a.cmp(count_b).then_with(|| tag_b.cmp(tag_a))
+    let mut scored: Vec<(String, f64)> = term_freq
+        .into_iter()
+        .map(|(term, tf)| {
+            let df = *corpus.doc_freq.get(&term).unwrap_or(&0) as f64;
+            let idf = ((corpus.size as f64 + 1.0) / (df + 1.0)).ln() + 1.0;
+            (term, tf as f64 * idf)
         })
-        .map(|(tag, _)| *tag)
-        .expect("tag_counts is non-empty");
+        .collect();
 
-    format!("{scope_prefix}-cluster-{}", top_tag.to_ascii_lowercase())
+    scored.sort_by(|(term_a, score_a), (term_b, score_b)| {
+        score_b
+            .partial_cmp(score_a)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| term_a.cmp(term_b))
+    });
+    scored
+}
+
+/// Computes the corpus document frequency for every term: how many skills (one
+/// "document" each) contain the term at least once in their subunit text.
+fn corpus_document_frequencies(skills: &[BuiltSkill]) -> HashMap<String, usize> {
+    let mut doc_freq: HashMap<String, usize> = HashMap::new();
+    for skill in skills {
+        let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for subunit in &skill.subunits {
+            for term in tokenize(&subunit.title).chain(tokenize(&subunit.content)) {
+                seen.insert(term);
+            }
+        }
+        for term in seen {
+            *doc_freq.entry(term).or_default() += 1;
+        }
+    }
+    doc_freq
+}
+
+/// Tokenizes text into lowercase alphanumeric terms of length >= 3, dropping
+/// stopwords and purely numeric tokens.  Pure punctuation/whitespace splits the
+/// stream into terms.
+fn tokenize(text: &str) -> impl Iterator<Item = String> + '_ {
+    text.split(|c: char| !c.is_alphanumeric())
+        .filter(|raw| raw.len() >= 3)
+        .map(|raw| raw.to_ascii_lowercase())
+        .filter(|term| !term.chars().all(|c| c.is_ascii_digit()))
+        .filter(|term| !is_stopword(term))
+}
+
+/// A small English stopword set so labels are anchored on meaningful terms rather
+/// than connective words that appear in every skill.
+fn is_stopword(term: &str) -> bool {
+    const STOPWORDS: &[&str] = &[
+        "the", "and", "for", "are", "but", "not", "you", "all", "any", "can",
+        "had", "has", "her", "was", "one", "our", "out", "use", "uses", "used",
+        "using", "with", "this", "that", "from", "into", "your", "them", "they",
+        "then", "than", "when", "what", "which", "while", "will", "would", "should",
+        "could", "have", "how", "its", "via", "per", "etc", "such", "also", "each",
+        "more", "most", "some", "only", "over", "under", "between", "about", "after",
+        "before", "during",
+    ];
+    STOPWORDS.contains(&term)
 }
 
 // ---------------------------------------------------------------------------
@@ -336,8 +467,20 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
 
-    /// Builds a minimal `BuiltSkill` for test purposes.
+    /// Builds a minimal `BuiltSkill` for test purposes with default subunit text.
     fn make_skill(id: &str, scope: ScopeType, tags: &[&str], embedding: Vec<f32>) -> BuiltSkill {
+        make_skill_with_content(id, scope, tags, &format!("Do {id}"), embedding)
+    }
+
+    /// Builds a `BuiltSkill` with explicit subunit content so tests can exercise
+    /// the TF-IDF label derivation, which reads subunit text (not tags).
+    fn make_skill_with_content(
+        id: &str,
+        scope: ScopeType,
+        tags: &[&str],
+        content: &str,
+        embedding: Vec<f32>,
+    ) -> BuiltSkill {
         use crate::extraction::ExtractedSubunit;
         use domain::SubunitType;
         BuiltSkill {
@@ -351,7 +494,7 @@ mod tests {
             subunits: vec![ExtractedSubunit {
                 kind: SubunitType::Procedure,
                 title: "step".to_owned(),
-                content: format!("Do {id}"),
+                content: content.to_owned(),
             }],
             embedding,
         }
@@ -366,31 +509,44 @@ mod tests {
     /// detail of HDBSCAN, not the property we are proving).
     ///
     /// What this test proves:
-    /// - Cluster A (3 "retrieval" skills) lands in a single named HDBSCAN community.
-    /// - Cluster B (3 "scoring" skills) lands in a different named HDBSCAN community.
-    /// - The community names are derived from the dominant tag of the cluster members.
-    /// - No "retrieval" skill appears in the "scoring" cluster and vice versa.
+    /// - Cluster A (3 retrieval skills) lands in a single named HDBSCAN community.
+    /// - Cluster B (3 scoring skills) lands in a different named HDBSCAN community.
+    /// - The community names are derived from the top TF-IDF terms of member subunit
+    ///   text — the distinctive, frequently-repeated term wins, while the term shared
+    ///   by every skill ("skill") is demoted out of the label by its low IDF.
+    /// - No retrieval skill appears in the scoring cluster and vice versa.
     #[test]
     fn hdbscan_clusters_similar_skills_and_marks_outlier_noise() {
         // Cluster A: 3 skills near [10, 0.x, 0, ...]
         // Cluster B: 3 skills near [0.x, 10, 0, ...]
         // Bridging skill at [5, 5, ...] — absorbed into whichever cluster is denser.
+        //
+        // Subunit content (NOT tags) drives the label. "skill" appears in every
+        // document (low IDF → demoted); "retrieval"/"scoring" are repeated within
+        // their cluster (high tf) and absent elsewhere (high IDF) → they win.
         let skills = vec![
-            make_skill("a1", ScopeType::Project, &["retrieval"],
+            make_skill_with_content("a1", ScopeType::Project, &["retrieval"],
+                "This skill performs retrieval retrieval retrieval over search vectors",
                 vec![10.0, 0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
-            make_skill("a2", ScopeType::Project, &["retrieval"],
+            make_skill_with_content("a2", ScopeType::Project, &["retrieval"],
+                "This skill performs retrieval retrieval retrieval over search vectors",
                 vec![10.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
-            make_skill("a3", ScopeType::Project, &["retrieval"],
+            make_skill_with_content("a3", ScopeType::Project, &["retrieval"],
+                "This skill performs retrieval retrieval retrieval over search vectors",
                 vec![9.9, 0.2, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
-            make_skill("b1", ScopeType::Project, &["scoring"],
+            make_skill_with_content("b1", ScopeType::Project, &["scoring"],
+                "This skill performs scoring scoring scoring over ranking weights",
                 vec![0.1, 10.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
-            make_skill("b2", ScopeType::Project, &["scoring"],
+            make_skill_with_content("b2", ScopeType::Project, &["scoring"],
+                "This skill performs scoring scoring scoring over ranking weights",
                 vec![0.0, 10.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
-            make_skill("b3", ScopeType::Project, &["scoring"],
+            make_skill_with_content("b3", ScopeType::Project, &["scoring"],
+                "This skill performs scoring scoring scoring over ranking weights",
                 vec![0.2, 9.9, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
             // Bridging skill — assigned to whichever cluster HDBSCAN finds denser.
             // We do not assert on this skill's assignment.
-            make_skill("bridge", ScopeType::Project, &["unrelated"],
+            make_skill_with_content("bridge", ScopeType::Project, &["unrelated"],
+                "This skill is a miscellaneous helper",
                 vec![5.0, 5.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
         ];
 
@@ -450,7 +606,8 @@ mod tests {
             "retrieval and scoring skills must be in different HDBSCAN clusters"
         );
 
-        // Community names are derived from the dominant tag of cluster members.
+        // Community names are derived from the top TF-IDF terms of member subunit
+        // text: the distinctive repeated term wins.
         assert!(
             retrieval_cluster.community_name.contains("retrieval"),
             "retrieval cluster name must contain 'retrieval', got: {}",
@@ -459,6 +616,19 @@ mod tests {
         assert!(
             scoring_cluster.community_name.contains("scoring"),
             "scoring cluster name must contain 'scoring', got: {}",
+            scoring_cluster.community_name
+        );
+
+        // IDF must demote the term shared by EVERY skill ("skill") so it never
+        // becomes the label, even though it is frequent within the cluster.
+        assert!(
+            !retrieval_cluster.community_name.contains("skill"),
+            "corpus-wide boilerplate 'skill' must be demoted by IDF, got: {}",
+            retrieval_cluster.community_name
+        );
+        assert!(
+            !scoring_cluster.community_name.contains("skill"),
+            "corpus-wide boilerplate 'skill' must be demoted by IDF, got: {}",
             scoring_cluster.community_name
         );
     }
