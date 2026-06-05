@@ -5,6 +5,7 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
+use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use domain::{
     PENDING_SKILL_FILE_NAME, ScopeType, pending_default_expires_at, pending_default_warning_at,
@@ -127,8 +128,13 @@ impl ScopeSelectionPolicy {
 }
 
 /// Integrates semantic validation before merge proposal emission.
+///
+/// Implementations must be async because the real gate is an LLM call.
+/// Missing or unavailable LLM providers must surface `MergeError::SemanticVerification`
+/// — never a silent `false` that quietly suppresses merges.
+#[async_trait]
 pub trait MergeSemanticVerifier: Send + Sync {
-    fn are_equivalent(
+    async fn are_equivalent(
         &self,
         left: &SkillSnapshot,
         right: &SkillSnapshot,
@@ -163,35 +169,36 @@ where
     }
 
     /// Proposes merged `.pending` files for cross-scope duplicate skill pairs.
-    pub fn propose(
+    pub async fn propose(
         &self,
         skills: &[SkillSnapshot],
         now: DateTime<Utc>,
     ) -> Result<Vec<MergeProposal>, MergeError> {
-        let candidates = self.find_candidates(skills)?;
+        let candidates = self.find_candidates(skills).await?;
         let skills_by_id = skills
             .iter()
             .map(|skill| (skill.id.as_str(), skill))
             .collect::<HashMap<_, _>>();
-        let proposals = candidates
-            .iter()
-            .map(|candidate| {
-                let left = skills_by_id
-                    .get(candidate.left_skill_id.as_str())
-                    .copied()
-                    .ok_or_else(|| MergeError::SkillNotFound(candidate.left_skill_id.clone()))?;
-                let right = skills_by_id
-                    .get(candidate.right_skill_id.as_str())
-                    .copied()
-                    .ok_or_else(|| MergeError::SkillNotFound(candidate.right_skill_id.clone()))?;
-                self.write_proposal(left, right, candidate.cosine_similarity, now)
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+        let mut proposals = Vec::new();
+        for candidate in &candidates {
+            let left = skills_by_id
+                .get(candidate.left_skill_id.as_str())
+                .copied()
+                .ok_or_else(|| MergeError::SkillNotFound(candidate.left_skill_id.clone()))?;
+            let right = skills_by_id
+                .get(candidate.right_skill_id.as_str())
+                .copied()
+                .ok_or_else(|| MergeError::SkillNotFound(candidate.right_skill_id.clone()))?;
+            proposals.push(self.write_proposal(left, right, candidate.cosine_similarity, now)?);
+        }
         Ok(proposals)
     }
 
-    /// Finds cross-scope candidates that satisfy similarity and semantic checks.
-    pub fn find_candidates(
+    /// Finds cross-scope candidates that satisfy cosine similarity and semantic equivalence.
+    ///
+    /// Cosine ≥ `similarity_threshold` selects the candidate set; the semantic verifier
+    /// (LLM-backed) makes the final equivalence call on each surviving pair.
+    pub async fn find_candidates(
         &self,
         skills: &[SkillSnapshot],
     ) -> Result<Vec<MergeCandidate>, MergeError> {
@@ -208,7 +215,7 @@ where
                 if similarity < self.config.similarity_threshold {
                     continue;
                 }
-                if !self.semantic_verifier.are_equivalent(left, right)? {
+                if !self.semantic_verifier.are_equivalent(left, right).await? {
                     continue;
                 }
                 candidates.push(MergeCandidate {

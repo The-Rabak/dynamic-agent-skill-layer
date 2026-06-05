@@ -4,6 +4,7 @@ use std::{
     time::SystemTime,
 };
 
+use async_trait::async_trait;
 use chrono::{TimeZone, Utc};
 use domain::{ScopeType, pending_default_expires_at, pending_default_warning_at};
 use maintenance::{
@@ -16,8 +17,9 @@ use serde_yaml::Value;
 #[derive(Clone)]
 struct EquivalentSemanticVerifier;
 
+#[async_trait]
 impl MergeSemanticVerifier for EquivalentSemanticVerifier {
-    fn are_equivalent(
+    async fn are_equivalent(
         &self,
         _left: &SkillSnapshot,
         _right: &SkillSnapshot,
@@ -98,8 +100,8 @@ fn frontmatter_from_pending_markdown(pending_markdown: &str) -> Value {
     serde_yaml::from_str(frontmatter_section).expect("frontmatter should be valid YAML")
 }
 
-#[test]
-fn merge_workflow_writes_pending_proposal_with_scope_provenance_and_human_gate() {
+#[tokio::test]
+async fn merge_workflow_writes_pending_proposal_with_scope_provenance_and_human_gate() {
     let sandbox = fresh_sandbox("merge-workflow");
     let project_skill_path = sandbox.join("project/auth/SKILL.md");
     let global_skill_path = sandbox.join("global/auth/SKILL.md");
@@ -134,6 +136,7 @@ fn merge_workflow_writes_pending_proposal_with_scope_provenance_and_human_gate()
 
     let proposals = writer
         .propose(&snapshots, now)
+        .await
         .expect("merge workflow should propose duplicate merge");
 
     assert_eq!(proposals.len(), 1);
@@ -230,8 +233,8 @@ fn merge_workflow_writes_pending_proposal_with_scope_provenance_and_human_gate()
     );
 }
 
-#[test]
-fn merge_workflow_serializes_frontmatter_with_special_characters_and_newlines() {
+#[tokio::test]
+async fn merge_workflow_serializes_frontmatter_with_special_characters_and_newlines() {
     let sandbox = fresh_sandbox("merge-workflow-frontmatter-escaping");
     let project_skill_path = sandbox.join("project/auth/SKILL.md");
     let global_skill_path = sandbox.join("global/auth/SKILL.md");
@@ -257,6 +260,7 @@ fn merge_workflow_serializes_frontmatter_with_special_characters_and_newlines() 
 
     let proposals = writer
         .propose(&snapshots, Utc::now())
+        .await
         .expect("merge workflow should propose duplicate merge");
 
     let pending_body = std::fs::read_to_string(&proposals[0].pending_path)
@@ -285,8 +289,8 @@ fn merge_workflow_serializes_frontmatter_with_special_characters_and_newlines() 
     assert!(merged_from_paths.contains(&global_path.as_str()));
 }
 
-#[test]
-fn merge_workflow_writes_global_scoped_proposal_under_global_root_for_team_global_pair() {
+#[tokio::test]
+async fn merge_workflow_writes_global_scoped_proposal_under_global_root_for_team_global_pair() {
     let sandbox = fresh_sandbox("merge-workflow-team-global");
     let team_skill_path = sandbox.join("team/auth/SKILL.md");
     let global_skill_path = sandbox.join("global/auth/SKILL.md");
@@ -312,6 +316,7 @@ fn merge_workflow_writes_global_scoped_proposal_under_global_root_for_team_globa
 
     let proposals = writer
         .propose(&snapshots, Utc::now())
+        .await
         .expect("merge workflow should propose duplicate merge");
 
     assert_eq!(proposals.len(), 1);
@@ -325,8 +330,8 @@ fn merge_workflow_writes_global_scoped_proposal_under_global_root_for_team_globa
     );
 }
 
-#[test]
-fn merge_workflow_rejects_filename_collision_without_overwriting_existing_proposal() {
+#[tokio::test]
+async fn merge_workflow_rejects_filename_collision_without_overwriting_existing_proposal() {
     let sandbox = fresh_sandbox("merge-workflow-collision");
     let project_skill_path = sandbox.join("project/auth/SKILL.md");
     let global_skill_path = sandbox.join("global/auth/SKILL.md");
@@ -353,12 +358,13 @@ fn merge_workflow_rejects_filename_collision_without_overwriting_existing_propos
 
     let first_proposals = writer
         .propose(&snapshots, now)
+        .await
         .expect("first proposal generation should succeed");
     let pending_path = first_proposals[0].pending_path.clone();
     std::fs::write(&pending_path, "human-note: keep this review state")
         .expect("human annotation should be written");
 
-    let second_attempt = writer.propose(&snapshots, now);
+    let second_attempt = writer.propose(&snapshots, now).await;
 
     assert!(
         matches!(
@@ -375,8 +381,8 @@ fn merge_workflow_rejects_filename_collision_without_overwriting_existing_propos
     );
 }
 
-#[test]
-fn merge_workflow_rejects_unsafe_pending_directory_component() {
+#[tokio::test]
+async fn merge_workflow_rejects_unsafe_pending_directory_component() {
     let sandbox = fresh_sandbox("merge-workflow-unsafe-pending-dir");
     let project_skill_path = sandbox.join("project/auth/SKILL.md");
     let global_skill_path = sandbox.join("global/auth/SKILL.md");
@@ -407,7 +413,7 @@ fn merge_workflow_rejects_unsafe_pending_directory_component() {
         &NoopMaintenanceAuditSink,
     );
 
-    let result = writer.propose(&snapshots, Utc::now());
+    let result = writer.propose(&snapshots, Utc::now()).await;
 
     assert!(
         matches!(
@@ -418,8 +424,8 @@ fn merge_workflow_rejects_unsafe_pending_directory_component() {
     );
 }
 
-#[test]
-fn merge_workflow_handles_high_cardinality_input_without_lookup_regressions() {
+#[tokio::test]
+async fn merge_workflow_handles_high_cardinality_input_without_lookup_regressions() {
     let sandbox = fresh_sandbox("merge-workflow-high-cardinality");
     let pair_count = 24usize;
     let embedding_dims = pair_count;
@@ -454,6 +460,7 @@ fn merge_workflow_handles_high_cardinality_input_without_lookup_regressions() {
     let writer = MergeProposalWriter::with_audit_sink(MergeConfig::default(), EquivalentSemanticVerifier, &NoopMaintenanceAuditSink);
     let proposals = writer
         .propose(&snapshots, Utc::now())
+        .await
         .expect("high-cardinality proposal generation should succeed");
 
     assert_eq!(
@@ -463,9 +470,9 @@ fn merge_workflow_handles_high_cardinality_input_without_lookup_regressions() {
     );
 }
 
-#[test]
+#[tokio::test]
 #[cfg(unix)]
-fn merge_workflow_rejects_symlinked_pending_root_that_escapes_scope_root() {
+async fn merge_workflow_rejects_symlinked_pending_root_that_escapes_scope_root() {
     let sandbox = fresh_sandbox("merge-workflow-symlink-escape");
     let project_skill_path = sandbox.join("project/auth/SKILL.md");
     let global_skill_path = sandbox.join("global/auth/SKILL.md");
@@ -499,7 +506,7 @@ fn merge_workflow_rejects_symlinked_pending_root_that_escapes_scope_root() {
         .expect("pending symlink should be created");
 
     let writer = MergeProposalWriter::with_audit_sink(MergeConfig::default(), EquivalentSemanticVerifier, &NoopMaintenanceAuditSink);
-    let result = writer.propose(&snapshots, Utc::now());
+    let result = writer.propose(&snapshots, Utc::now()).await;
 
     assert!(
         matches!(

@@ -1,6 +1,6 @@
 use std::{path::PathBuf, sync::Arc, time::Duration};
 
-use domain::{ScopeRoot, ScopeType};
+use domain::{HdbscanConfig, ScopeRoot, ScopeType};
 use graph_builder::{
     GraphRebuildOrchestrator, PostgresDurableGraphState, SkillFileChange, SkillWatcher,
     WatcherRecovery,
@@ -19,6 +19,12 @@ use tokio::{
     sync::RwLock,
     time::sleep,
 };
+
+/// Returns the value of `name` from the environment, or an error message suitable
+/// for boot-time failure. Required env vars must be present; there is no default.
+fn env_var(name: &str) -> Result<String, String> {
+    std::env::var(name).map_err(|_| format!("{name} must be set"))
+}
 
 fn build_scope_roots() -> Vec<ScopeRoot> {
     let repo_root = PathBuf::from(std::env::var("GRAPH_BUILDER_PROJECT_ROOT").unwrap_or_else(
@@ -212,6 +218,7 @@ async fn run_rebuild_cycle(
     watcher: &mut SkillWatcher,
     recovery: &mut WatcherRecovery,
     orchestrator: &mut GraphRebuildOrchestrator<'_, PostgresDurableGraphState<'_, QdrantAdapter>>,
+    hdbscan_config: &HdbscanConfig,
 ) -> Result<Option<i64>, String> {
     let first_scan = watcher
         .collect_file_changes()
@@ -229,7 +236,7 @@ async fn run_rebuild_cycle(
     }
 
     orchestrator
-        .rebuild_from_changes(&watcher.scopes(), &all_changes)
+        .rebuild_from_changes(&watcher.scopes(), &all_changes, hdbscan_config)
         .await
         .map_err(|error| error.to_string())
         .map(|outcome| {
@@ -312,11 +319,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut watcher = SkillWatcher::new(scopes)?;
     let mut recovery = WatcherRecovery::default();
 
-    let db_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
-        "postgres://skill_layer:skill_layer@localhost:15432/skill_layer".to_owned()
-    });
-    let qdrant_url =
-        std::env::var("QDRANT_URL").unwrap_or_else(|_| "http://localhost:16333".to_owned());
+    let db_url = env_var("DATABASE_URL")?;
+    let qdrant_url = env_var("QDRANT_URL")?;
 
     let pg_adapter = PostgresAdapter::connect(&PostgresConfig {
         database_url: db_url,
@@ -342,6 +346,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .ensure_collection(&qdrant_adapter.config.collection_name, 768)
         .await
         .map_err(|error| format!("qdrant collection setup: {error}"))?;
+
+    let hdbscan_config = HdbscanConfig::default();
 
     let mut durable_state =
         PostgresDurableGraphState::new(&rebuild_coordinator, &outbox_coordinator, &qdrant_adapter);
@@ -390,7 +396,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &mut published_events,
                 &embedding_service,
             );
-            run_rebuild_cycle(&mut watcher, &mut recovery, &mut orchestrator).await
+            run_rebuild_cycle(&mut watcher, &mut recovery, &mut orchestrator, &hdbscan_config).await
         };
         match cycle_result {
             Ok(Some(_version)) => {
@@ -408,5 +414,35 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         sleep(polling_interval()).await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn env_var_returns_err_with_must_be_set_message_when_unset() {
+        // Use a name that cannot exist in the environment during tests.
+        let result = env_var("GRAPH_BUILDER_TEST_DEFINITELY_UNSET_VAR_167");
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err(),
+            "GRAPH_BUILDER_TEST_DEFINITELY_UNSET_VAR_167 must be set"
+        );
+    }
+
+    #[test]
+    fn env_var_returns_value_when_set() {
+        // SAFETY: single-threaded test; no other thread reads this var concurrently.
+        unsafe {
+            std::env::set_var("GRAPH_BUILDER_TEST_SET_VAR_167", "postgres://localhost/test");
+        }
+        let result = env_var("GRAPH_BUILDER_TEST_SET_VAR_167");
+        // SAFETY: single-threaded test; no other thread reads this var concurrently.
+        unsafe {
+            std::env::remove_var("GRAPH_BUILDER_TEST_SET_VAR_167");
+        }
+        assert_eq!(result.unwrap(), "postgres://localhost/test");
     }
 }

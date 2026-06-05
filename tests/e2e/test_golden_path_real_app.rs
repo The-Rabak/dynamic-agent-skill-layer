@@ -365,6 +365,36 @@ async fn golden_path_real_app() {
         "mcp-server was healthy at test start (already asserted above)"
     );
 
+    // Hard-assert skill presence only when the loop is known to have closed (rebuild_ok).
+    // This ordering is intentional: if rebuild_ok is false, the assert!(rebuild_ok, …) below
+    // fires first with the "loop did not close" message; this assert fires only when the loop
+    // DID close but the seeded skill is absent — a distinct regression class.
+    //
+    // NOTE: whether compile_context must return status="ok" (vs "degraded") is deferred to
+    // #154 — the containerised server has no project scope, so "degraded" is expected for now.
+    if rebuild_ok {
+        assert!(
+            skill_present,
+            "\n\n\
+            === GOLDEN-PATH SKILL NOT SERVED AFTER LOOP CLOSED ===\n\
+            The loop closed (graph_version advanced past v{prev_version} to v{served_version}), \
+            but the seeded skill '{slug}' is absent from additional_context.\n\
+            This is NOT a loop-closure regression (#163) — the version DID advance.\n\
+            Likely the embedding/retrieval pipeline returned the wrong snapshot, or the \
+            scope filter excluded the seeded skill.\n\
+            Inspect:\n\
+              • docker logs <skill-builder> | grep -iE 'embed|build|{slug}'\n\
+              • docker logs <mcp-server>    | grep -iE 'context|compile|{slug}'\n\
+              • verify seed scope matches the compile_context prompt\n\
+            Context captured this run:\n\
+              • GET /health → {health_code}\n\
+              • compile_context status={:?}, served graph_version={served_version}\n\
+              • PG baseline v{prev_version}\n\
+            =========================================================\n",
+            retrieval_result.as_ref().map(|r| &r.status),
+        );
+    }
+
     // ── Cleanup: remove the seeded skill from the volume ─────────────────────
     // Best-effort; failure here does not affect the test outcome.
     let cleanup_result = harness::seed::remove(SkillScope::Global, &slug);

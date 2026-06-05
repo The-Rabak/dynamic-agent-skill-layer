@@ -7,9 +7,8 @@ use std::{
 
 use async_trait::async_trait;
 use domain::{
-    DomainId, EmbeddingError, EmbeddingService, ExtractedSkillCandidate, ExtractionError,
-    ExtractionResult, LifecycleStatus, PENDING_SKILL_FILE_NAME, ScopeType, SessionTranscript,
-    Skill, SkillStatus, Subunit, SubunitType, TranscriptSkillExtractionService,
+    ExtractedSkillCandidate, ExtractionError, ExtractionResult, PENDING_SKILL_FILE_NAME, ScopeType,
+    SessionTranscript, TranscriptSkillExtractionService,
 };
 use infrastructure::EventEnvelope;
 use mcp_server::{
@@ -19,7 +18,7 @@ use mcp_server::{
         extract_session::{ExtractSessionRequest, ExtractSessionTool},
     },
 };
-use retrieval::{RetrievalConfig, RetrievalSnapshot, SeededSkill};
+use retrieval::RetrievalConfig;
 use session_extractor::{
     ExtractionEventPublisher, ExtractionProvider, SessionExtractor, transcripts::TranscriptLoader,
     writer::PendingDraftWriter,
@@ -27,8 +26,7 @@ use session_extractor::{
 use tokio::task::JoinSet;
 
 use infrastructure::{
-    LiveGraphSkillRecord, LiveGraphSnapshotMutation,
-    LiveGraphSubunitRecord, RebuildCoordinator,
+    LiveGraphSkillRecord, LiveGraphSnapshotMutation, LiveGraphSubunitRecord, RebuildCoordinator,
 };
 
 #[path = "report.rs"]
@@ -36,114 +34,6 @@ mod report;
 
 #[path = "../integration/env_guard.rs"]
 mod env_guard;
-
-#[derive(Clone)]
-struct BurstEmbeddingService;
-
-impl BurstEmbeddingService {
-    fn embed_internal(&self, text: &str) -> Vec<f32> {
-        let normalized = text.to_lowercase();
-        let contains = |token: &str| normalized.contains(token);
-        vec![
-            if contains("rust") { 1.0 } else { 0.0 },
-            if contains("auth") { 1.0 } else { 0.0 },
-            if contains("file") { 1.0 } else { 0.0 },
-            if contains("async") { 1.0 } else { 0.0 },
-        ]
-    }
-}
-
-#[async_trait]
-impl EmbeddingService for BurstEmbeddingService {
-    async fn embed_text(&self, text: &str) -> Result<Vec<f32>, EmbeddingError> {
-        Ok(self.embed_internal(text))
-    }
-
-    async fn embed_batch(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>, EmbeddingError> {
-        Ok(texts.iter().map(|text| self.embed_internal(text)).collect())
-    }
-}
-
-fn seeded_graph() -> RetrievalSnapshot {
-    let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
-        .canonicalize()
-        .expect("repo root should canonicalize");
-    let docs_root = repo_root.join("docs");
-
-    let project_skill = Skill {
-        id: DomainId::new_unchecked("skill-project-rust-file"),
-        name: "project-rust-file-safety".to_owned(),
-        description: "Project-specific Rust file access safety checks".to_owned(),
-        scope: ScopeType::Project,
-        status: SkillStatus::Ready,
-        lifecycle: LifecycleStatus::Active,
-        tags: vec!["rust".to_owned(), "project".to_owned(), "file".to_owned()],
-        subunit_ids: vec![DomainId::new_unchecked("sub-project-file-safety")],
-        community_id: None,
-    };
-    let global_skill = Skill {
-        id: DomainId::new_unchecked("skill-global-async-rust"),
-        name: "global-async-rust-patterns".to_owned(),
-        description: "Global async Rust conventions".to_owned(),
-        scope: ScopeType::Global,
-        status: SkillStatus::Ready,
-        lifecycle: LifecycleStatus::Active,
-        tags: vec!["rust".to_owned(), "async".to_owned(), "global".to_owned()],
-        subunit_ids: vec![DomainId::new_unchecked("sub-global-async")],
-        community_id: None,
-    };
-
-    RetrievalSnapshot::new(
-        vec![
-            SeededSkill {
-                skill: project_skill.clone(),
-                scope_id: "project".to_owned(),
-                source_paths: vec![repo_root.join("src/file_access.rs")],
-                embedding: vec![1.0, 0.8, 1.0, 0.2],
-                subunits: vec![Subunit {
-                    id: DomainId::new_unchecked("sub-project-file-safety"),
-                    skill_id: project_skill.id.clone(),
-                    kind: SubunitType::Procedure,
-                    title: "Gate file IO by policy".to_owned(),
-                    content: "Apply project policy before reading or writing files.".to_owned(),
-                    lifecycle: LifecycleStatus::Active,
-                }],
-                prior: 0.2,
-                community_boost: 0.3,
-            },
-            SeededSkill {
-                skill: global_skill.clone(),
-                scope_id: "global".to_owned(),
-                source_paths: vec![docs_root.join("global-async-rust.md")],
-                embedding: vec![1.0, 0.0, 0.4, 1.0],
-                subunits: vec![Subunit {
-                    id: DomainId::new_unchecked("sub-global-async"),
-                    skill_id: global_skill.id.clone(),
-                    kind: SubunitType::Convention,
-                    title: "Preserve async boundaries".to_owned(),
-                    content: "Avoid blocking calls in async Rust handlers.".to_owned(),
-                    lifecycle: LifecycleStatus::Active,
-                }],
-                prior: 0.1,
-                community_boost: 0.2,
-            },
-        ],
-        17,
-    )
-}
-
-fn retrieval_config() -> RetrievalConfig {
-    RetrievalConfig {
-        candidate_limit: 32,
-        max_results: 2,
-        max_subunits_per_skill: 4,
-        rescue_threshold: 0.1,
-        relevance_threshold: 0.2,
-        mmr_lambda: 0.55,
-        ..RetrievalConfig::default()
-    }
-}
 
 fn test_repo_path() -> String {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -442,7 +332,7 @@ async fn compile_context_parallel_burst_under_live_infra_stays_within_contract_s
                     tags: vec!["rust".to_owned(), "file".to_owned(), "io".to_owned()],
                     source_paths: vec![],
                     subunits: vec![LiveGraphSubunitRecord {
-                        kind: SubunitType::Procedure,
+                        kind: domain::SubunitType::Procedure,
                         title: "test procedure".to_owned(),
                         content: "test content for concurrency stress".to_owned(),
                     }],

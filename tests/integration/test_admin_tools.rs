@@ -74,7 +74,7 @@ fn seeded_reader() -> StaticGraphSnapshotReader {
                 name: "skill-alpha".to_owned(),
                 description: "alpha skill".to_owned(),
                 tags: vec!["rust".to_owned(), "io".to_owned()],
-                community_id: Some("community-rust".to_owned()),
+                community_ids: vec!["community-rust".to_owned()],
                 subunits: vec![SubunitSnapshot {
                     kind: "procedure".to_owned(),
                     title: "Read files".to_owned(),
@@ -86,7 +86,7 @@ fn seeded_reader() -> StaticGraphSnapshotReader {
                 name: "skill-beta".to_owned(),
                 description: "beta skill".to_owned(),
                 tags: vec!["rust".to_owned()],
-                community_id: Some("community-rust".to_owned()),
+                community_ids: vec!["community-rust".to_owned()],
                 subunits: vec![SubunitSnapshot {
                     kind: "convention".to_owned(),
                     title: "Return Result".to_owned(),

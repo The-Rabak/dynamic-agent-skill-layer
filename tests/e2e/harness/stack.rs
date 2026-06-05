@@ -210,7 +210,8 @@ impl Stack {
     }
 
     /// Applies the #157 cold-start fix: if `graph-builder` is unhealthy after
-    /// initial `up`, issues a second `up -d graph-builder` to restart it.
+    /// initial `up`, issues a second `up -d graph-builder` to restart it, then
+    /// polls until it is healthy.
     ///
     /// The Qdrant collection already exists by the time of the retry, so the
     /// 409 conflict that caused the first crash does not recur.
@@ -219,8 +220,30 @@ impl Stack {
         if !is_healthy {
             self.run_compose(&["up", "-d", "graph-builder"])
                 .expect("graph-builder cold-start restart should succeed");
-            // Give it time to initialize.
-            tokio::time::sleep(Duration::from_secs(10)).await;
+            self.wait_for_service_health("graph-builder", Duration::from_secs(60))
+                .await;
+        }
+    }
+
+    /// Polls `docker inspect` until the named service reports a healthy container
+    /// state, or panics with a diagnostic when the deadline passes.
+    ///
+    /// Replaces fixed `sleep` calls in cold-start paths: a fixed sleep races on
+    /// slow hosts (too short) or wastes time on fast hosts (too long). A bounded
+    /// poll proves actual readiness.
+    async fn wait_for_service_health(&self, service: &str, timeout: Duration) {
+        let deadline = std::time::Instant::now() + timeout;
+        loop {
+            if self.service_is_healthy(service) {
+                return;
+            }
+            if std::time::Instant::now() >= deadline {
+                panic!(
+                    "service `{service}` did not become healthy within {}s",
+                    timeout.as_secs()
+                );
+            }
+            tokio::time::sleep(Duration::from_millis(500)).await;
         }
     }
 

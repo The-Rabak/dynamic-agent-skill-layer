@@ -4,8 +4,10 @@ use async_trait::async_trait;
 use chrono::Utc;
 use domain::EmbeddingService;
 use infrastructure::{
-    OllamaEmbeddingConfig, OllamaEmbeddingService, PostgresAdapter, PostgresConfig,
-    PostgresGraphSnapshotStore, PostgresUsageSampleStore, TranscriptIngestQueue, UsageSampleStore,
+    ClaudeMergeVerifier, ClaudeMergeVerifierConfig, LlmEquivalenceVerifier, OllamaEmbeddingConfig,
+    OllamaEmbeddingService, OllamaMergeVerifier, OllamaMergeVerifierConfig, PostgresAdapter,
+    PostgresConfig, PostgresGraphSnapshotStore, PostgresUsageSampleStore, TranscriptIngestQueue,
+    UsageSampleStore,
     logging::{ServiceLoggingConfig, init_service_logging},
 };
 use session_extractor::SessionExtractor;
@@ -19,13 +21,32 @@ use crate::cron::{
     CronDecision, CronError, MaintenanceCron, MergePassRunner, RetirementPassRunner,
 };
 use crate::merge::{MergeConfig, MergeProposal, MergeProposalWriter, SkillSnapshot};
-use crate::merge_verifier::TextOverlapMergeSemanticVerifier;
+use crate::merge_verifier::LlmMergeSemanticVerifier;
 use crate::retire::{RetirementConfig, RetirementProposal, RetirementProposalWriter, UsageSample};
 use crate::transcript_drain::{DEFAULT_TRANSCRIPT_DRAIN_BATCH, TranscriptQueueDrain};
+
+/// Environment variable selecting the merge-verifier LLM provider.
+///
+/// Accepted values:
+/// - unset / blank / `"ollama"` → Ollama `/api/generate` (local-first default)
+/// - `"claude"` → Anthropic Messages API (requires `ANTHROPIC_API_KEY`)
+pub const MERGE_VERIFIER_PROVIDER_ENV: &str = "MERGE_VERIFIER_PROVIDER";
+
+/// Ollama model used by the merge-verifier generate path.
+///
+/// Overridable via `MERGE_VERIFIER_MODEL`. Defaults to `gemma4:e4b` (same model
+/// as extraction) so a single local Ollama instance covers both workloads.
+pub const MERGE_VERIFIER_MODEL_ENV: &str = "MERGE_VERIFIER_MODEL";
 
 pub const DEFAULT_CRON_INTERVAL_SECS: u64 = 60;
 pub const CRON_INTERVAL_ENV: &str = "MAINTENANCE_CRON_INTERVAL_SECS";
 pub const RUN_ONCE_ENV: &str = "MAINTENANCE_RUN_ONCE";
+
+/// Returns the value of `name` from the environment, or an error message suitable
+/// for boot-time failure. Required env vars must be present; there is no default.
+fn env_var(name: &str) -> Result<String, String> {
+    std::env::var(name).map_err(|_| format!("{name} must be set"))
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct MaintenanceWorkerConfig {
@@ -111,7 +132,9 @@ where
         if skills.len() < 2 {
             return Ok(Vec::new());
         }
-        let verifier = TextOverlapMergeSemanticVerifier::default();
+        let llm = build_merge_verifier_from_environment()
+            .map_err(|e| CronError::MergePass(e.to_string()))?;
+        let verifier = LlmMergeSemanticVerifier::new(llm);
         let config = MergeConfig {
             similarity_threshold: 0.85,
             ..MergeConfig::default()
@@ -119,6 +142,7 @@ where
         let writer = MergeProposalWriter::with_audit_sink(config, verifier, &self.audit_sink);
         writer
             .propose(&skills, now)
+            .await
             .map_err(|e| CronError::MergePass(e.to_string()))
     }
 }
@@ -407,9 +431,8 @@ pub async fn run_maintenance_worker_from_environment() -> Result<(), Maintenance
     let config = MaintenanceWorkerConfig::from_environment()?;
     let mut cron = MaintenanceCron::new(config.cron_interval)?;
 
-    let db_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
-        "postgres://skill_layer:skill_layer@localhost:15432/skill_layer".to_owned()
-    });
+    let db_url = env_var("DATABASE_URL")
+        .map_err(|error| MaintenanceRuntimeError::InvalidConfiguration(error))?;
     let pg_adapter = PostgresAdapter::connect(&PostgresConfig {
         database_url: db_url,
         ..PostgresConfig::default()
@@ -499,6 +522,53 @@ fn build_embedding_service_from_environment() -> Result<Arc<dyn EmbeddingService
     let service = OllamaEmbeddingService::from_config(config)
         .map_err(|e| format!("OllamaEmbeddingService init failed: {e}"))?;
     Ok(Arc::new(service) as Arc<dyn EmbeddingService>)
+}
+
+/// Builds the merge-verifier LLM provider from `MERGE_VERIFIER_PROVIDER`.
+///
+/// Provider routing:
+/// - unset / blank / `"ollama"` → Ollama `/api/generate` using `OLLAMA_URL` + `MERGE_VERIFIER_MODEL`
+/// - `"claude"` → Anthropic Messages API using `ANTHROPIC_API_KEY`
+///
+/// Missing required configuration (e.g. `OLLAMA_URL` for Ollama, or `ANTHROPIC_API_KEY`
+/// for Claude) returns `Err` and the merge pass fails loudly at startup — there is no
+/// silent fallback.
+fn build_merge_verifier_from_environment() -> Result<Arc<dyn LlmEquivalenceVerifier>, String> {
+    let provider_raw = std::env::var(MERGE_VERIFIER_PROVIDER_ENV).unwrap_or_default();
+    match provider_raw.trim().to_ascii_lowercase().as_str() {
+        "" | "ollama" => {
+            let base_url = env_var("OLLAMA_URL")
+                .map_err(|e| format!("merge verifier (Ollama): {e}"))?;
+            let model = std::env::var(MERGE_VERIFIER_MODEL_ENV)
+                .unwrap_or_else(|_| "gemma4:e4b".to_owned());
+            let endpoint = format!("{}/api/generate", base_url.trim_end_matches('/'));
+            let config = OllamaMergeVerifierConfig {
+                endpoint,
+                model,
+                timeout_ms: 60_000,
+            };
+            let verifier = OllamaMergeVerifier::from_config(config)
+                .map_err(|e| format!("OllamaMergeVerifier init failed: {e}"))?;
+            Ok(Arc::new(verifier) as Arc<dyn LlmEquivalenceVerifier>)
+        }
+        "claude" => {
+            let api_key = env_var("ANTHROPIC_API_KEY")
+                .map_err(|e| format!("merge verifier (Claude): {e}"))?;
+            let mut config = ClaudeMergeVerifierConfig::default();
+            config.api_key = api_key;
+            if let Ok(base_url) = std::env::var("ANTHROPIC_BASE_URL")
+                && !base_url.trim().is_empty()
+            {
+                config.base_url = base_url;
+            }
+            let verifier = ClaudeMergeVerifier::from_config(config)
+                .map_err(|e| format!("ClaudeMergeVerifier init failed: {e}"))?;
+            Ok(Arc::new(verifier) as Arc<dyn LlmEquivalenceVerifier>)
+        }
+        other => Err(format!(
+            "{MERGE_VERIFIER_PROVIDER_ENV} must be one of [ollama, claude], got `{other}`"
+        )),
+    }
 }
 
 fn build_scope_roots_from_environment() -> Vec<std::path::PathBuf> {
@@ -733,5 +803,30 @@ mod tests {
             result.unwrap().is_empty(),
             "no skills loaded -> no proposals expected"
         );
+    }
+
+    #[test]
+    fn env_var_returns_err_with_must_be_set_message_when_unset() {
+        // Use a name that cannot exist in the environment during tests.
+        let result = env_var("MAINTENANCE_TEST_DEFINITELY_UNSET_VAR_167");
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err(),
+            "MAINTENANCE_TEST_DEFINITELY_UNSET_VAR_167 must be set"
+        );
+    }
+
+    #[test]
+    fn env_var_returns_value_when_set() {
+        // SAFETY: single-threaded test; no other thread reads this var concurrently.
+        unsafe {
+            std::env::set_var("MAINTENANCE_TEST_SET_VAR_167", "postgres://localhost/test");
+        }
+        let result = env_var("MAINTENANCE_TEST_SET_VAR_167");
+        // SAFETY: single-threaded test; no other thread reads this var concurrently.
+        unsafe {
+            std::env::remove_var("MAINTENANCE_TEST_SET_VAR_167");
+        }
+        assert_eq!(result.unwrap(), "postgres://localhost/test");
     }
 }

@@ -7,8 +7,7 @@ use std::{
 
 use async_trait::async_trait;
 use domain::{
-    DomainId, EmbeddingError, EmbeddingService, ExtractedSkillCandidate, ExtractionError,
-    ExtractionResult, LifecycleStatus, ScopeType, SessionTranscript, Skill, SkillStatus, Subunit,
+    ExtractedSkillCandidate, ExtractionError, ExtractionResult, ScopeType, SessionTranscript,
     SubunitType, TranscriptSkillExtractionService,
 };
 use infrastructure::{
@@ -22,7 +21,7 @@ use mcp_server::{
         extract_session::{ExtractSessionRequest, ExtractSessionTool},
     },
 };
-use retrieval::{RetrievalConfig, RetrievalSnapshot, SeededSkill};
+use retrieval::RetrievalConfig;
 use session_extractor::{
     ExtractionEventPublisher, ExtractionProvider, SessionExtractor, transcripts::TranscriptLoader,
     writer::PendingDraftWriter,
@@ -33,103 +32,6 @@ mod report;
 
 #[path = "../integration/env_guard.rs"]
 mod env_guard;
-
-#[derive(Clone)]
-struct DeterministicEmbeddingService;
-
-impl DeterministicEmbeddingService {
-    fn token_vector(&self, text: &str) -> Vec<f32> {
-        let normalized = text.to_lowercase();
-        let contains = |token: &str| normalized.contains(token);
-        vec![
-            if contains("rust") { 1.0 } else { 0.0 },
-            if contains("auth") { 1.0 } else { 0.0 },
-            if contains("global") { 1.0 } else { 0.0 },
-            if contains("file") { 1.0 } else { 0.0 },
-        ]
-    }
-}
-
-#[async_trait]
-impl EmbeddingService for DeterministicEmbeddingService {
-    async fn embed_text(&self, text: &str) -> Result<Vec<f32>, EmbeddingError> {
-        Ok(self.token_vector(text))
-    }
-
-    async fn embed_batch(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>, EmbeddingError> {
-        Ok(texts.iter().map(|text| self.token_vector(text)).collect())
-    }
-}
-
-fn seeded_graph() -> RetrievalSnapshot {
-    let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
-        .canonicalize()
-        .expect("repo root should canonicalize");
-    let docs_root = repo_root.join("docs");
-
-    let project_skill = Skill {
-        id: DomainId::new_unchecked("skill-project-rust-auth"),
-        name: "project-rust-auth-playbook".to_owned(),
-        description: "Repository-specific Rust auth and file debugging workflow".to_owned(),
-        scope: ScopeType::Project,
-        status: SkillStatus::Ready,
-        lifecycle: LifecycleStatus::Active,
-        tags: vec!["rust".to_owned(), "auth".to_owned(), "project".to_owned()],
-        subunit_ids: vec![DomainId::new_unchecked("sub-project-auth")],
-        community_id: None,
-    };
-    let global_skill = Skill {
-        id: DomainId::new_unchecked("skill-global-rust-file"),
-        name: "global-rust-file-patterns".to_owned(),
-        description: "Global Rust file-handling patterns".to_owned(),
-        scope: ScopeType::Global,
-        status: SkillStatus::Ready,
-        lifecycle: LifecycleStatus::Active,
-        tags: vec!["rust".to_owned(), "file".to_owned(), "global".to_owned()],
-        subunit_ids: vec![DomainId::new_unchecked("sub-global-file")],
-        community_id: None,
-    };
-
-    RetrievalSnapshot::new(
-        vec![
-            SeededSkill {
-                skill: project_skill.clone(),
-                scope_id: "project".to_owned(),
-                source_paths: vec![repo_root.join("src/auth.rs")],
-                embedding: vec![1.0, 1.0, 0.0, 1.0],
-                subunits: vec![Subunit {
-                    id: DomainId::new_unchecked("sub-project-auth"),
-                    skill_id: project_skill.id.clone(),
-                    kind: SubunitType::Procedure,
-                    title: "Inspect auth middleware chain".to_owned(),
-                    content: "Validate auth middleware ordering and file access guards.".to_owned(),
-                    lifecycle: LifecycleStatus::Active,
-                }],
-                prior: 0.2,
-                community_boost: 0.3,
-            },
-            SeededSkill {
-                skill: global_skill.clone(),
-                scope_id: "global".to_owned(),
-                source_paths: vec![docs_root.join("global-rust-file.md")],
-                embedding: vec![1.0, 0.0, 1.0, 1.0],
-                subunits: vec![Subunit {
-                    id: DomainId::new_unchecked("sub-global-file"),
-                    skill_id: global_skill.id.clone(),
-                    kind: SubunitType::Convention,
-                    title: "Return Result for file IO".to_owned(),
-                    content: "Prefer explicit Result propagation for filesystem boundaries."
-                        .to_owned(),
-                    lifecycle: LifecycleStatus::Active,
-                }],
-                prior: 0.1,
-                community_boost: 0.2,
-            },
-        ],
-        13,
-    )
-}
 
 fn retrieval_config() -> RetrievalConfig {
     RetrievalConfig {
@@ -275,53 +177,161 @@ fn inline_transcript_jsonl() -> String {
         .to_owned()
 }
 
+/// Proves the core retrieval-and-deduplication contract against real Ollama embeddings.
+///
+/// Seeds a global skill into PG via the live rebuild coordinator, boots a fresh server
+/// that loads the seed, calls `compile_context` twice with the same session ID, and
+/// asserts:
+///  1. The first call returns `Ok` with the seeded skill in the context.
+///  2. The second call with the same session ID is `DuplicateSuppressed`.
+///
+/// Uses nonce-suffixed skill names so concurrent runs don't collide on skill IDs or
+/// Redis suppression keys.
+#[ignore = "requires live containers"]
 #[tokio::test]
 async fn roundtrip_compile_context_returns_context_then_duplicate_suppression() {
-    let _env_guard = env_guard::configure_scope_env();
-    let server = McpServerApp::with_explicit_graph(
-        Arc::new(DeterministicEmbeddingService),
-        seeded_graph(),
-        retrieval_config(),
-        None,
-    );
+    let namespace = env_guard::isolated_namespace().await;
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock should be after unix epoch")
+        .as_nanos();
 
-    let request = CompileContextRequest {
-        prompt: "debug rust auth file access".to_owned(),
-        session_id: "live-roundtrip".to_owned(),
-        repo_path: test_repo_path(),
-        trigger: None,
-    };
+    let skill_name = format!("roundtrip-rust-auth-{nonce}");
 
-    let first = server.compile_context(request.clone()).await;
+    // Seed the skill via a bootstrap server; the second server loads the seeded snapshot.
+    let seed_components = McpServerApp::from_environment(retrieval_config())
+        .await
+        .expect("should connect to live infrastructure for seeding");
+
+    seed_components
+        .rebuild_coordinator
+        .replace_snapshot_and_bump_version(LiveGraphSnapshotMutation {
+            rebuilt_at: chrono::Utc::now(),
+            skills: vec![LiveGraphSkillRecord {
+                stable_id: skill_name.clone(),
+                name: skill_name.clone(),
+                description: "Rust authentication and file-access debugging playbook".to_owned(),
+                scope: ScopeType::Global,
+                tags: vec!["rust".to_owned(), "auth".to_owned(), "file".to_owned()],
+                source_paths: vec![],
+                subunits: vec![LiveGraphSubunitRecord {
+                    kind: SubunitType::Procedure,
+                    title: "Inspect auth middleware chain".to_owned(),
+                    content: "Validate auth middleware ordering and file access guards.".to_owned(),
+                }],
+            }],
+            communities: vec![],
+        })
+        .await
+        .expect("should seed roundtrip skill into PG");
+
+    // Fresh server loads the seeded snapshot.
+    let server_components = McpServerApp::from_environment(retrieval_config())
+        .await
+        .expect("should connect to live infrastructure after seeding");
+
+    let session_id = format!("roundtrip-session-{nonce}");
+
+    let first = server_components
+        .app
+        .compile_context(CompileContextRequest {
+            prompt: "debug rust authentication file access middleware".to_owned(),
+            session_id: session_id.clone(),
+            repo_path: test_repo_path(),
+            trigger: None,
+        })
+        .await;
     assert_eq!(first.status, CompileContextStatus::Ok);
     let markdown = first.additional_context.unwrap_or_default();
-    assert!(markdown.contains("project-rust-auth-playbook"));
-    assert!(markdown.contains("global-rust-file-patterns"));
-    assert!(first.latency_ms < 1_000);
+    assert!(
+        markdown.contains(&skill_name),
+        "compiled context must contain seeded skill name `{skill_name}`, got: {markdown:?}"
+    );
 
-    let second = server.compile_context(request).await;
+    let second = server_components
+        .app
+        .compile_context(CompileContextRequest {
+            prompt: "debug rust authentication file access middleware".to_owned(),
+            session_id: session_id.clone(),
+            repo_path: test_repo_path(),
+            trigger: None,
+        })
+        .await;
     assert_eq!(second.status, CompileContextStatus::DuplicateSuppressed);
     assert_eq!(
         second.reason_code.as_deref(),
         Some("already_compiled_for_session")
     );
+
+    server_components
+        .teardown()
+        .await
+        .expect("server teardown should succeed");
+    seed_components
+        .teardown()
+        .await
+        .expect("seed teardown should succeed");
+    namespace.cleanup().await;
 }
 
+/// Proves the degraded-but-still-serves-global contract: when `repo_path` points at a
+/// directory with no `.git` marker, `compile_context` returns `Degraded` with
+/// `reason_code = project_scope_resolution_failed` but still includes any globally-scoped
+/// skills in the context.
+///
+/// Uses real Ollama embeddings via `from_environment` so the embedding path is identical
+/// to production.
+#[ignore = "requires live containers"]
 #[tokio::test]
 async fn invalid_repo_path_degrades_but_preserves_global_context_contract() {
-    let _env_guard = env_guard::configure_scope_env();
-    let server = McpServerApp::with_explicit_graph(
-        Arc::new(DeterministicEmbeddingService),
-        seeded_graph(),
-        retrieval_config(),
-        None,
-    );
+    let namespace = env_guard::isolated_namespace().await;
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock should be after unix epoch")
+        .as_nanos();
+
+    let skill_name = format!("global-file-patterns-{nonce}");
+
+    let seed_components = McpServerApp::from_environment(retrieval_config())
+        .await
+        .expect("should connect to live infrastructure for seeding");
+
+    seed_components
+        .rebuild_coordinator
+        .replace_snapshot_and_bump_version(LiveGraphSnapshotMutation {
+            rebuilt_at: chrono::Utc::now(),
+            skills: vec![LiveGraphSkillRecord {
+                stable_id: skill_name.clone(),
+                name: skill_name.clone(),
+                description: "Global Rust file-handling patterns for IO error propagation"
+                    .to_owned(),
+                scope: ScopeType::Global,
+                tags: vec!["rust".to_owned(), "file".to_owned(), "global".to_owned()],
+                source_paths: vec![],
+                subunits: vec![LiveGraphSubunitRecord {
+                    kind: SubunitType::Convention,
+                    title: "Return Result for file IO".to_owned(),
+                    content: "Prefer explicit Result propagation for filesystem boundaries."
+                        .to_owned(),
+                }],
+            }],
+            communities: vec![],
+        })
+        .await
+        .expect("should seed global file skill into PG");
+
+    let server_components = McpServerApp::from_environment(retrieval_config())
+        .await
+        .expect("should connect to live infrastructure after seeding");
+
+    // A sandbox with no `.git` marker triggers project-scope-resolution failure.
     let sandbox = fresh_sandbox("live-roundtrip-nonrepo");
 
-    let response = server
+    let response = server_components
+        .app
         .compile_context(CompileContextRequest {
-            prompt: "rust file patterns".to_owned(),
-            session_id: "live-roundtrip-invalid-repo".to_owned(),
+            prompt: "rust file patterns error handling".to_owned(),
+            session_id: format!("roundtrip-invalid-repo-{nonce}"),
             repo_path: sandbox.display().to_string(),
             trigger: None,
         })
@@ -332,9 +342,21 @@ async fn invalid_repo_path_degrades_but_preserves_global_context_contract() {
         Some("project_scope_resolution_failed")
     );
     let markdown = response.additional_context.unwrap_or_default();
-    assert!(markdown.contains("global-rust-file-patterns"));
+    assert!(
+        markdown.contains(&skill_name),
+        "degraded response must still include global skill `{skill_name}`, got: {markdown:?}"
+    );
 
     std::fs::remove_dir_all(sandbox).expect("sandbox cleanup should succeed");
+    server_components
+        .teardown()
+        .await
+        .expect("server teardown should succeed");
+    seed_components
+        .teardown()
+        .await
+        .expect("seed teardown should succeed");
+    namespace.cleanup().await;
 }
 
 #[tokio::test]
@@ -578,11 +600,16 @@ async fn test_live_data_plane_roundtrip() {
         },
     );
 
-    builder.add_contract_assertion(report::ContractAssertion {
-        contract_name: "compile_context_roundtrip".to_owned(),
-        status: report::AssertionResult::Passed,
-        details: "live data plane: skill seeded, context compiled, duplicate suppressed".to_owned(),
-    });
+    let roundtrip_ok = first.status == CompileContextStatus::Ok
+        && second.status == CompileContextStatus::DuplicateSuppressed
+        && compiled_context.contains("roundtrip-rust-file-io");
+    builder.assert_contract(
+        "compile_context_roundtrip",
+        roundtrip_ok,
+        "first=Ok, second=DuplicateSuppressed, context contains skill name",
+        &format!("first={:?} second={:?}", first.status, second.status),
+        "live data plane: skill seeded, context compiled, duplicate suppressed",
+    );
 
     let report = builder.build();
     let report_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/e2e/reports");
@@ -911,11 +938,24 @@ async fn extract_session_live_ref_payload_loads_from_transcript_volume() {
         },
     );
 
-    builder.add_contract_assertion(report::ContractAssertion {
-        contract_name: "extract_session_ref_live".to_owned(),
-        status: report::AssertionResult::Passed,
-        details: "live extraction with ref payload processes pre-seeded transcript".to_owned(),
-    });
+    let ref_completed = tool
+        .lifecycle_events()
+        .iter()
+        .filter(|e| e.event_type == "extraction.completed")
+        .count();
+    let ref_failed = tool
+        .lifecycle_events()
+        .iter()
+        .filter(|e| e.event_type == "extraction.failed")
+        .count();
+    let ref_terminated = ref_completed + ref_failed >= 1;
+    builder.assert_contract(
+        "extract_session_ref_live",
+        ref_terminated,
+        "at least one terminal lifecycle event (completed or failed)",
+        &format!("completed={ref_completed} failed={ref_failed}"),
+        "live extraction with ref payload processes pre-seeded transcript",
+    );
 
     let report = builder.build();
     let report_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/e2e/reports");
@@ -1296,18 +1336,35 @@ async fn degraded_and_recovery_cycle_preserves_reason_codes_and_recovers_cleanly
         },
     );
 
-    // Contract assertion.
-    builder.add_contract_assertion(report::ContractAssertion {
-        contract_name: "degraded_and_recovery_cycle".to_owned(),
-        status: report::AssertionResult::Passed,
-        details: format!(
+    // Contract assertion: all four phase conditions must hold simultaneously.
+    let cycle_ok = (baseline.status == CompileContextStatus::Ok
+        || baseline.status == CompileContextStatus::NoMatch)
+        && matches!(
+            degraded1.status,
+            CompileContextStatus::Ok
+                | CompileContextStatus::NoMatch
+                | CompileContextStatus::DuplicateSuppressed
+        )
+        && degraded2.status == CompileContextStatus::Degraded
+        && !reason_ollama.is_empty()
+        && (recover2.status == CompileContextStatus::Ok
+            || recover2.status == CompileContextStatus::NoMatch);
+    builder.assert_contract(
+        "degraded_and_recovery_cycle",
+        cycle_ok,
+        "baseline healthy, qdrant stop read-path unaffected, ollama stop Degraded with reason, recovery healthy",
+        &format!(
+            "baseline={:?} qdrant_down={:?} ollama_down={:?} reason_ollama={reason_ollama} recovery={:?}",
+            baseline.status, degraded1.status, degraded2.status, recover2.status
+        ),
+        &format!(
             "Option A CQRS: qdrant stop ({qdrant_stop_elapsed}ms, read path unaffected), \
              ollama stop ({ollama_stop_elapsed}ms, embedding failed -> Degraded), \
              qdrant start ({qdrant_start_elapsed}ms, write-side only), \
              ollama start ({ollama_start_elapsed}ms, full recovery); \
              degradation reason: {reason_qdrant}, ollama reason: {reason_ollama}"
         ),
-    });
+    );
 
     let report = builder.build();
     let report_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/e2e/reports");

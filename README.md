@@ -76,7 +76,7 @@ Nine Rust crates with explicit feature homes:
 crates/
 ├── domain/           # Pure domain: types, traits, config (ZERO infra deps)
 ├── infrastructure/   # Concrete impls: Ollama clients, PG pool, Redis, resilience, logging
-├── retrieval/        # Retrieval pipeline: Qdrant search, PG graph, scoring, MMR+RRF
+├── retrieval/        # Retrieval pipeline: in-memory cosine ranking over CQRS snapshot, scoring, MMR+RRF
 ├── compiler/         # Context compilation: template, rescue, formatting
 ├── mcp-server/       # MCP transport: bootstrap, tool handlers, session state
 ├── graph-builder/    # Offline graph construction: watcher, extraction, embeddings, HDBSCAN

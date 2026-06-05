@@ -5,7 +5,10 @@ pub mod lifecycle_policy;
 pub mod traits;
 pub mod types;
 
-pub use config::{CompilationConfig, DomainConfig, EmbeddingConfig, ExtractionConfig, ScopeConfig};
+pub use config::{
+    CompilationConfig, DomainConfig, EmbeddingConfig, ExtractionConfig, HdbscanConfig,
+    ScopeConfig,
+};
 pub use errors::{
     CompilationError, ConfigError, DomainError, EmbeddingError, ExtractionError, ScopeError,
 };

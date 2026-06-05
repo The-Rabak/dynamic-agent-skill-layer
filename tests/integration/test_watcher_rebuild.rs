@@ -5,7 +5,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use domain::ScopeType;
+use domain::{HdbscanConfig, ScopeType};
 use graph_builder::{
     GraphRebuildOrchestrator, InMemoryDurableGraphState, ScopeRoot, SkillFileChangeKind,
     SkillWatcher, WatcherRecovery, watcher::build_snapshot,
@@ -132,7 +132,7 @@ async fn watcher_detects_pending_approval_and_rebuild_respects_invalidation_orde
     all_changes.extend(recovered_first);
 
     let outcome = orchestrator
-        .rebuild_from_changes(&scopes, &all_changes)
+        .rebuild_from_changes(&scopes, &all_changes, &HdbscanConfig::default())
         .await
         .expect("rebuild should succeed");
     assert_eq!(outcome.graph_version, 1);

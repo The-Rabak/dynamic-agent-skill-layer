@@ -6,7 +6,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use domain::ScopeType;
+use domain::{HdbscanConfig, ScopeType};
 use graph_builder::{
     GraphRebuildOrchestrator, InMemoryDurableGraphState, ScopeRoot, SkillFileChangeKind,
     SkillWatcher, WatcherRecovery, watcher::build_snapshot,
@@ -165,7 +165,7 @@ async fn watcher_churn_and_reconciliation_preserve_contracts_under_heavy_file_ac
     let mut orchestrator =
         GraphRebuildOrchestrator::new(&mut durable_state, &mut published_events, &embedder);
     let outcome = orchestrator
-        .rebuild_from_changes(&scopes, &observed_changes)
+        .rebuild_from_changes(&scopes, &observed_changes, &HdbscanConfig::default())
         .await
         .expect("rebuild should succeed after churn and reconciliation");
 
@@ -356,7 +356,11 @@ async fn watcher_churn_and_reconciliation_converges_to_correct_graph_state_under
     .await
     .expect("build should succeed");
 
-    let communities = graph_builder::graph::communities::assign_communities(&skills);
+    let communities = graph_builder::graph::communities::assign_communities(
+        &skills,
+        &HdbscanConfig::default(),
+    )
+    .expect("community assignment must succeed");
     let audits = observed_changes
         .iter()
         .map(|change| graph_builder::graph::rebuild::AuditRecord {
@@ -400,6 +404,7 @@ async fn watcher_churn_and_reconciliation_converges_to_correct_graph_state_under
                 name: community.community_name.clone(),
                 scope: community.scope,
                 member_skill_ids: community.skill_ids.clone(),
+                source: community.source.as_db_str().to_owned(),
             })
             .collect(),
     };

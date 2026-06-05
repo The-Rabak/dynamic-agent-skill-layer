@@ -4,11 +4,11 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use async_trait::async_trait;
 use domain::{ScopeRoot, ScopeType};
 use graph_builder::graph::build::build_skills_from_scope_roots;
 use maintenance::{
-    MergeProposalWriter, NoopMaintenanceAuditSink, SkillSnapshot,
-    merge_verifier::TextOverlapMergeSemanticVerifier,
+    MergeProposalWriter, MergeSemanticVerifier, NoopMaintenanceAuditSink, SkillSnapshot,
 };
 
 fn _requires_docker_services() -> bool {
@@ -58,8 +58,27 @@ fn to_snapshots(skills: Vec<graph_builder::graph::build::BuiltSkill>) -> Vec<Ski
         .collect()
 }
 
-#[test]
-fn merge_pass_detects_cross_scope_duplicate_skills_finds_merges_and_writes_pending() {
+/// Always-equivalent verifier used in e2e tests that don't have a live LLM.
+///
+/// These tests verify the merge *pipeline* (skill loading, proposal writing,
+/// filesystem output) — not the LLM gate. A live verifier would require a running
+/// Ollama instance, which is not guaranteed in this test environment.
+#[derive(Clone)]
+struct AlwaysEquivalentVerifier;
+
+#[async_trait]
+impl MergeSemanticVerifier for AlwaysEquivalentVerifier {
+    async fn are_equivalent(
+        &self,
+        _left: &SkillSnapshot,
+        _right: &SkillSnapshot,
+    ) -> Result<bool, maintenance::MergeError> {
+        Ok(true)
+    }
+}
+
+#[tokio::test]
+async fn merge_pass_detects_cross_scope_duplicate_skills_finds_merges_and_writes_pending() {
     let sandbox = fresh_sandbox("e2e-maintenance-merge");
 
     let project_root = sandbox.join("project");
@@ -100,18 +119,28 @@ fn merge_pass_detects_cross_scope_duplicate_skills_finds_merges_and_writes_pendi
     ];
 
     let embedder = graph_builder::graph::embeddings::DeterministicEmbeddingService;
-    let built = tokio::runtime::Runtime::new()
-        .expect("tokio runtime should build")
-        .block_on(build_skills_from_scope_roots(&scopes, &embedder))
+    let built = build_skills_from_scope_roots(&scopes, &embedder)
+        .await
         .expect("build should succeed");
     assert_eq!(built.len(), 3);
 
     let snapshots = to_snapshots(built);
-    let verifier = TextOverlapMergeSemanticVerifier::default();
-    let writer = MergeProposalWriter::with_audit_sink(maintenance::MergeConfig::default(), verifier, &NoopMaintenanceAuditSink);
+    // Use a lower threshold because DeterministicEmbeddingService produces
+    // hash-based embeddings that achieve ~0.70 cosine for near-duplicate skills,
+    // not the 0.85 target for production. This test exercises the pipeline
+    // (build → embed → cosine filter → verifier → proposal write), not threshold tuning.
+    let writer = MergeProposalWriter::with_audit_sink(
+        maintenance::MergeConfig {
+            similarity_threshold: 0.65,
+            ..maintenance::MergeConfig::default()
+        },
+        AlwaysEquivalentVerifier,
+        &NoopMaintenanceAuditSink,
+    );
 
     let proposals = writer
         .propose(&snapshots, chrono::Utc::now())
+        .await
         .expect("merge pass should succeed");
 
     assert!(
@@ -138,8 +167,8 @@ fn merge_pass_detects_cross_scope_duplicate_skills_finds_merges_and_writes_pendi
     fs::remove_dir_all(&sandbox).expect("sandbox cleanup should succeed");
 }
 
-#[test]
-fn merge_pass_no_duplicates_produces_no_proposals() {
+#[tokio::test]
+async fn merge_pass_no_duplicates_produces_no_proposals() {
     let sandbox = fresh_sandbox("e2e-maintenance-nodupes");
 
     let project_root = sandbox.join("project");
@@ -171,17 +200,20 @@ fn merge_pass_no_duplicates_produces_no_proposals() {
     ];
 
     let embedder = graph_builder::graph::embeddings::DeterministicEmbeddingService;
-    let built = tokio::runtime::Runtime::new()
-        .expect("tokio runtime should build")
-        .block_on(build_skills_from_scope_roots(&scopes, &embedder))
+    let built = build_skills_from_scope_roots(&scopes, &embedder)
+        .await
         .expect("build should succeed");
 
     let snapshots = to_snapshots(built);
-    let verifier = TextOverlapMergeSemanticVerifier::default();
-    let writer = MergeProposalWriter::with_audit_sink(maintenance::MergeConfig::default(), verifier, &NoopMaintenanceAuditSink);
+    let writer = MergeProposalWriter::with_audit_sink(
+        maintenance::MergeConfig::default(),
+        AlwaysEquivalentVerifier,
+        &NoopMaintenanceAuditSink,
+    );
 
     let proposals = writer
         .propose(&snapshots, chrono::Utc::now())
+        .await
         .expect("merge pass should succeed");
 
     assert!(

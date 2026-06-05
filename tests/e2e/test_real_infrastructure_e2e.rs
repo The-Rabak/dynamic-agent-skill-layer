@@ -4,7 +4,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use domain::ScopeType;
+use domain::{HdbscanConfig, ScopeType};
 use graph_builder::{
     GraphRebuildOrchestrator, PostgresDurableGraphState, ScopeRoot, SkillFileChangeKind,
     graph::build::build_skills_from_scope_roots, watcher::FileChangeSource,
@@ -146,7 +146,7 @@ async fn graph_builder_rebuild_persists_to_pg_and_enqueues_outbox_events_then_dr
         .collect();
 
     let outcome = orchestrator
-        .rebuild_from_changes(&scopes, &file_changes)
+        .rebuild_from_changes(&scopes, &file_changes, &HdbscanConfig::default())
         .await
         .expect("rebuild should succeed");
 
@@ -223,7 +223,7 @@ async fn full_roundtrip_filesystem_to_graph_builder_to_pg_and_qdrant() {
         })
         .collect();
     orchestrator
-        .rebuild_from_changes(&scopes, &file_changes)
+        .rebuild_from_changes(&scopes, &file_changes, &HdbscanConfig::default())
         .await
         .expect("rebuild should succeed");
 

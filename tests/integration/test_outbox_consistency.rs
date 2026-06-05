@@ -8,7 +8,7 @@ use std::{
 
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
-use domain::ScopeType;
+use domain::{HdbscanConfig, ScopeType};
 use graph_builder::{
     DurableGraphState, GraphRebuildOrchestrator, ScopeRoot, SkillFileChange, SkillFileChangeKind,
     graph::rebuild::GraphRebuildError, watcher::FileChangeSource,
@@ -687,7 +687,7 @@ async fn graph_rebuilt_is_not_emitted_when_outbox_drain_fails() {
         GraphRebuildOrchestrator::new(&mut durable_state, &mut published_events, &embedder);
 
     let result = orchestrator
-        .rebuild_from_changes(&[scope], &[file_change])
+        .rebuild_from_changes(&[scope], &[file_change], &HdbscanConfig::default())
         .await;
     assert!(result.is_err());
     assert!(
@@ -770,7 +770,7 @@ async fn graph_rebuilt_ordering_persist_then_outbox_drain_then_version_then_even
         GraphRebuildOrchestrator::new(&mut durable_state, &mut published_events, &embedder);
 
     let _outcome = orchestrator
-        .rebuild_from_changes(&[scope], &[file_change])
+        .rebuild_from_changes(&[scope], &[file_change], &HdbscanConfig::default())
         .await
         .expect("rebuild should succeed with clean relay");
 
@@ -822,7 +822,7 @@ async fn graph_rebuilt_fails_when_outbox_drain_reports_pending_items() {
         GraphRebuildOrchestrator::new(&mut durable_state, &mut published_events, &embedder);
 
     let result = orchestrator
-        .rebuild_from_changes(&[scope], &[file_change])
+        .rebuild_from_changes(&[scope], &[file_change], &HdbscanConfig::default())
         .await;
     assert!(result.is_err());
     assert!(

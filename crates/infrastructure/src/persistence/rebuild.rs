@@ -54,12 +54,22 @@ pub struct LiveGraphSkillRecord {
     pub subunits: Vec<LiveGraphSubunitRecord>,
 }
 
+/// Write DTO for a single community membership source.
+///
+/// A skill can appear in multiple `LiveGraphCommunityRecord` values
+/// (one per source) — this is how dual membership is expressed at the
+/// persistence boundary.  The `source` field maps directly to the
+/// `community_skills.source` column added in migration 006.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LiveGraphCommunityRecord {
     pub stable_id: String,
     pub name: String,
     pub scope: ScopeType,
+    /// Skills that belong to this community under `source`.
     pub member_skill_ids: Vec<String>,
+    /// Membership origin: `"hdbscan"` for semantic clusters, `"tag"` for
+    /// first-tag grouping.  Must match the DB CHECK constraint values.
+    pub source: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -91,6 +101,11 @@ pub struct PersistedGraphSubunitRecord {
 ///
 /// Rows written before migration 005 carry an empty `source_paths` array;
 /// callers must fall back to the configured scope root for those rows.
+///
+/// `community_ids` carries ALL community memberships for this skill (across
+/// all sources — `hdbscan` and `tag`).  Migration 006 introduced dual
+/// membership; pre-migration rows with a single membership still return a
+/// one-element vec.  Empty when the skill has no memberships.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PersistedGraphSkillRecord {
     pub skill_id: String,
@@ -101,7 +116,9 @@ pub struct PersistedGraphSkillRecord {
     /// Real SKILL.md source paths from `skills.source_paths`. Empty for
     /// pre-migration rows or skills seeded without a filesystem origin.
     pub source_paths: Vec<String>,
-    pub community_id: Option<String>,
+    /// All community IDs this skill belongs to (any source).  Empty when the
+    /// skill has no community memberships.
+    pub community_ids: Vec<String>,
     pub subunits: Vec<PersistedGraphSubunitRecord>,
 }
 
@@ -127,6 +144,8 @@ impl PostgresGraphSnapshotStore {
 
     pub async fn list_skills(&self) -> Result<Vec<PersistedGraphSkillRecord>, RebuildError> {
         // source_paths was added in migration 005; pre-migration rows return '{}'.
+        // community_ids aggregates ALL community memberships across sources (migration 006).
+        // Pre-migration rows with a single membership return a one-element array.
         let skill_rows = sqlx::query_as::<
             _,
             (
@@ -135,7 +154,7 @@ impl PostgresGraphSnapshotStore {
                 String,
                 Vec<String>,
                 Vec<String>,
-                Option<String>,
+                Vec<String>,
                 String,
             ),
         >(
@@ -146,7 +165,11 @@ impl PostgresGraphSnapshotStore {
                 skills.description,
                 skills.tags,
                 skills.source_paths,
-                communities.id::TEXT,
+                COALESCE(
+                    ARRAY_AGG(DISTINCT communities.id::TEXT)
+                    FILTER (WHERE communities.id IS NOT NULL),
+                    '{}'::TEXT[]
+                ),
                 skills.scope
             FROM skills
             LEFT JOIN community_skills
@@ -154,6 +177,8 @@ impl PostgresGraphSnapshotStore {
             LEFT JOIN communities
                 ON communities.id = community_skills.community_id
             WHERE skills.lifecycle = 'active'
+            GROUP BY skills.id, skills.name, skills.description,
+                     skills.tags, skills.source_paths, skills.scope
             ORDER BY skills.id
             "#,
         )
@@ -196,7 +221,7 @@ impl PostgresGraphSnapshotStore {
         Ok(skill_rows
             .into_iter()
             .map(
-                |(skill_id, name, description, tags, source_paths, community_id, scope)| {
+                |(skill_id, name, description, tags, source_paths, community_ids, scope)| {
                     PersistedGraphSkillRecord {
                         subunits: subunits_by_skill.remove(&skill_id).unwrap_or_default(),
                         skill_id,
@@ -205,7 +230,7 @@ impl PostgresGraphSnapshotStore {
                         scope,
                         tags,
                         source_paths,
-                        community_id,
+                        community_ids,
                     }
                 },
             )
@@ -506,12 +531,13 @@ impl RebuildCoordinator for PostgresRebuildCoordinator {
             for member_skill_id in &community.member_skill_ids {
                 sqlx::query(
                     r#"
-                    INSERT INTO community_skills (community_id, skill_id)
-                    VALUES ($1, $2)
+                    INSERT INTO community_skills (community_id, skill_id, source)
+                    VALUES ($1, $2, $3)
                     "#,
                 )
                 .bind(community_id)
                 .bind(stable_uuid("skill", member_skill_id))
+                .bind(&community.source)
                 .execute(&mut *tx)
                 .await?;
             }

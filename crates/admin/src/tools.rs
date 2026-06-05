@@ -7,9 +7,13 @@ use std::{
 };
 
 use async_trait::async_trait;
-use domain::{EmbeddingService, ScopeType};
+use domain::{EmbeddingService, HdbscanConfig, ScopeType};
 use graph_builder::{
-    ScopeRoot, graph::build::build_skills_from_scope_roots, graph::communities::assign_communities,
+    ScopeRoot,
+    graph::{
+        build::build_skills_from_scope_roots,
+        communities::assign_communities,
+    },
 };
 use infrastructure::{
     LiveGraphCommunityRecord, LiveGraphSkillRecord, LiveGraphSnapshotMutation,
@@ -44,13 +48,19 @@ pub trait GraphRebuildTrigger: Send + Sync {
 }
 
 /// Skill-level read model for admin inspection tools.
+///
+/// `community_ids` holds all community memberships for this skill across both
+/// `hdbscan` and `tag` sources (dual membership introduced in migration 006).
+/// Empty when the skill has no memberships; callers must NOT treat an empty
+/// list as a single-membership field.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SkillSnapshot {
     pub skill_id: String,
     pub name: String,
     pub description: String,
     pub tags: Vec<String>,
-    pub community_id: Option<String>,
+    /// All community IDs this skill belongs to (any source). Empty when no memberships.
+    pub community_ids: Vec<String>,
     pub subunits: Vec<SubunitSnapshot>,
 }
 
@@ -162,7 +172,7 @@ impl GraphSnapshotReader for PostgresGraphSnapshotReader {
                 name: record.name,
                 description: record.description,
                 tags: record.tags,
-                community_id: record.community_id,
+                community_ids: record.community_ids,
                 subunits: record
                     .subunits
                     .into_iter()
@@ -262,7 +272,11 @@ impl GraphRebuildTrigger for FilesystemGraphRebuildTrigger {
             build_skills_from_scope_roots(&self.scope_roots, self.embedding_service.as_ref())
                 .await
                 .map_err(|error| AdminToolError::Failed(error.to_string()))?;
-        let communities = assign_communities(&skills);
+        // Use default HDBSCAN config. A future enhancement can expose this via the
+        // admin tool config surface — for now the defaults match the spec.
+        let hdbscan_config = HdbscanConfig::default();
+        let communities = assign_communities(&skills, &hdbscan_config)
+            .map_err(|error| AdminToolError::Failed(error.to_string()))?;
         let skills_count = skills.len();
         let communities_count = communities.len();
 
@@ -297,6 +311,7 @@ impl GraphRebuildTrigger for FilesystemGraphRebuildTrigger {
                     name: community.community_name,
                     scope: community.scope,
                     member_skill_ids: community.skill_ids,
+                    source: community.source.as_db_str().to_owned(),
                 })
                 .collect(),
         };
@@ -679,27 +694,34 @@ impl AdminTools {
             };
         };
 
-        let community = target_skill.community_id.as_ref().and_then(|community_id| {
-            communities
-                .iter()
-                .find(|candidate| candidate.community_id == *community_id)
-                .map(|candidate| CommunityContext {
-                    community_id: candidate.community_id.clone(),
-                    name: candidate.name.clone(),
-                    scope: candidate.scope,
-                    member_count: candidate.member_skill_ids.len(),
-                })
-        });
+        // For inspect, show the first community the skill belongs to (lowest ID for
+        // determinism).  A future iteration can surface all memberships, but the
+        // inspect response shape keeps a single optional `community` field for now.
+        let community = {
+            let mut matching_ids = target_skill.community_ids.clone();
+            matching_ids.sort();
+            matching_ids.first().and_then(|community_id| {
+                communities
+                    .iter()
+                    .find(|candidate| candidate.community_id == *community_id)
+                    .map(|candidate| CommunityContext {
+                        community_id: candidate.community_id.clone(),
+                        name: candidate.name.clone(),
+                        scope: candidate.scope,
+                        member_count: candidate.member_skill_ids.len(),
+                    })
+            })
+        };
 
         let mut neighborhood = skills
             .iter()
             .filter(|candidate| candidate.skill_id != target_skill.skill_id)
             .filter_map(|candidate| {
+                // Skills are in the same community if they share any community ID.
                 let same_community = target_skill
-                    .community_id
-                    .as_ref()
-                    .zip(candidate.community_id.as_ref())
-                    .is_some_and(|(left, right)| left == right);
+                    .community_ids
+                    .iter()
+                    .any(|id| candidate.community_ids.contains(id));
                 let shared_tags = intersect_tags(&target_skill.tags, &candidate.tags);
 
                 if !same_community && shared_tags.is_empty() {

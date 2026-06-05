@@ -2,6 +2,7 @@ pub mod claude;
 pub mod claude_code;
 pub(crate) mod http;
 pub(crate) mod limits;
+pub mod merge_verifier;
 pub mod ollama;
 pub mod prompt_contract;
 

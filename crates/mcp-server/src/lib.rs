@@ -37,12 +37,12 @@ use domain::{EmbeddingService, ScopeResolver};
 #[cfg(any(test, feature = "test-utils"))]
 use infrastructure::OutboxVectorStore;
 use infrastructure::{
-    EnvPathGlobalResolver, FsMarkerProjectResolver, OllamaEmbeddingConfig, OllamaEmbeddingService,
-    PostgresAdapter, PostgresConfig, PostgresGraphSnapshotStore, PostgresGraphWriteCoordinator,
-    PostgresPool, PostgresRebuildCoordinator, PostgresUsageSampleStore, PostgresUsageWriter,
-    QdrantAdapter, QdrantConfig, RedisClient, RedisStreamsAdapter, RedisStreamsConfig,
-    SessionUsageRecord, SkillSelectionRecord, TranscriptIngestQueue, UsagePersistencePort,
-    UsageSampleStore,
+    CircuitBreaker, EnvPathGlobalResolver, FsMarkerProjectResolver, OllamaEmbeddingConfig,
+    OllamaEmbeddingService, PostgresAdapter, PostgresConfig, PostgresGraphSnapshotStore,
+    PostgresGraphWriteCoordinator, PostgresPool, PostgresRebuildCoordinator,
+    PostgresUsageSampleStore, PostgresUsageWriter, QdrantAdapter, QdrantConfig, RedisClient,
+    RedisStreamsAdapter, RedisStreamsConfig, SessionUsageRecord, SkillSelectionRecord,
+    TranscriptIngestQueue, UsagePersistencePort, UsageSampleStore,
 };
 use maintenance::RetirementConfig;
 use retrieval::{
@@ -183,8 +183,14 @@ impl McpServerApp {
         let global_resolver: Arc<dyn ScopeResolver> = Arc::new(EnvPathGlobalResolver::default());
         let scope_resolver = DualScopeResolver::new(project_resolver, global_resolver);
 
-        let retriever =
-            RetrievalOrchestrator::new_dual_scope(embedding_service, graph, config, scope_resolver);
+        let embedding_breaker = RetrievalOrchestrator::<E>::build_embedding_circuit_breaker_from_env();
+        let retriever = RetrievalOrchestrator::new_dual_scope(
+            embedding_service,
+            graph,
+            config,
+            scope_resolver,
+            embedding_breaker,
+        );
         McpServerApp::new_with_admin(
             Arc::new(retriever),
             admin_runtime_dependencies.rebuild_trigger,
@@ -520,11 +526,17 @@ async fn build_live_server(
     let global_resolver: Arc<dyn ScopeResolver> = Arc::new(EnvPathGlobalResolver::default());
     let scope_resolver = DualScopeResolver::new(project_resolver, global_resolver);
 
+    // Build the embedding circuit breaker from environment variables.  Reads
+    // EMBED_CIRCUIT_FAILURE_THRESHOLD and EMBED_CIRCUIT_OPEN_FOR_SECS with
+    // sane defaults; panics loudly on malformed values (per no-stubs mandate).
+    let embedding_breaker: CircuitBreaker =
+        RetrievalOrchestrator::<OllamaEmbeddingService>::build_embedding_circuit_breaker_from_env();
     let retriever = Arc::new(RetrievalOrchestrator::new_dual_scope(
         embedding_service.clone(),
         graph,
         config,
         scope_resolver,
+        embedding_breaker,
     ));
 
     let usage_writer: Arc<dyn UsagePersistencePort> =
@@ -922,6 +934,14 @@ async fn build_graph_from_pg(
             );
             let prior = retrieval::usage_prior(prior_inputs.usage_count, prior_inputs.age_days);
 
+            // For the domain::Skill, expose the first (lowest-ID) community
+            // membership so callers that rely on a single community_id still work.
+            // The community_boost uses the full membership set: any membership earns
+            // the boost, consistent with the dual-membership spec.
+            let mut sorted_community_ids = record.community_ids.clone();
+            sorted_community_ids.sort();
+            let primary_community_id = sorted_community_ids.into_iter().next();
+
             let skill = domain::Skill {
                 id: domain::DomainId::new_unchecked(&record.skill_id),
                 name: record.name,
@@ -935,9 +955,11 @@ async fn build_graph_from_pg(
                     .iter()
                     .map(|s| domain::DomainId::new_unchecked(&s.subunit_id))
                     .collect(),
-                community_id: record.community_id.map(domain::DomainId::new_unchecked),
+                community_id: primary_community_id.map(|id| domain::DomainId::new_unchecked(&id)),
             };
-            let community_boost = if skill.community_id.is_some() {
+            // Community boost: applies whenever a skill belongs to any community
+            // (hdbscan OR tag) — matching the dual-membership spec.
+            let community_boost = if !record.community_ids.is_empty() {
                 0.2
             } else {
                 0.0

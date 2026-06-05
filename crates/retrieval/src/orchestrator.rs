@@ -2,7 +2,7 @@ use std::{
     collections::{BTreeMap, HashSet},
     path::PathBuf,
     sync::Arc,
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 use arc_swap::ArcSwap;
@@ -11,6 +11,7 @@ use domain::{
     EmbeddingError, EmbeddingService, ScopeDescriptor, ScopeType, ScoredSkill, Skill, Subunit,
     SubunitType,
 };
+use infrastructure::CircuitBreaker;
 
 use crate::{
     dual_scope::search_scopes_concurrently,
@@ -167,6 +168,20 @@ pub trait SkillRetriever: Send + Sync {
     fn configured_scopes(&self) -> Vec<String>;
 }
 
+/// Orchestrates the retrieval read path: resolves scopes, embeds the prompt via
+/// the configured embedding provider, searches the in-memory skill graph, and
+/// fuses results.
+///
+/// The `embedding_breaker` guards the per-request `embed_text` call.  Once it
+/// trips (after `failure_threshold` consecutive failures) subsequent requests
+/// short-circuit immediately and return a degraded outcome with
+/// `reason: embedding_circuit_open`, so callers observe a loud, observable
+/// degradation instead of eating the full provider timeout on every request.
+///
+/// ADR-0001 invariant note (issue #171): this struct now holds an
+/// `infrastructure::CircuitBreaker`, which relaxes the original "retrieval has
+/// zero inward infra deps" rule.  The user explicitly chose this layering over
+/// moving the breaker to domain.
 pub struct RetrievalOrchestrator<E>
 where
     E: EmbeddingService + Send + Sync + 'static,
@@ -175,12 +190,51 @@ where
     current: ArcSwap<GraphSnapshot>,
     config: RetrievalConfig,
     scope_resolver: Option<DualScopeResolver>,
+    /// Circuit breaker guarding the per-request embedding call.
+    ///
+    /// Closed = normal; Open = return degraded immediately without calling the
+    /// provider; HalfOpen = allow one probe to test recovery.
+    embedding_breaker: CircuitBreaker,
 }
 
 impl<E> RetrievalOrchestrator<E>
 where
     E: EmbeddingService + Send + Sync + 'static,
 {
+    /// Builds a `CircuitBreaker` from environment variables, failing loudly if
+    /// a present-but-malformed value is found (per the project no-stubs mandate).
+    ///
+    /// - `EMBED_CIRCUIT_FAILURE_THRESHOLD` — u32, defaults to `5`
+    /// - `EMBED_CIRCUIT_OPEN_FOR_SECS` — u64 (seconds), defaults to `30`
+    ///
+    /// Panics with a clear message if either variable is set to a value that
+    /// cannot be parsed.  Missing variables silently use the documented defaults.
+    pub fn build_embedding_circuit_breaker_from_env() -> CircuitBreaker {
+        let failure_threshold: u32 = match std::env::var("EMBED_CIRCUIT_FAILURE_THRESHOLD") {
+            Ok(raw) => raw.parse().unwrap_or_else(|_| {
+                panic!(
+                    "EMBED_CIRCUIT_FAILURE_THRESHOLD is set but not a valid u32: {:?}",
+                    raw
+                )
+            }),
+            Err(_) => 5,
+        };
+
+        let open_for_secs: u64 = match std::env::var("EMBED_CIRCUIT_OPEN_FOR_SECS") {
+            Ok(raw) => raw.parse().unwrap_or_else(|_| {
+                panic!(
+                    "EMBED_CIRCUIT_OPEN_FOR_SECS is set but not a valid u64: {:?}",
+                    raw
+                )
+            }),
+            Err(_) => 30,
+        };
+
+        CircuitBreaker::new(failure_threshold, Duration::from_secs(open_for_secs))
+    }
+
+    /// Constructs an orchestrator with a single static scope and a default
+    /// embedding circuit breaker built from environment variables.
     pub fn new(
         embedding_service: Arc<E>,
         graph: RetrievalSnapshot,
@@ -191,20 +245,50 @@ where
             current: ArcSwap::from_pointee(GraphSnapshot::new(graph)),
             config,
             scope_resolver: None,
+            embedding_breaker: Self::build_embedding_circuit_breaker_from_env(),
         }
     }
 
+    /// Constructs an orchestrator with dual-scope resolution and a
+    /// caller-supplied embedding circuit breaker.
+    ///
+    /// The caller is responsible for building the breaker (typically via
+    /// [`Self::build_embedding_circuit_breaker_from_env`]) so the production
+    /// wiring site in `mcp-server` owns the breaker lifetime and can share or
+    /// inspect it if needed.
     pub fn new_dual_scope(
         embedding_service: Arc<E>,
         graph: RetrievalSnapshot,
         config: RetrievalConfig,
         scope_resolver: DualScopeResolver,
+        embedding_breaker: CircuitBreaker,
     ) -> Self {
         Self {
             embedding_service,
             current: ArcSwap::from_pointee(GraphSnapshot::new(graph)),
             config,
             scope_resolver: Some(scope_resolver),
+            embedding_breaker,
+        }
+    }
+
+    /// Constructs an orchestrator with a caller-provided circuit breaker.
+    ///
+    /// Intended for tests and for callers that manage the breaker lifecycle
+    /// externally (e.g. to share state or wire in a pre-tripped breaker for
+    /// controlled degradation testing).
+    pub fn new_with_breaker(
+        embedding_service: Arc<E>,
+        graph: RetrievalSnapshot,
+        config: RetrievalConfig,
+        embedding_breaker: CircuitBreaker,
+    ) -> Self {
+        Self {
+            embedding_service,
+            current: ArcSwap::from_pointee(GraphSnapshot::new(graph)),
+            config,
+            scope_resolver: None,
+            embedding_breaker,
         }
     }
 
@@ -276,6 +360,13 @@ where
             ("reason".to_owned(), reason.to_owned()),
         ])
     }
+
+    /// Reason code emitted when the embedding circuit breaker is open.
+    ///
+    /// Flows through `RetrievalOutcome.health["reason"]` →
+    /// `CompileContextResponse.health` so callers observe a loud, named
+    /// degradation instead of a silent empty success.
+    const REASON_EMBEDDING_CIRCUIT_OPEN: &'static str = "embedding_circuit_open";
 
     fn map_embedding_error_to_reason(error: &EmbeddingError) -> String {
         match error {
@@ -386,17 +477,41 @@ where
             );
         }
 
-        let prompt_embedding = match self.embedding_service.embed_text(prompt).await {
-            Ok(embedding) => embedding,
-            Err(error) => {
-                reason_codes.push(Self::map_embedding_error_to_reason(&error));
-                return self.build_degraded_outcome(
-                    started,
-                    graph_version,
-                    scopes_considered.clone(),
-                    reason_codes,
-                    scopes_considered,
-                );
+        // Gate the embedding call behind the circuit breaker.  When the breaker
+        // is open the provider has been repeatedly failing; skip the network call
+        // entirely and return a loud degraded outcome with a named reason code so
+        // callers can distinguish circuit-open from a transient embed failure.
+        //
+        // Manual allow/record (not `execute_with_resilience`) because
+        // OllamaEmbeddingService already carries internal timeouts and the embed
+        // batch path uses `retry_with_backoff`; stacking a second retry layer
+        // here would violate the project's no-double-retry rule.
+        let prompt_embedding = if !self.embedding_breaker.allow_request().await {
+            reason_codes.push(Self::REASON_EMBEDDING_CIRCUIT_OPEN.to_owned());
+            return self.build_degraded_outcome(
+                started,
+                graph_version,
+                scopes_considered.clone(),
+                reason_codes,
+                scopes_considered,
+            );
+        } else {
+            match self.embedding_service.embed_text(prompt).await {
+                Ok(embedding) => {
+                    self.embedding_breaker.record_success().await;
+                    embedding
+                }
+                Err(error) => {
+                    self.embedding_breaker.record_failure().await;
+                    reason_codes.push(Self::map_embedding_error_to_reason(&error));
+                    return self.build_degraded_outcome(
+                        started,
+                        graph_version,
+                        scopes_considered.clone(),
+                        reason_codes,
+                        scopes_considered,
+                    );
+                }
             }
         };
 
@@ -779,5 +894,169 @@ mod tests {
             "a strictly newer version must apply"
         );
         assert_eq!(orchestrator.current_graph_version(), 6);
+    }
+
+    // ── Circuit-breaker tests (issue #171) ───────────────────────────────────
+
+    /// Tracks how many times `embed_text` was actually invoked.
+    ///
+    /// Always fails with `ProviderUnavailable` so the circuit breaker trips after
+    /// `failure_threshold` calls. The invocation counter lets tests assert that no
+    /// network call reaches the embedder while the breaker is open.
+    struct CountingFailEmbeddingService {
+        call_count: Arc<std::sync::atomic::AtomicU32>,
+    }
+
+    impl CountingFailEmbeddingService {
+        fn new() -> (Arc<std::sync::atomic::AtomicU32>, Self) {
+            let counter = Arc::new(std::sync::atomic::AtomicU32::new(0));
+            (counter.clone(), Self { call_count: counter })
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl EmbeddingService for CountingFailEmbeddingService {
+        async fn embed_text(&self, _text: &str) -> Result<Vec<f32>, EmbeddingError> {
+            self.call_count
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Err(EmbeddingError::ProviderUnavailable(
+                "injected failure".to_owned(),
+            ))
+        }
+
+        async fn embed_batch(&self, _texts: &[&str]) -> Result<Vec<Vec<f32>>, EmbeddingError> {
+            Err(EmbeddingError::ProviderUnavailable(
+                "injected failure".to_owned(),
+            ))
+        }
+    }
+
+    /// After `failure_threshold` consecutive embed failures the breaker opens:
+    ///
+    /// 1. Each failure is visible as a degraded outcome with the specific
+    ///    `embedding_provider_unavailable` reason (breaker still closed — normal
+    ///    degraded path).
+    /// 2. Once open, the next call returns a degraded outcome with
+    ///    `reason: embedding_circuit_open` WITHOUT invoking the embedder (call
+    ///    count stays at `failure_threshold`).
+    /// 3. Open-state health markers: `ollama: degraded`, `reason:
+    ///    embedding_circuit_open` — a loud, observable degradation, not a silent
+    ///    empty success.
+    #[tokio::test]
+    async fn embedding_circuit_breaker_trips_after_threshold_and_skips_embedder_while_open() {
+        use infrastructure::CircuitBreaker;
+        use std::time::Duration;
+
+        const THRESHOLD: u32 = 3;
+        let (call_count, embed_svc) = CountingFailEmbeddingService::new();
+        let breaker = CircuitBreaker::new(THRESHOLD, Duration::from_secs(60));
+        let orchestrator = RetrievalOrchestrator::new_with_breaker(
+            Arc::new(embed_svc),
+            versioned_snapshot(0),
+            RetrievalConfig::default(),
+            breaker,
+        );
+
+        // Drive the breaker to its threshold — each of these is a normal embed
+        // failure (not circuit-open yet).
+        for i in 1..=THRESHOLD {
+            let outcome = orchestrator.retrieve("probe", None).await;
+            assert!(
+                outcome.is_degraded(),
+                "call {i}: outcome must be degraded while breaker is still closed"
+            );
+            assert_eq!(
+                outcome.health.get("ollama").map(String::as_str),
+                Some("degraded"),
+                "call {i}: ollama must be marked degraded"
+            );
+            assert_ne!(
+                outcome.health.get("reason").map(String::as_str),
+                Some("embedding_circuit_open"),
+                "call {i}: reason must NOT be embedding_circuit_open while breaker is closed"
+            );
+        }
+
+        // The embedder must have been called exactly THRESHOLD times.
+        assert_eq!(
+            call_count.load(std::sync::atomic::Ordering::SeqCst),
+            THRESHOLD,
+            "embedder must have been called exactly failure_threshold times before breaker opened"
+        );
+
+        // Breaker is now open.  The next call must NOT reach the embedder.
+        let open_outcome = orchestrator.retrieve("probe-after-open", None).await;
+        assert!(
+            open_outcome.is_degraded(),
+            "open-breaker call must produce a degraded outcome (not silent empty success)"
+        );
+        assert_eq!(
+            open_outcome.health.get("ollama").map(String::as_str),
+            Some("degraded"),
+            "open-breaker: ollama must be marked degraded"
+        );
+        assert_eq!(
+            open_outcome.health.get("reason").map(String::as_str),
+            Some("embedding_circuit_open"),
+            "open-breaker: reason must be embedding_circuit_open"
+        );
+        assert!(
+            open_outcome
+                .reason_codes
+                .contains(&"embedding_circuit_open".to_owned()),
+            "open-breaker: reason_codes must contain embedding_circuit_open"
+        );
+
+        // Critical: the embedder must NOT have been invoked again.
+        assert_eq!(
+            call_count.load(std::sync::atomic::Ordering::SeqCst),
+            THRESHOLD,
+            "embedder must NOT be called while the breaker is open (call count must stay at threshold)"
+        );
+    }
+
+    /// After `open_for` elapses the breaker transitions to half-open, allows a
+    /// single probe call, and a successful probe closes the breaker again.
+    ///
+    /// Uses a minimal `open_for` duration so the test is fast.
+    #[tokio::test]
+    async fn embedding_circuit_breaker_recovers_half_open_to_closed_after_open_for_elapses() {
+        use infrastructure::{CircuitBreaker, CircuitState};
+        use std::time::Duration;
+
+        let breaker = CircuitBreaker::new(1, Duration::from_millis(5));
+
+        // Trip the breaker.
+        breaker.record_failure().await;
+        assert_eq!(
+            breaker.state().await,
+            CircuitState::Open,
+            "breaker must be open after one failure with threshold=1"
+        );
+
+        // Wait for open_for to elapse.
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        // A single success should close the breaker via the orchestrator path.
+        // Use ConstantEmbeddingService so embed succeeds on the probe.
+        let orchestrator = RetrievalOrchestrator::new_with_breaker(
+            Arc::new(ConstantEmbeddingService),
+            versioned_snapshot(0),
+            RetrievalConfig::default(),
+            breaker.clone(),
+        );
+
+        // Probe call — half-open allows one request.
+        let probe_outcome = orchestrator.retrieve("probe", None).await;
+        // An empty snapshot (version=0, no skills) returns not-degraded (all
+        // scopes resolved, embed succeeded, just no results).  Verify the
+        // breaker closed.
+        let _ = probe_outcome; // outcome content is secondary here
+
+        assert_eq!(
+            breaker.state().await,
+            CircuitState::Closed,
+            "breaker must close after a successful probe during half-open"
+        );
     }
 }

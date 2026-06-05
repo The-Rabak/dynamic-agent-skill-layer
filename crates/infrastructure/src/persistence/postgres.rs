@@ -12,6 +12,12 @@ const MIGRATION_004: &str = include_str!("../../migrations/004_session_logs_stat
 /// instead of the scope-root stand-in. Pre-migration rows get an empty array
 /// and fall back to the scope-root behavior in `build_graph_from_pg`.
 const MIGRATION_005: &str = include_str!("../../migrations/005_skill_source_paths.sql");
+/// Migration 006: adds `community_skills.source TEXT NOT NULL DEFAULT 'tag'` and
+/// widens the PK to `(community_id, skill_id, source)` so a skill can belong to
+/// both an HDBSCAN cluster community and a tag community simultaneously (dual
+/// membership per CONTEXT.md §2.2).
+const MIGRATION_006: &str =
+    include_str!("../../migrations/006_community_skills_source.sql");
 
 /// Ordered migration set: each entry is `(stable_id, sql)`.
 ///
@@ -21,7 +27,8 @@ const MIGRATION_005: &str = include_str!("../../migrations/005_skill_source_path
 ///
 /// Ordering matters because later migrations depend on objects created by earlier
 /// ones (002 reuses the trigger function from 001; 003 adds columns to tables from
-/// 001; 004 adds a constraint to session_logs; 005 adds a column to skills).
+/// 001; 004 adds a constraint to session_logs; 005 adds a column to skills;
+/// 006 widens community_skills for dual membership).
 ///
 /// Individual migrations remain idempotent (`IF NOT EXISTS` / `ADD COLUMN IF NOT
 /// EXISTS`) as a belt-and-braces safety net, but the tracking table is the primary
@@ -32,6 +39,7 @@ const MIGRATIONS: &[(&str, &str)] = &[
     ("003_usage_fields", MIGRATION_003),
     ("004_session_logs_status_check", MIGRATION_004),
     ("005_skill_source_paths", MIGRATION_005),
+    ("006_community_skills_source", MIGRATION_006),
 ];
 
 #[derive(Debug, Clone)]
@@ -337,9 +345,9 @@ mod tests {
     }
 
     #[test]
-    fn migration_set_is_ordered_001_through_005() {
+    fn migration_set_is_ordered_001_through_006() {
         // MIGRATIONS is now &[(&str, &str)] — (stable_id, sql). Assert that
-        // the ids and sql content appear in the correct 001..005 order.
+        // the ids and sql content appear in the correct 001..006 order.
         let ids: Vec<&str> = MIGRATIONS.iter().map(|(id, _)| *id).collect();
         assert_eq!(
             ids,
@@ -349,8 +357,9 @@ mod tests {
                 "003_usage_fields",
                 "004_session_logs_status_check",
                 "005_skill_source_paths",
+                "006_community_skills_source",
             ],
-            "migration ids must appear in 001..005 order"
+            "migration ids must appear in 001..006 order"
         );
 
         let sqls: Vec<&str> = MIGRATIONS.iter().map(|(_, sql)| *sql).collect();
@@ -362,14 +371,15 @@ mod tests {
                 MIGRATION_003,
                 MIGRATION_004,
                 MIGRATION_005,
+                MIGRATION_006,
             ],
-            "migration sql bodies must match the include_str! constants in 001..005 order"
+            "migration sql bodies must match the include_str! constants in 001..006 order"
         );
     }
 
-    /// Live Postgres: proves that `run_migrations` applies all five migrations on
+    /// Live Postgres: proves that `run_migrations` applies all six migrations on
     /// a fresh schema and records them in `schema_migrations`, then proves that a
-    /// second call skips all five by asserting `applied_at` timestamps are UNCHANGED.
+    /// second call skips all six by asserting `applied_at` timestamps are UNCHANGED.
     ///
     /// A re-applied migration would re-INSERT or UPDATE the row (changing the
     /// timestamp). A truly skipped migration leaves the row exactly as it was.
@@ -415,7 +425,7 @@ mod tests {
             .await
             .expect("scratch adapter connect");
 
-        // ---- First boot: all five migrations must be applied ----
+        // ---- First boot: all six migrations must be applied ----
         adapter
             .run_migrations()
             .await
@@ -436,14 +446,15 @@ mod tests {
                 "003_usage_fields",
                 "004_session_logs_status_check",
                 "005_skill_source_paths",
+                "006_community_skills_source",
             ],
-            "first boot must record all five migration ids"
+            "first boot must record all six migration ids"
         );
 
         let first_applied_ats: Vec<chrono::DateTime<chrono::Utc>> =
             first_run_rows.iter().map(|(_, ts)| *ts).collect();
 
-        // ---- Second boot: all five must be SKIPPED (applied_at unchanged) ----
+        // ---- Second boot: all six must be SKIPPED (applied_at unchanged) ----
         adapter
             .run_migrations()
             .await

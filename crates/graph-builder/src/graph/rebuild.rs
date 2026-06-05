@@ -10,7 +10,7 @@ use serde_json::json;
 use thiserror::Error;
 use uuid::Uuid;
 
-use domain::{EmbeddingService, ScopeRoot};
+use domain::{EmbeddingService, HdbscanConfig, ScopeRoot};
 
 use crate::{
     graph::{
@@ -91,9 +91,11 @@ where
         &mut self,
         scope_roots: &[ScopeRoot],
         file_changes: &[SkillFileChange],
+        hdbscan_config: &HdbscanConfig,
     ) -> Result<GraphRebuildOutcome, GraphRebuildError> {
         let skills = build_skills_from_scope_roots(scope_roots, self.embedding_service).await?;
-        let communities = assign_communities(&skills);
+        let communities = assign_communities(&skills, hdbscan_config)
+            .map_err(GraphRebuildError::DurableWrite)?;
         let audits = file_changes
             .iter()
             .map(|change| AuditRecord {
@@ -255,6 +257,7 @@ where
                 name: community.community_name.clone(),
                 scope: community.scope,
                 member_skill_ids: community.skill_ids.clone(),
+                source: community.source.as_db_str().to_owned(),
             })
             .collect();
 
@@ -327,7 +330,7 @@ where
 mod tests {
     use std::path::PathBuf;
 
-    use domain::{ScopeRoot, ScopeType};
+    use domain::{HdbscanConfig, ScopeRoot, ScopeType};
 
     use super::*;
     use crate::graph::embeddings::DeterministicEmbeddingService;
@@ -369,6 +372,7 @@ mod tests {
         let scope_roots = vec![scope];
         let changes: Vec<SkillFileChange> = vec![];
         let embedder = DeterministicEmbeddingService;
+        let hdbscan_config = HdbscanConfig::default();
 
         let mut state = InMemoryDurableGraphState::with_synthetic_outbox_drain();
         let mut published_events: Vec<EventEnvelope> = Vec::new();
@@ -377,7 +381,7 @@ mod tests {
             let mut orchestrator =
                 GraphRebuildOrchestrator::new(&mut state, &mut published_events, &embedder);
             orchestrator
-                .rebuild_from_changes(&scope_roots, &changes)
+                .rebuild_from_changes(&scope_roots, &changes, &hdbscan_config)
                 .await
         };
         assert!(
@@ -399,7 +403,7 @@ mod tests {
             let mut orchestrator =
                 GraphRebuildOrchestrator::new(&mut state, &mut published_events, &embedder);
             orchestrator
-                .rebuild_from_changes(&scope_roots, &changes)
+                .rebuild_from_changes(&scope_roots, &changes, &hdbscan_config)
                 .await
         };
         assert!(
