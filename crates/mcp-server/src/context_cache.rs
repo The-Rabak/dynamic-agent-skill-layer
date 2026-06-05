@@ -22,6 +22,11 @@ pub struct CachedContext {
 #[derive(Debug, Clone)]
 pub struct CompiledContextCache {
     inner: Arc<DashMap<String, CachedContext>>,
+    /// Index from `session_id` → the set of cache keys that session owns, so
+    /// `clear_session` evicts in O(entries for THIS session) via keyed `remove`
+    /// instead of an O(total entries) full-map `retain` scan (#142). Every write
+    /// into `inner` (set + Redis read-through) also updates this index.
+    session_index: Arc<DashMap<String, std::collections::HashSet<String>>>,
     redis_client: Option<RedisClient>,
     ttl_secs: u64,
     /// Optional Redis-key namespace prefix (`REDIS_KEY_PREFIX`). Empty in
@@ -36,10 +41,22 @@ impl CompiledContextCache {
     pub fn new(redis_client: Option<RedisClient>, ttl_secs: u64) -> Self {
         Self {
             inner: Arc::default(),
+            session_index: Arc::default(),
             redis_client,
             ttl_secs,
             key_prefix: crate::suppression_state::redis_key_prefix(),
         }
+    }
+
+    /// Inserts an entry into the local map AND records its key under the session
+    /// in `session_index`, keeping the index a complete mirror so keyed
+    /// `clear_session` eviction never misses an entry.
+    fn record_local(&self, session_id: &str, cache_key: String, entry: CachedContext) {
+        self.inner.insert(cache_key.clone(), entry);
+        self.session_index
+            .entry(session_id.trim().to_owned())
+            .or_default()
+            .insert(cache_key);
     }
 
     fn prompt_hash(prompt: &str) -> String {
@@ -62,10 +79,6 @@ impl CompiledContextCache {
             Self::prompt_hash(prompt),
             Self::scope_fingerprint(configured_scopes)
         )
-    }
-
-    fn cache_prefix_for_clear(&self, session_id: &str) -> String {
-        format!("{}cache:{}:", self.key_prefix, session_id.trim())
     }
 
     async fn try_redis_get(&self, redis_key: &str) -> Option<CachedContext> {
@@ -168,7 +181,9 @@ impl CompiledContextCache {
         if let Some(redis_entry) = self.try_redis_get(&key).await
             && redis_entry.graph_version == graph_version
         {
-            self.inner.insert(key.clone(), redis_entry.clone());
+            // Read-through write-back (#142): warm the local map AND index it so
+            // keyed clear_session can later evict it.
+            self.record_local(session_id, key, redis_entry.clone());
             return Some(redis_entry);
         }
 
@@ -185,13 +200,20 @@ impl CompiledContextCache {
         let key = self.cache_key(session_id, prompt, configured_scopes);
         let redis_key = key.clone();
 
-        self.inner.insert(key.clone(), entry.clone());
+        self.record_local(session_id, key, entry.clone());
         self.try_redis_setex(&redis_key, &entry).await;
     }
 
     pub fn clear_session(&self, session_id: &str) {
-        let prefix = self.cache_prefix_for_clear(session_id);
-        self.inner.retain(|key, _| !key.starts_with(&prefix));
+        // Keyed eviction via the per-session index — O(entries for THIS session),
+        // not an O(total entries) full-map `retain` scan (#142). Keyed on the exact
+        // `session_id`, so it also cannot over-evict a session whose id is a string
+        // prefix of another.
+        if let Some((_, keys)) = self.session_index.remove(session_id.trim()) {
+            for key in keys {
+                self.inner.remove(&key);
+            }
+        }
 
         let redis_client = self.redis_client.clone();
         // Escape Redis glob metacharacters in the session_id before embedding it in the

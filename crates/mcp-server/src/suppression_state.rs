@@ -14,6 +14,12 @@ struct SuppressionEntry {
 #[derive(Debug, Clone)]
 pub struct SessionSuppressionState {
     inner: Arc<DashMap<String, SuppressionEntry>>,
+    /// Index from `session_id` → the set of local keys that session owns, so
+    /// `clear_session` evicts in O(entries for THIS session) via keyed `remove`
+    /// instead of an O(total entries) full-map `retain` scan (#142). Every write
+    /// into `inner` (mark + Redis read-through) also updates this index, so it
+    /// stays a complete mirror of which keys belong to which session.
+    session_index: Arc<DashMap<String, std::collections::HashSet<String>>>,
     redis_client: Option<RedisClient>,
     ttl_secs: u64,
     /// Optional Redis-key namespace prefix (`REDIS_KEY_PREFIX`). Empty in
@@ -91,10 +97,22 @@ impl SessionSuppressionState {
     pub fn new(redis_client: Option<RedisClient>, ttl_secs: u64) -> Self {
         Self {
             inner: Arc::default(),
+            session_index: Arc::default(),
             redis_client,
             ttl_secs,
             key_prefix: redis_key_prefix(),
         }
+    }
+
+    /// Inserts an entry into the local map AND records its key under the session
+    /// in `session_index`, keeping the index a complete mirror so keyed
+    /// `clear_session` eviction never misses an entry.
+    fn record_local(&self, session_id: &str, local_key: String, entry: SuppressionEntry) {
+        self.inner.insert(local_key.clone(), entry);
+        self.session_index
+            .entry(session_id.trim().to_owned())
+            .or_default()
+            .insert(local_key);
     }
 
     fn redis_key(&self, session_id: &str, repo_path: &str) -> String {
@@ -108,19 +126,6 @@ impl SessionSuppressionState {
 
     fn local_key(session_id: &str, repo_path: &str) -> String {
         format!("{}::{}", session_id.trim(), repo_path.trim())
-    }
-
-    /// Returns the prefix used to match all local DashMap keys belonging to
-    /// `session_id`. Must be consistent with `local_key`'s format, which is
-    /// `"{session_id}::{repo_path}"`.
-    ///
-    /// Separator invariant: `session_id` values MUST NOT themselves contain `"::"`
-    /// because the DashMap `starts_with` eviction in `clear_session` would then
-    /// over-evict entries for a session whose id is a prefix of another. This
-    /// invariant is enforced at the JSON-RPC param boundary in `protocol.rs`
-    /// (`validate_session_id` rejects `"::"` and constrains ids to `[A-Za-z0-9_-]`).
-    fn local_session_prefix(session_id: &str) -> String {
-        format!("{}::", session_id.trim())
     }
 
     /// Escapes Redis glob metacharacters in `raw` so it is safe to embed in a
@@ -241,7 +246,11 @@ impl SessionSuppressionState {
 
         // DashMap miss — check Redis (cross-process / post-restart warm-up path).
         if let Some(redis_entry) = self.try_redis_get(session_id, repo_path).await {
-            return redis_entry.suppressed && redis_entry.graph_version == graph_version;
+            let suppressed = redis_entry.suppressed && redis_entry.graph_version == graph_version;
+            // Read-through write-back (#142): warm the local map so a session
+            // restored after a process restart pays the Redis RTT only once.
+            self.record_local(session_id, key, redis_entry);
+            return suppressed;
         }
 
         false
@@ -256,7 +265,9 @@ impl SessionSuppressionState {
         }
 
         if let Some(redis_entry) = self.try_redis_get(session_id, repo_path).await {
-            return Some(redis_entry.graph_version);
+            let version = redis_entry.graph_version;
+            self.record_local(session_id, key, redis_entry); // read-through write-back (#142)
+            return Some(version);
         }
 
         None
@@ -275,7 +286,9 @@ impl SessionSuppressionState {
         }
 
         if let Some(redis_entry) = self.try_redis_get(session_id, repo_path).await {
-            return Some(redis_entry.scopes_considered);
+            let scopes = redis_entry.scopes_considered.clone();
+            self.record_local(session_id, key, redis_entry); // read-through write-back (#142)
+            return Some(scopes);
         }
 
         None
@@ -295,7 +308,7 @@ impl SessionSuppressionState {
         };
 
         let local_key = Self::local_key(session_id, repo_path);
-        self.inner.insert(local_key, entry.clone());
+        self.record_local(session_id, local_key, entry.clone());
 
         self.try_redis_setex(session_id, repo_path, &entry).await;
     }
@@ -307,9 +320,15 @@ impl SessionSuppressionState {
     /// `"{session_id}::"`) which matches the `local_key` format exactly.
     /// The Redis SCAN pattern uses the Redis-key prefix `"suppression:{session_id}::"`.
     pub fn clear_session(&self, session_id: &str) {
-        // Evict from the local DashMap using the local key format prefix.
-        let local_prefix = Self::local_session_prefix(session_id);
-        self.inner.retain(|key, _| !key.starts_with(&local_prefix));
+        // Keyed eviction via the per-session index — O(entries for THIS session),
+        // not an O(total entries) full-map `retain` scan (#142). Because the index
+        // is keyed on the exact `session_id`, this also cannot over-evict a session
+        // whose id is a string prefix of another.
+        if let Some((_, keys)) = self.session_index.remove(session_id.trim()) {
+            for key in keys {
+                self.inner.remove(&key);
+            }
+        }
 
         // Evict from Redis in the background (non-blocking).
         let redis_client = self.redis_client.clone();

@@ -863,22 +863,31 @@ async fn build_graph_from_pg(
     // source path), so their searchable scope is the configured scope root. Without
     // this, `seeded_skill_matches_scope` rejects every live skill against a
     // path-constrained scope and boot retrieval always returns `no_match`.
-    let global_scope_paths = scope_paths_from_env("SKILL_GLOBAL_PATHS");
-    // Fallback project scope root for skills with empty `source_paths`.
-    // Prefer the operator-declared `SKILL_PROJECT_ROOT` (issue #154) so this aligns
-    // with `FsMarkerProjectResolver`'s project-scope root in a container, where the
-    // working directory is `/`. Fall back to the process working directory for the
-    // host/dev case. Canonicalized to match the resolver's own canonicalization so
-    // `starts_with` scope matching succeeds at query time.
-    let project_scope_paths = std::env::var("SKILL_PROJECT_ROOT")
-        .ok()
-        .map(|raw| raw.trim().to_owned())
-        .filter(|raw| !raw.is_empty())
-        .map(std::path::PathBuf::from)
-        .or_else(|| std::env::current_dir().ok())
-        .and_then(|p| std::fs::canonicalize(p).ok())
-        .map(|p| vec![p])
-        .unwrap_or_default();
+    // Resolve the configured scope-root paths OFF the async executor: each
+    // `canonicalize` is a blocking filesystem syscall, and running it on a runtime
+    // worker thread stalls other tasks at boot / `graph.rebuilt` (#142). Boot-only;
+    // not on the request hot path.
+    //
+    // - `global_scope_paths`: from `SKILL_GLOBAL_PATHS`.
+    // - `project_scope_paths`: fallback project root for skills with empty
+    //   `source_paths`. Prefers the operator-declared `SKILL_PROJECT_ROOT` (#154)
+    //   so it aligns with `FsMarkerProjectResolver` in a container (working dir `/`),
+    //   falling back to the process working directory. Canonicalized to match the
+    //   resolver's own canonicalization so `starts_with` scope matching succeeds.
+    let (global_scope_paths, project_scope_paths) = tokio::task::spawn_blocking(|| {
+        let global = scope_paths_from_env("SKILL_GLOBAL_PATHS");
+        let project = std::env::var("SKILL_PROJECT_ROOT")
+            .ok()
+            .map(|raw| raw.trim().to_owned())
+            .filter(|raw| !raw.is_empty())
+            .map(std::path::PathBuf::from)
+            .or_else(|| std::env::current_dir().ok())
+            .and_then(|p| std::fs::canonicalize(p).ok())
+            .map(|p| vec![p])
+            .unwrap_or_default();
+        (global, project)
+    })
+    .await?;
 
     // Batch-query usage for all skills in one round trip so the prior is
     // populated at load time without N+1 queries. Skills with no rows get
@@ -911,6 +920,30 @@ async fn build_graph_from_pg(
                 std::collections::HashMap::new()
             }
         };
+
+    // Canonicalize every skill `source_path` OFF the async executor: at boot this
+    // is one blocking filesystem syscall per path (O(skills)), which would
+    // otherwise stall a runtime worker thread (#142). Precompute a raw→canonical
+    // map here so the synchronous SeededSkill assembly below is a pure in-memory
+    // lookup.
+    let raw_source_paths: Vec<String> = skills
+        .iter()
+        .flat_map(|s| s.source_paths.iter().cloned())
+        .collect();
+    let canonical_source_paths: std::collections::HashMap<String, std::path::PathBuf> =
+        tokio::task::spawn_blocking(move || {
+            raw_source_paths
+                .into_iter()
+                .map(|raw| {
+                    // The path may not exist on this host (skill built elsewhere);
+                    // fall back to the raw string so a prefix check can still run.
+                    let canonical = std::fs::canonicalize(&raw)
+                        .unwrap_or_else(|_| std::path::PathBuf::from(&raw));
+                    (raw, canonical)
+                })
+                .collect()
+        })
+        .await?;
 
     let seeded_skills: Vec<retrieval::SeededSkill> = skills
         .into_iter()
@@ -949,16 +982,17 @@ async fn build_graph_from_pg(
             let source_paths = if record.source_paths.is_empty() {
                 fallback_scope_paths
             } else {
+                // Look up the canonical form precomputed off-executor above. Falls
+                // back to the raw path (parsed) when canonicalization failed — safer
+                // than silently substituting the scope root.
                 record
                     .source_paths
                     .iter()
                     .map(|p| {
-                        // The path may not exist on the current host (e.g. the skill
-                        // was built on another machine). Parse the raw string so
-                        // scope matching can still attempt a prefix check; the
-                        // starts_with will simply fail for non-canonical paths, which
-                        // is safer than silently falling back to the scope root.
-                        std::fs::canonicalize(p).unwrap_or_else(|_| std::path::PathBuf::from(p))
+                        canonical_source_paths
+                            .get(p)
+                            .cloned()
+                            .unwrap_or_else(|| std::path::PathBuf::from(p))
                     })
                     .collect()
             };
