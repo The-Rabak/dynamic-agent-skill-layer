@@ -9,7 +9,7 @@ use walkdir::WalkDir;
 
 use crate::{
     extraction::{ExtractedSubunit, extract_skill},
-    watcher::is_active_skill_file,
+    watcher::{is_active_skill_file, is_ignored_walk_dir},
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -48,7 +48,10 @@ pub async fn build_skills_from_scope_roots(
     let mut texts_owned: Vec<String> = Vec::new();
 
     for scope in scope_roots {
-        for entry in WalkDir::new(&scope.root) {
+        for entry in WalkDir::new(&scope.root)
+            .into_iter()
+            .filter_entry(|entry| !is_ignored_walk_dir(entry))
+        {
             let entry = entry.map_err(|error| GraphBuildError::ReadFailure {
                 path: scope.root.display().to_string(),
                 message: error.to_string(),
@@ -69,16 +72,20 @@ pub async fn build_skills_from_scope_roots(
                     message: error.to_string(),
                 })?;
             let extraction = extract_skill(path, &content);
+            // Skill-level (ℓ₁) embedding text = the skill SUMMARY only
+            // (name + description + tags). The body is deliberately NOT folded in
+            // here: it is already represented at the subunit level (ℓ₀ / eq.3 β
+            // term), and concatenating every subunit body produced multi-thousand-
+            // token inputs that overflow the embedding model's single-batch limit
+            // (nomic-embed-text via Ollama: 2048-token batch → HTTP 500). This now
+            // matches the canonical read-path representation in `mcp-server` (the
+            // boot-time snapshot that actually ranks the α term), keeping the
+            // write-side Qdrant vector and the read-side snapshot vector consistent.
             let text_for_embedding = format!(
-                "{}\n{}\n{}",
+                "{} {} {}",
                 extraction.skill_name,
                 extraction.description,
-                extraction
-                    .subunits
-                    .iter()
-                    .map(|subunit| subunit.content.clone())
-                    .collect::<Vec<_>>()
-                    .join("\n")
+                extraction.tags.join(" ")
             );
             let id = blake3::hash(path.display().to_string().as_bytes())
                 .to_hex()

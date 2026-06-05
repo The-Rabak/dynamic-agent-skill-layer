@@ -121,6 +121,21 @@ path = "../../tests/e2e/test_namespace_cleanup_on_panic.rs"
 required-features = ["test-utils"]
 
 [[test]]
+name = "test_retrieval_quality"
+path = "../../tests/e2e/test_retrieval_quality.rs"
+required-features = ["test-utils"]
+
+[[test]]
+name = "test_brutal_probes"
+path = "../../tests/e2e/test_brutal_probes.rs"
+required-features = ["test-utils"]
+
+[[test]]
+name = "test_extraction_quality"
+path = "../../tests/e2e/test_extraction_quality.rs"
+required-features = ["test-utils"]
+
+[[test]]
 name = "test_admin_tools"
 path = "../../tests/integration/test_admin_tools.rs"
 required-features = ["test-utils"]

@@ -39,12 +39,14 @@ pub use persistence::outbox::{
     qdrant_point_id_from_content_hash,
 };
 pub use persistence::outbox_reconciler::{OutboxReconciler, OutboxReconciliationReport};
-pub use persistence::postgres::{PostgresAdapter, PostgresConfig, PostgresError};
+pub use persistence::postgres::{
+    PostgresAdapter, PostgresConfig, PostgresError, ensure_database_exists,
+};
 pub use persistence::rebuild::{
     LiveGraphCommunityRecord, LiveGraphSkillRecord, LiveGraphSnapshotMutation,
     LiveGraphSubunitRecord, PersistedGraphCommunityRecord, PersistedGraphSkillRecord,
     PersistedGraphSubunitRecord, PostgresGraphSnapshotStore, PostgresRebuildCoordinator,
-    RebuildCoordinator, RebuildError,
+    RebuildCoordinator, RebuildError, stable_skill_uuid,
 };
 pub use persistence::transcript_queue::{
     EnqueueOutcome, MAX_TRANSCRIPT_DRAIN_ATTEMPTS, MAX_TRANSCRIPT_INGEST_BYTES,

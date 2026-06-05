@@ -1,0 +1,111 @@
+{
+  "_description": "Labeled relevance corpus for the retrieval-quality harness (tests/e2e/test_retrieval_quality.rs). Unlike retrieval_corpus.json (threshold-alignment fixtures), this file is a graded relevance set: every query names the skill id(s) that are RELEVANT, so the harness can compute precision@k / recall@k / MRR / nDCG against ground truth and compare the live semantic ranking against an in-harness pure-lexical baseline. Query kinds: 'lexical' (shares literal tokens with its skill), 'disjoint' (semantically about its skill but deliberately avoids the skill's literal tokens — only real embeddings can bridge it), 'negative' (no skill is relevant; the system must NOT fabricate a match). This file is OWNED by the quality harness and is NOT the shared retrieval_corpus.json.",
+  "_thresholds": {
+    "note": "Honest bars. These are targets, not guarantees — the harness asserts them and is EXPECTED to fail loudly when retrieval quality regresses or under-delivers. Do not relax them to make the suite green; fix retrieval.",
+    "mean_mrr_min": 0.70,
+    "mean_precision_at_1_min": 0.60,
+    "mean_ndcg_at_3_min": 0.70,
+    "disjoint_recall_at_3_min": 0.60,
+    "semantic_must_beat_lexical_map_on_disjoint": true,
+    "negative_max_false_match_rate": 0.0,
+    "latency_p95_ms_budget": 500
+  },
+  "skills": [
+    {
+      "id": "rust-async-file-io",
+      "description": "Asynchronous file input and output in Rust using the tokio runtime — non-blocking reads and writes, streaming large files, and error boundaries at async IO seams.",
+      "tags": ["rust", "tokio", "async", "file", "io"],
+      "subunits": [
+        { "kind": "procedure", "title": "Read a file without blocking", "content": "Use tokio::fs::read_to_string for small files; wrap large files in a tokio BufReader and stream line by line so the executor thread is never blocked on disk." },
+        { "kind": "convention", "title": "Never block the async executor on disk", "content": "Avoid std::fs in an async context; a synchronous read stalls the whole runtime thread. Prefer spawn_blocking only when no async API exists." }
+      ]
+    },
+    {
+      "id": "postgres-connection-pooling",
+      "description": "Managing PostgreSQL connection pools with sqlx — sizing the pool, acquiring and releasing handles, and surviving bursts of concurrent requests without exhausting the database.",
+      "tags": ["postgres", "sqlx", "pool", "database", "connections"],
+      "subunits": [
+        { "kind": "procedure", "title": "Size and share one pool", "content": "Create a single sqlx::PgPool at startup and clone it into handlers; never open a fresh connection per request. Bound max_connections to what the database can serve." },
+        { "kind": "convention", "title": "Release handles promptly", "content": "Hold an acquired connection for the shortest possible scope so a spike of simultaneous callers does not drain the available handles." }
+      ]
+    },
+    {
+      "id": "docker-compose-healthchecks",
+      "description": "Health gating between services in Docker Compose — defining health probes and making a dependent container wait until the service it needs is actually ready before it boots.",
+      "tags": ["docker", "compose", "healthcheck", "depends-on", "startup"],
+      "subunits": [
+        { "kind": "procedure", "title": "Gate startup on readiness", "content": "Add a HEALTHCHECK to the dependency and use depends_on condition: service_healthy so the consumer does not start until the probe passes." },
+        { "kind": "convention", "title": "Probe cheaply", "content": "Use a lightweight readiness probe (pg_isready, a TCP check) rather than a full query so the health loop stays fast." }
+      ]
+    },
+    {
+      "id": "git-rebase-conflict-resolution",
+      "description": "Resolving merge conflicts during an interactive git rebase — replaying commits one at a time, reconciling diverging histories hunk by hunk, and continuing or aborting the replay safely.",
+      "tags": ["git", "rebase", "conflict", "merge", "history"],
+      "subunits": [
+        { "kind": "procedure", "title": "Reconcile each replayed commit", "content": "When a replayed commit collides, edit the conflicting hunks, stage the resolution, and continue the replay; abort to restore the original branch if it goes wrong." },
+        { "kind": "convention", "title": "Replay onto an updated base", "content": "Reapply your work on top of the latest upstream tip so the diverging lines of history converge into one linear sequence." }
+      ]
+    },
+    {
+      "id": "redis-streams-consumer-groups",
+      "description": "Consuming a Redis stream with consumer groups — reading new entries, acknowledging processed messages, and recovering pending un-acked work after a crash so nothing is silently lost.",
+      "tags": ["redis", "streams", "consumer-group", "ack", "xreadgroup"],
+      "subunits": [
+        { "kind": "procedure", "title": "Read, process, then acknowledge", "content": "XREADGROUP to claim new entries, do the work, then XACK so the entry leaves the pending list; an entry stays pending until acknowledged." },
+        { "kind": "convention", "title": "Recover orphaned work after a crash", "content": "On restart, inspect the pending entries list and re-claim un-acknowledged messages so a mid-flight failure does not drop the event." }
+      ]
+    },
+    {
+      "id": "retry-backoff-resilience",
+      "description": "Resilience for flaky downstream calls — retrying a transient failure with exponential backoff and jitter, and giving up after a bounded number of attempts instead of hammering a struggling dependency.",
+      "tags": ["retry", "backoff", "resilience", "jitter", "timeout"],
+      "subunits": [
+        { "kind": "procedure", "title": "Back off between attempts", "content": "On a transient error, wait an exponentially growing, jittered delay before the next attempt; cap the total attempts so a dead dependency is not retried forever." },
+        { "kind": "convention", "title": "Only retry idempotent work", "content": "Retry reads and idempotent writes; never blindly re-issue a non-idempotent side effect, or a flapping call can double-apply it." }
+      ]
+    },
+    {
+      "id": "structured-logging-tracing",
+      "description": "Structured, contextual logging in Rust with the tracing crate — emitting machine-parseable key/value events and wrapping work in spans so a request can be followed across async boundaries.",
+      "tags": ["tracing", "logging", "spans", "observability", "rust"],
+      "subunits": [
+        { "kind": "procedure", "title": "Wrap work in a span", "content": "Open a tracing span around a unit of work and attach fields; child events inherit the span context so the whole operation can be reconstructed from logs." },
+        { "kind": "convention", "title": "Log key/value, not prose", "content": "Emit structured fields instead of interpolated sentences so logs are queryable and correlate across a request's lifetime." }
+      ]
+    },
+    {
+      "id": "vector-cosine-similarity",
+      "description": "Ranking dense embedding vectors by cosine similarity — measuring the angle between a query vector and candidate vectors to order them by semantic closeness rather than literal word overlap.",
+      "tags": ["embeddings", "cosine", "similarity", "ranking", "vectors"],
+      "subunits": [
+        { "kind": "procedure", "title": "Score by the angle between vectors", "content": "Normalize both vectors and take their dot product; the closer the cosine is to 1 the more semantically aligned the candidate is with the query." },
+        { "kind": "convention", "title": "Closeness is meaning, not spelling", "content": "Two passages with no shared words can still score high if their embeddings point the same way — rank by meaning, not token overlap." }
+      ]
+    }
+  ],
+  "queries": [
+    { "id": "q-lex-file", "kind": "lexical", "text": "how to read a file asynchronously in rust with tokio", "relevant": ["rust-async-file-io"] },
+    { "id": "q-lex-pool", "kind": "lexical", "text": "sqlx postgres connection pool sizing and max connections", "relevant": ["postgres-connection-pooling"] },
+    { "id": "q-lex-health", "kind": "lexical", "text": "docker compose healthcheck depends_on service_healthy wait for startup", "relevant": ["docker-compose-healthchecks"] },
+    { "id": "q-lex-rebase", "kind": "lexical", "text": "resolve conflicts during an interactive git rebase", "relevant": ["git-rebase-conflict-resolution"] },
+    { "id": "q-lex-redis", "kind": "lexical", "text": "redis stream consumer group xreadgroup ack pending entries", "relevant": ["redis-streams-consumer-groups"] },
+    { "id": "q-lex-retry", "kind": "lexical", "text": "exponential backoff retry policy with jitter for flaky calls", "relevant": ["retry-backoff-resilience"] },
+    { "id": "q-lex-trace", "kind": "lexical", "text": "structured logging and spans with the rust tracing crate", "relevant": ["structured-logging-tracing"] },
+    { "id": "q-lex-cosine", "kind": "lexical", "text": "rank embeddings by cosine similarity", "relevant": ["vector-cosine-similarity"] },
+
+    { "id": "q-dis-file", "kind": "disjoint", "text": "grab the bytes of a saved document inside a coroutine so the scheduler stays free for other jobs", "relevant": ["rust-async-file-io"] },
+    { "id": "q-dis-pool", "kind": "disjoint", "text": "lend out a fixed roster of standing links to the datastore so a traffic surge cannot starve the app", "relevant": ["postgres-connection-pooling"] },
+    { "id": "q-dis-health", "kind": "disjoint", "text": "delay a box from coming up while the component it leans on signals it is good to go", "relevant": ["docker-compose-healthchecks"] },
+    { "id": "q-dis-rebase", "kind": "disjoint", "text": "reorder my local edits to sit cleanly atop the freshest shared trunk, smoothing clashes row by row", "relevant": ["git-rebase-conflict-resolution"] },
+    { "id": "q-dis-redis", "kind": "disjoint", "text": "guarantee a queued task is never dropped when a worker dies halfway and a peer must take over", "relevant": ["redis-streams-consumer-groups"] },
+    { "id": "q-dis-retry", "kind": "disjoint", "text": "quit pounding a shaky endpoint and let the gap between tries stretch wider each round", "relevant": ["retry-backoff-resilience"] },
+    { "id": "q-dis-trace", "kind": "disjoint", "text": "tail one job as it bounces through concurrent stages, leaving labeled findable footprints", "relevant": ["structured-logging-tracing"] },
+    { "id": "q-dis-cosine", "kind": "disjoint", "text": "line entries up by how alike their underlying intent is, even with zero matching wording", "relevant": ["vector-cosine-similarity"] },
+
+    { "id": "q-neg-bread", "kind": "negative", "text": "how to bake sourdough bread with a long overnight fermentation", "relevant": [] },
+    { "id": "q-neg-k8s-tls", "kind": "negative", "text": "configure kubernetes ingress TLS termination with cert-manager", "relevant": [] },
+    { "id": "q-neg-react", "kind": "negative", "text": "manage react component state with useEffect and useMemo hooks", "relevant": [] },
+    { "id": "q-neg-tax", "kind": "negative", "text": "file quarterly self-employment estimated tax payments", "relevant": [] }
+  ]
+}

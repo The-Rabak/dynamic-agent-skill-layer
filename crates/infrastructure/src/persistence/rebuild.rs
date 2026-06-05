@@ -605,6 +605,19 @@ fn stable_uuid(entity_kind: &str, stable_id: &str) -> Uuid {
     Uuid::from_bytes(bytes)
 }
 
+/// Re-derives the persisted `skills.id` UUID for a skill's stable id.
+///
+/// The rebuild persistence path writes `skills.id = stable_uuid("skill",
+/// BuiltSkill.id)`, where `BuiltSkill.id` is the blake3 hex of the source path.
+/// Consumers that rebuild skills out-of-band from the filesystem (the maintenance
+/// worker's merge/retire passes) must key their `skill_usage` queries and joins on
+/// this SAME UUID — not the raw blake3 hex — or the usage `unnest($1::uuid[])`
+/// lookup rejects the id and, if coerced, would zero-match usage and mass-retire
+/// every skill. This is the single source of truth for that derivation.
+pub fn stable_skill_uuid(stable_id: &str) -> Uuid {
+    stable_uuid("skill", stable_id)
+}
+
 #[cfg(test)]
 mod tests {
     /// Smoke test: deserializes `tests/fixtures/retrieval_corpus.json` and

@@ -41,14 +41,19 @@ services:
     volumes:
       - qdrant_data:/qdrant/storage
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:6333/collections"]
+      # The qdrant image ships neither wget nor curl (only bash + the qdrant
+      # binary), so the old `wget http://localhost:6333/collections` probe could
+      # never run → the container reported unhealthy despite a fully serving
+      # server. bash's /dev/tcp talks to the readiness endpoint with no extra
+      # tooling; `/readyz` returns HTTP 200 once qdrant is ready to serve.
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/6333 && printf 'GET /readyz HTTP/1.0\r\n\r\n' >&3 && grep -q '200 OK' <&3"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 10s
 
   ollama:
-    image: ollama/ollama:0.24.0
+    image: ollama/ollama:latest
     container_name: ${COMPOSE_PROJECT_NAME:-skill-layer}-ollama
     environment:
       # Parallel request slots so concurrent compile_context embed calls are served

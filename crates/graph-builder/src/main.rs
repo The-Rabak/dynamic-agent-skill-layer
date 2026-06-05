@@ -322,6 +322,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let db_url = env_var("DATABASE_URL")?;
     let qdrant_url = env_var("QDRANT_URL")?;
 
+    // Self-heal a missing application database before connecting (see
+    // `ensure_database_exists`): a stale/test-initialized volume otherwise
+    // crash-loops the service on `database "X" does not exist`.
+    infrastructure::ensure_database_exists(&db_url).await?;
     let pg_adapter = PostgresAdapter::connect(&PostgresConfig {
         database_url: db_url,
         ..PostgresConfig::default()

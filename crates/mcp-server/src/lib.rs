@@ -599,6 +599,10 @@ async fn build_pg_adapter() -> Result<Arc<PostgresAdapter>, Box<dyn std::error::
         max_connections: 10,
         min_connections: 1,
     };
+    // Self-heal a missing application database (stale/reused/test-initialized
+    // volume) before connecting, so boot doesn't crash-loop on
+    // `database "X" does not exist`.
+    infrastructure::ensure_database_exists(&pg_config.database_url).await?;
     let pg_adapter = PostgresAdapter::connect(&pg_config).await?;
     pg_adapter.run_migrations().await?;
     Ok(Arc::new(pg_adapter))

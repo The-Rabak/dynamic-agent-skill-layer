@@ -30,7 +30,7 @@ services:
       - "16334:6334"
 
   ollama:
-    image: ollama/ollama:0.24.0
+    image: ollama/ollama:latest
     environment:
       # Parallel request slots so concurrent embed calls are served in parallel
       # (DS-007 warm-path p95 budget). Pair with EMBED_MAX_CONCURRENCY on clients.

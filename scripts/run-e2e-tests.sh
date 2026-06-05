@@ -2,6 +2,7 @@
 set -euo pipefail
 
 INCLUDE_DREAM=0
+INCLUDE_QUALITY=0
 SKIP_INFRA=0
 SKIP_LIVE=0
 
@@ -9,6 +10,9 @@ for arg in "$@"; do
   case "$arg" in
     --include-dream)
       INCLUDE_DREAM=1
+      ;;
+    --include-quality)
+      INCLUDE_QUALITY=1
       ;;
     --skip-infra)
       SKIP_INFRA=1
@@ -18,7 +22,7 @@ for arg in "$@"; do
       ;;
     *)
       echo "Unknown option: $arg" >&2
-      echo "Usage: $0 [--include-dream] [--skip-infra] [--skip-live]" >&2
+      echo "Usage: $0 [--include-dream] [--include-quality] [--skip-infra] [--skip-live]" >&2
       exit 1
       ;;
   esac
@@ -88,6 +92,29 @@ if [[ "${SKIP_INFRA}" -eq 0 ]]; then
 
     echo "==> Running transcript ingest queue E2E test (todo 103: shipped hook → queue → drain → .pending)"
     cargo test -p mcp-server --features test-utils --test test_transcript_ingest_queue_e2e -- --ignored
+
+    if [[ "${INCLUDE_QUALITY}" -eq 1 ]]; then
+      # DIAGNOSTIC, NON-GATING. These brutal honesty probes measure the shipped
+      # system against ground truth and are EXPECTED to fail loudly when a gap is
+      # open (retrieval quality below bar, latency over the 500ms budget, semantic
+      # not beating keyword matching, #154 project scope degraded, #156 recovery).
+      # We run them against the live mcp-server + graph-builder containers and do
+      # NOT abort the suite on their failure — their per-test output and the
+      # emitted reports under tests/e2e/reports/ are the evidence. Run them
+      # directly for a true exit code:
+      #   cargo test -p mcp-server --features test-utils --test test_retrieval_quality -- --ignored
+      echo "==> [DIAGNOSTIC] Retrieval-quality harness (precision/recall/MRR/nDCG, semantic-vs-lexical, latency SLO)"
+      cargo test -p mcp-server --features test-utils --test test_retrieval_quality -- --ignored \
+        || echo "    [DIAGNOSTIC] retrieval-quality harness reported failures — see tests/e2e/reports/ (non-gating)"
+
+      echo "==> [DIAGNOSTIC] Brutal deployment-truth probes (#154 containerized project scope, #156 builder-crash recovery)"
+      cargo test -p mcp-server --features test-utils --test test_brutal_probes -- --ignored \
+        || echo "    [DIAGNOSTIC] brutal probes reported failures — see tests/e2e/reports/ (non-gating)"
+
+      echo "==> [DIAGNOSTIC] Extraction-content-quality (real Ollama extraction → .pending must CAPTURE the taught procedure)"
+      cargo test -p mcp-server --features test-utils --test test_extraction_quality -- --ignored \
+        || echo "    [DIAGNOSTIC] extraction-quality reported failures — see tests/e2e/reports/ (non-gating)"
+    fi
 
     echo "==> Tearing down service containers"
     docker compose --ansi never -f "${REPO_ROOT}/${COMPOSE_FILE}" rm -sf mcp-server graph-builder

@@ -9,6 +9,10 @@ description = "Offline maintenance workflows for merge, retirement, and schedule
 name = "maintenance"
 path = "src/lib.rs"
 
+[[bin]]
+name = "maintenance-worker"
+path = "src/main.rs"
+
 [[test]]
 name = "test_merge_workflow"
 path = "../../tests/integration/test_merge_workflow.rs"

@@ -248,7 +248,16 @@ where
             summaries
                 .into_iter()
                 .filter_map(|summary| {
-                    if summary.windowed_count == 0 {
+                    // Cold-start guard: emit a sample for every skill that has EVER
+                    // been used (lifetime `total_count > 0`), and drop only
+                    // never-used skills. A never-used skill is NOT provably stale —
+                    // it simply has not had the chance yet — so it must not be
+                    // retired (this is the same "honest cold-start" principle the
+                    // retrieval `usage_prior` already follows). `propose` skips any
+                    // skill with no sample. Ever-used-but-now-cold skills still emit
+                    // a sample (with `usage_count = windowed_count`, possibly 0), so
+                    // they score below threshold and are correctly retired.
+                    if summary.total_count == 0 {
                         return None;
                     }
                     // Emit ONE sample with `usage_count = windowed_count` rather
@@ -315,7 +324,15 @@ async fn load_skill_snapshots(
     Ok(built
         .into_iter()
         .map(|skill| SkillSnapshot {
-            id: skill.id,
+            // Key on the PERSISTED skill identity, not the raw blake3 hex. The
+            // graph-builder persistence path writes `skills.id =
+            // stable_skill_uuid(BuiltSkill.id)` (the UUID the `skill_usage` FK
+            // references). Re-deriving the same UUID here makes `recent_usage`
+            // (which parses UUIDs and returns `s.id::TEXT`) match, and keeps the
+            // retire/merge usage joins correct. Using `skill.id` (the 64-char
+            // blake3 hex) instead both fails the UUID parse AND, if coerced, would
+            // zero-match usage and mass-retire every skill.
+            id: infrastructure::stable_skill_uuid(&skill.id).to_string(),
             name: skill.name,
             description: skill.description,
             scope: skill.scope_type,
@@ -433,6 +450,12 @@ pub async fn run_maintenance_worker_from_environment() -> Result<(), Maintenance
 
     let db_url = env_var("DATABASE_URL")
         .map_err(|error| MaintenanceRuntimeError::InvalidConfiguration(error))?;
+    // Self-heal a missing application database before connecting (see
+    // `ensure_database_exists`): a stale/test-initialized volume otherwise
+    // crash-loops the worker on `database "X" does not exist`.
+    infrastructure::ensure_database_exists(&db_url)
+        .await
+        .map_err(|error| MaintenanceRuntimeError::InvalidConfiguration(error.to_string()))?;
     let pg_adapter = PostgresAdapter::connect(&PostgresConfig {
         database_url: db_url,
         ..PostgresConfig::default()

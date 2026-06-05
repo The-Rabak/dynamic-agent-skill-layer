@@ -1,6 +1,10 @@
+use std::str::FromStr;
 use std::time::Duration;
 
-use sqlx::{PgPool, postgres::PgPoolOptions};
+use sqlx::{
+    Connection, PgConnection, PgPool,
+    postgres::{PgConnectOptions, PgPoolOptions},
+};
 use thiserror::Error;
 
 const MIGRATION_001: &str = include_str!("../../migrations/001_initial_schema.sql");
@@ -71,6 +75,80 @@ pub enum PostgresError {
     Connection(#[from] sqlx::Error),
     #[error("postgres migration failure: {0}")]
     Migration(String),
+}
+
+/// Ensures the application database named in `database_url` exists, creating it
+/// if absent.
+///
+/// Postgres only runs its `POSTGRES_DB` bootstrap on a first-boot EMPTY data
+/// directory. A reused or stale volume — or one first initialized under a
+/// different `POSTGRES_DB` (e.g. the test database) — therefore leaves the
+/// application database missing, and every service then crash-loops on
+/// `database "X" does not exist`. Calling this at service boot makes the stack
+/// self-heal regardless of how the volume was initialized.
+///
+/// It connects to the always-present `postgres` maintenance database, checks
+/// `pg_database`, and issues `CREATE DATABASE` only when needed. Idempotent and
+/// safe to call from every service concurrently: the loser of a `CREATE` race
+/// re-checks and treats the now-present database as success.
+///
+/// Fails loud (returns `Err`) when the maintenance database is unreachable or the
+/// role lacks `CREATEDB` — it never silently proceeds against a missing database.
+pub async fn ensure_database_exists(database_url: &str) -> Result<(), PostgresError> {
+    let options = PgConnectOptions::from_str(database_url)?;
+    let database_name = options.get_database().unwrap_or_default().to_owned();
+    if database_name.trim().is_empty() {
+        return Err(PostgresError::InvalidConfiguration(
+            "database_url must name a database".to_owned(),
+        ));
+    }
+
+    // Connect to the maintenance database that always exists in a Postgres
+    // cluster so we can interrogate/create the application database.
+    let admin_options = options.clone().database("postgres");
+    let mut admin = PgConnection::connect_with(&admin_options).await?;
+
+    if database_exists(&mut admin, &database_name).await? {
+        admin.close().await.ok();
+        return Ok(());
+    }
+
+    // CREATE DATABASE cannot run inside a transaction nor be parameterized. The
+    // name comes from our own trusted config; we still quote-identify it so an
+    // unusual database name can never break the statement. A concurrent booter
+    // may win the race — on error, re-check and accept an already-created db.
+    let quoted = database_name.replace('"', "\"\"");
+    if let Err(create_error) = sqlx::query(&format!("CREATE DATABASE \"{quoted}\""))
+        .execute(&mut admin)
+        .await
+    {
+        if database_exists(&mut admin, &database_name).await? {
+            tracing::info!(
+                database = %database_name,
+                "application database was created concurrently by another booter"
+            );
+        } else {
+            admin.close().await.ok();
+            return Err(PostgresError::Connection(create_error));
+        }
+    } else {
+        tracing::info!(database = %database_name, "created missing application database");
+    }
+
+    admin.close().await.ok();
+    Ok(())
+}
+
+/// Returns whether a database with `database_name` is present in the cluster.
+async fn database_exists(
+    admin: &mut PgConnection,
+    database_name: &str,
+) -> Result<bool, PostgresError> {
+    let found: Option<i32> = sqlx::query_scalar("SELECT 1 FROM pg_database WHERE datname = $1")
+        .bind(database_name)
+        .fetch_optional(&mut *admin)
+        .await?;
+    Ok(found.is_some())
 }
 
 #[derive(Debug, Clone)]
