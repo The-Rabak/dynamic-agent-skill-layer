@@ -49,7 +49,11 @@ fn repo_root_path() -> String {
 #[ignore = "requires live containers"]
 #[tokio::test]
 async fn boot_time_live_retrieval() {
-    let _env_guard = env_guard::configure_scope_env();
+    // Per-run namespace isolation (#164): build all components against a sandbox
+    // PG schema / Qdrant collection / Redis stream so the destructive teardowns
+    // below never touch the live containers' canonical namespace. Also sets the
+    // scope env (folded in to avoid double-locking ENV_LOCK).
+    let namespace = env_guard::isolated_namespace().await;
 
     // Boot once to obtain the live components (PG/Qdrant/Redis/Ollama wiring) and
     // seed a single retrievable skill into the durable graph store.
@@ -126,4 +130,8 @@ async fn boot_time_live_retrieval() {
         .teardown()
         .await
         .expect("teardown should succeed");
+
+    // Drop the sandbox schema / collection / stream. Only touches this run's
+    // namespace; the containers' canonical namespace is never affected.
+    namespace.cleanup().await;
 }

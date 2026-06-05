@@ -16,6 +16,18 @@ pub struct SessionSuppressionState {
     inner: Arc<DashMap<String, SuppressionEntry>>,
     redis_client: Option<RedisClient>,
     ttl_secs: u64,
+    /// Optional Redis-key namespace prefix (`REDIS_KEY_PREFIX`). Empty in
+    /// production and the live containers — set only by the per-run test
+    /// namespace guard (#164) so a sandbox's suppression keys cannot collide with
+    /// the shared canonical `suppression:*` keys (which would yield phantom
+    /// `DuplicateSuppressed` results at low graph versions).
+    key_prefix: String,
+}
+
+/// Reads the optional `REDIS_KEY_PREFIX` namespace prefix shared by the
+/// suppression and context-cache Redis keys. Unset/blank in production.
+pub(crate) fn redis_key_prefix() -> String {
+    std::env::var("REDIS_KEY_PREFIX").unwrap_or_default()
 }
 
 pub(crate) async fn scan_and_del_pattern(client: &RedisClient, pattern: &str, context: &str) {
@@ -81,11 +93,17 @@ impl SessionSuppressionState {
             inner: Arc::default(),
             redis_client,
             ttl_secs,
+            key_prefix: redis_key_prefix(),
         }
     }
 
-    fn redis_key(session_id: &str, repo_path: &str) -> String {
-        format!("suppression:{}::{}", session_id.trim(), repo_path.trim())
+    fn redis_key(&self, session_id: &str, repo_path: &str) -> String {
+        format!(
+            "{}suppression:{}::{}",
+            self.key_prefix,
+            session_id.trim(),
+            repo_path.trim()
+        )
     }
 
     fn local_key(session_id: &str, repo_path: &str) -> String {
@@ -140,7 +158,7 @@ impl SessionSuppressionState {
                 return None;
             }
         };
-        let key = Self::redis_key(session_id, repo_path);
+        let key = self.redis_key(session_id, repo_path);
         let raw: Option<String> = match conn.get(&key).await {
             Ok(raw) => raw,
             Err(error) => {
@@ -184,7 +202,7 @@ impl SessionSuppressionState {
                 return;
             }
         };
-        let key = Self::redis_key(session_id, repo_path);
+        let key = self.redis_key(session_id, repo_path);
         let value = match serde_json::to_string(entry) {
             Ok(json) => json,
             Err(error) => {
@@ -296,8 +314,8 @@ impl SessionSuppressionState {
         // Evict from Redis in the background (non-blocking).
         let redis_client = self.redis_client.clone();
         let escaped_sid = Self::escape_redis_glob(session_id.trim());
-        // Redis keys use format "suppression:{session_id}::{repo_path}".
-        let pattern = format!("suppression:{escaped_sid}::*");
+        // Redis keys use format "{key_prefix}suppression:{session_id}::{repo_path}".
+        let pattern = format!("{}suppression:{escaped_sid}::*", self.key_prefix);
         tokio::spawn(async move {
             if let Some(client) = redis_client {
                 scan_and_del_pattern(&client, &pattern, "suppression_clear").await;

@@ -594,14 +594,19 @@ async fn build_pg_adapter() -> Result<Arc<PostgresAdapter>, Box<dyn std::error::
 
 async fn build_qdrant_adapter()
 -> Result<Arc<QdrantAdapter>, Box<dyn std::error::Error + Send + Sync>> {
+    // `QDRANT_COLLECTION` defaults to the canonical `skills` so the production
+    // binary and the live containers are unaffected. Per-run test isolation
+    // (#164) overrides it with a unique collection so a destructive teardown
+    // never touches the shared `skills` collection.
+    let collection_name = env_or("QDRANT_COLLECTION", "skills");
     let qdrant_config = QdrantConfig {
         endpoint: env_var("QDRANT_URL")?,
         timeout_ms: 3_000,
-        collection_name: "skills".to_owned(),
+        collection_name: collection_name.clone(),
     };
     let qdrant_adapter = QdrantAdapter::from_config(qdrant_config)?;
     qdrant_adapter.check_connectivity().await?;
-    qdrant_adapter.ensure_collection("skills", 768).await?;
+    qdrant_adapter.ensure_collection(&collection_name, 768).await?;
     Ok(Arc::new(qdrant_adapter))
 }
 
@@ -621,13 +626,21 @@ fn build_embedding_service()
 
 async fn build_redis_streams_adapter()
 -> Result<Arc<RedisStreamsAdapter>, Box<dyn std::error::Error + Send + Sync>> {
-    // Stream key / consumer group / tuning come from the single canonical source
-    // (`RedisStreamsConfig::default`, which uses `SKILL_LAYER_STREAM_KEY` /
-    // `SKILL_LAYER_CONSUMER_GROUP`). Only the URL is environment-driven here — this
-    // guarantees the subscriber can never drift from the publisher's stream/group.
+    // Stream key / consumer group / consumer name default to the single canonical
+    // source (`RedisStreamsConfig::default`, which uses `SKILL_LAYER_STREAM_KEY` /
+    // `SKILL_LAYER_CONSUMER_GROUP`) so production and the live containers stay on the
+    // shared bus and the subscriber can never drift from the publisher. The optional
+    // `REDIS_STREAM_KEY` / `REDIS_CONSUMER_GROUP` / `REDIS_CONSUMER_NAME` overrides
+    // exist ONLY for per-run test isolation (#164) — they mirror the same env names
+    // the session-extractor already honors, so a namespaced test consumes its own
+    // stream/group and its destructive teardown never DELs the shared one.
+    let defaults = RedisStreamsConfig::default();
     let redis_config = RedisStreamsConfig {
         redis_url: env_var("REDIS_URL")?,
-        ..RedisStreamsConfig::default()
+        stream_key: env_or("REDIS_STREAM_KEY", &defaults.stream_key),
+        consumer_group: env_or("REDIS_CONSUMER_GROUP", &defaults.consumer_group),
+        consumer_name: env_or("REDIS_CONSUMER_NAME", &defaults.consumer_name),
+        ..defaults
     };
     let redis_streams = RedisStreamsAdapter::new(redis_config)?;
     redis_streams.ensure_consumer_group().await?;
@@ -640,6 +653,18 @@ fn build_redis_client() -> Result<RedisClient, Box<dyn std::error::Error + Send 
 
 fn env_var(name: &str) -> Result<String, String> {
     std::env::var(name).map_err(|_| format!("{name} must be set"))
+}
+
+/// Reads an optional env override, falling back to `default` when unset or blank.
+///
+/// Used for the per-run test-isolation overrides (#164): unset in production and
+/// in the live containers, so they keep the canonical stream/group/collection
+/// names; set only by the in-process test harness's namespace guard.
+fn env_or(name: &str, default: &str) -> String {
+    match std::env::var(name) {
+        Ok(value) if !value.trim().is_empty() => value,
+        _ => default.to_owned(),
+    }
 }
 
 /// Reads a `PATH`-style env var into canonicalized scope-root paths.

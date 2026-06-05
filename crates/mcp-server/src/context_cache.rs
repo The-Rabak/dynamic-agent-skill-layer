@@ -24,6 +24,10 @@ pub struct CompiledContextCache {
     inner: Arc<DashMap<String, CachedContext>>,
     redis_client: Option<RedisClient>,
     ttl_secs: u64,
+    /// Optional Redis-key namespace prefix (`REDIS_KEY_PREFIX`). Empty in
+    /// production; set only by the per-run test namespace guard (#164) so a
+    /// sandbox's `cache:*` keys cannot collide with the shared canonical ones.
+    key_prefix: String,
 }
 
 impl CompiledContextCache {
@@ -34,6 +38,7 @@ impl CompiledContextCache {
             inner: Arc::default(),
             redis_client,
             ttl_secs,
+            key_prefix: crate::suppression_state::redis_key_prefix(),
         }
     }
 
@@ -49,17 +54,18 @@ impl CompiledContextCache {
         sorted.join(",")
     }
 
-    fn cache_key(session_id: &str, prompt: &str, configured_scopes: &[String]) -> String {
+    fn cache_key(&self, session_id: &str, prompt: &str, configured_scopes: &[String]) -> String {
         format!(
-            "cache:{}:{}:{}",
+            "{}cache:{}:{}:{}",
+            self.key_prefix,
             session_id.trim(),
             Self::prompt_hash(prompt),
             Self::scope_fingerprint(configured_scopes)
         )
     }
 
-    fn cache_prefix_for_clear(session_id: &str) -> String {
-        format!("cache:{}:", session_id.trim())
+    fn cache_prefix_for_clear(&self, session_id: &str) -> String {
+        format!("{}cache:{}:", self.key_prefix, session_id.trim())
     }
 
     async fn try_redis_get(&self, redis_key: &str) -> Option<CachedContext> {
@@ -151,7 +157,7 @@ impl CompiledContextCache {
         configured_scopes: &[String],
         graph_version: i64,
     ) -> Option<CachedContext> {
-        let key = Self::cache_key(session_id, prompt, configured_scopes);
+        let key = self.cache_key(session_id, prompt, configured_scopes);
 
         if let Some(entry) = self.inner.get(&key)
             && entry.graph_version == graph_version
@@ -176,7 +182,7 @@ impl CompiledContextCache {
         configured_scopes: &[String],
         entry: CachedContext,
     ) {
-        let key = Self::cache_key(session_id, prompt, configured_scopes);
+        let key = self.cache_key(session_id, prompt, configured_scopes);
         let redis_key = key.clone();
 
         self.inner.insert(key.clone(), entry.clone());
@@ -184,7 +190,7 @@ impl CompiledContextCache {
     }
 
     pub fn clear_session(&self, session_id: &str) {
-        let prefix = Self::cache_prefix_for_clear(session_id);
+        let prefix = self.cache_prefix_for_clear(session_id);
         self.inner.retain(|key, _| !key.starts_with(&prefix));
 
         let redis_client = self.redis_client.clone();
@@ -193,7 +199,7 @@ impl CompiledContextCache {
         // Without escaping, a session_id of "*" produces "cache:*:*" and wipes every
         // session's cache. `escape_redis_glob` is `pub(crate)` specifically for this reuse.
         let escaped_sid = SessionSuppressionState::escape_redis_glob(session_id.trim());
-        let pattern = format!("cache:{escaped_sid}:*");
+        let pattern = format!("{}cache:{escaped_sid}:*", self.key_prefix);
         tokio::spawn(async move {
             if let Some(client) = redis_client {
                 scan_and_del_pattern(&client, &pattern, "cache_clear").await;

@@ -410,7 +410,7 @@ async fn seed_live_skill(
 #[ignore = "requires live containers"]
 #[tokio::test(flavor = "multi_thread", worker_threads = 8)]
 async fn compile_context_parallel_burst_under_live_infra_stays_within_contract_statuses() {
-    let _env_guard = env_guard::configure_scope_env();
+    let namespace = env_guard::isolated_namespace().await;
     let mut builder = report::ReportBuilder::new(
         "compile_context_parallel_burst_under_live_infra_stays_within_contract_statuses",
     );
@@ -421,29 +421,63 @@ async fn compile_context_parallel_burst_under_live_infra_stays_within_contract_s
         .expect("should connect to live infrastructure");
     builder.record_latency("server_bootstrap", start.elapsed().as_millis() as u64);
 
-    // Seed 3 known skills into PG via components.rebuild_coordinator.
+    // Seed all 3 skills in a single replace_snapshot_and_bump_version call.
+    //
+    // With sandbox namespace isolation (#164) each call to replace_snapshot_and_bump_version
+    // REPLACES the entire snapshot (DELETE FROM skills + INSERT). If the three skills are seeded
+    // via separate calls only the last one survives. A single combined mutation preserves all
+    // three so the fresh server's in-memory snapshot includes every skill the burst test needs
+    // to produce Ok retrievals.
     let seed_start = std::time::Instant::now();
-    seed_live_skill(
-        &*components.rebuild_coordinator,
-        "live-stress-rust-file-io",
-        "Rust file IO patterns for stress testing",
-        vec!["rust".to_owned(), "file".to_owned(), "io".to_owned()],
-    )
-    .await;
-    seed_live_skill(
-        &*components.rebuild_coordinator,
-        "live-stress-async-tokio",
-        "Async tokio patterns for stress testing",
-        vec!["rust".to_owned(), "async".to_owned(), "tokio".to_owned()],
-    )
-    .await;
-    seed_live_skill(
-        &*components.rebuild_coordinator,
-        "live-stress-auth-playbook",
-        "Auth security playbook for stress testing",
-        vec!["auth".to_owned(), "security".to_owned()],
-    )
-    .await;
+    components
+        .rebuild_coordinator
+        .replace_snapshot_and_bump_version(LiveGraphSnapshotMutation {
+            rebuilt_at: chrono::Utc::now(),
+            skills: vec![
+                LiveGraphSkillRecord {
+                    stable_id: "live-stress-rust-file-io".to_owned(),
+                    name: "live-stress-rust-file-io".to_owned(),
+                    description: "Rust file IO patterns for stress testing".to_owned(),
+                    scope: ScopeType::Global,
+                    tags: vec!["rust".to_owned(), "file".to_owned(), "io".to_owned()],
+                    source_paths: vec![],
+                    subunits: vec![LiveGraphSubunitRecord {
+                        kind: SubunitType::Procedure,
+                        title: "test procedure".to_owned(),
+                        content: "test content for concurrency stress".to_owned(),
+                    }],
+                },
+                LiveGraphSkillRecord {
+                    stable_id: "live-stress-async-tokio".to_owned(),
+                    name: "live-stress-async-tokio".to_owned(),
+                    description: "Async tokio patterns for stress testing".to_owned(),
+                    scope: domain::ScopeType::Global,
+                    tags: vec!["rust".to_owned(), "async".to_owned(), "tokio".to_owned()],
+                    source_paths: vec![],
+                    subunits: vec![LiveGraphSubunitRecord {
+                        kind: domain::SubunitType::Procedure,
+                        title: "test procedure".to_owned(),
+                        content: "test content for concurrency stress".to_owned(),
+                    }],
+                },
+                LiveGraphSkillRecord {
+                    stable_id: "live-stress-auth-playbook".to_owned(),
+                    name: "live-stress-auth-playbook".to_owned(),
+                    description: "Auth security playbook for stress testing".to_owned(),
+                    scope: domain::ScopeType::Global,
+                    tags: vec!["auth".to_owned(), "security".to_owned()],
+                    source_paths: vec![],
+                    subunits: vec![LiveGraphSubunitRecord {
+                        kind: domain::SubunitType::Procedure,
+                        title: "test procedure".to_owned(),
+                        content: "test content for concurrency stress".to_owned(),
+                    }],
+                },
+            ],
+            communities: vec![],
+        })
+        .await
+        .expect("seed all 3 stress skills in one snapshot");
     builder.record_latency("seed_skills", seed_start.elapsed().as_millis() as u64);
 
     // Build a fresh server AFTER seeding so its in-memory snapshot includes the seeded
@@ -648,12 +682,13 @@ async fn compile_context_parallel_burst_under_live_infra_stays_within_contract_s
         .teardown()
         .await
         .expect("components teardown should succeed");
+    namespace.cleanup().await;
 }
 
 #[ignore = "requires live containers"]
 #[tokio::test(flavor = "multi_thread", worker_threads = 8)]
 async fn compile_context_and_rebuild_concurrent_activity_stays_consistent() {
-    let _env_guard = env_guard::configure_scope_env();
+    let namespace = env_guard::isolated_namespace().await;
     let mut builder = report::ReportBuilder::new(
         "compile_context_and_rebuild_concurrent_activity_stays_consistent",
     );
@@ -806,6 +841,7 @@ async fn compile_context_and_rebuild_concurrent_activity_stays_consistent() {
         .teardown()
         .await
         .expect("teardown should succeed");
+    namespace.cleanup().await;
 }
 
 #[ignore = "requires live containers"]
@@ -822,9 +858,9 @@ async fn extract_session_parallel_burst_all_jobs_complete_and_drafts_persist() {
     let sandbox = repo_root.join(format!("target/tmp-live-extract-stress-{nonce}"));
     std::fs::create_dir_all(&sandbox).expect("sandbox should exist");
 
-    let _env_guard = env_guard::configure_scope_env_with_global_path(sandbox.clone());
+    let namespace = env_guard::isolated_namespace_with_global_path(sandbox.clone()).await;
 
-    // SAFETY: tests set process env only while holding ENV_LOCK via _env_guard.
+    // SAFETY: tests set process env only while holding ENV_LOCK via namespace.
     unsafe {
         std::env::set_var("CLAUDE_TRANSCRIPT_ROOT", &sandbox);
         std::env::set_var("EXTRACT_SESSION_PROVIDER", "ollama");
@@ -1026,4 +1062,5 @@ async fn extract_session_parallel_burst_all_jobs_complete_and_drafts_persist() {
         .await
         .expect("teardown should succeed");
     let _ = std::fs::remove_dir_all(&sandbox);
+    namespace.cleanup().await;
 }

@@ -439,8 +439,16 @@ async fn extract_session_invalid_inline_payload_surfaces_failed_event_without_pe
 #[ignore = "requires live containers"]
 #[tokio::test]
 async fn test_live_data_plane_roundtrip() {
-    let _env_guard = env_guard::configure_scope_env();
+    let namespace = env_guard::isolated_namespace().await;
     let mut builder = report::ReportBuilder::new("test_live_data_plane_roundtrip");
+
+    // Unique per-run nonce prevents Redis suppression-key collision with stale entries
+    // from prior runs (#164). Suppression keys are keyed on session_id, which is NOT
+    // namespace-isolated by `isolated_namespace()` — only PG/Qdrant/stream are isolated.
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock should be after unix epoch")
+        .as_nanos();
 
     let start = std::time::Instant::now();
 
@@ -505,7 +513,7 @@ async fn test_live_data_plane_roundtrip() {
 
     let request = CompileContextRequest {
         prompt: "how to read files in rust with tokio async".to_owned(),
-        session_id: "live-roundtrip-session".to_owned(),
+        session_id: format!("live-roundtrip-session-{nonce}"),
         repo_path,
         trigger: None,
     };
@@ -591,6 +599,7 @@ async fn test_live_data_plane_roundtrip() {
         .teardown()
         .await
         .expect("teardown should succeed");
+    namespace.cleanup().await;
 }
 
 #[ignore = "requires live containers"]
@@ -607,9 +616,9 @@ async fn extract_session_live_inline_payload_writes_pending_and_emits_completion
     let sandbox = repo_root.join(format!("target/tmp-live-extract-inline-{nonce}"));
     std::fs::create_dir_all(&sandbox).expect("sandbox should exist");
 
-    let _env_guard = env_guard::configure_scope_env_with_global_path(sandbox.clone());
+    let namespace = env_guard::isolated_namespace_with_global_path(sandbox.clone()).await;
 
-    // SAFETY: tests set process env only while holding ENV_LOCK via _env_guard.
+    // SAFETY: tests set process env only while holding ENV_LOCK via namespace.
     unsafe {
         std::env::set_var("CLAUDE_TRANSCRIPT_ROOT", &sandbox);
         std::env::set_var("EXTRACT_SESSION_PROVIDER", "ollama");
@@ -798,6 +807,7 @@ async fn extract_session_live_inline_payload_writes_pending_and_emits_completion
         .await
         .expect("teardown should succeed");
     let _ = std::fs::remove_dir_all(&sandbox);
+    namespace.cleanup().await;
 }
 
 #[ignore = "requires live containers"]
@@ -815,9 +825,9 @@ async fn extract_session_live_ref_payload_loads_from_transcript_volume() {
     let sandbox = repo_root.join(format!("target/tmp-live-extract-ref-{nonce}"));
     std::fs::create_dir_all(&sandbox).expect("sandbox should exist");
 
-    let _env_guard = env_guard::configure_scope_env_with_global_path(sandbox.clone());
+    let namespace = env_guard::isolated_namespace_with_global_path(sandbox.clone()).await;
 
-    // SAFETY: tests set process env only while holding ENV_LOCK via _env_guard.
+    // SAFETY: tests set process env only while holding ENV_LOCK via namespace.
     unsafe {
         std::env::set_var("CLAUDE_TRANSCRIPT_ROOT", &fixtures_dir);
         std::env::set_var("EXTRACT_SESSION_PROVIDER", "ollama");
@@ -919,12 +929,13 @@ async fn extract_session_live_ref_payload_loads_from_transcript_volume() {
         .await
         .expect("teardown should succeed");
     let _ = std::fs::remove_dir_all(&sandbox);
+    namespace.cleanup().await;
 }
 
 #[ignore = "requires live containers"]
 #[tokio::test]
 async fn degraded_and_recovery_cycle_preserves_reason_codes_and_recovers_cleanly() {
-    let _env_guard = env_guard::configure_scope_env();
+    let namespace = env_guard::isolated_namespace().await;
     let compose_file = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../docker-compose.test.yml")
         .canonicalize()
@@ -934,6 +945,14 @@ async fn degraded_and_recovery_cycle_preserves_reason_codes_and_recovers_cleanly
     let mut builder = report::ReportBuilder::new(
         "degraded_and_recovery_cycle_preserves_reason_codes_and_recovers_cleanly",
     );
+
+    // Unique per-run nonce prevents Redis suppression-key collision with stale entries
+    // from prior runs (#164). Suppression keys are keyed on session_id, which is NOT
+    // namespace-isolated by `isolated_namespace()` — only PG/Qdrant/stream are isolated.
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock should be after unix epoch")
+        .as_nanos();
 
     let repo_path = test_repo_path();
 
@@ -946,7 +965,7 @@ async fn degraded_and_recovery_cycle_preserves_reason_codes_and_recovers_cleanly
     // Phase 1: Baseline healthy call.
     let baseline_req = CompileContextRequest {
         prompt: "rust file access patterns".to_owned(),
-        session_id: "live-degraded-baseline".to_owned(),
+        session_id: format!("live-degraded-baseline-{nonce}"),
         repo_path: repo_path.clone(),
         trigger: None,
     };
@@ -1017,7 +1036,7 @@ async fn degraded_and_recovery_cycle_preserves_reason_codes_and_recovers_cleanly
 
     let degraded1_req = CompileContextRequest {
         prompt: "rust auth middleware".to_owned(),
-        session_id: "live-degraded-qdrant".to_owned(),
+        session_id: format!("live-degraded-qdrant-{nonce}"),
         repo_path: repo_path.clone(),
         trigger: None,
     };
@@ -1093,7 +1112,7 @@ async fn degraded_and_recovery_cycle_preserves_reason_codes_and_recovers_cleanly
 
     let degraded2_req = CompileContextRequest {
         prompt: "rust file io patterns".to_owned(),
-        session_id: "live-degraded-ollama".to_owned(),
+        session_id: format!("live-degraded-ollama-{nonce}"),
         repo_path: repo_path.clone(),
         trigger: None,
     };
@@ -1188,7 +1207,7 @@ async fn degraded_and_recovery_cycle_preserves_reason_codes_and_recovers_cleanly
         .app
         .compile_context(CompileContextRequest {
             prompt: "rust error handling".to_owned(),
-            session_id: "live-qdrant-back-ollama-down".to_owned(),
+            session_id: format!("live-qdrant-back-ollama-down-{nonce}"),
             repo_path: repo_path.clone(),
             trigger: None,
         })
@@ -1253,7 +1272,7 @@ async fn degraded_and_recovery_cycle_preserves_reason_codes_and_recovers_cleanly
 
     let recover2_req = CompileContextRequest {
         prompt: "rust async patterns".to_owned(),
-        session_id: "live-recovered-ollama".to_owned(),
+        session_id: format!("live-recovered-ollama-{nonce}"),
         repo_path: repo_path.clone(),
         trigger: None,
     };
@@ -1301,6 +1320,7 @@ async fn degraded_and_recovery_cycle_preserves_reason_codes_and_recovers_cleanly
         .teardown()
         .await
         .expect("teardown should succeed");
+    namespace.cleanup().await;
 }
 
 /// SC-V1.5-A online half: a skill that becomes available WHILE the server runs
@@ -1317,7 +1337,7 @@ async fn degraded_and_recovery_cycle_preserves_reason_codes_and_recovers_cleanly
 #[ignore = "requires live containers"]
 #[tokio::test]
 async fn graph_rebuilt_event_refreshes_running_server_without_restart() {
-    let _env_guard = env_guard::configure_scope_env();
+    let namespace = env_guard::isolated_namespace().await;
 
     let components = McpServerApp::from_environment(retrieval_config())
         .await
@@ -1450,6 +1470,7 @@ async fn graph_rebuilt_event_refreshes_running_server_without_restart() {
         .teardown()
         .await
         .expect("teardown should succeed");
+    namespace.cleanup().await;
 }
 
 /// Proves that two independent `SessionSuppressionState` instances — each

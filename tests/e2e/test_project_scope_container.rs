@@ -81,7 +81,7 @@ fn nonce() -> u128 {
 #[ignore = "requires live containers"]
 #[tokio::test]
 async fn project_scoped_compile_context_returns_ok_with_fs_marker_resolver() {
-    let _env_guard = env_guard::configure_scope_env();
+    let namespace = env_guard::isolated_namespace().await;
 
     let mut builder = report::ReportBuilder::new(
         "project_scoped_compile_context_returns_ok_with_fs_marker_resolver",
@@ -240,4 +240,5 @@ async fn project_scoped_compile_context_returns_ok_with_fs_marker_resolver() {
         .teardown()
         .await
         .expect("teardown should succeed");
+    namespace.cleanup().await;
 }

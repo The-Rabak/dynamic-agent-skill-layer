@@ -127,8 +127,8 @@ async fn shipped_command_hook_payload_round_trips_through_queue_to_pending() {
     let sandbox = repo_root.join(format!("target/tmp-ingest-queue-{nonce}"));
     std::fs::create_dir_all(&sandbox).expect("sandbox should be creatable");
 
-    let _env_guard = env_guard::configure_scope_env_with_global_path(sandbox.clone());
-    // SAFETY: process env is mutated only while holding ENV_LOCK via _env_guard.
+    let namespace = env_guard::isolated_namespace_with_global_path(sandbox.clone()).await;
+    // SAFETY: process env is mutated only while holding ENV_LOCK via namespace.
     unsafe {
         std::env::set_var("CLAUDE_TRANSCRIPT_ROOT", repo_root.join("tests/fixtures"));
         std::env::set_var("EXTRACT_SESSION_PROVIDER", "ollama");
@@ -428,4 +428,5 @@ async fn shipped_command_hook_payload_round_trips_through_queue_to_pending() {
         .await
         .expect("teardown should succeed");
     let _ = std::fs::remove_dir_all(&sandbox);
+    namespace.cleanup().await;
 }

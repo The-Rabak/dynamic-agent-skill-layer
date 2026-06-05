@@ -5,9 +5,9 @@
 
 use domain::SubunitType;
 use infrastructure::{
-    DependencyFactory, GraphWriteCoordinator, LiveGraphSkillRecord, LiveGraphSnapshotMutation,
-    LiveGraphSubunitRecord, OutboxEvent, OutboxReconciler, OutboxRelay, OutboxVectorStore,
-    RebuildCoordinator, VECTOR_UPSERT_EVENT_TYPE,
+    DependencyFactory, EventEnvelope, GraphWriteCoordinator, LiveGraphSkillRecord,
+    LiveGraphSnapshotMutation, LiveGraphSubunitRecord, OutboxEvent, OutboxReconciler, OutboxRelay,
+    OutboxVectorStore, RebuildCoordinator, VECTOR_UPSERT_EVENT_TYPE,
 };
 use mcp_server::McpServerApp;
 use mcp_server::tools::compile_context::{CompileContextRequest, CompileContextStatus};
@@ -93,6 +93,68 @@ fn test_repo_path() -> String {
         .to_string()
 }
 
+/// Publishes a `graph.rebuilt` event to the sandbox Redis stream so the
+/// in-process `graph_refresh_subscriber` can pick it up and swap the
+/// in-memory snapshot to the freshly seeded state.
+///
+/// After `dream_seed_skills` writes skills into PG, the in-memory snapshot
+/// is still at the boot-time (empty) state because `replace_snapshot_and_bump_version`
+/// only writes to PG — it does NOT publish a `graph.rebuilt` event. In production
+/// the graph-builder container does that; in tests that use a sandbox namespace, we
+/// must trigger the refresh ourselves.
+///
+/// Polls until `compile_context` returns a response whose `graph_version` matches
+/// `expected_version`, proving the subscriber processed the event and swapped the
+/// snapshot. Times out after 30 s with a clear failure message.
+async fn dream_trigger_graph_refresh(
+    components: &mcp_server::LiveServerComponents,
+    expected_version: i64,
+    repo: &str,
+    probe_session_id: &str,
+    probe_prompt: &str,
+) {
+    let envelope = EventEnvelope::new(
+        "graph.rebuilt",
+        format!("graph.rebuilt:{expected_version}"),
+        serde_json::json!({
+            "graph_version": expected_version,
+            "skills_count": 3,
+            "communities_count": 0,
+        }),
+    );
+    components
+        .redis_adapter
+        .publish(&envelope)
+        .await
+        .expect("dream_trigger_graph_refresh: publish graph.rebuilt to sandbox stream");
+
+    // Poll until the in-memory snapshot reflects the new version.
+    // The graph_refresh_subscriber runs asynchronously so we give it up to 30 s.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    loop {
+        let r = components
+            .app
+            .compile_context(CompileContextRequest {
+                prompt: probe_prompt.to_owned(),
+                session_id: probe_session_id.to_owned(),
+                repo_path: repo.to_owned(),
+                trigger: Some(mcp_server::tools::compile_context::TriggerKind::Compact),
+            })
+            .await;
+        if r.graph_version >= expected_version {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "dream_trigger_graph_refresh: in-memory snapshot did not update to \
+             graph_version={expected_version} within 30s (last seen: {}); \
+             graph_refresh_subscriber may not be consuming the sandbox Redis stream",
+            r.graph_version
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
+}
+
 #[test]
 #[ignore = "Dream-state contract: closed-loop deterministic analysis->extraction->ingestion->retrieval not implemented"]
 fn full_session_analysis_extraction_ingestion_retrieval_loop_is_deterministic() {
@@ -166,7 +228,7 @@ fn mcp_transport_roundtrip_over_stdio_and_http_is_lossless() {
 #[tokio::test]
 async fn dependency_chaos_matrix_preserves_degraded_semantics_and_fast_recovery() {
     use std::time::Instant;
-    let _env_guard = env_guard::configure_scope_env();
+    let namespace = env_guard::isolated_namespace().await;
     let mut builder = report::ReportBuilder::new("DS-003_dependency_chaos_matrix");
     let docker_compose = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../docker-compose.test.yml")
@@ -686,6 +748,7 @@ async fn dependency_chaos_matrix_preserves_degraded_semantics_and_fast_recovery(
     )
     .unwrap();
     components.teardown().await.expect("teardown");
+    namespace.cleanup().await;
 }
 
 /// DS-004: Outbox backlog replay without data loss across multiple hard restart cycles.
@@ -712,7 +775,7 @@ async fn outbox_backlog_replays_without_data_loss_after_multi_restart_sequence()
     use sqlx::Row as _;
     use uuid::Uuid;
 
-    let _env_guard = env_guard::configure_scope_env();
+    let namespace = env_guard::isolated_namespace().await;
     let mut builder = report::ReportBuilder::new("DS-004_outbox_backlog_replay");
 
     let docker_compose = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -1122,6 +1185,7 @@ async fn outbox_backlog_replays_without_data_loss_after_multi_restart_sequence()
     )
     .unwrap();
     crash_restart_2.teardown().await.expect("teardown");
+    namespace.cleanup().await;
 }
 
 /// DS-005: Qdrant/PG drift injection, reconciliation, and convergence at scale.
@@ -1157,15 +1221,18 @@ async fn qdrant_pg_drift_detection_and_reconciliation_closes_all_gaps() {
 
     // The production collection uses 768-dimensional nomic-embed-text vectors.
     const VECTOR_DIM: usize = 768;
-    // The production Qdrant collection name.
-    const COLLECTION_NAME: &str = "skills";
     // scan_limit must exceed the total published-event count to ensure `expected_set_is_complete`
     // is true, which is required for the reconciler to delete orphans.
     const RECONCILER_SCAN_LIMIT: i64 = 500;
     // Maximum reconcile+relay cycles before declaring convergence failure.
     const MAX_CONVERGENCE_CYCLES: u32 = 20;
 
-    let _env_guard = env_guard::configure_scope_env();
+    let namespace = env_guard::isolated_namespace().await; // #164 per-run isolation
+    // Raw-HTTP drift injection must target the SAME namespaced collection the
+    // reconciler (built by `from_environment`) uses — otherwise it pollutes the
+    // shared canonical `skills` collection and the reconciler never sees it.
+    let collection_name =
+        std::env::var("QDRANT_COLLECTION").unwrap_or_else(|_| "skills".to_owned());
     let mut builder = report::ReportBuilder::new("DS-005_qdrant_pg_drift");
 
     let components = McpServerApp::from_environment(dream_retrieval_config())
@@ -1245,7 +1312,7 @@ async fn qdrant_pg_drift_detection_and_reconciliation_closes_all_gaps() {
     // point IDs not in the expected set and deletes them.
     let injected_orphans = support::drift::inject_qdrant_vectors_without_pg_rows(
         &qdrant_url,
-        COLLECTION_NAME,
+        &collection_name,
         VECTOR_DIM,
         ORPHAN_VECTOR_COUNT,
     )
@@ -1423,18 +1490,19 @@ async fn qdrant_pg_drift_detection_and_reconciliation_closes_all_gaps() {
     )
     .unwrap();
     components.teardown().await.expect("DS-005: teardown");
+    namespace.cleanup().await;
 }
 
 #[ignore = "requires live containers"]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn sustained_watcher_and_extraction_saturation_keeps_eventual_consistency() {
-    let _env_guard = env_guard::configure_scope_env();
+    let namespace = env_guard::isolated_namespace().await;
     let mut builder = report::ReportBuilder::new("DS-006_watcher_extraction_saturation");
 
     let components = McpServerApp::from_environment(dream_retrieval_config())
         .await
         .expect("live");
-    dream_seed_skills(
+    let seeded_version = dream_seed_skills(
         components.rebuild_coordinator.as_ref(),
         &[
             ("ds006-sat-skill-1", "Saturation skill alpha", &["alpha"]),
@@ -1445,6 +1513,19 @@ async fn sustained_watcher_and_extraction_saturation_keeps_eventual_consistency(
     .await;
 
     let repo = test_repo_path();
+
+    // Publish graph.rebuilt to the sandbox Redis stream so the in-process
+    // graph_refresh_subscriber swaps the in-memory snapshot to the seeded state.
+    // Without this, compile_context would see 0 skills (empty boot snapshot) and
+    // return NoMatch for every request — the exact failure mode we must prevent.
+    dream_trigger_graph_refresh(
+        &components,
+        seeded_version,
+        &repo,
+        "ds006-refresh-probe",
+        "saturation refresh probe",
+    )
+    .await;
     use tokio::task::JoinSet;
     let mut set = JoinSet::new();
     let app = components.app.clone();
@@ -1498,18 +1579,19 @@ async fn sustained_watcher_and_extraction_saturation_keeps_eventual_consistency(
     )
     .unwrap();
     components.teardown().await.expect("teardown");
+    namespace.cleanup().await;
 }
 
 #[ignore = "requires live containers"]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn high_qps_compile_context_load_meets_p95_and_error_budget_targets() {
-    let _env_guard = env_guard::configure_scope_env();
+    let namespace = env_guard::isolated_namespace().await;
     let mut builder = report::ReportBuilder::new("DS-007_high_qps_compile_context");
 
     let components = McpServerApp::from_environment(dream_retrieval_config())
         .await
         .expect("live");
-    dream_seed_skills(
+    let seeded_version = dream_seed_skills(
         components.rebuild_coordinator.as_ref(),
         &[
             (
@@ -1532,6 +1614,19 @@ async fn high_qps_compile_context_load_meets_p95_and_error_budget_targets() {
     .await;
 
     let repo = test_repo_path();
+
+    // Publish graph.rebuilt to the sandbox Redis stream so the in-process
+    // graph_refresh_subscriber swaps the in-memory snapshot to the seeded state.
+    // Without this, compile_context would see 0 skills (empty boot snapshot) and
+    // return NoMatch for every request — violating the QPS contract.
+    dream_trigger_graph_refresh(
+        &components,
+        seeded_version,
+        &repo,
+        "ds007-refresh-probe",
+        "qps refresh probe",
+    )
+    .await;
     use tokio::task::JoinSet;
     let mut set = JoinSet::new();
     let app = components.app.clone();
@@ -1614,6 +1709,7 @@ async fn high_qps_compile_context_load_meets_p95_and_error_budget_targets() {
     )
     .unwrap();
     components.teardown().await.expect("teardown");
+    namespace.cleanup().await;
 }
 
 #[test]

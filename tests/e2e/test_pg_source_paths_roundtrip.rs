@@ -50,7 +50,7 @@ fn retrieval_config() -> RetrievalConfig {
 #[ignore = "requires live containers"]
 #[tokio::test]
 async fn pg_source_paths_round_trip_preserves_provenance_for_scope_matching() {
-    let _env_guard = env_guard::configure_scope_env();
+    let namespace = env_guard::isolated_namespace().await;
 
     let components = McpServerApp::from_environment(retrieval_config())
         .await
@@ -173,4 +173,5 @@ async fn pg_source_paths_round_trip_preserves_provenance_for_scope_matching() {
         .teardown()
         .await
         .expect("teardown should succeed");
+    namespace.cleanup().await;
 }

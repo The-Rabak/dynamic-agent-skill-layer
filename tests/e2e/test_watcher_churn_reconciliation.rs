@@ -233,7 +233,7 @@ fn retrieval_config_for_watcher() -> RetrievalConfig {
 #[ignore = "requires live containers"]
 #[tokio::test]
 async fn watcher_churn_and_reconciliation_converges_to_correct_graph_state_under_live_pg_qdrant() {
-    let _env_guard = env_guard::configure_scope_env();
+    let namespace = env_guard::isolated_namespace().await;
     let mut builder = report::ReportBuilder::new(
         "watcher_churn_and_reconciliation_converges_to_correct_graph_state_under_live_pg_qdrant",
     );
@@ -510,4 +510,5 @@ async fn watcher_churn_and_reconciliation_converges_to_correct_graph_state_under
         .await
         .expect("teardown should succeed");
     fs::remove_dir_all(&sandbox).expect("sandbox should clean up");
+    namespace.cleanup().await;
 }
