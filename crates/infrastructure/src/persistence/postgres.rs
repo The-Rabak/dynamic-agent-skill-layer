@@ -155,6 +155,43 @@ impl PostgresAdapter {
     ///
     /// Failures surface as `PostgresError::Migration` — no errors are swallowed.
     pub async fn run_migrations(&self) -> Result<(), PostgresError> {
+        // Serialize concurrent migrators ACROSS PROCESSES. mcp-server and
+        // graph-builder boot at the same time against the same database and both call
+        // `run_migrations`; without a cross-process gate they race on the
+        // `schema_migrations` ledger and one crashes with a duplicate-key violation
+        // on `schema_migrations_pkey` (observed on a fresh DB). A session-level
+        // Postgres advisory lock, held on a dedicated connection for the whole
+        // sequence, guarantees only one process runs the loop at a time; the others
+        // block here, then find every migration already applied and skip.
+        //
+        // Stable arbitrary lock key (must be identical across all processes).
+        const MIGRATION_LOCK_KEY: i64 = 0x5C17_1A4E_4D16_2017;
+
+        let mut lock_conn = self.pool.acquire().await.map_err(|err| {
+            PostgresError::Migration(format!("acquire migration lock connection: {err}"))
+        })?;
+        sqlx::query("SELECT pg_advisory_lock($1)")
+            .bind(MIGRATION_LOCK_KEY)
+            .execute(&mut *lock_conn)
+            .await
+            .map_err(|err| {
+                PostgresError::Migration(format!("acquire advisory migration lock: {err}"))
+            })?;
+
+        // Run under the lock; always release it (even on error) before returning.
+        let result = self.run_migrations_locked().await;
+
+        let _ = sqlx::query("SELECT pg_advisory_unlock($1)")
+            .bind(MIGRATION_LOCK_KEY)
+            .execute(&mut *lock_conn)
+            .await;
+        drop(lock_conn); // dropping the session also releases the lock as a backstop
+
+        result
+    }
+
+    /// The actual migration sequence, run while the caller holds the advisory lock.
+    async fn run_migrations_locked(&self) -> Result<(), PostgresError> {
         // Bootstrap the tracking table. Created outside of any application
         // migration transaction so it is always available for the loop query.
         sqlx::query(
@@ -227,8 +264,15 @@ impl PostgresAdapter {
 
         // One simple-query message → one implicit transaction over both the DDL and
         // the id record. No explicit BEGIN/COMMIT (see the doc block above).
-        let batch =
-            format!("{inner_body}\nINSERT INTO schema_migrations (id) VALUES ('{migration_id}');");
+        //
+        // `ON CONFLICT (id) DO NOTHING`: even though `run_migrations` holds a
+        // cross-process advisory lock, this makes the ledger insert idempotent as a
+        // belt-and-braces guard — a concurrent or repeated apply can never crash with
+        // a duplicate-key violation on `schema_migrations_pkey`.
+        let batch = format!(
+            "{inner_body}\nINSERT INTO schema_migrations (id) VALUES ('{migration_id}') \
+             ON CONFLICT (id) DO NOTHING;"
+        );
 
         sqlx::raw_sql(&batch)
             .execute(&self.pool)
