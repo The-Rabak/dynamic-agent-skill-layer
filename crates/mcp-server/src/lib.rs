@@ -814,6 +814,51 @@ async fn build_graph_from_pg(
         .into());
     }
 
+    // Embed every subunit's text so the read path can score the β
+    // (subunit_evidence) term of eq.3 semantically at request time (issue #172).
+    // Subunit embeddings live ONLY in the in-memory snapshot — recomputed at boot
+    // exactly like skill embeddings above, so no migration or write-side storage is
+    // needed. One flat batch keeps this to a single provider round trip; it is
+    // re-sliced back into per-skill groups in the SeededSkill map below.
+    let subunit_texts: Vec<String> = skills
+        .iter()
+        .flat_map(|s| {
+            s.subunits
+                .iter()
+                .map(|su| format!("{} {}", su.title, su.content))
+        })
+        .collect();
+    let per_skill_subunit_embeddings: Vec<Vec<Vec<f32>>> = if subunit_texts.is_empty() {
+        skills.iter().map(|_| Vec::new()).collect()
+    } else {
+        let subunit_text_refs: Vec<&str> = subunit_texts.iter().map(String::as_str).collect();
+        let flat = embedding_service.embed_batch(&subunit_text_refs).await?;
+        // Fail loudly on a mismatched batch for the same reason as the skill path:
+        // a short vector would silently mis-align subunit embeddings to subunits.
+        if flat.len() != subunit_texts.len() {
+            return Err(format!(
+                "embed_batch returned {} subunit vectors for {} subunit texts",
+                flat.len(),
+                subunit_texts.len()
+            )
+            .into());
+        }
+        let mut flat = flat.into_iter();
+        skills
+            .iter()
+            .map(|s| {
+                (0..s.subunits.len())
+                    .map(|_| {
+                        flat.next().expect(
+                            "flat subunit embedding stream exhausted before all subunits were \
+                             assigned — len check above guarantees this cannot happen",
+                        )
+                    })
+                    .collect()
+            })
+            .collect()
+    };
+
     // Live-loaded skills have no per-file provenance (the `skills` table stores no
     // source path), so their searchable scope is the configured scope root. Without
     // this, `seeded_skill_matches_scope` rejects every live skill against a
@@ -862,7 +907,8 @@ async fn build_graph_from_pg(
     let seeded_skills: Vec<retrieval::SeededSkill> = skills
         .into_iter()
         .zip(embeddings.into_iter())
-        .map(|(record, embedding)| {
+        .zip(per_skill_subunit_embeddings.into_iter())
+        .map(|((record, embedding), subunit_embeddings)| {
             // Derive scope type, scope_id, and the fallback scope-root paths from
             // the `skills.scope` column in one match so the two arms cannot drift.
             let (scope, scope_id, fallback_scope_paths) = match record.scope.as_str() {
@@ -983,6 +1029,7 @@ async fn build_graph_from_pg(
                 source_paths,
                 embedding,
                 subunits,
+                subunit_embeddings,
                 prior,
                 community_boost,
             }

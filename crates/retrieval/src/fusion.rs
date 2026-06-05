@@ -11,6 +11,9 @@ pub struct FusedCandidate {
     pub score: f32,
     pub semantic_score: f32,
     pub lexical_score: f32,
+    /// β term actually folded into `score`: semantic subunit evidence (issue #172).
+    /// Retained for rationale/observability alongside the skill-level scores.
+    pub subunit_evidence: f32,
     pub embedding: Vec<f32>,
     pub highlights: Vec<SubunitProjection>,
 }
@@ -184,6 +187,7 @@ mod tests {
             score,
             semantic_score: score,
             lexical_score: score,
+            subunit_evidence: score,
             embedding: vec![score, 1.0 - score],
             highlights: Vec::new(),
         }
@@ -211,6 +215,7 @@ mod tests {
                 score: 0.9,
                 semantic_score: 0.9,
                 lexical_score: 0.9,
+                subunit_evidence: 0.9,
                 embedding: vec![1.0, 0.0],
                 highlights: vec![highlight.clone()],
             },
@@ -221,6 +226,7 @@ mod tests {
                 score: 0.9,
                 semantic_score: 0.9,
                 lexical_score: 0.9,
+                subunit_evidence: 0.9,
                 embedding: vec![0.99, 0.01],
                 highlights: vec![highlight.clone()],
             },
@@ -231,6 +237,7 @@ mod tests {
                 score: 0.85,
                 semantic_score: 0.85,
                 lexical_score: 0.8,
+                subunit_evidence: 0.8,
                 embedding: vec![0.0, 1.0],
                 highlights: vec![highlight],
             },

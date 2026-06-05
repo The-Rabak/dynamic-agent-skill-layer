@@ -109,6 +109,7 @@ fn seeded_dual_scope_graph() -> RetrievalSnapshot {
                 scope_id: "project".to_owned(),
                 source_paths: vec![repo_root.join("src/auth.rs")],
                 embedding: vec![1.0, 1.0, 0.0],
+                subunit_embeddings: vec![vec![1.0, 1.0, 0.0]],
                 subunits: vec![Subunit {
                     id: DomainId::new_unchecked("sub-project-rust-auth"),
                     skill_id: project_skill.id.clone(),
@@ -126,6 +127,7 @@ fn seeded_dual_scope_graph() -> RetrievalSnapshot {
                 scope_id: "global".to_owned(),
                 source_paths: vec![docs_root.join("global-rust-auth.md")],
                 embedding: vec![0.9, 1.0, 0.0],
+                subunit_embeddings: vec![vec![0.9, 1.0, 0.0]],
                 subunits: vec![Subunit {
                     id: DomainId::new_unchecked("sub-global-rust-auth"),
                     skill_id: global_skill.id.clone(),

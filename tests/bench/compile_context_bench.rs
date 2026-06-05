@@ -54,6 +54,7 @@ fn build_seeded_skill(id: &str, name: &str, scope: ScopeType, embedding: Vec<f32
             ScopeType::Team => "team".to_owned(),
         },
         source_paths: vec![],
+        subunit_embeddings: vec![embedding.clone()],
         embedding,
         subunits: vec![Subunit {
             id: DomainId::new_unchecked(format!("{id}-sub-0")),

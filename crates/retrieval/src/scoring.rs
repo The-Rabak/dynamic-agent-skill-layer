@@ -1,7 +1,11 @@
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ScoreComponents {
+    /// α term: skill-level cosine similarity (query vs skill embedding).
     pub l1_semantic: f32,
-    pub l0_lexical: f32,
+    /// β term: semantic subunit evidence — the aggregate cosine relevance of the
+    /// skill's subunits to the query (NOT lexical token overlap). See issue #172.
+    pub subunit_evidence: f32,
+    /// γ term: deterministic usage prior.
     pub prior: f32,
     pub community_boost: f32,
 }
@@ -27,7 +31,7 @@ impl Default for ScoringWeights {
 
 pub fn score_eq3(components: ScoreComponents, weights: ScoringWeights) -> f32 {
     let base = weights.alpha * components.l1_semantic
-        + weights.beta * components.l0_lexical
+        + weights.beta * components.subunit_evidence
         + weights.gamma * components.prior;
 
     base * (1.0 + weights.lambda * components.community_boost)
@@ -78,7 +82,7 @@ mod tests {
     fn score_eq3_matches_contract_formula() {
         let components = ScoreComponents {
             l1_semantic: 0.8,
-            l0_lexical: 0.6,
+            subunit_evidence: 0.6,
             prior: 0.4,
             community_boost: 0.3,
         };

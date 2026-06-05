@@ -249,10 +249,18 @@ fn perform_scope_search(
         .map(|seeded_skill| seeded_skill.subunits.clone())
         .collect();
 
+    let skill_subunit_embeddings: Vec<Vec<Vec<f32>>> = graph
+        .skills
+        .iter()
+        .map(|seeded_skill| seeded_skill.subunit_embeddings.clone())
+        .collect();
+
     let graph_hits = search_graph(
         prompt,
+        prompt_embedding,
         &skill_text,
         &skill_subunits,
+        &skill_subunit_embeddings,
         &candidate_indices,
         config.max_subunits_per_skill,
     );
@@ -268,10 +276,14 @@ fn perform_scope_search(
             let seeded_skill = graph.skills.get(scoped_skill_index)?;
             let graph_hit = graph_hits_by_skill.get(&scoped_skill_index);
             let lexical_score = graph_hit.map_or(0.0, |hit| hit.lexical_score);
+            // β is the semantic subunit evidence (issue #172), NOT skill-name
+            // lexical overlap. The skill-level lexical_score is retained only for
+            // rationale/observability below.
+            let subunit_evidence = graph_hit.map_or(0.0, |hit| hit.subunit_evidence);
             let score = score_eq3(
                 ScoreComponents {
                     l1_semantic: cosine_hit.semantic_score,
-                    l0_lexical: lexical_score,
+                    subunit_evidence,
                     prior: seeded_skill.prior,
                     community_boost: seeded_skill.community_boost,
                 },
@@ -285,6 +297,7 @@ fn perform_scope_search(
                 score,
                 semantic_score: cosine_hit.semantic_score,
                 lexical_score,
+                subunit_evidence,
                 embedding: seeded_skill.embedding.clone(),
                 highlights: graph_hit
                     .map(|hit| hit.projections.clone())
@@ -380,6 +393,7 @@ mod tests {
                     scope_id: "project".to_owned(),
                     source_paths: vec![PathBuf::from("/workspace/project/src/auth.rs")],
                     embedding: vec![1.0, 1.0],
+                    subunit_embeddings: vec![vec![1.0, 1.0]],
                     subunits: vec![Subunit {
                         id: DomainId::new_unchecked("project-sub"),
                         skill_id: project.id.clone(),
@@ -400,6 +414,7 @@ mod tests {
                     scope_id: "global".to_owned(),
                     source_paths: vec![PathBuf::from("/workspace/global/docs/auth.md")],
                     embedding: vec![0.9, 1.0],
+                    subunit_embeddings: vec![vec![0.9, 1.0]],
                     subunits: vec![Subunit {
                         id: DomainId::new_unchecked("global-sub"),
                         skill_id: global.id.clone(),
@@ -454,6 +469,7 @@ mod tests {
                     "/workspace/project/src/file-{index}.rs"
                 ))],
                 embedding: vec![1.0, 1.0],
+                subunit_embeddings: vec![vec![1.0, 1.0]],
                 subunits: vec![Subunit {
                     id: DomainId::new_unchecked(format!("project-sub-{index}")),
                     skill_id: project.id.clone(),
@@ -473,6 +489,7 @@ mod tests {
                     "/workspace/global/docs/file-{index}.md"
                 ))],
                 embedding: vec![0.9, 1.0],
+                subunit_embeddings: vec![vec![0.9, 1.0]],
                 subunits: vec![Subunit {
                     id: DomainId::new_unchecked(format!("global-sub-{index}")),
                     skill_id: global.id.clone(),
@@ -710,6 +727,7 @@ mod tests {
                     scope_id: "global".to_owned(),
                     source_paths: vec![PathBuf::from("/workspace/project/src/auth.rs")],
                     embedding: vec![1.0, 1.0],
+                    subunit_embeddings: vec![vec![1.0, 1.0]],
                     subunits: vec![Subunit {
                         id: DomainId::new_unchecked("project-sub"),
                         skill_id: project.id.clone(),
@@ -730,6 +748,7 @@ mod tests {
                     scope_id: "project".to_owned(),
                     source_paths: vec![PathBuf::from("/outside-scope/auth.rs")],
                     embedding: vec![0.95, 1.0],
+                    subunit_embeddings: vec![vec![0.95, 1.0]],
                     subunits: vec![Subunit {
                         id: DomainId::new_unchecked("project-sub-outside"),
                         skill_id: DomainId::new_unchecked("project-skill"),
@@ -796,6 +815,7 @@ mod tests {
                     scope_id: "project".to_owned(),
                     source_paths: vec![PathBuf::from("/workspace/project/src/io.rs")],
                     embedding: vec![1.0, 1.0],
+                    subunit_embeddings: vec![vec![1.0, 1.0]],
                     subunits: vec![Subunit {
                         id: DomainId::new_unchecked("io-sub"),
                         skill_id: skill_with_real_path.id.clone(),
@@ -813,6 +833,7 @@ mod tests {
                     scope_id: "project".to_owned(),
                     source_paths: vec![PathBuf::from("/other-project/src/io.rs")],
                     embedding: vec![1.0, 1.0],
+                    subunit_embeddings: vec![vec![1.0, 1.0]],
                     subunits: vec![Subunit {
                         id: DomainId::new_unchecked("io-sub-outside"),
                         skill_id: skill_with_real_path.id.clone(),

@@ -126,6 +126,7 @@ fn seeded_graph() -> RetrievalSnapshot {
                 scope_id: "global".to_owned(),
                 source_paths: vec![docs_root.join("rust-file.md")],
                 embedding: vec![1.0, 1.0, 0.0, 0.0],
+                subunit_embeddings: vec![vec![1.0, 1.0, 0.0, 0.0]],
                 subunits: vec![Subunit {
                     id: DomainId::new_unchecked("sub-rust-file-read"),
                     skill_id: rust_skill.id.clone(),
@@ -142,6 +143,7 @@ fn seeded_graph() -> RetrievalSnapshot {
                 scope_id: "global".to_owned(),
                 source_paths: vec![docs_root.join("tokio-io.md")],
                 embedding: vec![0.9, 0.5, 1.0, 0.0],
+                subunit_embeddings: vec![vec![0.9, 0.5, 1.0, 0.0]],
                 subunits: vec![Subunit {
                     id: DomainId::new_unchecked("sub-tokio-file-read"),
                     skill_id: tokio_skill.id.clone(),
@@ -158,6 +160,7 @@ fn seeded_graph() -> RetrievalSnapshot {
                 scope_id: "global".to_owned(),
                 source_paths: vec![docs_root.join("python-http.md")],
                 embedding: vec![0.0, 0.0, 0.0, 1.0],
+                subunit_embeddings: vec![vec![0.0, 0.0, 0.0, 1.0]],
                 subunits: vec![Subunit {
                     id: DomainId::new_unchecked("sub-python-http"),
                     skill_id: python_skill.id.clone(),
@@ -279,6 +282,7 @@ async fn cache_invalidated_on_graph_version_mismatch() {
             scope_id: "global".to_owned(),
             source_paths: vec![docs_root.join("rust-file.md")],
             embedding: vec![1.0, 1.0, 0.0, 0.0],
+            subunit_embeddings: vec![vec![1.0, 1.0, 0.0, 0.0]],
             subunits: vec![Subunit {
                 id: DomainId::new_unchecked("sub-rust-file-read"),
                 skill_id: rust_skill.id.clone(),

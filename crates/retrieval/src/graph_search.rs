@@ -2,9 +2,20 @@ use std::collections::BTreeSet;
 
 use domain::Subunit;
 
+use crate::cosine_rank::cosine_similarity;
+
+/// Weight of the semantic (cosine) component in a subunit's displayed relevance.
+/// Semantic dominates so a subunit that *means* the same thing as the query ranks
+/// above one that merely shares literal tokens; lexical overlap remains as a cheap
+/// tiebreaker for near-ties (SkillRAE eq.3 β — issue #172).
+const SUBUNIT_SEMANTIC_WEIGHT: f32 = 0.75;
+/// Weight of the lexical (token-overlap) component in a subunit's displayed relevance.
+const SUBUNIT_LEXICAL_WEIGHT: f32 = 0.25;
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct SubunitProjection {
     pub subunit: Subunit,
+    /// Blended display relevance: `0.75·cosine(query, subunit) + 0.25·lexical`.
     pub relevance: f32,
 }
 
@@ -12,13 +23,29 @@ pub struct SubunitProjection {
 pub struct GraphHit {
     pub skill_index: usize,
     pub lexical_score: f32,
+    /// Aggregate semantic relevance of the skill's subunits to the query: the mean
+    /// of the top-`max_subunits_per_skill` per-subunit cosine scores. This is the
+    /// real β (`subunit_evidence`) term of SkillRAE eq.3 — it reflects subunit
+    /// *meaning*, not skill-name/description token overlap (issue #172).
+    pub subunit_evidence: f32,
     pub projections: Vec<SubunitProjection>,
 }
 
+/// Projects each candidate skill's subunits, scoring every subunit by a blend of
+/// semantic cosine (query embedding vs subunit embedding) and lexical token
+/// overlap, and derives the skill's `subunit_evidence` (mean of top-k semantic
+/// scores) for the eq.3 β term.
+///
+/// `skill_subunit_embeddings` is parallel to `skill_subunits`: entry `i` holds one
+/// embedding per subunit of skill `i` (same order). A missing/empty embedding makes
+/// that subunit's semantic score 0 and it falls back to lexical only — this never
+/// panics on a subunit that was not embedded.
 pub fn search_graph(
     prompt: &str,
+    prompt_embedding: &[f32],
     skill_text: &[String],
     skill_subunits: &[Vec<Subunit>],
+    skill_subunit_embeddings: &[Vec<Vec<f32>>],
     candidate_indices: &[usize],
     max_subunits_per_skill: usize,
 ) -> Vec<GraphHit> {
@@ -29,13 +56,21 @@ pub fn search_graph(
         .filter_map(|skill_index| {
             let text = skill_text.get(*skill_index)?;
             let subunits = skill_subunits.get(*skill_index)?;
+            let subunit_embeddings = skill_subunit_embeddings.get(*skill_index);
 
             let lexical_score = token_overlap_score(&prompt_tokens, &tokenize(text));
-            let mut projections: Vec<SubunitProjection> = subunits
+
+            // Score every subunit: semantic (cosine) + lexical (token overlap).
+            let mut scored: Vec<(SubunitProjection, f32)> = subunits
                 .iter()
                 .cloned()
-                .map(|subunit| {
-                    let relevance = token_overlap_score(
+                .enumerate()
+                .map(|(position, subunit)| {
+                    let semantic = subunit_embeddings
+                        .and_then(|embeddings| embeddings.get(position))
+                        .map(|embedding| cosine_similarity(prompt_embedding, embedding).max(0.0))
+                        .unwrap_or(0.0);
+                    let lexical = token_overlap_score(
                         &prompt_tokens,
                         &tokenize(&format!(
                             "{} {}",
@@ -43,16 +78,34 @@ pub fn search_graph(
                             subunit.content.to_lowercase()
                         )),
                     );
-                    SubunitProjection { subunit, relevance }
+                    let relevance =
+                        SUBUNIT_SEMANTIC_WEIGHT * semantic + SUBUNIT_LEXICAL_WEIGHT * lexical;
+                    (SubunitProjection { subunit, relevance }, semantic)
                 })
                 .collect();
 
-            projections.sort_by(|left, right| right.relevance.total_cmp(&left.relevance));
-            projections.truncate(max_subunits_per_skill);
+            // subunit_evidence (β) = mean of the top-k SEMANTIC scores, so it
+            // reflects subunit meaning independent of the lexical tiebreaker.
+            let mut semantic_scores: Vec<f32> = scored.iter().map(|(_, semantic)| *semantic).collect();
+            semantic_scores.sort_by(|left, right| right.total_cmp(left));
+            let top_k = semantic_scores.iter().take(max_subunits_per_skill);
+            let top_k_len = semantic_scores.len().min(max_subunits_per_skill);
+            let subunit_evidence = if top_k_len == 0 {
+                0.0
+            } else {
+                top_k.sum::<f32>() / top_k_len as f32
+            };
+
+            // Displayed/ranked projections use the blended relevance.
+            scored.sort_by(|left, right| right.0.relevance.total_cmp(&left.0.relevance));
+            scored.truncate(max_subunits_per_skill);
+            let projections: Vec<SubunitProjection> =
+                scored.into_iter().map(|(projection, _)| projection).collect();
 
             Some(GraphHit {
                 skill_index: *skill_index,
                 lexical_score,
+                subunit_evidence,
                 projections,
             })
         })
@@ -82,21 +135,27 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn search_graph_projects_relevant_subunits() {
-        let subunit = Subunit {
-            id: DomainId::new_unchecked("sub-1"),
+    fn subunit(id: &str, title: &str, content: &str) -> Subunit {
+        Subunit {
+            id: DomainId::new_unchecked(id),
             skill_id: DomainId::new_unchecked("skill-1"),
             kind: SubunitType::Procedure,
-            title: "Read a file".to_owned(),
-            content: "Use std::fs::read_to_string".to_owned(),
+            title: title.to_owned(),
+            content: content.to_owned(),
             lifecycle: LifecycleStatus::Active,
-        };
+        }
+    }
+
+    #[test]
+    fn search_graph_projects_relevant_subunits() {
+        let sub = subunit("sub-1", "Read a file", "Use std::fs::read_to_string");
 
         let hits = search_graph(
             "how to read file",
+            &[1.0, 0.0],
             &["read files in rust".to_owned()],
-            &[vec![subunit]],
+            &[vec![sub]],
+            &[vec![vec![1.0, 0.0]]],
             &[0],
             3,
         );
@@ -104,5 +163,69 @@ mod tests {
         assert_eq!(hits.len(), 1);
         assert!(hits[0].lexical_score > 0.0);
         assert!(hits[0].projections[0].relevance > 0.0);
+        assert!(hits[0].subunit_evidence > 0.0);
+    }
+
+    /// THE #172 contract: a subunit that is semantically aligned with the query
+    /// but shares ZERO literal tokens with it must still be selected and drive
+    /// `subunit_evidence` — where the old lexical-only implementation scored 0.
+    #[test]
+    fn semantically_aligned_subunit_with_no_lexical_overlap_is_selected() {
+        // Query embedding points along axis 0. The "relevant" subunit's embedding
+        // also points along axis 0 (cosine = 1) but its TEXT shares no tokens with
+        // the query. The "irrelevant" subunit's embedding is orthogonal (cosine = 0)
+        // even though it is wordy.
+        let prompt = "alpha bravo charlie";
+        let prompt_embedding = vec![1.0, 0.0];
+
+        let relevant = subunit("relevant", "zulu yankee", "xray whiskey victor");
+        let irrelevant = subunit("irrelevant", "delta echo", "foxtrot golf hotel");
+
+        // No lexical overlap between prompt tokens and either subunit's tokens.
+        let hits = search_graph(
+            prompt,
+            &prompt_embedding,
+            &["skill text with no query tokens".to_owned()],
+            &[vec![relevant.clone(), irrelevant.clone()]],
+            &[vec![
+                vec![1.0, 0.0], // relevant: cosine(query)=1
+                vec![0.0, 1.0], // irrelevant: cosine(query)=0
+            ]],
+            &[0],
+            3,
+        );
+
+        assert_eq!(hits.len(), 1);
+        let hit = &hits[0];
+
+        // Semantic evidence is non-zero despite zero lexical overlap.
+        assert!(
+            hit.subunit_evidence > 0.0,
+            "subunit_evidence must be driven by semantics, not lexical overlap; got {}",
+            hit.subunit_evidence
+        );
+
+        // The semantically-aligned subunit ranks first with positive relevance,
+        // even though it shares no tokens with the query.
+        assert_eq!(
+            hit.projections[0].subunit.id.as_str(),
+            "relevant",
+            "the semantically-aligned subunit must rank first"
+        );
+        assert!(
+            hit.projections[0].relevance > 0.0,
+            "semantic relevance must be positive with zero lexical overlap"
+        );
+
+        // Sanity: a purely lexical implementation would have scored BOTH subunits 0
+        // (no token overlap), so this behaviour is only possible with semantics.
+        let prompt_tokens = tokenize(prompt);
+        for s in [&relevant, &irrelevant] {
+            let lex = token_overlap_score(
+                &prompt_tokens,
+                &tokenize(&format!("{} {}", s.title, s.content)),
+            );
+            assert_eq!(lex, 0.0, "test fixture must have zero lexical overlap");
+        }
     }
 }

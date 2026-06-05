@@ -27,6 +27,10 @@ pub struct SeededSkill {
     pub source_paths: Vec<PathBuf>,
     pub embedding: Vec<f32>,
     pub subunits: Vec<Subunit>,
+    /// One embedding per entry in `subunits`, in the same order. Used to score the
+    /// β (`subunit_evidence`) term of eq.3 by cosine against the query embedding at
+    /// request time (issue #172). Empty when a skill has no subunits.
+    pub subunit_embeddings: Vec<Vec<f32>>,
     pub prior: f32,
     pub community_boost: f32,
 }
@@ -592,6 +596,7 @@ where
                         rationale: vec![
                             format!("rrf={:.6}", candidate.score),
                             format!("semantic={:.3}", candidate.semantic_score),
+                            format!("subunit_evidence={:.3}", candidate.subunit_evidence),
                             format!("lexical={:.3}", candidate.lexical_score),
                         ],
                     },
@@ -764,6 +769,7 @@ mod tests {
                 source_paths: Vec::new(),
                 embedding: vec![1.0, 0.0, 0.0, 0.0],
                 subunits: Vec::new(),
+                subunit_embeddings: Vec::new(),
                 // Prior is computed dynamically from real usage at graph-load
                 // time (mcp-server lib.rs via `retrieval::usage_prior`). Test
                 // fixtures use 0.0 (cold-start, no usage history) — the same

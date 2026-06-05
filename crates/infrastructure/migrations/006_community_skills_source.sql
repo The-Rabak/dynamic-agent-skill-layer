@@ -21,9 +21,19 @@ BEGIN;
 --   deleted and re-inserted inside each atomic rebuild transaction
 --   (replace_snapshot_and_bump_version deletes community_skills before re-inserting).
 --
+-- Schema scoping (critical):
+--   Every catalog lookup below is keyed on `'community_skills'::regclass`, which
+--   resolves to the single table on the current `search_path`.  An earlier version
+--   matched `pg_class.relname = 'community_skills'` / `information_schema.columns`,
+--   which matches the table in EVERY schema — under per-run schema isolation
+--   (test namespaces) that returns multiple rows and the `DROP CONSTRAINT`
+--   subquery fails with "more than one row returned by a subquery used as an
+--   expression". `regclass` scoping fixes that and is correct for both the single
+--   public schema and isolated per-run schemas.
+--
 -- Idempotency (run-twice-clean):
---   Both statements use `IF NOT EXISTS` / `IF EXISTS` guards so a re-run is a
---   no-op (no error, no data change).
+--   Both DO blocks guard on the post-state (column present / PK already includes
+--   `source`) so a re-run is a no-op (no error, no data change).
 --
 -- Human gate: APPROVED 2026-06-05 (dual-membership community schema, migration 006,
 --   follows 005_skill_source_paths.sql).
@@ -34,13 +44,17 @@ BEGIN;
 --   ALTER TABLE community_skills DROP CONSTRAINT IF EXISTS community_skills_pkey;
 --   ALTER TABLE community_skills ADD PRIMARY KEY (community_id, skill_id);
 
--- Step 1: add the source column (idempotent — IF NOT EXISTS guard via a DO block).
+-- Step 1: add the source column (idempotent; scoped to the current schema's
+-- table via regclass so a `source` column in another schema does not mask a
+-- missing one here).
 DO $$
 BEGIN
     IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_name = 'community_skills'
-          AND column_name = 'source'
+        SELECT 1
+        FROM pg_attribute
+        WHERE attrelid = 'community_skills'::regclass
+          AND attname = 'source'
+          AND NOT attisdropped
     ) THEN
         ALTER TABLE community_skills
             ADD COLUMN source TEXT NOT NULL DEFAULT 'tag'
@@ -50,39 +64,40 @@ END
 $$;
 
 -- Step 2: widen the primary key to include source so dual membership is
--- structurally enforced.  The old PK constraint must be dropped first.
--- Guard: only act when the old (2-column) PK still exists.
+-- structurally enforced.  Scoped to the current schema's table via regclass:
+-- the constraint lookups return at most one row even when several schemas each
+-- hold a `community_skills` table (per-run isolation).
 DO $$
+DECLARE
+    existing_pk_name text;
+    pk_already_includes_source boolean;
 BEGIN
-    IF EXISTS (
+    -- Second-run safety: skip entirely if the PK already includes `source`.
+    SELECT EXISTS (
         SELECT 1
         FROM pg_constraint c
-        JOIN pg_class t ON t.oid = c.conrelid
-        WHERE t.relname = 'community_skills'
-          AND c.contype = 'p'
-    ) THEN
-        -- Drop whichever PK currently exists (old 2-col or new 3-col).
-        -- The name is system-assigned so we look it up dynamically.
-        EXECUTE (
-            SELECT format('ALTER TABLE community_skills DROP CONSTRAINT %I', c.conname)
-            FROM pg_constraint c
-            JOIN pg_class t ON t.oid = c.conrelid
-            WHERE t.relname = 'community_skills'
-              AND c.contype = 'p'
-        );
-    END IF;
-
-    -- Re-create PK as (community_id, skill_id, source) only if it does not
-    -- already have 3 columns (second-run safety).
-    IF NOT EXISTS (
-        SELECT 1
-        FROM pg_constraint c
-        JOIN pg_class t ON t.oid = c.conrelid
-        JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ANY(c.conkey)
-        WHERE t.relname = 'community_skills'
+        JOIN pg_attribute a
+            ON a.attrelid = c.conrelid AND a.attnum = ANY (c.conkey)
+        WHERE c.conrelid = 'community_skills'::regclass
           AND c.contype = 'p'
           AND a.attname = 'source'
-    ) THEN
+    ) INTO pk_already_includes_source;
+
+    IF NOT pk_already_includes_source THEN
+        -- Drop whichever PK currently exists (exactly one, via regclass).
+        SELECT c.conname
+        INTO existing_pk_name
+        FROM pg_constraint c
+        WHERE c.conrelid = 'community_skills'::regclass
+          AND c.contype = 'p';
+
+        IF existing_pk_name IS NOT NULL THEN
+            EXECUTE format(
+                'ALTER TABLE community_skills DROP CONSTRAINT %I',
+                existing_pk_name
+            );
+        END IF;
+
         ALTER TABLE community_skills
             ADD CONSTRAINT community_skills_pkey
             PRIMARY KEY (community_id, skill_id, source);
