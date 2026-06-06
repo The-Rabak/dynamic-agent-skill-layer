@@ -337,10 +337,23 @@ pub fn events_to_transcript(session_id: DomainId, events: &[SessionEvent]) -> Se
 pub struct ExtractedSkillCandidate {
     pub name: String,
     pub description: String,
+    // Enrichment fields default when absent. Local models (gemma4:12b) occasionally
+    // emit partial/truncated JSON — e.g. an unescaped inner quote in a procedure
+    // string (`flavor = "multi_thread"`) prematurely closes the object and drops the
+    // trailing fields. A candidate carrying name + description (+ usually procedures)
+    // is still a useful, actionable skill; rejecting the WHOLE candidate because a
+    // secondary field is missing throws away real extraction output. These fields
+    // therefore tolerate omission (empty / zero) rather than failing deserialization.
+    // `name` and `description` stay required — a candidate without them is meaningless.
+    #[serde(default)]
     pub tags: Vec<String>,
+    #[serde(default)]
     pub procedures: Vec<String>,
+    #[serde(default)]
     pub conventions: Vec<String>,
+    #[serde(default)]
     pub assets: Vec<String>,
+    #[serde(default)]
     pub confidence: f32,
     /// Advisory scope-generality hint captured by the LLM while the full transcript
     /// is available. Values: `"project"`, `"general"`, `"uncertain"`.
@@ -370,12 +383,55 @@ pub struct ScoredSkill {
 
 #[cfg(test)]
 mod tests {
-    use super::ScopeType;
+    use super::{ExtractedSkillCandidate, ScopeType};
 
     #[test]
     fn scope_type_as_str_returns_lowercase_label_for_each_variant() {
         assert_eq!(ScopeType::Project.as_str(), "project");
         assert_eq!(ScopeType::Global.as_str(), "global");
         assert_eq!(ScopeType::Team.as_str(), "team");
+    }
+
+    #[test]
+    fn candidate_deserializes_when_local_model_truncates_trailing_fields() {
+        // Exact failure mode observed live: gemma4:12b emitted a candidate whose
+        // procedure string contained an unescaped inner quote
+        // (`flavor = "multi_thread"`), prematurely closing the object so that
+        // `conventions`, `assets`, and `confidence` never appeared. A candidate with
+        // name + description + procedures is still useful; it must NOT be discarded
+        // wholesale for the missing trailing fields.
+        let truncated = r#"{
+            "name": "diagnose-and-fix-fd-exhaustion",
+            "description": "Resolve file-descriptor exhaustion causing WouldBlock in Tokio tasks.",
+            "tags": ["tokio", "debugging"],
+            "procedures": ["Run `ulimit -n 65536` before starting the app."]
+        }"#;
+
+        let candidate: ExtractedSkillCandidate =
+            serde_json::from_str(truncated).expect("partial candidate must still deserialize");
+
+        assert_eq!(candidate.name, "diagnose-and-fix-fd-exhaustion");
+        assert_eq!(candidate.procedures.len(), 1);
+        // Omitted enrichment fields default rather than failing the whole parse.
+        assert!(candidate.conventions.is_empty());
+        assert!(candidate.assets.is_empty());
+        assert_eq!(candidate.confidence, 0.0);
+        assert!(candidate.generality.is_none());
+    }
+
+    #[test]
+    fn candidate_without_name_or_description_still_fails_loud() {
+        // name + description remain required — a candidate without them is meaningless
+        // and must NOT silently deserialize to an empty skill.
+        let no_name = r#"{ "description": "x", "procedures": ["a"] }"#;
+        assert!(
+            serde_json::from_str::<ExtractedSkillCandidate>(no_name).is_err(),
+            "a candidate missing `name` must fail deserialization"
+        );
+        let no_desc = r#"{ "name": "x", "procedures": ["a"] }"#;
+        assert!(
+            serde_json::from_str::<ExtractedSkillCandidate>(no_desc).is_err(),
+            "a candidate missing `description` must fail deserialization"
+        );
     }
 }
