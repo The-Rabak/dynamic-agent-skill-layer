@@ -10,6 +10,7 @@ use chrono::{DateTime, Utc};
 use domain::{
     PENDING_SKILL_FILE_NAME, ScopeType, pending_default_expires_at, pending_default_warning_at,
 };
+use infrastructure::cosine_similarity as shared_cosine_similarity;
 use serde::Serialize;
 use thiserror::Error;
 
@@ -366,7 +367,7 @@ impl MergeError {
 }
 
 /// Canonicalizes scope roots before any filesystem writes.
-fn canonicalize_scope_root(scope_root: &Path) -> Result<PathBuf, MergeError> {
+pub(crate) fn canonicalize_scope_root(scope_root: &Path) -> Result<PathBuf, MergeError> {
     if !scope_root.is_absolute() {
         return Err(MergeError::InvalidScopeRoot {
             path: scope_root.display().to_string(),
@@ -390,7 +391,7 @@ fn canonicalize_scope_root(scope_root: &Path) -> Result<PathBuf, MergeError> {
 }
 
 /// Restricts pending directory configuration to a single normal path component.
-fn validate_pending_directory_name(pending_directory_name: &str) -> Result<&str, MergeError> {
+pub(crate) fn validate_pending_directory_name(pending_directory_name: &str) -> Result<&str, MergeError> {
     if pending_directory_name.is_empty() {
         return Err(MergeError::InvalidPendingDirectoryName(
             pending_directory_name.to_owned(),
@@ -412,7 +413,7 @@ fn validate_pending_directory_name(pending_directory_name: &str) -> Result<&str,
 }
 
 /// Enforces write boundaries for pending proposal output.
-fn ensure_path_is_within_scope_root(
+pub(crate) fn ensure_path_is_within_scope_root(
     candidate_path: &Path,
     canonical_scope_root: &Path,
 ) -> Result<(), MergeError> {
@@ -425,25 +426,23 @@ fn ensure_path_is_within_scope_root(
     })
 }
 
+/// Delegates to the shared [`infrastructure::cosine_similarity`] and maps the
+/// error to the local [`MergeError`] variants. This is the single cosine
+/// implementation in the repo; the logic lives in `infrastructure::similarity`.
 fn cosine_similarity(left: &[f32], right: &[f32]) -> Result<f32, MergeError> {
-    if left.len() != right.len() {
-        return Err(MergeError::EmbeddingDimensionMismatch {
-            left_dimension: left.len(),
-            right_dimension: right.len(),
-        });
-    }
-    let mut dot_product = 0.0;
-    let mut left_norm = 0.0;
-    let mut right_norm = 0.0;
-    for (left_value, right_value) in left.iter().zip(right.iter()) {
-        dot_product += left_value * right_value;
-        left_norm += left_value * left_value;
-        right_norm += right_value * right_value;
-    }
-    if left_norm == 0.0 || right_norm == 0.0 {
-        return Err(MergeError::ZeroMagnitudeEmbedding);
-    }
-    Ok(dot_product / (left_norm.sqrt() * right_norm.sqrt()))
+    shared_cosine_similarity(left, right).map_err(|error| {
+        use infrastructure::CosineSimilarityError;
+        match error {
+            CosineSimilarityError::DimensionMismatch {
+                left_dimension,
+                right_dimension,
+            } => MergeError::EmbeddingDimensionMismatch {
+                left_dimension,
+                right_dimension,
+            },
+            CosineSimilarityError::ZeroMagnitude => MergeError::ZeroMagnitudeEmbedding,
+        }
+    })
 }
 
 fn output_root_for_scope(

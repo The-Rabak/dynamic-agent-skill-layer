@@ -163,6 +163,176 @@ pub struct SessionTranscript {
     pub entries: Vec<TranscriptEntry>,
 }
 
+/// A single typed event in a Claude Code session transcript.
+///
+/// This is the **rich** event model that sits alongside `TranscriptEntry`/`SessionTranscript`.
+/// It is **additive** — existing consumers that read the flat `SessionTranscript` are unaffected.
+/// The structured variants carry load-bearing fields needed by the extraction-scaling epic:
+/// tool names, exit codes, error flags, and edited file paths.
+///
+/// ## Wire shape (observed from real Claude Code `.jsonl` files)
+///
+/// Claude Code session files have top-level `type` fields:
+/// - `"user"` — human turn OR tool result: `message.content` is either a plain string
+///   or an array of `{type:"tool_result", tool_use_id, content: string, is_error?: bool}`.
+/// - `"assistant"` — model turn: `message.content` is an array of typed blocks:
+///   `{type:"thinking"}`, `{type:"text", text}`, `{type:"tool_use", id, name, input}`.
+/// - All other `type` values (`"mode"`, `"attachment"`, `"ai-title"`, …) are not
+///   conversational and are mapped to `SessionEvent::Metadata`.
+///
+/// Exit codes are NOT a separate JSON field — they appear as `"Exit code N\n..."` prefixed
+/// inside the `content` string of a `tool_result` block when `is_error: true`.
+///
+/// File-editing events (Write, Edit) are `tool_use` blocks on the assistant turn with
+/// `name` in `{"Write", "Edit", "MultiEdit"}` and `input.file_path`.
+///
+/// Each variant carries an `index` that reflects source-file line order, ensuring
+/// deterministic ordering of events in downstream processing.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SessionEvent {
+    /// A human-authored message turn (`role: "user"` with plain-text content).
+    UserMessage {
+        /// Zero-based line index in the source JSONL, for deterministic ordering.
+        index: usize,
+        content: String,
+    },
+    /// A model-authored message turn (`role: "assistant"` text blocks).
+    AssistantMessage {
+        /// Zero-based line index in the source JSONL, for deterministic ordering.
+        index: usize,
+        content: String,
+    },
+    /// A tool invocation issued by the assistant (`tool_use` content block).
+    ///
+    /// `name` is the tool name (e.g. `"Bash"`, `"Read"`, `"Write"`, `"Edit"`).
+    /// `input` is the raw JSON input object serialized to a string; downstream
+    /// stages parse what they need without forcing all callers to handle every variant.
+    ToolCall {
+        /// Zero-based line index of the assistant turn that issued this call.
+        index: usize,
+        /// Stable `tool_use_id` from the wire format, used to correlate with `ToolResult`.
+        tool_use_id: String,
+        /// Tool name as emitted by Claude Code (e.g. `"Bash"`, `"Write"`, `"Edit"`).
+        name: String,
+        /// Raw JSON-serialized tool input object. Preserved verbatim so callers
+        /// choose what fields to extract without lossy re-encoding here.
+        input_json: String,
+    },
+    /// The result of a tool invocation (`tool_result` content block in a user turn).
+    ///
+    /// `exit_code` is parsed from a `"Exit code N\n"` prefix in `output` when
+    /// `is_error` is true; absent otherwise. `output` is the full content string
+    /// with the exit-code prefix still present, so callers can re-derive or display it.
+    ToolResult {
+        /// Zero-based line index of the user turn carrying this result.
+        index: usize,
+        /// `tool_use_id` from the wire format, correlates with a `ToolCall`.
+        tool_use_id: String,
+        /// `true` when the `tool_result` block carries `"is_error": true`.
+        is_error: bool,
+        /// Exit code parsed from the `"Exit code N\n"` content prefix, if present.
+        /// `None` when the content does not start with that prefix.
+        exit_code: Option<i32>,
+        /// Full tool output string from the `content` field of the `tool_result` block.
+        output: String,
+    },
+    /// A file-edit operation issued by the assistant via Write, Edit, or MultiEdit.
+    ///
+    /// Derived from `tool_use` blocks whose `name` is in `{"Write","Edit","MultiEdit"}`.
+    /// Carries the target `path` and a compact `summary` line for display, while the
+    /// raw input JSON is also available via the corresponding `ToolCall` event.
+    FileEdit {
+        /// Zero-based line index of the assistant turn that issued this edit.
+        index: usize,
+        /// `tool_use_id` from the wire format, correlates with a `ToolResult`.
+        tool_use_id: String,
+        /// Path of the file being created or modified, as-is from the tool input.
+        path: String,
+        /// Operation name: `"Write"`, `"Edit"`, or `"MultiEdit"`.
+        operation: String,
+    },
+    /// A non-conversational Claude Code session event (mode, attachment, ai-title, etc.).
+    ///
+    /// These lines are present in real session files but carry no extractable dialogue.
+    /// They are preserved with their raw JSON to avoid silent drops.
+    Metadata {
+        /// Zero-based line index in the source JSONL.
+        index: usize,
+        /// The `type` field from the raw JSON line.
+        event_type: String,
+    },
+}
+
+impl SessionEvent {
+    /// Returns the zero-based source-line index for deterministic ordering.
+    pub fn index(&self) -> usize {
+        match self {
+            Self::UserMessage { index, .. }
+            | Self::AssistantMessage { index, .. }
+            | Self::ToolCall { index, .. }
+            | Self::ToolResult { index, .. }
+            | Self::FileEdit { index, .. }
+            | Self::Metadata { index, .. } => *index,
+        }
+    }
+
+    /// Returns `true` when this event is a conversational turn (user or assistant
+    /// message text) suitable for inclusion in a flat transcript view.
+    pub fn is_conversational(&self) -> bool {
+        matches!(
+            self,
+            Self::UserMessage { .. } | Self::AssistantMessage { .. }
+        )
+    }
+
+    /// Derives a flat `TranscriptEntry` from this event, if it has a conversational
+    /// speaker/content representation.
+    ///
+    /// Returns `None` for `ToolCall`, `ToolResult`, `FileEdit`, and `Metadata` events
+    /// since they have no direct `speaker: content` rendering in the legacy flat model.
+    pub fn as_transcript_entry(&self) -> Option<TranscriptEntry> {
+        match self {
+            Self::UserMessage { content, .. } => Some(TranscriptEntry {
+                speaker: "user".to_owned(),
+                content: content.clone(),
+            }),
+            Self::AssistantMessage { content, .. } => Some(TranscriptEntry {
+                speaker: "assistant".to_owned(),
+                content: content.clone(),
+            }),
+            _ => None,
+        }
+    }
+}
+
+/// Derives a flat `SessionTranscript` from an ordered slice of `SessionEvent`s.
+///
+/// This is the compatibility bridge for the post-#183 extraction pipeline:
+/// `ToolCall`, `ToolResult`, `FileEdit`, and `Metadata` events are skipped;
+/// `UserMessage` and `AssistantMessage` events are mapped to `TranscriptEntry`
+/// in source-line order. The result is byte-identical to parsing the same JSONL
+/// with the legacy `parse_claude_jsonl` path.
+///
+/// # Panics
+/// Never panics; the session ID is taken from the caller since `Vec<SessionEvent>`
+/// does not carry it.
+pub fn events_to_transcript(session_id: DomainId, events: &[SessionEvent]) -> SessionTranscript {
+    let entries = events
+        .iter()
+        .filter_map(SessionEvent::as_transcript_entry)
+        .collect();
+    SessionTranscript { session_id, entries }
+}
+
+/// Advisory hint describing whether an extracted skill lesson is project-specific
+/// or broadly applicable across projects.
+///
+/// This is a data field for the downstream maintenance promotion pass (#179) — it
+/// is NEVER used as a routing decision during extraction. Extraction always writes
+/// project-local regardless of this value.
+///
+/// The valid string values are exactly: `"project"`, `"general"`, `"uncertain"`.
+/// `None` (absent from provider JSON) is treated as `"uncertain"` at mapping time.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ExtractedSkillCandidate {
     pub name: String,
@@ -172,6 +342,15 @@ pub struct ExtractedSkillCandidate {
     pub conventions: Vec<String>,
     pub assets: Vec<String>,
     pub confidence: f32,
+    /// Advisory scope-generality hint captured by the LLM while the full transcript
+    /// is available. Values: `"project"`, `"general"`, `"uncertain"`.
+    /// `#[serde(default)]` means absent JSON fields deserialise to `None` so
+    /// old provider responses (Ollama, Claude) remain backward-compatible.
+    #[serde(default)]
+    pub generality: Option<String>,
+    /// One-line rationale for the `generality` judgement from the LLM.
+    #[serde(default)]
+    pub generality_rationale: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

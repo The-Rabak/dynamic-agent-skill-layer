@@ -128,6 +128,11 @@ services:
       QDRANT_URL: http://qdrant:6333
       OLLAMA_URL: http://ollama:11434
       MCP_SERVER_ADDR: 0.0.0.0:3001
+      # Run all LLM extraction/merge through gemma4:12b for this measurement run.
+      OLLAMA_EXTRACTION_MODEL: gemma4:12b
+      OLLAMA_EXTRACTION_TIMEOUT_MS: "300000"
+      MERGE_VERIFIER_MODEL: gemma4:12b
+      GENERALITY_VERIFIER_MODEL: gemma4:12b
       SKILL_GLOBAL_PATHS: /skills/global
       SKILL_GLOBAL_ALLOWED_ROOTS: /skills/global
       # Declares the in-container project scope root (issue #154) so compile_context
@@ -173,6 +178,9 @@ services:
       GRAPH_BUILDER_PROJECT_ROOT: /skills/project
       GRAPH_BUILDER_GLOBAL_ROOT: /skills/global
       GRAPH_BUILDER_POLL_INTERVAL_MS: "5000"
+      # LLM subunit-extraction fallback (rare) uses gemma4:12b for this run.
+      OLLAMA_EXTRACTION_MODEL: gemma4:12b
+      OLLAMA_EXTRACTION_TIMEOUT_MS: "300000"
     volumes:
       - test-project-skills:/skills/project:ro
       - test-global-skills:/skills/global:ro

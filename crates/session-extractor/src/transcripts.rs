@@ -3,9 +3,10 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
-use domain::{DomainId, SessionTranscript, TranscriptEntry};
+use domain::{DomainId, SessionEvent, SessionTranscript, TranscriptEntry};
 use serde_json::Value;
 use thiserror::Error;
+use tracing::{debug, warn};
 
 /// Maximum allowed size for an inline transcript payload.
 ///
@@ -188,6 +189,356 @@ fn parse_claude_jsonl(
     })
 }
 
+/// Parses a Claude Code JSONL payload into an ordered sequence of [`SessionEvent`]s.
+///
+/// This is the **rich** parsing path that preserves tool calls, tool results (with exit
+/// codes and error flags), file-edit events, and non-conversational metadata — as opposed
+/// to [`parse_claude_jsonl`] which only extracts `speaker: content` pairs.
+///
+/// ## Wire shape handled
+///
+/// Each JSONL line has a top-level `type` field:
+/// - `"user"` with `message.content` as a **string** → [`SessionEvent::UserMessage`]
+/// - `"user"` with `message.content` as an **array** containing `tool_result` blocks →
+///   [`SessionEvent::ToolResult`] per block (with `is_error` and parsed `exit_code`)
+/// - `"assistant"` with `message.content` blocks:
+///   - `{type:"text", text}` → [`SessionEvent::AssistantMessage`]
+///   - `{type:"tool_use", id, name, input}` where `name` ∈ {Write, Edit, MultiEdit} →
+///     emits BOTH a [`SessionEvent::FileEdit`] and a [`SessionEvent::ToolCall`]
+///   - `{type:"tool_use", ...}` for all other tools → [`SessionEvent::ToolCall`]
+///   - `{type:"thinking"}` → skipped (internal reasoning, not conversational)
+/// - All other `type` values → [`SessionEvent::Metadata`]
+///
+/// ## Error handling
+///
+/// Lines that are not valid JSON are counted, logged, and emitted as a
+/// `SessionEvent::UserMessage` with content `"[unparseable line N]"` — they are never
+/// silently dropped. The `malformed_count` in the returned [`ParsedEvents`] lets callers
+/// surface this to the user.
+///
+/// Unknown or future-shaped `tool_use` or `tool_result` blocks are mapped to the
+/// best-fitting typed variant (ToolCall / ToolResult) without panicking.
+///
+/// ## Ordering
+///
+/// The `index` on every event is the zero-based source-line index from the JSONL file,
+/// providing a stable, deterministic ordering that survives any downstream shuffle.
+pub fn parse_session_events(jsonl_payload: &str) -> ParsedEvents {
+    let mut events = Vec::new();
+    let mut malformed_count: usize = 0;
+
+    for (line_index, line) in jsonl_payload.lines().enumerate() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        let value: Value = match serde_json::from_str(trimmed) {
+            Ok(v) => v,
+            Err(error) => {
+                warn!(
+                    line = line_index + 1,
+                    error = %error,
+                    "transcript line is not valid JSON; mapping to placeholder UserMessage"
+                );
+                malformed_count += 1;
+                events.push(SessionEvent::UserMessage {
+                    index: line_index,
+                    content: format!("[unparseable line {}]", line_index + 1),
+                });
+                continue;
+            }
+        };
+
+        let event_type = value
+            .get("type")
+            .and_then(Value::as_str)
+            .unwrap_or("unknown");
+
+        match event_type {
+            "user" => {
+                let message_content = value.pointer("/message/content");
+                match message_content {
+                    // Plain string content → human text turn
+                    Some(Value::String(text)) => {
+                        let trimmed_text = text.trim().to_owned();
+                        if !trimmed_text.is_empty() {
+                            events.push(SessionEvent::UserMessage {
+                                index: line_index,
+                                content: trimmed_text,
+                            });
+                        } else {
+                            debug!(line = line_index + 1, "user line has empty string content; skipping");
+                        }
+                    }
+                    // Array content → tool_result blocks
+                    Some(Value::Array(blocks)) => {
+                        for block in blocks {
+                            let block_type = block.get("type").and_then(Value::as_str).unwrap_or("");
+                            if block_type == "tool_result" {
+                                events.push(parse_tool_result_block(block, line_index));
+                            } else {
+                                debug!(
+                                    line = line_index + 1,
+                                    block_type,
+                                    "unexpected block type in user message content; skipping"
+                                );
+                            }
+                        }
+                    }
+                    None => {
+                        // Fall back to top-level content or speaker+content shape for
+                        // legacy inline JSONL (the format used by tests/fixtures/*.jsonl).
+                        if let Some(speaker) = extract_speaker(&value) {
+                            if let Some(content) = extract_content(&value) {
+                                let event = if speaker == "user" {
+                                    SessionEvent::UserMessage {
+                                        index: line_index,
+                                        content,
+                                    }
+                                } else {
+                                    SessionEvent::AssistantMessage {
+                                        index: line_index,
+                                        content,
+                                    }
+                                };
+                                events.push(event);
+                            } else {
+                                debug!(
+                                    line = line_index + 1,
+                                    "user-type line missing content; skipping"
+                                );
+                            }
+                        } else {
+                            debug!(
+                                line = line_index + 1,
+                                "user-type line has no message.content and no speaker; skipping"
+                            );
+                        }
+                    }
+                    Some(_unexpected) => {
+                        warn!(
+                            line = line_index + 1,
+                            "user message.content has unexpected type; mapping to placeholder"
+                        );
+                        malformed_count += 1;
+                        events.push(SessionEvent::UserMessage {
+                            index: line_index,
+                            content: format!("[unexpected content shape on line {}]", line_index + 1),
+                        });
+                    }
+                }
+            }
+            "assistant" => {
+                // An assistant turn has an array of typed content blocks.
+                let content_blocks = value
+                    .pointer("/message/content")
+                    .and_then(Value::as_array);
+
+                match content_blocks {
+                    Some(blocks) => {
+                        for block in blocks {
+                            let block_type = block.get("type").and_then(Value::as_str).unwrap_or("");
+                            match block_type {
+                                "text" => {
+                                    let text = block
+                                        .get("text")
+                                        .and_then(Value::as_str)
+                                        .unwrap_or("")
+                                        .trim()
+                                        .to_owned();
+                                    if !text.is_empty() {
+                                        events.push(SessionEvent::AssistantMessage {
+                                            index: line_index,
+                                            content: text,
+                                        });
+                                    }
+                                }
+                                "tool_use" => {
+                                    events.extend(parse_tool_use_block(block, line_index));
+                                }
+                                "thinking" => {
+                                    // Internal reasoning — not conversational, not useful for
+                                    // extraction. Skip without counting as malformed.
+                                    debug!(line = line_index + 1, "skipping thinking block");
+                                }
+                                other => {
+                                    debug!(
+                                        line = line_index + 1,
+                                        block_type = other,
+                                        "unknown assistant content block type; skipping"
+                                    );
+                                }
+                            }
+                        }
+                    }
+                    None => {
+                        // Inline JSONL fallback: top-level speaker+content format.
+                        if let Some(content) = extract_content(&value) {
+                            events.push(SessionEvent::AssistantMessage {
+                                index: line_index,
+                                content,
+                            });
+                        } else {
+                            debug!(line = line_index + 1, "assistant line missing content blocks; skipping");
+                        }
+                    }
+                }
+            }
+            // Legacy inline JSONL shape: {"type":"message","message":{"role":"user","content":"..."}}
+            "message" => {
+                if let Some(speaker) = extract_speaker(&value) {
+                    if let Some(content) = extract_content(&value) {
+                        let event = if speaker == "user" {
+                            SessionEvent::UserMessage {
+                                index: line_index,
+                                content,
+                            }
+                        } else {
+                            SessionEvent::AssistantMessage {
+                                index: line_index,
+                                content,
+                            }
+                        };
+                        events.push(event);
+                    } else {
+                        debug!(line = line_index + 1, "message-type line missing content; skipping");
+                    }
+                } else {
+                    debug!(line = line_index + 1, "message-type line missing role/speaker; skipping");
+                }
+            }
+            other => {
+                // Non-conversational Claude Code session events (mode, attachment, etc.)
+                debug!(
+                    line = line_index + 1,
+                    event_type = other,
+                    "non-conversational event mapped to Metadata"
+                );
+                events.push(SessionEvent::Metadata {
+                    index: line_index,
+                    event_type: other.to_owned(),
+                });
+            }
+        }
+    }
+
+    ParsedEvents {
+        events,
+        malformed_count,
+    }
+}
+
+/// Holds the output of [`parse_session_events`].
+///
+/// `events` are in source-line order (stable by `index`). `malformed_count` is the
+/// number of lines that were not valid JSON or had an irrecoverably unexpected shape;
+/// each such line was mapped to a placeholder `UserMessage` rather than dropped.
+#[derive(Debug)]
+pub struct ParsedEvents {
+    pub events: Vec<SessionEvent>,
+    /// Count of JSONL lines that were not valid JSON (each was logged and mapped to a
+    /// placeholder `UserMessage` rather than silently discarded).
+    pub malformed_count: usize,
+}
+
+/// Parses a `tool_use` content block (from an assistant turn) into one or two
+/// [`SessionEvent`]s.
+///
+/// File-editing tools (Write, Edit, MultiEdit) emit a `FileEdit` event followed by a
+/// `ToolCall` event so callers interested only in file edits can match just `FileEdit`,
+/// while callers that need the raw input JSON can correlate via `tool_use_id`.
+/// All other tools emit only a `ToolCall` event.
+fn parse_tool_use_block(block: &Value, line_index: usize) -> Vec<SessionEvent> {
+    let tool_use_id = block
+        .get("id")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_owned();
+    let name = block
+        .get("name")
+        .and_then(Value::as_str)
+        .unwrap_or("unknown")
+        .to_owned();
+    let input_json = block
+        .get("input")
+        .map(|v| v.to_string())
+        .unwrap_or_else(|| "{}".to_owned());
+
+    let mut result = Vec::new();
+
+    // File-editing tools carry a target file path that is load-bearing for #185/#188.
+    if matches!(name.as_str(), "Write" | "Edit" | "MultiEdit") {
+        let path = block
+            .pointer("/input/file_path")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_owned();
+        result.push(SessionEvent::FileEdit {
+            index: line_index,
+            tool_use_id: tool_use_id.clone(),
+            path,
+            operation: name.clone(),
+        });
+    }
+
+    result.push(SessionEvent::ToolCall {
+        index: line_index,
+        tool_use_id,
+        name,
+        input_json,
+    });
+
+    result
+}
+
+/// Parses a `tool_result` content block (from a user turn) into a [`SessionEvent::ToolResult`].
+///
+/// `exit_code` is derived from a `"Exit code N\n"` prefix in the `content` string, which
+/// is how Claude Code encodes non-zero Bash exit codes. The prefix is detected but the full
+/// `output` string is preserved verbatim so callers can display or re-derive as needed.
+fn parse_tool_result_block(block: &Value, line_index: usize) -> SessionEvent {
+    let tool_use_id = block
+        .get("tool_use_id")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_owned();
+    let is_error = block
+        .get("is_error")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let output = block
+        .get("content")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_owned();
+
+    let exit_code = extract_exit_code_from_output(&output);
+
+    SessionEvent::ToolResult {
+        index: line_index,
+        tool_use_id,
+        is_error,
+        exit_code,
+        output,
+    }
+}
+
+/// Parses the `"Exit code N\n"` prefix from a Bash tool result's content string.
+///
+/// Claude Code embeds the exit code as the first line of the content when a Bash command
+/// exits non-zero. The prefix format is exactly `"Exit code "` followed by an integer and
+/// a newline. Returns `None` when the output does not start with this prefix.
+fn extract_exit_code_from_output(output: &str) -> Option<i32> {
+    let prefix = "Exit code ";
+    if !output.starts_with(prefix) {
+        return None;
+    }
+    let rest = &output[prefix.len()..];
+    let digits = rest.split('\n').next().unwrap_or("").trim();
+    digits.parse::<i32>().ok()
+}
+
 fn extract_speaker(value: &Value) -> Option<String> {
     value
         .get("speaker")
@@ -241,7 +592,9 @@ mod tests {
         sync::{LazyLock, Mutex, MutexGuard},
     };
 
-    use super::{TranscriptError, TranscriptLoader};
+    use domain::{DomainId, SessionEvent, events_to_transcript};
+
+    use super::{ParsedEvents, TranscriptError, TranscriptLoader, parse_session_events};
 
     static ENV_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
@@ -324,6 +677,257 @@ mod tests {
                 assert!(message.contains("CLAUDE_TRANSCRIPT_ROOT is not set"));
             }
             other => panic!("expected invalid root error, got {other:?}"),
+        }
+    }
+
+    // ── parse_session_events tests ──────────────────────────────────────────────
+
+    /// Returns the path to a fixture file relative to the workspace root.
+    ///
+    /// `CARGO_MANIFEST_DIR` for session-extractor is `crates/session-extractor/`;
+    /// fixtures live in `tests/fixtures/` at the workspace root.
+    fn fixture_path(name: &str) -> std::path::PathBuf {
+        let manifest_dir = env!("CARGO_MANIFEST_DIR");
+        std::path::Path::new(manifest_dir)
+            .join("../../tests/fixtures")
+            .join(name)
+    }
+
+    fn read_fixture(name: &str) -> String {
+        let path = fixture_path(name);
+        std::fs::read_to_string(&path).unwrap_or_else(|err| {
+            panic!("could not read fixture {}: {err}", path.display())
+        })
+    }
+
+    /// AC1 — The real Claude Code JSONL fixture parses into typed SessionEvents with
+    /// tool calls, tool results (incl. exit codes / is_error flags), and file edits.
+    #[test]
+    fn real_fixture_parses_tool_calls_results_and_file_edits() {
+        let payload = read_fixture("claude-code-session-real.jsonl");
+        let ParsedEvents { events, malformed_count } = parse_session_events(&payload);
+
+        assert_eq!(malformed_count, 0, "real fixture should have no malformed lines");
+        assert!(!events.is_empty(), "events must not be empty");
+
+        // Must contain at least one UserMessage (the human text turn)
+        let user_messages: Vec<_> = events.iter().filter(|e| matches!(e, SessionEvent::UserMessage { .. })).collect();
+        assert!(!user_messages.is_empty(), "must parse at least one UserMessage");
+
+        // Must contain at least one ToolCall (Bash tool)
+        let tool_calls: Vec<_> = events.iter().filter(|e| matches!(e, SessionEvent::ToolCall { .. })).collect();
+        assert!(!tool_calls.is_empty(), "must parse at least one ToolCall");
+
+        // The Bash tool call must be present
+        let bash_call = tool_calls.iter().find(|e| {
+            matches!(e, SessionEvent::ToolCall { name, .. } if name == "Bash")
+        });
+        assert!(bash_call.is_some(), "must parse a Bash ToolCall");
+
+        // Must contain at least one ToolResult
+        let tool_results: Vec<_> = events.iter().filter(|e| matches!(e, SessionEvent::ToolResult { .. })).collect();
+        assert!(!tool_results.is_empty(), "must parse at least one ToolResult");
+
+        // Must parse a ToolResult with is_error=false
+        let ok_result = tool_results.iter().find(|e| {
+            matches!(e, SessionEvent::ToolResult { is_error: false, .. })
+        });
+        assert!(ok_result.is_some(), "must parse at least one non-error ToolResult");
+
+        // Must parse a ToolResult with is_error=true and exit_code Some(2)
+        let error_result = tool_results.iter().find(|e| {
+            matches!(e, SessionEvent::ToolResult { is_error: true, exit_code: Some(2), .. })
+        });
+        assert!(
+            error_result.is_some(),
+            "must parse a ToolResult with is_error=true and exit_code=Some(2); results: {tool_results:?}"
+        );
+
+        // Must contain at least one FileEdit (Write tool)
+        let file_edits: Vec<_> = events.iter().filter(|e| matches!(e, SessionEvent::FileEdit { .. })).collect();
+        assert!(!file_edits.is_empty(), "must parse at least one FileEdit");
+
+        let write_edit = file_edits.iter().find(|e| {
+            matches!(e, SessionEvent::FileEdit { operation, .. } if operation == "Write")
+        });
+        assert!(write_edit.is_some(), "must parse a Write FileEdit");
+
+        // FileEdit path must be non-empty and contain the sanitized repo marker
+        if let Some(SessionEvent::FileEdit { path, .. }) = write_edit {
+            assert!(!path.is_empty(), "FileEdit path must not be empty");
+            assert!(path.contains("<repo>"), "sanitized path must contain <repo> marker");
+        }
+
+        // Events must be in source-line order (non-decreasing index)
+        let indices: Vec<usize> = events.iter().map(SessionEvent::index).collect();
+        let mut sorted = indices.clone();
+        sorted.sort_unstable();
+        assert_eq!(indices, sorted, "events must be in source-line order");
+    }
+
+    /// AC2 — The inline-JSONL ingest path (legacy {type:"message",...} shape) produces
+    /// the same UserMessage / AssistantMessage event model.
+    #[test]
+    fn inline_jsonl_ingest_path_produces_event_model() {
+        // This is the shape used by tests/fixtures/sample-transcript.jsonl and the inline path.
+        let payload = r#"{"type":"message","message":{"role":"user","content":"I keep repeating Rust file I/O setup steps in new repos."}}
+{"type":"message","message":{"role":"assistant","content":"Capture a reusable skill covering safe read/write helpers and explicit Result handling."}}
+"#;
+
+        let ParsedEvents { events, malformed_count } = parse_session_events(payload);
+
+        assert_eq!(malformed_count, 0);
+        assert_eq!(events.len(), 2);
+
+        assert!(
+            matches!(&events[0], SessionEvent::UserMessage { content, .. } if content.contains("Rust file I/O")),
+            "first event must be UserMessage with 'Rust file I/O'; got {:?}", events[0]
+        );
+        assert!(
+            matches!(&events[1], SessionEvent::AssistantMessage { content, .. } if content.contains("reusable skill")),
+            "second event must be AssistantMessage with 'reusable skill'; got {:?}", events[1]
+        );
+
+        // Indices must be 0-based source-line order
+        assert_eq!(events[0].index(), 0);
+        assert_eq!(events[1].index(), 1);
+    }
+
+    /// AC2b — The real Claude Code "user"/"assistant" wire shape (no "type":"message" wrapper)
+    /// also produces UserMessage / AssistantMessage events via the inline path.
+    #[test]
+    fn real_wire_user_assistant_shape_parses_to_events() {
+        let payload = read_fixture("claude-code-session-real.jsonl");
+        let ParsedEvents { events, .. } = parse_session_events(&payload);
+
+        // There should be at least one UserMessage from the human text turn.
+        // (Line 0 is the fixture metadata header → Metadata event; user text is line 1.)
+        let user_msg = events.iter().find(|e| matches!(e, SessionEvent::UserMessage { .. }));
+        assert!(user_msg.is_some(), "real fixture must produce at least one UserMessage");
+    }
+
+    /// AC3 — flat_lines() derived from events is byte-compatible with the legacy parse path.
+    ///
+    /// `events_to_transcript()` produces a `SessionTranscript` from the events. When that
+    /// transcript is rendered by `render_sanitized_transcript_lines` it must be identical to
+    /// rendering the transcript produced by the legacy `parse_claude_jsonl` path from the
+    /// same inline JSONL input.
+    ///
+    /// Scope: we test against the inline JSONL shape (the shape `TranscriptLoader::load`
+    /// uses for inline payloads) to avoid I/O in unit tests. The renderer lives in
+    /// `infrastructure` which is not a dependency of `session-extractor`, so we verify the
+    /// flat `TranscriptEntry` sequence is identical instead — the renderer is a pure function
+    /// of those entries, so identical entries guarantees identical rendered output.
+    #[test]
+    fn flat_view_from_events_is_byte_compatible_with_legacy_parse_path() {
+        let payload = r#"{"type":"message","message":{"role":"user","content":"I keep repeating the same Rust file I/O setup in every new repo and it wastes time. Can we make it reusable?"}}
+{"type":"message","message":{"role":"assistant","content":"Let's capture a reusable skill."}}
+{"type":"message","message":{"role":"user","content":"Right, and we should create the parent directory before writing a file."}}
+"#;
+
+        // Legacy path: parse_claude_jsonl (via TranscriptLoader::load)
+        let loader = TranscriptLoader::new(std::env::temp_dir()).expect("temp dir should be valid");
+        let legacy_transcript = loader
+            .load("00000000-0000-0000-0000-000000000001", "", Some(payload))
+            .expect("legacy parse must succeed");
+
+        // New path: parse_session_events → events_to_transcript
+        let ParsedEvents { events, .. } = parse_session_events(payload);
+        let session_id = DomainId::parse("00000000-0000-0000-0000-000000000001".to_owned())
+            .expect("session id must parse");
+        let events_transcript = events_to_transcript(session_id, &events);
+
+        // The two transcripts must produce identical flat entries (order + content).
+        assert_eq!(
+            legacy_transcript.entries,
+            events_transcript.entries,
+            "events_to_transcript entries must be byte-identical to legacy parse entries"
+        );
+    }
+
+    /// AC4 — Malformed and foreign-shaped lines are counted and never silently dropped.
+    #[test]
+    fn malformed_and_foreign_lines_are_counted_and_mapped_to_placeholder() {
+        let payload = read_fixture("claude-code-session-edge-cases.jsonl");
+        let ParsedEvents { events, malformed_count } = parse_session_events(&payload);
+
+        // The malformed JSON line must be counted
+        assert_eq!(
+            malformed_count, 1,
+            "exactly one malformed JSON line must be counted; got {malformed_count}"
+        );
+
+        // No events should be silently absent: every non-empty line must produce at least
+        // one event (except the malformed line, which still produces a placeholder UserMessage).
+        // Non-empty lines: 6; empty payload lines: 0.
+        // Line breakdown:
+        //   0: user text → UserMessage
+        //   1: malformed JSON → placeholder UserMessage (counted)
+        //   2: mode event → Metadata
+        //   3: assistant with unknown tool → ToolCall
+        //   4: user with tool_result → ToolResult
+        //   5: no type field → Metadata (unknown type)
+        assert!(
+            events.len() >= 5,
+            "must have at least 5 events (all lines accounted for); got {} events: {events:#?}",
+            events.len()
+        );
+
+        // The malformed line must have been mapped to a placeholder UserMessage
+        let placeholder = events.iter().find(|e| {
+            matches!(e, SessionEvent::UserMessage { content, .. } if content.contains("unparseable line"))
+        });
+        assert!(
+            placeholder.is_some(),
+            "malformed line must produce a placeholder UserMessage, not be silently dropped"
+        );
+
+        // The foreign/unknown tool_use must still produce a ToolCall (not be dropped)
+        let unknown_tool_call = events.iter().find(|e| {
+            matches!(e, SessionEvent::ToolCall { name, .. } if name == "UnknownFutureTool")
+        });
+        assert!(
+            unknown_tool_call.is_some(),
+            "unknown tool_use must produce a ToolCall (forward-compatibility)"
+        );
+    }
+
+    /// Verifies exit_code parsing from the "Exit code N\n" prefix format.
+    #[test]
+    fn exit_code_parsed_from_bash_output_prefix() {
+        assert_eq!(
+            super::extract_exit_code_from_output("Exit code 2\nsome output"),
+            Some(2)
+        );
+        assert_eq!(
+            super::extract_exit_code_from_output("Exit code 127\n"),
+            Some(127)
+        );
+        assert_eq!(
+            super::extract_exit_code_from_output("normal output without exit code"),
+            None
+        );
+        assert_eq!(
+            super::extract_exit_code_from_output(""),
+            None
+        );
+    }
+
+    /// Verifies that tool_use_id correlates between FileEdit and ToolCall for the same edit.
+    #[test]
+    fn file_edit_and_tool_call_share_tool_use_id() {
+        let payload = r#"{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_abc123","name":"Write","input":{"file_path":"/tmp/test.md","content":"hello"}}]}}"#;
+        let ParsedEvents { events, .. } = parse_session_events(payload);
+
+        // Should produce a FileEdit and a ToolCall, both with the same tool_use_id
+        let file_edit = events.iter().find(|e| matches!(e, SessionEvent::FileEdit { .. }));
+        let tool_call = events.iter().find(|e| matches!(e, SessionEvent::ToolCall { name, .. } if name == "Write"));
+
+        assert!(file_edit.is_some(), "Write tool_use must produce a FileEdit");
+        assert!(tool_call.is_some(), "Write tool_use must also produce a ToolCall");
+
+        if let (Some(SessionEvent::FileEdit { tool_use_id: fe_id, .. }), Some(SessionEvent::ToolCall { tool_use_id: tc_id, .. })) = (file_edit, tool_call) {
+            assert_eq!(fe_id, tc_id, "FileEdit and ToolCall must share the same tool_use_id");
         }
     }
 }

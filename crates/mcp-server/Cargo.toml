@@ -136,6 +136,10 @@ path = "../../tests/e2e/test_extraction_quality.rs"
 required-features = ["test-utils"]
 
 [[test]]
+name = "test_claude_code_provider_e2e"
+path = "../../tests/e2e/test_claude_code_provider_e2e.rs"
+
+[[test]]
 name = "test_admin_tools"
 path = "../../tests/integration/test_admin_tools.rs"
 required-features = ["test-utils"]

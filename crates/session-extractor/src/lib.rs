@@ -7,6 +7,12 @@ pub mod providers {
     pub mod claude_code;
     pub mod ollama;
 }
+pub mod orchestrator;
+pub mod preamble;
+pub mod routing;
+pub mod salience;
+pub mod segmentation;
+pub mod skeleton;
 pub mod transcripts;
 pub mod worker_pool;
 pub mod writer;
@@ -19,6 +25,7 @@ use infrastructure::{
     EventEnvelope, RedisStreamError, RedisStreamsAdapter, RedisStreamsConfig, RetryPolicy,
     retry_with_backoff,
 };
+use routing::{RoutingDecision, RoutingConfigError, compute_routing_decision};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use thiserror::Error;
@@ -214,6 +221,13 @@ impl std::str::FromStr for ExtractionProvider {
 #[derive(Clone)]
 pub struct SessionExtractor {
     pub(crate) provider: ExtractionProvider,
+    /// Routing decision resolved at construction time from `EXTRACT_SESSION_ROUTING`.
+    ///
+    /// Logged at INFO level during construction so every extraction session is
+    /// observable: which provider/tier/granularity handled it, and whether
+    /// dual-pass is enabled. The decision is immutable for the lifetime of the
+    /// extractor — it is never changed per-session.
+    pub routing_decision: RoutingDecision,
     pub(crate) extractor: Arc<dyn TranscriptSkillExtractionService>,
     pub(crate) transcript_loader: TranscriptLoader,
     pub(crate) draft_writer: PendingDraftWriter,
@@ -252,6 +266,16 @@ pub(crate) enum ExtractionOutcome {
 
 impl SessionExtractor {
     /// Constructs the default extractor runtime from environment-driven routing.
+    ///
+    /// Two environment variables govern construction:
+    ///
+    /// - `EXTRACT_SESSION_PROVIDER` — selects the extraction backend (ollama /
+    ///   claude / claude-code). Parsed first; unset / blank defaults to `ollama`.
+    /// - `EXTRACT_SESSION_ROUTING` — selects the routing tier (local / frontier /
+    ///   tiered). Parsed second, after the provider is known. The resulting
+    ///   [`RoutingDecision`] is stored on the extractor and logged at INFO so
+    ///   every construction is observable: which tier/provider/granularity was
+    ///   selected, and whether dual-pass is enabled.
     pub fn from_environment() -> Result<Self, SessionExtractorInitError> {
         let provider = std::env::var("EXTRACT_SESSION_PROVIDER")
             .unwrap_or_default()
@@ -270,11 +294,17 @@ impl SessionExtractor {
             }
         };
 
+        // Compute the routing decision AFTER the provider is known so the
+        // `"tiered"` strategy can inspect the already-selected provider.
+        // The decision is logged inside `compute_routing_decision` at INFO level.
+        let routing_decision = compute_routing_decision(provider)?;
+
         let pool_config = ExtractionWorkerPoolConfig::default();
         let retry_policy = pool_config.retry_policy.clone();
         let job_timeout = pool_config.timeout;
         Ok(Self {
             provider,
+            routing_decision,
             extractor,
             transcript_loader: TranscriptLoader::from_environment()?,
             draft_writer: PendingDraftWriter::from_environment()?,
@@ -312,11 +342,20 @@ impl SessionExtractor {
         draft_writer: PendingDraftWriter,
         event_publisher: Arc<dyn ExtractionEventPublisher>,
     ) -> Self {
+        use routing::{ExtractionRoutingTier, LOCAL_TIER_TOKEN_BUDGET};
         let pool_config = ExtractionWorkerPoolConfig::default();
         let retry_policy = pool_config.retry_policy.clone();
         let job_timeout = pool_config.timeout;
+        // Tests use the local tier by default (no EXTRACT_SESSION_ROUTING needed).
+        let routing_decision = RoutingDecision {
+            tier: ExtractionRoutingTier::Local,
+            provider,
+            segmentation_token_budget: LOCAL_TIER_TOKEN_BUDGET,
+            dual_pass_enabled: false,
+        };
         Self {
             provider,
+            routing_decision,
             extractor,
             transcript_loader,
             draft_writer,
@@ -492,9 +531,16 @@ impl SessionExtractor {
         }
     }
 
-    /// Publishes the timeout terminal event. Timeout maps to `extraction.failed`
-    /// with the canonical "extraction timed out" error string (the Redis 8-event
+    /// Publishes the timeout terminal event for the **no-pool** spawn path.
+    ///
+    /// The no-pool path has no retry budget and no requeue channel, so any
+    /// ceiling hit is immediately terminal. Maps to `extraction.failed` with
+    /// the canonical "extraction timed out" error string (the Redis 8-event
     /// catalog is frozen — there is no dedicated `extraction.timeout` type).
+    ///
+    /// The **worker-pool** path MUST NOT call this method; it uses
+    /// [`Self::publish_ceiling_exhausted_event`] only after all retry attempts
+    /// are exhausted.
     pub(crate) async fn publish_timeout_event(&self, job_id: &str) {
         if let Err(publish_error) = self
             .publish_lifecycle_event(EventEnvelope::new(
@@ -511,6 +557,33 @@ impl SessionExtractor {
             tracing::error!(
                 ?publish_error,
                 "failed to publish timeout extraction.failed lifecycle event"
+            );
+        }
+    }
+
+    /// Publishes the terminal `extraction.failed` event after the safety ceiling
+    /// has been hit and all bounded retry attempts have been exhausted.
+    ///
+    /// This is the **only** terminal-failure path for ceiling hits in the
+    /// worker-pool dispatch loop. It MUST NOT be called on intermediate hits
+    /// (where the job is requeued with backoff instead).
+    pub(crate) async fn publish_ceiling_exhausted_event(&self, job_id: &str) {
+        if let Err(publish_error) = self
+            .publish_lifecycle_event(EventEnvelope::new(
+                "extraction.failed",
+                format!("extraction.failed:{job_id}"),
+                json!({
+                    "job_id": job_id,
+                    "provider": self.provider.as_str(),
+                    "reason_code": "extraction_timed_out_retries_exhausted",
+                    "error": "extraction timed out: all retry attempts exhausted",
+                }),
+            ))
+            .await
+        {
+            tracing::error!(
+                ?publish_error,
+                "failed to publish ceiling-exhausted extraction.failed lifecycle event"
             );
         }
     }
@@ -621,6 +694,8 @@ pub enum SessionExtractorInitError {
     Extraction(#[from] ExtractionError),
     #[error(transparent)]
     Redis(#[from] RedisStreamError),
+    #[error(transparent)]
+    Routing(#[from] RoutingConfigError),
 }
 
 #[derive(Debug, Error)]
@@ -955,6 +1030,8 @@ mod tests {
                     conventions: vec![],
                     assets: vec![],
                     confidence: 0.9,
+                    generality: None,
+                    generality_rationale: None,
                 }],
             })
         }
@@ -967,10 +1044,19 @@ mod tests {
         pool_config: ExtractionWorkerPoolConfig,
         worker_pool: Option<ExtractionWorkerPool>,
     ) -> SessionExtractor {
+        use crate::routing::{ExtractionRoutingTier, LOCAL_TIER_TOKEN_BUDGET};
         let retry_policy = pool_config.retry_policy.clone();
         let job_timeout = pool_config.timeout;
+        let provider = ExtractionProvider::Ollama;
+        let routing_decision = RoutingDecision {
+            tier: ExtractionRoutingTier::Local,
+            provider,
+            segmentation_token_budget: LOCAL_TIER_TOKEN_BUDGET,
+            dual_pass_enabled: false,
+        };
         SessionExtractor {
-            provider: ExtractionProvider::Ollama,
+            provider,
+            routing_decision,
             extractor: extractor_impl,
             transcript_loader: TranscriptLoader::new(transcript_root.to_path_buf())
                 .expect("loader"),

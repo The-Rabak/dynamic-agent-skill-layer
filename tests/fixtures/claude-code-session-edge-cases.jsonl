@@ -1,0 +1,6 @@
+{"type":"user","message":{"role":"user","content":"normal user message before edge cases"}}
+THIS IS NOT VALID JSON — malformed line intentionally here
+{"type":"mode","mode":"normal"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_unknown_shape","name":"UnknownFutureTool","input":{"some_new_field":"value"}}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_unknown_shape","content":"result of unknown tool","is_error":false}]}}
+{"completely_unknown_structure":true,"no_type_field":"at_all"}

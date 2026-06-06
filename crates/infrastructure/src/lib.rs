@@ -3,6 +3,7 @@ pub mod embeddings {
 }
 
 pub mod extraction;
+pub mod similarity;
 
 pub mod health;
 pub mod logging;
@@ -10,7 +11,9 @@ pub mod persistence {
     pub mod outbox;
     pub mod outbox_reconciler;
     pub mod postgres;
+    pub mod promotion_recurrence;
     pub mod rebuild;
+    pub mod scope_demotion;
     pub mod transcript_queue;
     pub mod usage;
 }
@@ -26,6 +29,10 @@ pub mod vector {
 pub use embeddings::ollama::{OllamaEmbeddingConfig, OllamaEmbeddingService};
 pub use extraction::claude::{ClaudeExtractionConfig, ClaudeExtractor};
 pub use extraction::claude_code::{ClaudeCodeExtractionConfig, ClaudeCodeExtractor};
+pub use extraction::generality_verifier::{
+    ClaudeGeneralityVerifier, ClaudeGeneralityVerifierConfig, GeneralityDecision,
+    OllamaGeneralityVerifier, OllamaGeneralityVerifierConfig, SkillGeneralityVerifier,
+};
 pub use extraction::merge_verifier::{
     ClaudeMergeVerifier, ClaudeMergeVerifierConfig, EquivalenceDecision, LlmEquivalenceVerifier,
     OllamaMergeVerifier, OllamaMergeVerifierConfig,
@@ -53,10 +60,18 @@ pub use persistence::transcript_queue::{
     TranscriptIngestQueue, TranscriptIngestRequest, TranscriptQueueError, TranscriptQueueRecord,
     TranscriptSource,
 };
+pub use persistence::promotion_recurrence::{
+    PostgresPromotionRecurrenceStore, ProjectSkillRow, PromotionRecurrenceError,
+    PromotionRecurrenceStore,
+};
+pub use persistence::scope_demotion::{
+    GlobalSkillRow, PostgresScopeDemotionStore, ScopeDemotionError, ScopeDemotionStore,
+};
 pub use persistence::usage::{
     PostgresUsageSampleStore, PostgresUsageWriter, SessionUsageRecord, SkillSelectionRecord,
     SkillUsageSummary, UsagePersistenceError, UsagePersistencePort, UsageSampleStore,
 };
+pub use similarity::{CosineSimilarityError, cosine_similarity};
 pub use resilience::{
     CircuitBreaker, CircuitState, ResilienceError, RetryPolicy, execute_with_resilience,
     retry_with_backoff,
