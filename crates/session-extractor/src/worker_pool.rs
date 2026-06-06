@@ -385,6 +385,7 @@ mod tests {
         };
         crate::SessionExtractor {
             provider,
+            run_path: crate::ExtractionRunPath::SingleShot,
             routing_decision,
             extractor: extractor_impl,
             transcript_loader: TranscriptLoader::new(transcript_root.to_path_buf())
@@ -395,6 +396,11 @@ mod tests {
             worker_pool: Some(pool),
             retry_policy: RetryPolicy::default(),
             job_timeout: std::time::Duration::from_secs(30),
+            skeleton_labeler: None,
+            embedder: None,
+            equivalence_verifier: None,
+            synthesis: None,
+            preamble_normalizer: None,
         }
     }
 
@@ -560,6 +566,7 @@ mod tests {
         };
         let extractor = crate::SessionExtractor {
             provider: requeue_provider,
+            run_path: crate::ExtractionRunPath::SingleShot,
             routing_decision: requeue_routing,
             extractor: slow_extractor,
             transcript_loader: TranscriptLoader::new(transcript_root.to_path_buf())
@@ -570,6 +577,11 @@ mod tests {
             worker_pool: Some(pool),
             retry_policy: RetryPolicy::default(),
             job_timeout: std::time::Duration::from_secs(30),
+            skeleton_labeler: None,
+            embedder: None,
+            equivalence_verifier: None,
+            synthesis: None,
+            preamble_normalizer: None,
         };
 
         let response = extractor.enqueue(make_request("requeue-test")).await;

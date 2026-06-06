@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use domain::ExtractionError;
 use reqwest::StatusCode;
-use serde::{Serialize, de::DeserializeOwned};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use tokio::time::timeout;
 
 /// Simple token-bucket rate limiter for extraction HTTP endpoints.
@@ -56,6 +56,58 @@ static EXTRACTION_CLAUDE_RATE_LIMITER: LazyLock<RateLimiter> =
 /// request rate as the generic helper.
 pub(crate) async fn acquire_claude_rate_limit() -> Result<(), ExtractionError> {
     EXTRACTION_CLAUDE_RATE_LIMITER.acquire().await
+}
+
+/// Wire shape for Ollama's `/api/generate` endpoint (non-streaming).
+///
+/// Used by [`ollama_generate_text`] and the internal extraction/merge paths.
+#[derive(Debug, Serialize)]
+pub struct OllamaGenerateTextRequest {
+    pub model: String,
+    pub stream: bool,
+    /// Must be `"json"` to guard against thinking-model free-form output (per #190).
+    pub format: String,
+    pub prompt: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub options: Option<OllamaGenerateTextOptions>,
+}
+
+/// Inference options for [`OllamaGenerateTextRequest`].
+#[derive(Debug, Serialize)]
+pub struct OllamaGenerateTextOptions {
+    pub temperature: f32,
+}
+
+#[derive(Debug, Deserialize)]
+struct OllamaGenerateTextResponse {
+    response: String,
+}
+
+/// Sends one `format:"json"` prompt to Ollama's `/api/generate` and returns the
+/// raw `response` field as a `String`.
+///
+/// This is the single Ollama-generate transport for all LLM seam impls in
+/// `session-extractor`. Using one transport avoids duplicating reqwest plumbing
+/// across `PreambleNormalizer`, `SkeletonLabeler`, and `SynthesisPass` impls.
+///
+/// ## Fail behaviour
+///
+/// - Connection errors → `ExtractionError::ProviderUnavailable`.
+/// - Non-200 HTTP status → `ExtractionError::ProviderUnavailable`.
+/// - Timeout → `ExtractionError::Timeout`.
+/// - Non-JSON response body → `ExtractionError::Unexpected`.
+///
+/// Callers are responsible for parsing the returned JSON string into their own
+/// domain type.
+pub async fn ollama_generate_text(
+    client: &reqwest::Client,
+    endpoint: &str,
+    request: &OllamaGenerateTextRequest,
+    timeout_ms: u64,
+) -> Result<String, ExtractionError> {
+    let raw: OllamaGenerateTextResponse =
+        post_json_with_timeout(client, endpoint, request, timeout_ms, "ollama-seam").await?;
+    Ok(raw.response)
 }
 
 pub(crate) async fn post_json_with_timeout<Req, Res>(

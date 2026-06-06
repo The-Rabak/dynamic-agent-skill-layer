@@ -11,6 +11,7 @@ pub mod orchestrator;
 pub mod preamble;
 pub mod routing;
 pub mod salience;
+pub mod seams;
 pub mod segmentation;
 pub mod skeleton;
 pub mod transcripts;
@@ -20,16 +21,20 @@ pub mod writer;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
-use domain::{ExtractionError, ExtractionResult, TranscriptSkillExtractionService};
+use domain::{DomainId, EmbeddingService, ExtractionError, ExtractionResult, TranscriptSkillExtractionService};
 use infrastructure::{
-    EventEnvelope, RedisStreamError, RedisStreamsAdapter, RedisStreamsConfig, RetryPolicy,
-    retry_with_backoff,
+    EventEnvelope, LlmEquivalenceVerifier, OllamaEmbeddingConfig, OllamaEmbeddingService,
+    OllamaMergeVerifier, OllamaMergeVerifierConfig, RedisStreamError, RedisStreamsAdapter,
+    RedisStreamsConfig, RetryPolicy, retry_with_backoff,
 };
-use routing::{RoutingDecision, RoutingConfigError, compute_routing_decision};
+use orchestrator::{OrchestrationConfig, OrchestrationError, run_orchestration};
+use routing::{RoutingConfigError, RoutingDecision, compute_routing_decision};
+use seams::{OllamaPreambleNormalizer, OllamaSkeletonLabeler, OllamaSynthesisPass};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use skeleton::SkeletonLabeler;
 use thiserror::Error;
-use transcripts::{TranscriptError, TranscriptLoader};
+use transcripts::{TranscriptError, TranscriptLoader, parse_session_events};
 use uuid::Uuid;
 use worker_pool::{ExtractionWorkerPool, ExtractionWorkerPoolConfig};
 use writer::{PendingDraftWriter, WriterError};
@@ -217,10 +222,58 @@ impl std::str::FromStr for ExtractionProvider {
     }
 }
 
+/// Selects the extraction run path — which pipeline the worker actually executes.
+///
+/// Controlled by `EXTRACT_EXTRACTION_PATH`:
+/// - unset / blank / `"orchestrated"` → the map→reduce orchestration pipeline
+///   (`run_orchestration`). **DEFAULT for v1.5.1** — the full epic is now the live path.
+/// - `"single-shot"` / `"legacy"` → the prior single-shot extraction
+///   (`TranscriptSkillExtractionService::extract` over the flat transcript).
+///   Kept as a one-release fallback for operators who need an escape hatch.
+///
+/// The single-shot path will be removed in a subsequent release once the orchestrated
+/// path has been proven in production. Selecting `"single-shot"` is logged at INFO level
+/// so the fallback is always visible to operators.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExtractionRunPath {
+    /// Map→reduce orchestration pipeline (default). Full #184–#189 epic.
+    Orchestrated,
+    /// Legacy single-shot extraction (one-release fallback). Removed next release.
+    SingleShot,
+}
+
+impl ExtractionRunPath {
+    /// Canonical string label for log lines.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Orchestrated => "orchestrated",
+            Self::SingleShot => "single-shot",
+        }
+    }
+}
+
+impl std::str::FromStr for ExtractionRunPath {
+    type Err = SessionExtractorInitError;
+
+    fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        match raw.trim().to_ascii_lowercase().as_str() {
+            // Default: unset / blank / explicit "orchestrated" → map→reduce pipeline.
+            "" | "orchestrated" => Ok(Self::Orchestrated),
+            // Legacy escape hatch: single-shot provider extraction.
+            "single-shot" | "legacy" => Ok(Self::SingleShot),
+            other => Err(SessionExtractorInitError::InvalidRunPath(other.to_owned())),
+        }
+    }
+}
+
 /// Coordinates transcript loading, provider extraction, draft writing, and lifecycle events.
 #[derive(Clone)]
 pub struct SessionExtractor {
     pub(crate) provider: ExtractionProvider,
+    /// Which extraction pipeline is executed per job — orchestrated (default) or single-shot
+    /// (legacy fallback). Sourced from `EXTRACT_EXTRACTION_PATH` at construction time and
+    /// logged at INFO. Immutable for the lifetime of this extractor.
+    pub run_path: ExtractionRunPath,
     /// Routing decision resolved at construction time from `EXTRACT_SESSION_ROUTING`.
     ///
     /// Logged at INFO level during construction so every extraction session is
@@ -243,6 +296,17 @@ pub struct SessionExtractor {
     /// worker loop. Carried on the extractor so the no-pool spawn path can apply
     /// its own timeout arm (otherwise a slow extraction stalls silently).
     pub(crate) job_timeout: std::time::Duration,
+    // ── Orchestration seams (built once at construction; None only when run_path=SingleShot) ──
+    /// Skeleton labeler for the orchestrated map step. Built from env; None when run_path=SingleShot.
+    pub(crate) skeleton_labeler: Option<Arc<dyn SkeletonLabeler>>,
+    /// Embedder for the orchestrated reduce step. Built from env; None when run_path=SingleShot.
+    pub(crate) embedder: Option<Arc<dyn EmbeddingService>>,
+    /// LLM equivalence verifier for the orchestrated reduce step. None when run_path=SingleShot.
+    pub(crate) equivalence_verifier: Option<Arc<dyn LlmEquivalenceVerifier>>,
+    /// Synthesis pass for the orchestrated final step. None when run_path=SingleShot.
+    pub(crate) synthesis: Option<Arc<dyn orchestrator::SynthesisPass>>,
+    /// Optional preamble normalizer (None skips LLM normalization — valid and grounded).
+    pub(crate) preamble_normalizer: Option<Arc<OllamaPreambleNormalizer>>,
 }
 
 /// Typed result of one extraction job, produced by [`SessionExtractor::execute_job`].
@@ -267,7 +331,7 @@ pub(crate) enum ExtractionOutcome {
 impl SessionExtractor {
     /// Constructs the default extractor runtime from environment-driven routing.
     ///
-    /// Two environment variables govern construction:
+    /// Environment variables governing construction:
     ///
     /// - `EXTRACT_SESSION_PROVIDER` — selects the extraction backend (ollama /
     ///   claude / claude-code). Parsed first; unset / blank defaults to `ollama`.
@@ -276,6 +340,15 @@ impl SessionExtractor {
     ///   [`RoutingDecision`] is stored on the extractor and logged at INFO so
     ///   every construction is observable: which tier/provider/granularity was
     ///   selected, and whether dual-pass is enabled.
+    /// - `EXTRACT_EXTRACTION_PATH` — selects which pipeline `execute_job` runs:
+    ///   - unset / blank / `"orchestrated"` (default) → map→reduce via
+    ///     [`run_orchestration`]; real LLM-backed seams are built from env and
+    ///     a missing `OLLAMA_URL` fails loudly here at construction.
+    ///   - `"single-shot"` / `"legacy"` → the prior flat-transcript provider
+    ///     extraction path. Seams are NOT constructed; this is the one-release
+    ///     fallback for operators who need an escape hatch.
+    /// - `OLLAMA_URL` — required when `EXTRACT_EXTRACTION_PATH=orchestrated`.
+    ///   Missing value fails loudly; no silent default.
     pub fn from_environment() -> Result<Self, SessionExtractorInitError> {
         let provider = std::env::var("EXTRACT_SESSION_PROVIDER")
             .unwrap_or_default()
@@ -299,11 +372,91 @@ impl SessionExtractor {
         // The decision is logged inside `compute_routing_decision` at INFO level.
         let routing_decision = compute_routing_decision(provider)?;
 
+        // Resolve the run path. Default is Orchestrated.
+        let run_path = std::env::var("EXTRACT_EXTRACTION_PATH")
+            .unwrap_or_default()
+            .parse::<ExtractionRunPath>()?;
+
+        tracing::info!(
+            run_path = run_path.as_str(),
+            "extraction run path resolved"
+        );
+
+        if run_path == ExtractionRunPath::SingleShot {
+            tracing::info!(
+                "EXTRACT_EXTRACTION_PATH=single-shot: using legacy flat-transcript extraction. \
+                 This fallback will be removed in the next release."
+            );
+        }
+
+        // Build orchestration seams when the orchestrated path is selected.
+        // A missing OLLAMA_URL fails loudly here at construction — not at job time.
+        let (skeleton_labeler, embedder, equivalence_verifier, synthesis, preamble_normalizer) =
+            if run_path == ExtractionRunPath::Orchestrated {
+                let ollama_url = seams::require_ollama_base_url()?;
+                let model = std::env::var("ORCHESTRATION_SEAM_MODEL")
+                    .unwrap_or_else(|_| "gemma4:12b".to_owned());
+
+                // Skeleton labeler: OllamaSkeletonLabeler from OLLAMA_URL.
+                let labeler = OllamaSkeletonLabeler::from_environment()?;
+
+                // Embedder: OllamaEmbeddingService (nomic-embed-text) from OLLAMA_URL.
+                let embed_config = OllamaEmbeddingConfig {
+                    base_url: ollama_url.clone(),
+                    model: "nomic-embed-text".to_owned(),
+                    timeout_ms: 5_000,
+                    batch_timeout_ms: 10_000,
+                    max_concurrency: 4,
+                };
+                let embedder: Arc<dyn EmbeddingService> = Arc::new(
+                    OllamaEmbeddingService::from_config(embed_config)
+                        .map_err(|e| SessionExtractorInitError::SeamInit(e.to_string()))?,
+                );
+
+                // LLM equivalence verifier: OllamaMergeVerifier from OLLAMA_URL.
+                let verifier_endpoint =
+                    format!("{}/api/generate", ollama_url.trim_end_matches('/'));
+                let verifier_config = OllamaMergeVerifierConfig {
+                    endpoint: verifier_endpoint,
+                    model: model.clone(),
+                    timeout_ms: 60_000,
+                };
+                let equivalence_verifier: Arc<dyn LlmEquivalenceVerifier> = Arc::new(
+                    OllamaMergeVerifier::from_config(verifier_config)
+                        .map_err(|e| SessionExtractorInitError::SeamInit(e.to_string()))?,
+                );
+
+                // Synthesis pass: OllamaSynthesisPass from OLLAMA_URL.
+                let synthesis: Arc<dyn orchestrator::SynthesisPass> =
+                    OllamaSynthesisPass::from_environment()?;
+
+                // Preamble normalizer: optional (mine_preamble works without it).
+                let preamble_normalizer =
+                    Some(OllamaPreambleNormalizer::from_environment()?);
+
+                tracing::info!(
+                    ollama_url = %ollama_url,
+                    seam_model = %model,
+                    "orchestration seams built from environment"
+                );
+
+                (
+                    Some(labeler as Arc<dyn SkeletonLabeler>),
+                    Some(embedder),
+                    Some(equivalence_verifier),
+                    Some(synthesis),
+                    preamble_normalizer,
+                )
+            } else {
+                (None, None, None, None, None)
+            };
+
         let pool_config = ExtractionWorkerPoolConfig::default();
         let retry_policy = pool_config.retry_policy.clone();
         let job_timeout = pool_config.timeout;
         Ok(Self {
             provider,
+            run_path,
             routing_decision,
             extractor,
             transcript_loader: TranscriptLoader::from_environment()?,
@@ -313,10 +466,19 @@ impl SessionExtractor {
             worker_pool: Some(ExtractionWorkerPool::new(pool_config)),
             retry_policy,
             job_timeout,
+            skeleton_labeler,
+            embedder,
+            equivalence_verifier,
+            synthesis,
+            preamble_normalizer,
         })
     }
 
     /// Constructs a fully-injected extractor for deterministic tests.
+    ///
+    /// Always uses `ExtractionRunPath::SingleShot` so legacy tests continue to work
+    /// without wiring orchestration seams. Use [`Self::new_for_tests_orchestrated`]
+    /// to test the orchestrated path with injected seam fakes.
     #[cfg(any(test, feature = "test-utils"))]
     pub fn new_for_tests(
         provider: ExtractionProvider,
@@ -334,6 +496,8 @@ impl SessionExtractor {
     }
 
     /// Constructs a fully-injected extractor and lifecycle publisher for tests.
+    ///
+    /// Always uses `ExtractionRunPath::SingleShot` — seam fields are `None`.
     #[cfg(any(test, feature = "test-utils"))]
     pub fn new_for_tests_with_publisher(
         provider: ExtractionProvider,
@@ -355,6 +519,7 @@ impl SessionExtractor {
         };
         Self {
             provider,
+            run_path: ExtractionRunPath::SingleShot,
             routing_decision,
             extractor,
             transcript_loader,
@@ -364,6 +529,11 @@ impl SessionExtractor {
             worker_pool: Some(ExtractionWorkerPool::new(pool_config)),
             retry_policy,
             job_timeout,
+            skeleton_labeler: None,
+            embedder: None,
+            equivalence_verifier: None,
+            synthesis: None,
+            preamble_normalizer: None,
         }
     }
 
@@ -458,7 +628,174 @@ impl SessionExtractor {
     /// Runs one extraction job to a typed [`ExtractionOutcome`], publishing NO
     /// lifecycle events. Terminal-event ownership belongs to the dispatch layer
     /// (worker loop, no-pool spawn path, [`Self::extract_blocking`]).
+    ///
+    /// Dispatches to the orchestrated map→reduce pipeline ([`run_orchestration`])
+    /// by default, or to the legacy single-shot path when
+    /// `EXTRACT_EXTRACTION_PATH=single-shot`.
     pub(crate) async fn execute_job(
+        &self,
+        job_id: &str,
+        request: &ExtractSessionRequest,
+    ) -> ExtractionOutcome {
+        match self.run_path {
+            ExtractionRunPath::Orchestrated => {
+                self.execute_job_orchestrated(job_id, request).await
+            }
+            ExtractionRunPath::SingleShot => {
+                self.execute_job_single_shot(job_id, request).await
+            }
+        }
+    }
+
+    /// Orchestrated map→reduce extraction path — the DEFAULT since v1.5.1.
+    ///
+    /// Loads the raw transcript payload, parses it to [`SessionEvent`]s (rich path
+    /// preserving tool calls, tool results, file edits), then drives
+    /// [`run_orchestration`] which segments → gates → maps → reduces → synthesises →
+    /// writes `.pending` drafts. The routing budget from [`Self::routing_decision`]
+    /// drives episode granularity.
+    ///
+    /// The seams (`skeleton_labeler`, `embedder`, `equivalence_verifier`, `synthesis`)
+    /// are required when `run_path = Orchestrated`. A missing seam panics at this point
+    /// because it indicates a construction invariant violation (the seams are always
+    /// `Some` when `Orchestrated`).
+    async fn execute_job_orchestrated(
+        &self,
+        _job_id: &str,
+        request: &ExtractSessionRequest,
+    ) -> ExtractionOutcome {
+        // Load the raw transcript bytes (inline or file-rooted).
+        let raw_payload = match self.transcript_loader.load_raw(
+            &request.transcript_ref,
+            request.transcript_inline.as_deref(),
+        ) {
+            Ok(payload) => payload,
+            Err(error) => return ExtractionOutcome::Failed(error.into()),
+        };
+
+        // Parse to SessionEvents (rich path: tool calls, results, file edits).
+        let parsed = parse_session_events(&raw_payload);
+        if parsed.malformed_count > 0 {
+            tracing::warn!(
+                malformed_lines = parsed.malformed_count,
+                session_id = %request.session_id,
+                "orchestrated extraction: {} JSONL line(s) were malformed and mapped to \
+                 placeholder events",
+                parsed.malformed_count,
+            );
+        }
+        let events = parsed.events;
+
+        // Obtain the session DomainId.
+        let session_id = match DomainId::parse(request.session_id.clone()) {
+            Ok(id) => id,
+            Err(error) => {
+                return ExtractionOutcome::Failed(SessionExtractionError::Transcript(
+                    TranscriptError::InvalidPayload(format!(
+                        "invalid session_id for orchestration: {error}"
+                    )),
+                ))
+            }
+        };
+
+        // Thread the routing budget into the segmentation config.
+        // Log so the granularity choice is always observable.
+        let token_budget = self.routing_decision.segmentation_token_budget;
+        tracing::info!(
+            session_id = session_id.as_str(),
+            token_budget,
+            tier = self.routing_decision.tier.as_str(),
+            dual_pass_enabled = self.routing_decision.dual_pass_enabled,
+            "orchestrated extraction: resolved segmentation budget from routing decision \
+             (dual_pass is observed, not yet wired into the dispatch path)"
+        );
+
+        let config = OrchestrationConfig {
+            segmentation: segmentation::SegmentationConfig::new(token_budget, 3),
+            ..OrchestrationConfig::default()
+        };
+
+        // Seam references — unwrap is safe: invariant guarantees Some when Orchestrated.
+        let labeler = self
+            .skeleton_labeler
+            .as_ref()
+            .expect("skeleton_labeler must be Some when run_path=Orchestrated")
+            .clone();
+        let embedder = self
+            .embedder
+            .as_ref()
+            .expect("embedder must be Some when run_path=Orchestrated")
+            .clone();
+        let equivalence_verifier = self
+            .equivalence_verifier
+            .as_ref()
+            .expect("equivalence_verifier must be Some when run_path=Orchestrated")
+            .clone();
+        let synthesis = self
+            .synthesis
+            .as_ref()
+            .expect("synthesis must be Some when run_path=Orchestrated")
+            .clone();
+
+        // Optional preamble normalizer: None skips LLM normalization (grounded and valid).
+        let preamble_normalizer_ref: Option<&dyn preamble::PreambleNormalizer> =
+            self.preamble_normalizer
+                .as_ref()
+                .map(|n| n.as_ref() as &dyn preamble::PreambleNormalizer);
+
+        match run_orchestration(
+            session_id.clone(),
+            &events,
+            &config,
+            preamble_normalizer_ref,
+            labeler,
+            self.extractor.clone(),
+            embedder,
+            equivalence_verifier,
+            synthesis,
+            &self.draft_writer,
+            request,
+            self.provider.as_str(),
+        )
+        .await
+        {
+            Ok(report) => {
+                tracing::info!(
+                    session_id = session_id.as_str(),
+                    total_episodes = report.total_episodes,
+                    kept_episodes = report.kept_episode_count,
+                    gated_episodes = report.gated_episode_count,
+                    pre_reduce_candidates = report.pre_reduce_candidate_count,
+                    post_reduce_candidates = report.post_reduce_candidate_count,
+                    synthesis_added = report.synthesis_added_count,
+                    final_candidates = report.final_candidate_count,
+                    draft_count = report.draft_paths.len(),
+                    "orchestrated extraction complete"
+                );
+                ExtractionOutcome::Completed {
+                    draft_paths: report.draft_paths,
+                    source_session_id: session_id.as_str().to_owned(),
+                }
+            }
+            Err(error) => {
+                tracing::error!(
+                    session_id = session_id.as_str(),
+                    ?error,
+                    "orchestrated extraction failed"
+                );
+                ExtractionOutcome::Failed(SessionExtractionError::Orchestration(error))
+            }
+        }
+    }
+
+    /// Legacy single-shot extraction path — kept for one-release fallback.
+    ///
+    /// Loads the flat transcript via [`TranscriptLoader`], calls
+    /// [`TranscriptSkillExtractionService::extract`] with retry, and writes drafts.
+    ///
+    /// This path will be removed once the orchestrated path is proven in production.
+    /// Selecting it logs at INFO so operators always see the fallback is active.
+    async fn execute_job_single_shot(
         &self,
         _job_id: &str,
         request: &ExtractSessionRequest,
@@ -686,6 +1023,10 @@ impl SessionExtractor {
 pub enum SessionExtractorInitError {
     #[error("unsupported extraction provider `{0}`")]
     InvalidProvider(String),
+    #[error("unsupported extraction run path `{0}`")]
+    InvalidRunPath(String),
+    #[error("orchestration seam initialization failed: {0}")]
+    SeamInit(String),
     #[error(transparent)]
     Transcript(#[from] TranscriptError),
     #[error(transparent)]
@@ -708,6 +1049,9 @@ pub(crate) enum SessionExtractionError {
     Writer(#[from] WriterError),
     #[error(transparent)]
     EventPublication(#[from] LifecycleEventPublishError),
+    /// Orchestrated pipeline failure (map→reduce path).
+    #[error("orchestration pipeline failed: {0}")]
+    Orchestration(OrchestrationError),
 }
 
 impl SessionExtractionError {
@@ -735,6 +1079,7 @@ impl SessionExtractionError {
                 WriterError::WriteDenied(_) => "write_denied",
             },
             Self::EventPublication(_) => "event_publication_failed",
+            Self::Orchestration(_) => "orchestration_failed",
         }
     }
 }
@@ -801,8 +1146,8 @@ mod tests {
 
     use async_trait::async_trait;
     use domain::{
-        DomainId, ExtractedSkillCandidate, ExtractionError, ExtractionResult, SessionTranscript,
-        TranscriptSkillExtractionService,
+        DomainId, ExtractedSkillCandidate, ExtractionError, ExtractionResult,
+        SessionTranscript, TranscriptSkillExtractionService,
     };
 
     use super::*;
@@ -1056,6 +1401,7 @@ mod tests {
         };
         SessionExtractor {
             provider,
+            run_path: ExtractionRunPath::SingleShot,
             routing_decision,
             extractor: extractor_impl,
             transcript_loader: TranscriptLoader::new(transcript_root.to_path_buf())
@@ -1066,6 +1412,11 @@ mod tests {
             worker_pool,
             retry_policy,
             job_timeout,
+            skeleton_labeler: None,
+            embedder: None,
+            equivalence_verifier: None,
+            synthesis: None,
+            preamble_normalizer: None,
         }
     }
 
@@ -1231,6 +1582,205 @@ mod tests {
             error.reason_code(),
             "extraction_failed",
             "Unexpected extraction errors must still map to 'extraction_failed'"
+        );
+    }
+
+    // ── ExtractionRunPath dispatch tests ──────────────────────────────────────
+
+    /// Proves that the default run path is Orchestrated when EXTRACT_EXTRACTION_PATH is unset.
+    #[test]
+    fn run_path_defaults_to_orchestrated_when_unset() {
+        let result = "".parse::<ExtractionRunPath>().expect("empty must parse");
+        assert_eq!(
+            result,
+            ExtractionRunPath::Orchestrated,
+            "empty EXTRACT_EXTRACTION_PATH must default to Orchestrated"
+        );
+    }
+
+    /// Proves that EXTRACT_EXTRACTION_PATH=orchestrated parses to Orchestrated.
+    #[test]
+    fn run_path_parses_orchestrated() {
+        let result = "orchestrated"
+            .parse::<ExtractionRunPath>()
+            .expect("'orchestrated' must parse");
+        assert_eq!(result, ExtractionRunPath::Orchestrated);
+    }
+
+    /// Proves that EXTRACT_EXTRACTION_PATH=single-shot parses to SingleShot.
+    #[test]
+    fn run_path_parses_single_shot() {
+        let result = "single-shot"
+            .parse::<ExtractionRunPath>()
+            .expect("'single-shot' must parse");
+        assert_eq!(result, ExtractionRunPath::SingleShot);
+    }
+
+    /// Proves that EXTRACT_EXTRACTION_PATH=legacy parses to SingleShot.
+    #[test]
+    fn run_path_parses_legacy_alias() {
+        let result = "legacy"
+            .parse::<ExtractionRunPath>()
+            .expect("'legacy' must parse");
+        assert_eq!(result, ExtractionRunPath::SingleShot);
+    }
+
+    /// Proves that an unknown EXTRACT_EXTRACTION_PATH fails loudly.
+    #[test]
+    fn run_path_fails_loudly_on_unknown_value() {
+        let err = "unknown-path"
+            .parse::<ExtractionRunPath>()
+            .expect_err("unknown run path must be a loud error");
+        assert!(
+            matches!(err, SessionExtractorInitError::InvalidRunPath(_)),
+            "expected InvalidRunPath error, got {err:?}"
+        );
+    }
+
+    /// Proves that as_str() outputs round-trip through from_str().
+    #[test]
+    fn run_path_as_str_round_trips() {
+        for variant in [ExtractionRunPath::Orchestrated, ExtractionRunPath::SingleShot] {
+            let serialised = variant.as_str();
+            let deserialised = serialised
+                .parse::<ExtractionRunPath>()
+                .unwrap_or_else(|_| panic!("as_str() '{serialised}' must round-trip through parse()"));
+            assert_eq!(
+                deserialised, variant,
+                "parse(as_str({variant:?})) must equal {variant:?}"
+            );
+        }
+    }
+
+    /// Proves that the single-shot path (legacy fallback) still produces drafts
+    /// when explicitly selected. This prevents the fallback from regressing silently.
+    #[tokio::test]
+    async fn single_shot_path_produces_pending_drafts_via_extract_blocking() {
+        let sandbox = sandbox_dir("run-path-single-shot");
+        let transcript_root = sandbox_dir("run-path-single-shot-tx");
+        let extractor = build_no_pool_extractor(
+            &sandbox,
+            &transcript_root,
+            Arc::new(StaticExtractor::ok(Duration::ZERO)),
+            ExtractionWorkerPoolConfig::default(),
+            None,
+        );
+        // run_path is SingleShot in build_no_pool_extractor — verify.
+        assert_eq!(
+            extractor.run_path,
+            ExtractionRunPath::SingleShot,
+            "test extractor must use SingleShot run path"
+        );
+
+        let paths = extractor
+            .extract_blocking(&request_for("run-path-single-shot"))
+            .await
+            .expect("single-shot extraction must succeed");
+        assert!(!paths.is_empty(), "single-shot path must produce at least one .pending draft");
+    }
+
+    /// Proves that `execute_job_orchestrated` returns Failed when the session ID
+    /// cannot be parsed as a DomainId (an upstream contract invariant check).
+    ///
+    /// This validates the explicit fail path for the session_id parsing branch
+    /// inside `execute_job_orchestrated` without requiring a live model.
+    #[tokio::test]
+    async fn orchestrated_path_fails_loudly_on_invalid_session_id() {
+        use crate::routing::{ExtractionRoutingTier, LOCAL_TIER_TOKEN_BUDGET};
+
+        // Build a minimal orchestrated extractor with fake seams.
+        // We need Some seams to avoid the unwrap panics.
+        use crate::{
+            orchestrator::SynthesisPass,
+            skeleton::{ProcedureSkeleton, SkeletonError, SkeletonLabel, SkeletonLabeler},
+        };
+        use domain::{EmbeddingError, EmbeddingService};
+        use infrastructure::{EquivalenceDecision, LlmEquivalenceVerifier};
+
+        struct NoopLabeler;
+        #[async_trait]
+        impl SkeletonLabeler for NoopLabeler {
+            async fn label(&self, _s: &ProcedureSkeleton) -> Result<SkeletonLabel, SkeletonError> {
+                Ok(SkeletonLabel {
+                    name: "noop".to_owned(),
+                    description: "noop".to_owned(),
+                    generality: None,
+                    keep: false,
+                    confidence: 0.0,
+                })
+            }
+        }
+
+        struct NoopEmbedder;
+        #[async_trait]
+        impl EmbeddingService for NoopEmbedder {
+            async fn embed_text(&self, _text: &str) -> Result<Vec<f32>, EmbeddingError> {
+                Ok(vec![1.0])
+            }
+            async fn embed_batch(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>, EmbeddingError> {
+                Ok(texts.iter().map(|_| vec![1.0]).collect())
+            }
+        }
+
+        struct NoopVerifier;
+        #[async_trait]
+        impl LlmEquivalenceVerifier for NoopVerifier {
+            async fn decide_equivalence(&self, _l: &str, _r: &str) -> Result<EquivalenceDecision, ExtractionError> {
+                Ok(EquivalenceDecision { equivalent: false, rationale: "noop".to_owned() })
+            }
+        }
+
+        struct NoopSynthesis;
+        #[async_trait]
+        impl SynthesisPass for NoopSynthesis {
+            async fn synthesize(&self, _c: &[ExtractedSkillCandidate], _p: &str) -> Result<Vec<ExtractedSkillCandidate>, crate::orchestrator::SynthesisError> {
+                Ok(vec![])
+            }
+        }
+
+        let sandbox = sandbox_dir("orch-invalid-session-id");
+        let transcript_root = sandbox_dir("orch-invalid-session-id-tx");
+        let pool_config = ExtractionWorkerPoolConfig::default();
+        let retry_policy = pool_config.retry_policy.clone();
+        let job_timeout = pool_config.timeout;
+        let provider = ExtractionProvider::Ollama;
+        let routing_decision = RoutingDecision {
+            tier: ExtractionRoutingTier::Local,
+            provider,
+            segmentation_token_budget: LOCAL_TIER_TOKEN_BUDGET,
+            dual_pass_enabled: false,
+        };
+
+        let extractor = SessionExtractor {
+            provider,
+            run_path: ExtractionRunPath::Orchestrated,
+            routing_decision,
+            extractor: Arc::new(StaticExtractor::ok(Duration::ZERO)),
+            transcript_loader: TranscriptLoader::new(transcript_root.to_path_buf()).expect("loader"),
+            draft_writer: PendingDraftWriter::new(vec![sandbox.to_path_buf()]),
+            lifecycle_events: ExtractionLifecycleEvents::default(),
+            event_publisher: Arc::new(NoopExtractionEventPublisher),
+            worker_pool: None,
+            retry_policy,
+            job_timeout,
+            skeleton_labeler: Some(Arc::new(NoopLabeler) as Arc<dyn SkeletonLabeler>),
+            embedder: Some(Arc::new(NoopEmbedder) as Arc<dyn EmbeddingService>),
+            equivalence_verifier: Some(Arc::new(NoopVerifier) as Arc<dyn LlmEquivalenceVerifier>),
+            synthesis: Some(Arc::new(NoopSynthesis) as Arc<dyn crate::orchestrator::SynthesisPass>),
+            preamble_normalizer: None,
+        };
+
+        // Use a blank session_id — DomainId::parse rejects blank identifiers.
+        let mut bad_request = request_for("placeholder");
+        bad_request.session_id = "   ".to_owned(); // whitespace-only → DomainId::parse fails
+
+        let outcome = extractor
+            .execute_job_orchestrated("test-job", &bad_request)
+            .await;
+
+        assert!(
+            matches!(outcome, ExtractionOutcome::Failed(_)),
+            "orchestrated path must fail loudly for a blank/invalid session_id"
         );
     }
 

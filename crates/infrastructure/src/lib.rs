@@ -33,6 +33,9 @@ pub use extraction::generality_verifier::{
     ClaudeGeneralityVerifier, ClaudeGeneralityVerifierConfig, GeneralityDecision,
     OllamaGeneralityVerifier, OllamaGeneralityVerifierConfig, SkillGeneralityVerifier,
 };
+pub use extraction::http::{
+    OllamaGenerateTextOptions, OllamaGenerateTextRequest, ollama_generate_text,
+};
 pub use extraction::merge_verifier::{
     ClaudeMergeVerifier, ClaudeMergeVerifierConfig, EquivalenceDecision, LlmEquivalenceVerifier,
     OllamaMergeVerifier, OllamaMergeVerifierConfig,

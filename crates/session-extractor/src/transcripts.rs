@@ -121,6 +121,32 @@ impl TranscriptLoader {
 
         parse_claude_jsonl(session_id, &transcript_payload)
     }
+
+    /// Loads raw JSONL payload bytes from either inline content or a file reference,
+    /// without parsing.
+    ///
+    /// Used by the orchestrated extraction path which needs to pass the raw JSONL to
+    /// [`parse_session_events`] rather than the flat [`SessionTranscript`] parser.
+    /// The same size limit as [`Self::load`] is enforced on inline payloads.
+    pub fn load_raw(
+        &self,
+        transcript_ref: &str,
+        transcript_inline: Option<&str>,
+    ) -> Result<String, TranscriptError> {
+        if let Some(inline_payload) = transcript_inline {
+            if inline_payload.len() > MAX_INLINE_BYTES {
+                return Err(TranscriptError::InvalidReference(format!(
+                    "transcript_inline exceeds {MAX_INLINE_BYTES} bytes"
+                )));
+            }
+            Ok(inline_payload.to_owned())
+        } else {
+            let path = self.validate_ref(transcript_ref)?;
+            fs::read_to_string(&path).map_err(|error| {
+                TranscriptError::ReadFailure(path.display().to_string(), error.to_string())
+            })
+        }
+    }
 }
 
 #[derive(Debug, Error)]
