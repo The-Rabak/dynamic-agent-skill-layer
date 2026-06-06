@@ -122,8 +122,6 @@ async fn orchestrated_extraction_live_produces_grounded_pending_drafts() {
         let config = OllamaEmbeddingConfig {
             base_url: ollama_url.clone(),
             model: "nomic-embed-text".to_owned(),
-            timeout_ms: 5_000,
-            batch_timeout_ms: 10_000,
             max_concurrency: 2,
         };
         Arc::new(
@@ -136,7 +134,6 @@ async fn orchestrated_extraction_live_produces_grounded_pending_drafts() {
         let config = OllamaMergeVerifierConfig {
             endpoint: endpoint.clone(),
             model: seam_model.clone(),
-            timeout_ms: 60_000,
         };
         Arc::new(
             OllamaMergeVerifier::from_config(config)
@@ -206,10 +203,13 @@ async fn orchestrated_extraction_live_produces_grounded_pending_drafts() {
     assert!(
         !report.draft_paths.is_empty(),
         "live: at least one .pending draft must be written; got zero. \
-         Report: total_episodes={} kept={} gated={} final_candidates={}",
+         Report: total_episodes={} kept={} gated={} pre_reduce={} post_reduce={} synthesis_added={} final_candidates={}",
         report.total_episodes,
         report.kept_episode_count,
         report.gated_episode_count,
+        report.pre_reduce_candidate_count,
+        report.post_reduce_candidate_count,
+        report.synthesis_added_count,
         report.final_candidate_count,
     );
 

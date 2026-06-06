@@ -5,7 +5,7 @@ use domain::{
 use serde::{Deserialize, Serialize};
 
 use crate::extraction::{
-    http::post_json_with_timeout,
+    http::post_json,
     limits::{validate_extraction_config, validate_transcript_limits},
     prompt_contract::{build_text_json_extraction_prompt, render_sanitized_transcript_lines},
 };
@@ -21,7 +21,6 @@ use crate::extraction::{
 pub struct OllamaExtractionConfig {
     pub endpoint: String,
     pub model: String,
-    pub timeout_ms: u64,
     pub max_entries: usize,
     pub max_entry_chars: usize,
     pub max_total_chars: usize,
@@ -41,14 +40,6 @@ impl Default for OllamaExtractionConfig {
             // gemma4:12b is the default local extraction model (Gemma 4, 12B
             // variant). Override via OLLAMA_EXTRACTION_MODEL.
             model: "gemma4:12b".to_owned(),
-            // Conservative inner timeout CEILING for CPU LLM extraction — a safety bound,
-            // not a latency target. Baseline measured on the reference host with the prior
-            // default gemma4:e4b (2026-06-04, ~9.6GB, CPU, moderate transcript): warm
-            // single-job ~37s, cold-start (model load) ~66s. The default is now the larger
-            // gemma4:12b, which is slower — so 120s remains a deliberately generous ceiling
-            // (re-measure per host and tune via OLLAMA_EXTRACTION_TIMEOUT_MS). The worker-pool
-            // (outer) timeout must stay >= 1.5x this value (see session-extractor worker_pool.rs).
-            timeout_ms: 120_000,
             max_entries: 2_000,
             max_entry_chars: 8_192,
             max_total_chars: 1_000_000,
@@ -77,7 +68,6 @@ impl OllamaExtractor {
         }
 
         validate_extraction_config(
-            config.timeout_ms,
             config.max_entries,
             config.max_entry_chars,
             config.max_total_chars,
@@ -149,11 +139,10 @@ impl TranscriptSkillExtractionService for OllamaExtractor {
             options,
         };
 
-        let raw: OllamaExtractionResponse = post_json_with_timeout(
+        let raw: OllamaExtractionResponse = post_json(
             &self.client,
             &self.config.endpoint,
             &request,
-            self.config.timeout_ms,
             "ollama",
         )
         .await?;
@@ -174,16 +163,11 @@ mod tests {
     use domain::{DomainId, TranscriptEntry};
 
     #[test]
-    fn default_config_targets_gemma_with_cpu_inference_timeout() {
+    fn default_config_targets_gemma4_12b() {
         let config = OllamaExtractionConfig::default();
         assert_eq!(
             config.model, "gemma4:12b",
             "default Ollama model must be gemma4:12b"
-        );
-        assert!(
-            config.timeout_ms >= 60_000,
-            "inner timeout must be realistic for CPU inference (>=60s), got {}ms",
-            config.timeout_ms
         );
         // Default temperature must be None so production inference uses the model's
         // built-in default sampling (stochastic). Callers that need deterministic

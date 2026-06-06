@@ -292,10 +292,11 @@ pub struct SessionExtractor {
     /// worker pool clones the whole extractor into each job), so retry behavior
     /// is sourced from exactly one place.
     pub(crate) retry_policy: RetryPolicy,
-    /// Per-job extraction timeout, sourced from the same pool config as the
-    /// worker loop. Carried on the extractor so the no-pool spawn path can apply
-    /// its own timeout arm (otherwise a slow extraction stalls silently).
-    pub(crate) job_timeout: std::time::Duration,
+    /// Optional per-job extraction ceiling, sourced from the same pool config as
+    /// the worker loop. Carried on the extractor so the no-pool spawn path can
+    /// apply the same arm. `None` = no fixed ceiling (the churning orchestrated
+    /// path); `Some(d)` = bounded single-shot path.
+    pub(crate) job_timeout: Option<std::time::Duration>,
     // ── Orchestration seams (built once at construction; None only when run_path=SingleShot) ──
     /// Skeleton labeler for the orchestrated map step. Built from env; None when run_path=SingleShot.
     pub(crate) skeleton_labeler: Option<Arc<dyn SkeletonLabeler>>,
@@ -404,8 +405,6 @@ impl SessionExtractor {
                 let embed_config = OllamaEmbeddingConfig {
                     base_url: ollama_url.clone(),
                     model: "nomic-embed-text".to_owned(),
-                    timeout_ms: 5_000,
-                    batch_timeout_ms: 10_000,
                     max_concurrency: 4,
                 };
                 let embedder: Arc<dyn EmbeddingService> = Arc::new(
@@ -419,7 +418,6 @@ impl SessionExtractor {
                 let verifier_config = OllamaMergeVerifierConfig {
                     endpoint: verifier_endpoint,
                     model: model.clone(),
-                    timeout_ms: 60_000,
                 };
                 let equivalence_verifier: Arc<dyn LlmEquivalenceVerifier> = Arc::new(
                     OllamaMergeVerifier::from_config(verifier_config)
@@ -451,7 +449,37 @@ impl SessionExtractor {
                 (None, None, None, None, None)
             };
 
-        let pool_config = ExtractionWorkerPoolConfig::default();
+        // OUTER per-job ceiling policy. The orchestrated path is a background worker
+        // that constantly churns through many sequential LLM calls; per the standing
+        // rule we do NOT impose a hardcoded wall-clock timeout on it — a fixed cap
+        // only requeue-thrashes a slow-but-progressing job, never makes it finish.
+        // Its liveness comes from each provider call's own per-request timeout plus
+        // the streaming idle-watchdog (#197). So: orchestrated → no ceiling (None)
+        // unless an operator explicitly opts into one via `EXTRACTION_JOB_TIMEOUT_MS`
+        // (set `0` to force "no ceiling" even on the single-shot path). The legacy
+        // single-shot path keeps its bounded one-call default.
+        let timeout_override: Option<Option<std::time::Duration>> =
+            match std::env::var("EXTRACTION_JOB_TIMEOUT_MS") {
+                Ok(raw) => {
+                    let ms: u64 = raw.trim().parse().map_err(|error| {
+                        SessionExtractorInitError::SeamInit(format!(
+                            "invalid EXTRACTION_JOB_TIMEOUT_MS value {raw:?}: {error}"
+                        ))
+                    })?;
+                    Some(if ms == 0 {
+                        None
+                    } else {
+                        Some(std::time::Duration::from_millis(ms))
+                    })
+                }
+                Err(_) => None,
+            };
+        let job_ceiling: Option<std::time::Duration> = match timeout_override {
+            Some(explicit) => explicit,
+            None if run_path == ExtractionRunPath::Orchestrated => None,
+            None => ExtractionWorkerPoolConfig::default().timeout,
+        };
+        let pool_config = ExtractionWorkerPoolConfig::default().with_optional_timeout(job_ceiling);
         let retry_policy = pool_config.retry_policy.clone();
         let job_timeout = pool_config.timeout;
         Ok(Self {
@@ -599,19 +627,21 @@ impl SessionExtractor {
             let worker_request = request;
             let worker_job_id = job_id.clone();
             tokio::spawn(async move {
-                // The no-pool spawn path owns terminal events itself, including a
-                // timeout arm — otherwise a slow extraction stalls silently.
-                let outcome = match tokio::time::timeout(
-                    worker.job_timeout,
-                    worker.execute_job(&worker_job_id, &worker_request),
-                )
-                .await
-                {
-                    Ok(outcome) => outcome,
-                    Err(_elapsed) => {
-                        worker.publish_timeout_event(&worker_job_id).await;
-                        return;
-                    }
+                // The no-pool spawn path owns terminal events itself. It applies the
+                // same OPTIONAL ceiling as the pool: `Some` → bounded with a timeout
+                // arm (single-shot); `None` → no fixed ceiling, the churning
+                // orchestrated job runs to completion (its liveness is per-call
+                // timeouts + the #197 idle-watchdog, not a wall-clock kill).
+                let run = worker.execute_job(&worker_job_id, &worker_request);
+                let outcome = match worker.job_timeout {
+                    Some(ceiling) => match tokio::time::timeout(ceiling, run).await {
+                        Ok(outcome) => outcome,
+                        Err(_elapsed) => {
+                            worker.publish_timeout_event(&worker_job_id).await;
+                            return;
+                        }
+                    },
+                    None => run.await,
                 };
                 worker.publish_terminal_event(&worker_job_id, outcome).await;
             });

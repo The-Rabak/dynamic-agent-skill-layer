@@ -435,16 +435,40 @@ pub fn parse_session_events(jsonl_payload: &str) -> ParsedEvents {
                 }
             }
             other => {
-                // Non-conversational Claude Code session events (mode, attachment, etc.)
-                debug!(
-                    line = line_index + 1,
-                    event_type = other,
-                    "non-conversational event mapped to Metadata"
-                );
-                events.push(SessionEvent::Metadata {
-                    index: line_index,
-                    event_type: other.to_owned(),
-                });
+                // Bare / legacy JSONL shape with NO "type" field but a top-level
+                // speaker/role + content, e.g. {"speaker":"user","content":"..."} or
+                // {"role":"assistant","content":"..."}. This is the shape the original
+                // `parse_claude_jsonl` accepted and the shape many inline ingest payloads
+                // use — it is a real conversational turn, NOT non-conversational metadata.
+                // Misclassifying it as Metadata starves the extractor of all content.
+                if let (Some(speaker), Some(content)) =
+                    (extract_speaker(&value), extract_content(&value))
+                {
+                    let event = if speaker == "user" {
+                        SessionEvent::UserMessage {
+                            index: line_index,
+                            content,
+                        }
+                    } else {
+                        SessionEvent::AssistantMessage {
+                            index: line_index,
+                            content,
+                        }
+                    };
+                    events.push(event);
+                } else {
+                    // Genuinely non-conversational Claude Code session events
+                    // (mode, attachment, etc.) → Metadata.
+                    debug!(
+                        line = line_index + 1,
+                        event_type = other,
+                        "non-conversational event mapped to Metadata"
+                    );
+                    events.push(SessionEvent::Metadata {
+                        index: line_index,
+                        event_type: other.to_owned(),
+                    });
+                }
             }
         }
     }
@@ -915,6 +939,41 @@ mod tests {
         assert!(
             unknown_tool_call.is_some(),
             "unknown tool_use must produce a ToolCall (forward-compatibility)"
+        );
+    }
+
+    /// Regression: the bare legacy JSONL shape `{"speaker":..,"content":..}` with NO
+    /// "type" field must parse to conversational User/Assistant messages, NOT Metadata.
+    /// Misclassifying these as Metadata starved the orchestrated extractor of all content
+    /// and produced zero candidates on inline payloads (the #176 Tokio-repro shape).
+    #[test]
+    fn bare_speaker_content_lines_parse_to_conversational_messages_not_metadata() {
+        let payload = concat!(
+            r#"{"speaker":"user","content":"How do I fix WouldBlock under load?"}"#,
+            "\n",
+            r#"{"speaker":"assistant","content":"Run ulimit -n 65536 then use tokio-console."}"#,
+        );
+        let ParsedEvents {
+            events,
+            malformed_count,
+        } = parse_session_events(payload);
+
+        assert_eq!(malformed_count, 0, "well-formed JSON lines must not be counted malformed");
+        assert_eq!(events.len(), 2, "both turns must produce events; got {events:#?}");
+        assert!(
+            matches!(&events[0], SessionEvent::UserMessage { content, .. } if content.contains("WouldBlock")),
+            "first bare line must be a UserMessage with its content, not Metadata; got {:#?}",
+            events[0]
+        );
+        assert!(
+            matches!(&events[1], SessionEvent::AssistantMessage { content, .. } if content.contains("ulimit")),
+            "second bare line must be an AssistantMessage with its content, not Metadata; got {:#?}",
+            events[1]
+        );
+        // Critically: NONE of these conversational lines may be dropped to Metadata.
+        assert!(
+            !events.iter().any(|e| matches!(e, SessionEvent::Metadata { .. })),
+            "bare speaker/content lines must never be classified as non-conversational Metadata"
         );
     }
 

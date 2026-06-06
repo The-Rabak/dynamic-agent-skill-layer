@@ -667,8 +667,6 @@ fn build_embedding_service()
     let ollama_config = OllamaEmbeddingConfig {
         base_url: env_var("OLLAMA_URL")?,
         model: "nomic-embed-text".to_owned(),
-        timeout_ms: 5_000,
-        batch_timeout_ms: 10_000,
         max_concurrency,
     };
     let embedding_service = OllamaEmbeddingService::from_config(ollama_config)

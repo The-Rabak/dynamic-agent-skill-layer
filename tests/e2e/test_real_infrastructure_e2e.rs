@@ -91,8 +91,6 @@ fn setup_embedding_service() -> OllamaEmbeddingService {
     OllamaEmbeddingService::from_config(OllamaEmbeddingConfig {
         base_url,
         model: "nomic-embed-text".to_owned(),
-        timeout_ms: 5_000,
-        batch_timeout_ms: 10_000,
         max_concurrency: 4,
     })
     .expect("OllamaEmbeddingService should build with valid config")

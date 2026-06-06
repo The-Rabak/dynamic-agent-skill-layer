@@ -601,8 +601,6 @@ fn build_embedding_service_from_environment() -> Result<Arc<dyn EmbeddingService
     let config = OllamaEmbeddingConfig {
         base_url,
         model: "nomic-embed-text".to_owned(),
-        timeout_ms: 5_000,
-        batch_timeout_ms: 10_000,
         max_concurrency: 4,
     };
     let service = OllamaEmbeddingService::from_config(config)
@@ -631,7 +629,6 @@ fn build_merge_verifier_from_environment() -> Result<Arc<dyn LlmEquivalenceVerif
             let config = OllamaMergeVerifierConfig {
                 endpoint,
                 model,
-                timeout_ms: 60_000,
             };
             let verifier = OllamaMergeVerifier::from_config(config)
                 .map_err(|e| format!("OllamaMergeVerifier init failed: {e}"))?;
@@ -789,7 +786,6 @@ fn build_generality_verifier_from_environment() -> Result<Arc<dyn SkillGeneralit
             let config = OllamaGeneralityVerifierConfig {
                 endpoint,
                 model,
-                timeout_ms: 60_000,
             };
             let verifier = OllamaGeneralityVerifier::from_config(config)
                 .map_err(|e| format!("OllamaGeneralityVerifier init failed: {e}"))?;

@@ -64,9 +64,11 @@ pub enum ExtractionRoutingTier {
     Local,
     /// Frontier (Claude Code or Claude API) extraction — opt-in upgrade.
     ///
-    /// `token_budget` = [`FRONTIER_TIER_TOKEN_BUDGET`] (200 000 tokens). A
-    /// session up to ~200 k tokens becomes ONE episode; the model reasons
-    /// holistically over the full arc.
+    /// `token_budget` = [`FRONTIER_TIER_TOKEN_BUDGET`] (~5× local, 40 960 tokens) —
+    /// a larger-but-bounded chunk, NOT the full 200k window. Big sessions are still
+    /// split into multiple overlapping windows (extracted + deduped, recall-first);
+    /// frontier just uses coarser granularity than local. A single 200k chunk
+    /// satisfices and drops the long tail, so we never do that even for frontier.
     Frontier,
 }
 
@@ -88,10 +90,15 @@ pub const LOCAL_TIER_TOKEN_BUDGET: usize = 8_192;
 
 /// Segmentation `token_budget` for the frontier tier.
 ///
-/// 200 000 tokens — matches the Claude Sonnet context window. A session whose
-/// token estimate is at or below this value becomes ONE episode, giving the
-/// model holistic cross-arc reasoning without fragmentation.
-pub const FRONTIER_TIER_TOKEN_BUDGET: usize = 200_000;
+/// ~5× the local tier (40 960 tokens), NOT the full model context window. Even a
+/// frontier model with a 200k window should NOT process a 200k-token transcript in
+/// one shot: a single giant chunk *satisfices* — the model returns the 3–5 headline
+/// skills and drops the long tail (a well-documented map-reduce failure mode). A
+/// larger-but-bounded chunk gives frontier its context advantage (≈5× the local
+/// window) while still splitting big sessions into multiple overlapping windows that
+/// are each extracted and deduped — recall-first. So a 200k session becomes ~5–6
+/// frontier chunks, not one.
+pub const FRONTIER_TIER_TOKEN_BUDGET: usize = 40_960;
 
 /// Default session-size threshold (in estimated tokens) for the `"tiered"`
 /// strategy. Sessions above this are considered large/high-value and route to
@@ -271,7 +278,11 @@ mod tests {
         let long_content = "a".repeat(100);
         let long_input = "b".repeat(200);
         let long_output = "c".repeat(100);
-        (0..300_usize)
+        // 700 iterations (~2 100 events, ~76k token estimate) — deliberately LARGER
+        // than FRONTIER_TIER_TOKEN_BUDGET (40 960) so the frontier tier must ALSO
+        // chunk it into multiple windows (never one giant 200k-style chunk), while
+        // local chunks it more finely. Proves bounded-5x frontier granularity.
+        (0..700_usize)
             .flat_map(|i| {
                 vec![
                     user_msg(i * 3, &format!("{long_content} task-{i:04}")),
@@ -373,40 +384,47 @@ mod tests {
     // ── granularity parity tests ──────────────────────────────────────────────
 
     /// Proves that:
-    /// - A frontier-tier token budget (200 000) → exactly ONE episode for a large
-    ///   session (same-pipeline, no special-case branch).
-    /// - A local-tier token budget (8 192) → MANY episodes for the SAME session.
+    /// - A frontier-tier token budget (40 960, ~5× local) → MULTIPLE windows for a
+    ///   large session (> budget): frontier never one-shots a big transcript.
+    /// - A local-tier token budget (8 192) → even FINER granularity for the SAME
+    ///   session. Same `segment_session` code path, only the budget differs.
     ///
     /// This is the authoritative parity assertion for the frontier/local granularity
     /// split mandated by todo #191. It reuses the same `segment_session` code path
     /// for both tiers, proving neither tier bypasses the segmentation pipeline.
     #[test]
-    fn frontier_budget_yields_one_episode_local_budget_yields_many_same_pipeline() {
+    fn frontier_budget_chunks_large_session_coarser_than_local_same_pipeline() {
         let events = large_session_events();
         assert!(
             events.len() >= 100,
             "precondition: large_session_events must be ≥ 100 events for this test to be meaningful"
         );
 
-        // Frontier tier: budget = model window → whole session = one episode.
+        // Frontier tier: a LARGE session (> frontier budget) must still be CHUNKED into
+        // multiple overlapping windows — never processed as one giant chunk. A single
+        // chunk satisfices and drops the long tail; recall-first needs multiple windows.
         let frontier_config = SegmentationConfig::new(FRONTIER_TIER_TOKEN_BUDGET, 3);
         let frontier_episodes = segment_session(&events, &frontier_config);
-        assert_eq!(
-            frontier_episodes.len(),
-            1,
-            "frontier tier (budget={}) must yield exactly ONE episode for a large session; got {}",
+        assert!(
+            frontier_episodes.len() > 1,
+            "frontier tier (budget={}) must CHUNK a large session into multiple windows, \
+             not one giant chunk; got {}",
             FRONTIER_TIER_TOKEN_BUDGET,
             frontier_episodes.len()
         );
 
-        // Local tier: small budget → many episodes for the same session.
+        // Local tier: smaller budget → FINER granularity (more windows) for the same
+        // session. Same `segment_session` code path — only the budget differs.
         let local_config = SegmentationConfig::new(LOCAL_TIER_TOKEN_BUDGET, 3);
         let local_episodes = segment_session(&events, &local_config);
         assert!(
-            local_episodes.len() > 1,
-            "local tier (budget={}) must yield MANY episodes for the same large session; got {}",
+            local_episodes.len() > frontier_episodes.len(),
+            "local tier (budget={}, got {} windows) must be FINER than frontier (budget={}, got {} windows) \
+             for the same session",
             LOCAL_TIER_TOKEN_BUDGET,
-            local_episodes.len()
+            local_episodes.len(),
+            FRONTIER_TIER_TOKEN_BUDGET,
+            frontier_episodes.len()
         );
 
         // Both must cover every event — the same pipeline, no dropped events.

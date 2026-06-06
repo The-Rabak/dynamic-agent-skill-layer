@@ -145,8 +145,8 @@ async fn shipped_command_hook_payload_round_trips_through_queue_to_pending() {
             "OLLAMA_EXTRACTION_ENDPOINT",
             format!("{ollama_base}/api/generate"),
         );
-        // granite4:3b cold inference exceeds the 1.5s default; give it headroom.
-        std::env::set_var("OLLAMA_EXTRACTION_TIMEOUT_MS", "120000");
+        // No extraction request timeout: Ollama calls run to completion (models are
+        // kept warm via OLLAMA_KEEP_ALIVE), so no per-call ceiling is configured.
         // Must be set before protocol::router() reads it.
         std::env::set_var("TRANSCRIPT_INGEST_SECRET", INGEST_SECRET);
     }

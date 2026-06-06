@@ -94,7 +94,6 @@ impl ClaudeExtractor {
         }
 
         validate_extraction_config(
-            config.timeout_ms,
             config.max_entries,
             config.max_entry_chars,
             config.max_total_chars,

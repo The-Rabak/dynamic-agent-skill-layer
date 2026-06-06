@@ -4,7 +4,6 @@ use std::time::Duration;
 use domain::ExtractionError;
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
-use tokio::time::timeout;
 
 /// Simple token-bucket rate limiter for extraction HTTP endpoints.
 /// Protects downstream LLM providers from accidental request floods.
@@ -52,7 +51,7 @@ static EXTRACTION_CLAUDE_RATE_LIMITER: LazyLock<RateLimiter> =
 ///
 /// Exposed for adapters (e.g. the Anthropic Messages API in `claude.rs`) that
 /// build their requests directly — with custom headers — instead of through
-/// [`post_json_with_timeout`], but must still respect the same per-provider
+/// [`post_json`], but must still respect the same per-provider
 /// request rate as the generic helper.
 pub(crate) async fn acquire_claude_rate_limit() -> Result<(), ExtractionError> {
     EXTRACTION_CLAUDE_RATE_LIMITER.acquire().await
@@ -94,7 +93,6 @@ struct OllamaGenerateTextResponse {
 ///
 /// - Connection errors → `ExtractionError::ProviderUnavailable`.
 /// - Non-200 HTTP status → `ExtractionError::ProviderUnavailable`.
-/// - Timeout → `ExtractionError::Timeout`.
 /// - Non-JSON response body → `ExtractionError::Unexpected`.
 ///
 /// Callers are responsible for parsing the returned JSON string into their own
@@ -103,18 +101,16 @@ pub async fn ollama_generate_text(
     client: &reqwest::Client,
     endpoint: &str,
     request: &OllamaGenerateTextRequest,
-    timeout_ms: u64,
 ) -> Result<String, ExtractionError> {
     let raw: OllamaGenerateTextResponse =
-        post_json_with_timeout(client, endpoint, request, timeout_ms, "ollama-seam").await?;
+        post_json(client, endpoint, request, "ollama-seam").await?;
     Ok(raw.response)
 }
 
-pub(crate) async fn post_json_with_timeout<Req, Res>(
+pub(crate) async fn post_json<Req, Res>(
     client: &reqwest::Client,
     endpoint: &str,
     request: &Req,
-    timeout_ms: u64,
     provider_label: &str,
 ) -> Result<Res, ExtractionError>
 where
@@ -127,27 +123,22 @@ where
     };
     rate_limiter.acquire().await?;
 
-    timeout(Duration::from_millis(timeout_ms), async {
-        let response = client
-            .post(endpoint)
-            .json(request)
-            .send()
-            .await
-            .map_err(|error| ExtractionError::ProviderUnavailable(error.to_string()))?;
+    let response = client
+        .post(endpoint)
+        .json(request)
+        .send()
+        .await
+        .map_err(|error| ExtractionError::ProviderUnavailable(error.to_string()))?;
 
-        if response.status() != StatusCode::OK {
-            return Err(ExtractionError::ProviderUnavailable(format!(
-                "{provider_label} extraction endpoint returned {}",
-                response.status()
-            )));
-        }
+    if response.status() != StatusCode::OK {
+        return Err(ExtractionError::ProviderUnavailable(format!(
+            "{provider_label} extraction endpoint returned {}",
+            response.status()
+        )));
+    }
 
-        response
-            .json::<Res>()
-            .await
-            .map_err(|error| ExtractionError::Unexpected(error.to_string()))
-    })
-    .await
-    .map_err(|_| ExtractionError::Timeout { timeout_ms })
-    .and_then(|result| result)
+    response
+        .json::<Res>()
+        .await
+        .map_err(|error| ExtractionError::Unexpected(error.to_string()))
 }

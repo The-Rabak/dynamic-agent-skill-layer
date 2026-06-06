@@ -660,10 +660,8 @@ async fn extract_session_live_inline_payload_writes_pending_and_emits_completion
         // stochastically returning zero candidates on some runs. Live e2e tests must
         // not be flaky due to sampling randomness in an otherwise-healthy extractor.
         std::env::set_var("OLLAMA_EXTRACTION_TEMPERATURE", "0");
-        // 150s inner timeout: wider than the observed ~34s warm greedy run on this
-        // CPU host (temp=0 is faster than sampling), narrower than the 180s outer
-        // pool timeout so a stalled model is correctly killed before the pool gives up.
-        std::env::set_var("OLLAMA_EXTRACTION_TIMEOUT_MS", "150000");
+        // No extraction request timeout: the call runs to completion against a warm
+        // model (OLLAMA_KEEP_ALIVE keeps it resident); no per-call ceiling is set.
     }
 
     let mut builder = report::ReportBuilder::new(
@@ -705,13 +703,16 @@ async fn extract_session_live_inline_payload_writes_pending_and_emits_completion
         },
     );
 
-    // Bounded readiness poll: wait up to 180 s for extraction to complete.
-    // The prior gemma4:e4b baseline was ~37s warm / ~66s cold on CPU-only hosts; the
-    // larger gemma4:12b default is slower, and a dense multi-turn transcript can push
-    // past 120s. 180s = 360 × 500ms matches the worker pool's outer timeout
-    // (DEFAULT_TIMEOUT_SECS=180) so the poll never outlasts the extraction.
+    // Bounded readiness poll: wait up to 600 s for extraction to complete. This is
+    // a real poll — it breaks the instant a terminal event arrives — with a generous
+    // give-up ceiling, NOT a fixed sleep. The DEFAULT orchestrated path makes several
+    // sequential local-model calls per job (preamble → prose×N → per-pair equivalence
+    // verifier → synthesis); on a VRAM-constrained host where gemma4:12b spills to CPU
+    // that easily exceeds 200 s. Crucially, the orchestrated worker now has NO outer
+    // wall-clock timeout (it runs to completion against warm models), so the poll must
+    // outlast the real pipeline rather than the old 180 s ceiling. 600 s = 1200 × 500ms.
     let wait_start = std::time::Instant::now();
-    for iteration in 0..360 {
+    for iteration in 0..1200 {
         let completed = tool
             .lifecycle_events()
             .iter()
@@ -725,7 +726,7 @@ async fn extract_session_live_inline_payload_writes_pending_and_emits_completion
         if completed >= 1 || failed >= 1 {
             break;
         }
-        if iteration == 359 {
+        if iteration == 1199 {
             let events: Vec<_> = tool
                 .lifecycle_events()
                 .iter()

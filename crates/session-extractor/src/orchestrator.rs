@@ -3,16 +3,25 @@
 //!
 //! ## Pipeline
 //!
-//! 1. **Segment** the full session into coherent [`Episode`]s (reuses #185).
+//! 1. **Segment** the full session into overlapping windows (reuses #185).
 //! 2. **Mine preamble** from the full event stream (reuses #186).
-//! 3. **Gate** episodes via the salience filter (reuses #189). Gated episodes
-//!    are recorded in the [`OrchestrationReport`]; nothing is silently dropped.
-//! 4. **Map** each kept episode concurrently (bounded by a [`tokio::sync::Semaphore`]):
-//!    - If the episode has an actionable tool arc → [`skeleton::map_episode`] with
-//!      the real [`SkeletonLabeler`] (LLM-backed seam; fake in tests).
-//!    - [`MapOutcome::ProseFallback`] → the existing prose extractor via
-//!      [`domain::events_to_transcript`] + [`TranscriptSkillExtractionService::extract`].
-//! 5. **Reduce** the union of all episode candidates + preamble preference candidates:
+//! 3. **Map** ALL windows concurrently (bounded by a [`tokio::sync::Semaphore`]),
+//!    recall-first — NO salience gate on the blocking path:
+//!    - ALWAYS run the prose extractor on the window's flat transcript (prepended
+//!      with the preamble as leading context). This is the universal floor that
+//!      works on any transcript shape including flat conversational sessions.
+//!    - ADDITIONALLY, if the window contains a tool arc (failing→passing
+//!      `ToolResult`), run [`skeleton::map_episode`] with the [`SkeletonLabeler`]
+//!      and union the resulting grounded candidate with the prose results. Skeleton
+//!      mining is additive grounding only — it never replaces prose extraction.
+//!
+//!    The salience module (`crate::salience`) remains in the codebase but is NOT
+//!    called as a blocking gate in this pipeline. External research (mem0/Letta/Zep,
+//!    LangChain map-reduce, RAG chunking benchmarks) is unambiguous: extract from
+//!    EVERY chunk; never pre-filter with heuristics. A gate that scores 0 on flat
+//!    conversational content silently drops all extraction output on the most common
+//!    real-world session type.
+//! 4. **Reduce** the union of all window candidates + preamble preference candidates:
 //!    - Embed each candidate's semantic text (via [`EmbeddingService`] seam).
 //!    - Cosine-pair candidates exceeding [`REDUCE_SIMILARITY_THRESHOLD`] using
 //!      the shared [`infrastructure::cosine_similarity`] (ONE impl in the repo).
@@ -20,9 +29,9 @@
 //!      (the same verifier the maintenance merge pass uses — no second impl).
 //!    - Record every merge and drop in the audit log. No candidate is dropped
 //!      silently.
-//! 6. **Synthesize** — ONE LLM pass over the deduped candidate list to surface
+//! 5. **Synthesize** — ONE LLM pass over the deduped candidate list to surface
 //!    session-spanning patterns (via [`SynthesisPass`] seam; fake in tests).
-//! 7. **Write** survivors as `.pending` drafts via [`PendingDraftWriter`].
+//! 6. **Write** survivors as `.pending` drafts via [`PendingDraftWriter`].
 //!
 //! ## Seam discipline
 //!
@@ -40,7 +49,8 @@
 //!
 //! - No candidate is silently dropped. Every merge and drop is recorded in
 //!   [`ReduceAuditEntry`] with a rationale.
-//! - Bounded concurrency: slow episodes are backpressured by the semaphore,
+//! - Recall-first: every window is extracted; nothing is gated out by heuristic.
+//! - Bounded concurrency: slow windows are backpressured by the semaphore,
 //!   never discarded on a wall-clock timeout.
 //! - Exactly ONE cosine implementation in the repo (`infrastructure::cosine_similarity`).
 //! - Exactly ONE equivalence verifier (`infrastructure::LlmEquivalenceVerifier`).
@@ -60,7 +70,7 @@ use tracing::{debug, info, warn};
 use crate::{
     ExtractSessionRequest,
     preamble::{NormalizationError, Preamble, PreambleNormalizer, mine_preamble},
-    salience::{SalienceConfig, gate_episodes},
+    salience::SalienceConfig,
     segmentation::{Episode, SegmentationConfig, segment_session},
     skeleton::{MapOutcome, SkeletonError, SkeletonLabeler, map_episode},
     writer::{PendingDraftWriter, WriterError},
@@ -120,20 +130,24 @@ pub trait SynthesisPass: Send + Sync {
 
 /// Configuration for the map→reduce orchestration pipeline.
 pub struct OrchestrationConfig {
-    /// Episode segmentation budget (tokens per episode, overlap events).
+    /// Window segmentation budget (tokens per window, overlap events).
     pub segmentation: SegmentationConfig,
-    /// Salience gate configuration.
+    /// Salience gate configuration. Preserved for API compatibility.
+    ///
+    /// The salience gate is no longer on the blocking path of `run_orchestration`.
+    /// This field may be used for observability or analytics in future work but
+    /// does not affect which windows are sent to the map step.
     pub salience: SalienceConfig,
-    /// Maximum number of episodes to process concurrently in the map step.
-    /// Slow episodes block a semaphore permit but are never discarded.
+    /// Maximum number of windows to process concurrently in the map step.
+    /// Slow windows block a semaphore permit but are never discarded.
     pub map_concurrency: usize,
     /// Cosine similarity threshold for the reduce pairing step.
     pub reduce_similarity_threshold: f32,
 }
 
 impl Default for OrchestrationConfig {
-    /// Conservative defaults: 8 k-token budget, recall-biased salience gate,
-    /// 4 concurrent episode map workers, 0.82 reduce threshold.
+    /// Conservative defaults: 8 k-token budget, 3-event overlap, 4 concurrent
+    /// map workers, 0.82 reduce threshold.
     fn default() -> Self {
         Self {
             segmentation: SegmentationConfig::new(8_192, 3),
@@ -174,13 +188,26 @@ pub struct ReduceAuditEntry {
 // ─── Report ──────────────────────────────────────────────────────────────────
 
 /// Full observability report from one orchestration run.
+///
+/// The salience gate is no longer on the blocking path (recall-first). All windows
+/// from segmentation are forwarded to the map step, so:
+/// - `kept_episode_count == total_episodes` always.
+/// - `gated_episode_count == 0` always.
+///
+/// These fields are preserved for API compatibility with callers that assert
+/// `total_episodes == kept_episode_count + gated_episode_count`.
 #[derive(Debug, Clone)]
 pub struct OrchestrationReport {
-    /// Total episodes produced by segmentation.
+    /// Total windows produced by segmentation, all of which are sent to the map step.
     pub total_episodes: usize,
-    /// Episodes that passed the salience gate (sent to the map step).
+    /// Always equal to `total_episodes`. Preserved for API compatibility.
+    ///
+    /// The salience gate is not on the blocking path: all windows are processed.
     pub kept_episode_count: usize,
-    /// Episodes that were gated out (surface for operator visibility).
+    /// Always zero. The salience gate no longer gates out any windows.
+    ///
+    /// Preserved for API compatibility with callers asserting
+    /// `total_episodes == kept_episode_count + gated_episode_count`.
     pub gated_episode_count: usize,
     /// Candidates from the map step before reduce.
     pub pre_reduce_candidate_count: usize,
@@ -220,6 +247,11 @@ pub enum OrchestrationError {
     DraftWrite(#[from] WriterError),
     #[error("session has no events to process")]
     EmptySession,
+    #[error("all {window_count} map window(s) failed; extraction produced nothing. errors: {errors:?}")]
+    AllWindowsFailed {
+        window_count: usize,
+        errors: Vec<String>,
+    },
 }
 
 // ─── Entry point ─────────────────────────────────────────────────────────────
@@ -264,44 +296,30 @@ pub async fn run_orchestration(
         "orchestrator: preamble mined"
     );
 
-    // ── Step 2: Segment into episodes ─────────────────────────────────────
-    let episodes: Vec<Episode> = segment_session(events, &config.segmentation);
-    let total_episodes = episodes.len();
-    debug!(total_episodes, "orchestrator: session segmented");
+    // ── Step 2: Segment into overlapping windows ──────────────────────────
+    let windows: Vec<Episode> = segment_session(events, &config.segmentation);
+    let total_windows = windows.len();
+    debug!(total_windows, "orchestrator: session segmented into windows");
 
-    // ── Step 3: Salience gate ─────────────────────────────────────────────
-    let gate_result = gate_episodes(&episodes, events, &config.salience);
-    let kept_episodes = gate_result.kept;
-    let gated_count = gate_result.gated.len();
-    info!(
-        kept = kept_episodes.len(),
-        gated = gated_count,
-        "orchestrator: salience gate applied"
-    );
+    // Salience gating is intentionally NOT applied here. Recall-first: every
+    // window is extracted. On flat conversational transcripts (no tool events,
+    // no imperative keywords) the salience heuristic scores zero and would gate
+    // all windows, producing zero extraction output. The salience module remains
+    // in the codebase for potential analytics use but is not on the blocking path.
 
-    // Warn on every gated episode so no drops are silent.
-    for gated in &gate_result.gated {
-        debug!(
-            episode_index = gated.episode_index,
-            score = gated.score,
-            reason = %gated.gate_reason,
-            "orchestrator: episode gated by salience"
-        );
-    }
-
-    // ── Step 4: Map episodes concurrently ─────────────────────────────────
+    // ── Step 3: Map all windows concurrently (recall-first) ───────────────
     let semaphore = Arc::new(Semaphore::new(config.map_concurrency.max(1)));
 
-    // Build an index: source-event-index → &SessionEvent (for episode event lookup).
+    // Build a source-event-index → &SessionEvent index for window event lookup.
     let event_by_index: std::collections::HashMap<usize, &SessionEvent> =
         events.iter().map(|ev| (ev.index(), ev)).collect();
 
     let mut map_join_set: JoinSet<Result<Vec<ExtractedSkillCandidate>, OrchestrationError>> =
         JoinSet::new();
 
-    for episode in &kept_episodes {
-        // Resolve the episode's events from the full stream.
-        let episode_events: Vec<SessionEvent> = episode
+    for window in &windows {
+        // Resolve the window's event indices into the full event stream.
+        let window_events: Vec<SessionEvent> = window
             .event_indices
             .iter()
             .filter_map(|idx| event_by_index.get(idx).copied().cloned())
@@ -321,8 +339,8 @@ pub async fn run_orchestration(
                 .await
                 .expect("semaphore must not be closed during map step");
 
-            map_one_episode(
-                &episode_events,
+            map_one_window(
+                &window_events,
                 &session_id,
                 &preamble_text,
                 labeler.as_ref(),
@@ -332,37 +350,60 @@ pub async fn run_orchestration(
         });
     }
 
-    let mut episode_candidates: Vec<ExtractedSkillCandidate> = Vec::new();
+    let mut window_candidates: Vec<ExtractedSkillCandidate> = Vec::new();
+    let mut windows_succeeded: usize = 0;
+    let mut window_errors: Vec<String> = Vec::new();
 
     while let Some(join_result) = map_join_set.join_next().await {
         match join_result {
             Ok(Ok(mut candidates)) => {
-                episode_candidates.append(&mut candidates);
+                // A window that returns Ok — even with zero candidates — is a
+                // genuine success (the model legitimately found nothing here).
+                windows_succeeded += 1;
+                window_candidates.append(&mut candidates);
             }
             Ok(Err(error)) => {
-                // A single episode failure is logged but does not abort the pipeline.
-                // All other episodes' candidates are preserved.
-                warn!(?error, "orchestrator: episode map step failed; skipping episode");
+                // Recall-first: one window failing must not lose the candidates
+                // from windows that succeeded. But the failure is NOT swallowed —
+                // it is recorded so a total-failure run fails loud (below) instead
+                // of masquerading as an empty success.
+                warn!(?error, "orchestrator: window map step failed");
+                window_errors.push(error.to_string());
             }
             Err(join_error) => {
-                warn!(?join_error, "orchestrator: episode task panicked; skipping episode");
+                warn!(?join_error, "orchestrator: window task panicked");
+                window_errors.push(format!("window task panicked: {join_error}"));
             }
         }
     }
 
+    // Fail loud on a TOTAL map failure: if no window succeeded AND at least one
+    // window errored, the pipeline produced nothing because the work failed —
+    // not because the model found nothing. Surfacing this as a success with zero
+    // drafts would violate the no-silent-failure mandate. (Per-window degradation
+    // is preserved: as long as ≥1 window succeeds, partial results flow through.)
+    if windows_succeeded == 0 && !window_errors.is_empty() {
+        return Err(OrchestrationError::AllWindowsFailed {
+            window_count: windows.len(),
+            errors: window_errors,
+        });
+    }
+
     // Include preamble preference candidates in the union before reduce.
     let preamble_candidates = preamble.preference_skill_candidates();
-    episode_candidates.extend(preamble_candidates);
+    window_candidates.extend(preamble_candidates);
 
-    let pre_reduce_count = episode_candidates.len();
+    let pre_reduce_count = window_candidates.len();
     info!(
         pre_reduce_count,
+        windows_succeeded,
+        window_errors = window_errors.len(),
         "orchestrator: map step complete; entering reduce"
     );
 
-    // ── Step 5: Reduce (cosine + LLM equivalence) ─────────────────────────
+    // ── Step 4: Reduce (cosine + LLM equivalence) ─────────────────────────
     let (deduped_candidates, reduce_audit) =
-        reduce_candidates(episode_candidates, embedder.as_ref(), equivalence_verifier.as_ref(), config.reduce_similarity_threshold).await?;
+        reduce_candidates(window_candidates, embedder.as_ref(), equivalence_verifier.as_ref(), config.reduce_similarity_threshold).await?;
 
     let post_reduce_count = deduped_candidates.len();
     info!(
@@ -371,10 +412,31 @@ pub async fn run_orchestration(
         "orchestrator: reduce step complete"
     );
 
-    // ── Step 6: Synthesis pass ────────────────────────────────────────────
-    let mut synthesis_candidates = synthesis
+    // ── Step 5: Synthesis pass ────────────────────────────────────────────
+    // Synthesis is an ADDITIVE enrichment pass: it proposes extra cross-arc
+    // candidates on top of the grounded prose/skeleton candidates already
+    // produced. It is NOT the source of truth. A synthesis failure (e.g. the
+    // local model returns malformed/empty JSON — gemma4:12b does this
+    // nondeterministically) must therefore NOT discard the real candidates the
+    // map+reduce steps already grounded. We log the failure LOUDLY (never
+    // swallow it silently) and proceed with the deduped candidates — the same
+    // degrade-don't-drop contract the map step uses for a single failed window.
+    let mut synthesis_candidates = match synthesis
         .synthesize(&deduped_candidates, &preamble.text)
-        .await?;
+        .await
+    {
+        Ok(candidates) => candidates,
+        Err(error) => {
+            warn!(
+                ?error,
+                grounded_candidates = deduped_candidates.len(),
+                "orchestrator: synthesis pass failed; proceeding with grounded \
+                 prose/skeleton candidates (synthesis is additive enrichment, not \
+                 the source of truth)"
+            );
+            Vec::new()
+        }
+    };
     let synthesis_added_count = synthesis_candidates.len();
 
     let mut final_candidates = deduped_candidates;
@@ -387,7 +449,7 @@ pub async fn run_orchestration(
         "orchestrator: synthesis step complete"
     );
 
-    // ── Step 7: Write .pending drafts ─────────────────────────────────────
+    // ── Step 6: Write .pending drafts ─────────────────────────────────────
     let extraction_result = ExtractionResult {
         source_session_id: session_id,
         provider: provider_name.to_owned(),
@@ -401,9 +463,10 @@ pub async fn run_orchestration(
     )?;
 
     Ok(OrchestrationReport {
-        total_episodes,
-        kept_episode_count: kept_episodes.len(),
-        gated_episode_count: gated_count,
+        total_episodes: total_windows,
+        // All windows are forwarded to the map step; gate is not on the blocking path.
+        kept_episode_count: total_windows,
+        gated_episode_count: 0,
         pre_reduce_candidate_count: pre_reduce_count,
         post_reduce_candidate_count: post_reduce_count,
         synthesis_added_count,
@@ -415,55 +478,75 @@ pub async fn run_orchestration(
 
 // ─── Map step helper ─────────────────────────────────────────────────────────
 
-/// Maps one episode to zero or more [`ExtractedSkillCandidate`]s.
+/// Maps one window to zero or more [`ExtractedSkillCandidate`]s.
 ///
-/// Routes via skeleton mining when the episode has a tool arc, otherwise
-/// falls through to the prose extractor. Both paths use the preamble text as
-/// context (prepended to the episode's flat transcript view).
-async fn map_one_episode(
-    episode_events: &[SessionEvent],
+/// ## Extraction strategy: prose always, skeleton additive
+///
+/// The prose extractor is the **universal floor**: it always runs on every window,
+/// regardless of whether the window contains tool events. This guarantees extraction
+/// output on flat conversational sessions (the root cause of the production regression).
+///
+/// When the window also contains an actionable tool arc (failing→passing `ToolResult`),
+/// skeleton mining runs ADDITIONALLY and its grounded candidate is added to the prose
+/// results. Skeleton mining is strictly additive — it never replaces prose extraction,
+/// and "no arc" never means "no extraction".
+///
+/// Both paths prepend the preamble text as a synthetic leading context entry so the
+/// model has global session context in every window.
+async fn map_one_window(
+    window_events: &[SessionEvent],
     session_id: &DomainId,
     preamble_text: &str,
     labeler: &dyn SkeletonLabeler,
     prose_extractor: &dyn TranscriptSkillExtractionService,
 ) -> Result<Vec<ExtractedSkillCandidate>, OrchestrationError> {
-    if episode_events.is_empty() {
+    if window_events.is_empty() {
         return Ok(Vec::new());
     }
 
-    let outcome = map_episode(episode_events, labeler).await?;
+    // Always run the prose extractor — universal floor for all transcript shapes.
+    let mut candidates =
+        extract_prose_window(window_events, session_id, preamble_text, prose_extractor).await?;
 
-    match outcome {
-        MapOutcome::Skeleton(candidate) => {
+    // Additively run skeleton mining when the window has a tool arc.
+    // `map_episode` returns ProseFallback (not an error) when no arc exists,
+    // so it is safe to call unconditionally — non-arc windows produce no
+    // skeleton candidate and incur only a cheap deterministic scan.
+    match map_episode(window_events, labeler).await? {
+        MapOutcome::Skeleton(skeleton_candidate) => {
             debug!(
-                name = %candidate.name,
-                "orchestrator: episode yielded skeleton candidate"
+                name = %skeleton_candidate.name,
+                "orchestrator: window yielded skeleton candidate (additive to prose)"
             );
-            Ok(vec![candidate])
+            candidates.push(skeleton_candidate);
         }
         MapOutcome::ProseFallback { reason } => {
             debug!(
                 reason = %reason,
-                "orchestrator: episode routed to prose extractor"
+                "orchestrator: window has no tool arc; prose extraction is the only path"
             );
-            extract_prose_episode(episode_events, session_id, preamble_text, prose_extractor).await
         }
     }
+
+    Ok(candidates)
 }
 
-/// Builds a [`SessionTranscript`] from episode events (prepending the preamble
+/// Builds a [`SessionTranscript`] from window events (prepending the preamble
 /// as a synthetic context message) and runs the prose extractor.
-async fn extract_prose_episode(
-    episode_events: &[SessionEvent],
+///
+/// This is the universal extraction floor: it works on any window regardless
+/// of whether tool events or imperative keywords are present.
+async fn extract_prose_window(
+    window_events: &[SessionEvent],
     session_id: &DomainId,
     preamble_text: &str,
     prose_extractor: &dyn TranscriptSkillExtractionService,
 ) -> Result<Vec<ExtractedSkillCandidate>, OrchestrationError> {
-    // Build a flat transcript from the episode events.
-    let mut transcript = events_to_transcript(session_id.clone(), episode_events);
+    // Build a flat transcript from the window events.
+    let mut transcript = events_to_transcript(session_id.clone(), window_events);
 
     // Prepend the preamble as a synthetic leading context entry so the prose
-    // extractor has the same global context as the skeleton labeler.
+    // extractor sees the same global preferences and facts in every window.
     if !preamble_text.is_empty() {
         use domain::TranscriptEntry;
         let preamble_entry = TranscriptEntry {
@@ -686,6 +769,23 @@ mod tests {
         }
     }
 
+    /// Prose extractor that always errors — models a real provider timing out on
+    /// every window (the production failure that was being silently swallowed).
+    struct FailingProseExtractor;
+
+    impl FailingProseExtractor {
+        fn new() -> Arc<Self> {
+            Arc::new(Self)
+        }
+    }
+
+    #[async_trait]
+    impl TranscriptSkillExtractionService for FailingProseExtractor {
+        async fn extract(&self, _transcript: &SessionTranscript) -> Result<ExtractionResult, ExtractionError> {
+            Err(ExtractionError::Timeout { timeout_ms: 120_000 })
+        }
+    }
+
     /// Fake embedder: returns a unit vector whose first element is set to the
     /// hash of the input, giving distinct vectors for distinct inputs while
     /// keeping identical inputs equal.
@@ -783,6 +883,30 @@ mod tests {
             _preamble_text: &str,
         ) -> Result<Vec<ExtractedSkillCandidate>, SynthesisError> {
             Ok(self.additional.clone())
+        }
+    }
+
+    /// Synthesis pass that always errors — models the local model returning
+    /// malformed/empty JSON from the synthesis seam (observed nondeterministically
+    /// with gemma4:12b).
+    struct FailingSynthesisPassFake;
+
+    impl FailingSynthesisPassFake {
+        fn new() -> Arc<Self> {
+            Arc::new(Self)
+        }
+    }
+
+    #[async_trait]
+    impl SynthesisPass for FailingSynthesisPassFake {
+        async fn synthesize(
+            &self,
+            _deduped: &[ExtractedSkillCandidate],
+            _preamble_text: &str,
+        ) -> Result<Vec<ExtractedSkillCandidate>, SynthesisError> {
+            Err(SynthesisError::ParseFailure(
+                "synthesis response was not valid JSON: EOF".to_owned(),
+            ))
         }
     }
 
@@ -1232,12 +1356,17 @@ mod tests {
         assert!(audit.is_empty(), "empty input must yield empty audit");
     }
 
-    // ── map_one_episode prose fallback ────────────────────────────────────────
+    // ── map_one_window: prose always runs (including no-arc windows) ─────────
 
-    /// Proves that a preference-only episode (no tool arc) routes to the prose
-    /// extractor and surfaces the extractor's candidates.
+    /// Proves that a preference-only window (no tool arc) always routes to the
+    /// prose extractor and surfaces the extractor's candidates.
+    ///
+    /// In the new design, prose extraction is the universal floor: it fires on
+    /// every window regardless of content. A window with no arc produces only
+    /// prose candidates (no skeleton additive). This test is the unit-level
+    /// analogue of the full-pipeline regression test.
     #[tokio::test]
-    async fn map_one_episode_prose_fallback_uses_prose_extractor() {
+    async fn map_one_window_prose_always_runs_on_no_arc_window() {
         let events = vec![
             SessionEvent::UserMessage {
                 index: 0,
@@ -1252,7 +1381,7 @@ mod tests {
         let expected_candidate = skill_candidate("prefer-snake-case", "Use snake_case");
         let prose_extractor = FixedProseExtractor::returning(vec![expected_candidate.clone()]);
 
-        let candidates = map_one_episode(
+        let candidates = map_one_window(
             &events,
             &DomainId::new_unchecked("prose-test"),
             "preamble text",
@@ -1260,12 +1389,13 @@ mod tests {
             prose_extractor.as_ref(),
         )
         .await
-        .expect("prose fallback must succeed");
+        .expect("prose extraction must succeed on no-arc window");
 
+        // Prose extractor result is the only output (no skeleton for a no-arc window).
         assert_eq!(
             candidates.len(),
             1,
-            "prose extractor result must be forwarded; got {candidates:?}"
+            "no-arc window must produce exactly 1 candidate (from prose); got {candidates:?}"
         );
         assert_eq!(candidates[0].name, expected_candidate.name);
     }
@@ -1326,6 +1456,282 @@ mod tests {
                 "written .pending draft must exist on disk: {path:?}"
             );
         }
+    }
+
+    // ── Regression: a TOTAL map failure must fail loud, not report empty success ──
+
+    /// Proves the no-silent-failure mandate at the orchestration seam: when EVERY
+    /// map window's prose extraction errors (e.g. the model times out on each
+    /// window), `run_orchestration` must return `AllWindowsFailed` — NOT `Ok` with
+    /// zero drafts. This is the exact production bug: a swallowed per-window error
+    /// made the pipeline report `extraction.completed` with `candidate_count=0`,
+    /// indistinguishable from "the model legitimately found nothing".
+    #[tokio::test]
+    async fn all_windows_failing_fails_loud_instead_of_silent_empty_success() {
+        let events = multi_arc_session_events();
+        let session_id = DomainId::new_unchecked("all-fail");
+        let sandbox = sandbox_dir("all-fail");
+        let draft_writer = PendingDraftWriter::new(vec![sandbox]);
+        let request = inline_request("all-fail");
+
+        let config = OrchestrationConfig {
+            segmentation: SegmentationConfig::new(1_000_000, 3), // one window
+            salience: SalienceConfig::default(),
+            map_concurrency: 2,
+            reduce_similarity_threshold: REDUCE_SIMILARITY_THRESHOLD,
+        };
+
+        let result = run_orchestration(
+            session_id,
+            &events,
+            &config,
+            Some(&SortingNormalizerFake),
+            // Skeleton labeler also fails so NO window can produce candidates by any
+            // path — the only outcome is total failure.
+            Arc::new(EchoLabelerFake),
+            FailingProseExtractor::new(),
+            Arc::new(DeterministicEmbedderFake),
+            PrefixEquivalenceFake::never_equivalent(),
+            FixedSynthesisPassFake::noop(),
+            &draft_writer,
+            &request,
+            "test-provider",
+        )
+        .await;
+
+        match result {
+            Err(OrchestrationError::AllWindowsFailed { window_count, errors }) => {
+                assert!(window_count >= 1, "must report the failed window count");
+                assert!(
+                    !errors.is_empty(),
+                    "must carry the underlying per-window error(s), got none"
+                );
+            }
+            other => panic!(
+                "total map failure must surface as AllWindowsFailed, got: {other:?}"
+            ),
+        }
+    }
+
+    // ── Regression: synthesis failure must NOT discard grounded candidates ──
+
+    /// Proves synthesis is additive: when the synthesis seam fails (malformed/empty
+    /// JSON from the local model — observed with gemma4:12b), the job still SUCCEEDS
+    /// and writes the grounded prose/skeleton candidates. Synthesis is enrichment, not
+    /// the source of truth, so its failure degrades (logged loudly) instead of nuking
+    /// a job that already produced real candidates.
+    #[tokio::test]
+    async fn synthesis_failure_degrades_and_keeps_grounded_candidates() {
+        let events = multi_arc_session_events();
+        let session_id = DomainId::new_unchecked("synth-fail");
+        let sandbox = sandbox_dir("synth-fail");
+        let draft_writer = PendingDraftWriter::new(vec![sandbox]);
+        let request = inline_request("synth-fail");
+
+        let config = OrchestrationConfig {
+            segmentation: SegmentationConfig::new(1_000_000, 3),
+            salience: SalienceConfig::default(),
+            map_concurrency: 2,
+            reduce_similarity_threshold: REDUCE_SIMILARITY_THRESHOLD,
+        };
+
+        let report = run_orchestration(
+            session_id,
+            &events,
+            &config,
+            Some(&SortingNormalizerFake),
+            Arc::new(EchoLabelerFake),
+            // Prose produces a real grounded candidate.
+            FixedProseExtractor::returning(vec![skill_candidate(
+                "grounded-by-prose",
+                "a real grounded candidate from the prose extractor",
+            )]),
+            Arc::new(DeterministicEmbedderFake),
+            PrefixEquivalenceFake::never_equivalent(),
+            // Synthesis blows up — must NOT fail the whole job.
+            FailingSynthesisPassFake::new(),
+            &draft_writer,
+            &request,
+            "test-provider",
+        )
+        .await
+        .expect("synthesis failure must degrade, not fail the whole orchestration");
+
+        assert_eq!(
+            report.synthesis_added_count, 0,
+            "a failed synthesis pass adds zero candidates"
+        );
+        assert!(
+            report.final_candidate_count >= 1,
+            "the grounded prose candidate must survive a synthesis failure; report: {report:?}"
+        );
+        assert!(
+            !report.draft_paths.is_empty(),
+            "a .pending draft must still be written from the grounded candidate"
+        );
+    }
+
+    // ── Regression: flat structureless session must yield ≥1 candidate via prose path ──
+
+    /// Proves that a FLAT, structureless-but-substantive session (plain user/assistant
+    /// turns, no tool events, no "always/never" keywords) produces ≥1 `.pending`-bound
+    /// candidate via the prose extractor.
+    ///
+    /// This is the **exact regression** that caused the production failure: on flat
+    /// conversational transcripts the old salience gate scored every episode 0.0 and
+    /// gated them all, so the map step ran on nothing and zero candidates were produced.
+    /// After the fix the gate is NOT applied as a blocking filter — all windows are
+    /// forwarded to the prose extractor unconditionally.
+    #[tokio::test]
+    async fn flat_structureless_session_yields_candidate_via_prose_path() {
+        // A flat, substantive, conversational session with no tool events and no
+        // imperative keywords — the exact shape that triggered the production regression.
+        let events = vec![
+            SessionEvent::UserMessage {
+                index: 0,
+                content: "How do I handle timeouts in tokio?".to_owned(),
+            },
+            SessionEvent::AssistantMessage {
+                index: 1,
+                content: "Use tokio::time::timeout to wrap any future. It returns a Result: Ok(inner_result) or Err(Elapsed). Always handle both branches explicitly.".to_owned(),
+            },
+            SessionEvent::UserMessage {
+                index: 2,
+                content: "What about select! for racing futures?".to_owned(),
+            },
+            SessionEvent::AssistantMessage {
+                index: 3,
+                content: "tokio::select! polls all branches concurrently and completes when the first branch resolves. The other branch futures are dropped. Use biased; if you need deterministic branch priority.".to_owned(),
+            },
+            SessionEvent::UserMessage {
+                index: 4,
+                content: "How do I propagate errors from spawned tasks?".to_owned(),
+            },
+            SessionEvent::AssistantMessage {
+                index: 5,
+                content: "Spawned tasks return JoinHandle<T>. Await it and match on JoinError to detect panics. For structured propagation, use a channel or a shared error slot.".to_owned(),
+            },
+        ];
+
+        let session_id = DomainId::new_unchecked("flat-session-regression");
+        let sandbox = sandbox_dir("flat-regression");
+        let draft_writer = PendingDraftWriter::new(vec![sandbox.clone()]);
+        let request = inline_request("flat-session-regression");
+
+        // The prose extractor returns a candidate for this content.
+        let expected_candidate = skill_candidate(
+            "tokio-async-patterns",
+            "Patterns for timeouts, select!, and error propagation in tokio",
+        );
+        let prose_extractor = FixedProseExtractor::returning(vec![expected_candidate.clone()]);
+
+        // Use a budget that produces multiple windows (to exercise the multi-window path).
+        let config = OrchestrationConfig {
+            segmentation: SegmentationConfig::new(50, 2),
+            map_concurrency: 2,
+            reduce_similarity_threshold: REDUCE_SIMILARITY_THRESHOLD,
+            ..OrchestrationConfig::default()
+        };
+
+        // Declare the candidate equivalent to itself so that duplicate copies
+        // produced from multiple overlapping windows are merged down to one in reduce.
+        let verifier = PrefixEquivalenceFake::declaring_equivalent(vec![
+            ("tokio-async-patterns", "tokio-async-patterns"),
+        ]);
+
+        let report = run_orchestration(
+            session_id,
+            &events,
+            &config,
+            None,
+            Arc::new(EchoLabelerFake),
+            prose_extractor,
+            Arc::new(DeterministicEmbedderFake),
+            verifier,
+            FixedSynthesisPassFake::noop(),
+            &draft_writer,
+            &request,
+            "test-provider",
+        )
+        .await
+        .expect("flat session orchestration must not error");
+
+        // The core regression assertion: a flat session must produce ≥1 candidate.
+        // Before the fix this was 0 (gate blocked all windows). After the fix it is ≥1.
+        assert!(
+            report.final_candidate_count >= 1,
+            "flat structureless session must yield ≥1 candidate via prose extractor; \
+             pre-fix this was 0 because the gate blocked all windows. \
+             got: pre_reduce={}, final={}",
+            report.pre_reduce_candidate_count,
+            report.final_candidate_count
+        );
+
+        // At least one draft must be written.
+        assert!(
+            !report.draft_paths.is_empty(),
+            "flat session must produce at least one .pending draft"
+        );
+        for path in &report.draft_paths {
+            assert!(
+                path.exists(),
+                "written .pending draft must exist on disk: {path:?}"
+            );
+        }
+    }
+
+    // ── Additive: skeleton candidates contribute alongside prose candidates ────────
+
+    /// Proves that when a window contains tool arcs, skeleton mining contributes
+    /// candidates ADDITIVE to prose extraction (both run; results are unioned).
+    ///
+    /// This verifies the "skeleton is additive grounding" invariant: for a window
+    /// with arcs, both the skeleton labeler AND the prose extractor fire.
+    #[tokio::test]
+    async fn structured_window_with_tool_arc_produces_skeleton_plus_prose_candidates() {
+        let events = multi_arc_session_events();
+        let session_id = DomainId::new_unchecked("additive-test");
+        let sandbox = sandbox_dir("additive");
+        let draft_writer = PendingDraftWriter::new(vec![sandbox.clone()]);
+        let request = inline_request("additive-test");
+
+        // Prose extractor returns one candidate per call.
+        let prose_candidate = skill_candidate("prose-extracted", "From prose path");
+        let prose_extractor = FixedProseExtractor::returning(vec![prose_candidate.clone()]);
+
+        // Large budget so everything is one episode — one window runs both paths.
+        let config = OrchestrationConfig {
+            segmentation: SegmentationConfig::new(1_000_000, 3),
+            map_concurrency: 2,
+            reduce_similarity_threshold: REDUCE_SIMILARITY_THRESHOLD,
+            ..OrchestrationConfig::default()
+        };
+
+        let report = run_orchestration(
+            session_id,
+            &events,
+            &config,
+            None,
+            Arc::new(EchoLabelerFake),
+            prose_extractor,
+            Arc::new(DeterministicEmbedderFake),
+            PrefixEquivalenceFake::never_equivalent(),
+            FixedSynthesisPassFake::noop(),
+            &draft_writer,
+            &request,
+            "test-provider",
+        )
+        .await
+        .expect("additive-test orchestration must succeed");
+
+        // Both skeleton and prose paths fire, so pre-reduce count ≥ 2
+        // (at least one skeleton candidate + at least one prose candidate).
+        assert!(
+            report.pre_reduce_candidate_count >= 2,
+            "structured window must produce ≥2 pre-reduce candidates (skeleton + prose additive); \
+             got pre_reduce={}",
+            report.pre_reduce_candidate_count
+        );
     }
 
     // ── Empty session fails loudly ─────────────────────────────────────────────

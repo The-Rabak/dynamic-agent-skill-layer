@@ -342,8 +342,6 @@ async fn watcher_churn_and_reconciliation_converges_to_correct_graph_state_under
         infrastructure::OllamaEmbeddingConfig {
             base_url: ollama_url,
             model: "nomic-embed-text".to_owned(),
-            timeout_ms: 5_000,
-            batch_timeout_ms: 10_000,
             max_concurrency: 4,
         },
     )

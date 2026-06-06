@@ -35,6 +35,11 @@ services:
       # Parallel request slots so concurrent embed calls are served in parallel
       # (DS-007 warm-path p95 budget). Pair with EMBED_MAX_CONCURRENCY on clients.
       OLLAMA_NUM_PARALLEL: ${OLLAMA_NUM_PARALLEL:-4}
+      # Keep every model resident for 24h after last use so a warmed model is never
+      # evicted mid-suite. We do NOT impose request timeouts on model calls (a slow
+      # cold load must never cut a call off); keeping models warm is how we keep
+      # latency sane instead of timing out. Override via OLLAMA_KEEP_ALIVE.
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-24h}
     # NVIDIA GPU passthrough (RTX/GeForce). Requires the NVIDIA Container Toolkit
     # on the host (the `nvidia` docker runtime). The ollama/ollama image
     # auto-detects CUDA and runs embeddings on the GPU — dramatically faster than

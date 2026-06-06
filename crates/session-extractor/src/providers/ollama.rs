@@ -8,7 +8,6 @@ use infrastructure::{OllamaExtractionConfig, OllamaExtractor};
 /// Recognized environment variables:
 /// - `OLLAMA_EXTRACTION_ENDPOINT`: full URL to Ollama's `/api/generate` endpoint
 /// - `OLLAMA_EXTRACTION_MODEL`: model name to use for extraction (e.g. `gemma4:12b`)
-/// - `OLLAMA_EXTRACTION_TIMEOUT_MS`: inner per-request timeout in milliseconds
 /// - `OLLAMA_EXTRACTION_TEMPERATURE`: sampling temperature float 0.0–2.0; omit to use
 ///   the model default. Set to `0` for deterministic (greedy) output in e2e tests.
 pub fn build_extractor(
@@ -20,13 +19,6 @@ pub fn build_extractor(
     }
     if let Ok(model) = std::env::var("OLLAMA_EXTRACTION_MODEL") {
         config.model = model;
-    }
-    if let Ok(timeout_ms) = std::env::var("OLLAMA_EXTRACTION_TIMEOUT_MS") {
-        config.timeout_ms = timeout_ms.parse().map_err(|error| {
-            ExtractionError::InvalidTranscript(format!(
-                "invalid OLLAMA_EXTRACTION_TIMEOUT_MS value: {error}"
-            ))
-        })?;
     }
     if let Ok(temperature_str) = std::env::var("OLLAMA_EXTRACTION_TEMPERATURE") {
         let temperature: f32 = temperature_str.parse().map_err(|error| {

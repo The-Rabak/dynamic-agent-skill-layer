@@ -699,7 +699,7 @@ if [ "$QUEUE_STATUS" != "not found" ]; then
         export OLLAMA_URL="http://127.0.0.1:${OLLAMA_PORT}"
         export OLLAMA_EXTRACTION_ENDPOINT="http://127.0.0.1:${OLLAMA_PORT}/api/generate"
         export OLLAMA_EXTRACTION_MODEL="$EXTRACT_MODEL"
-        export OLLAMA_EXTRACTION_TIMEOUT_MS="120000"
+        # No extraction request timeout: rely on OLLAMA_KEEP_ALIVE keeping models warm.
         export EXTRACT_SESSION_PROVIDER="ollama"
         export TRANSCRIPT_INGEST_SECRET="$INGEST_SECRET"
         # Scope global paths to SANDBOX_DIR only (fixes #144 and #146).

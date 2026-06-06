@@ -5,24 +5,36 @@ use crate::{ExtractSessionRequest, ExtractSessionResponse, ExtractionOutcome, Se
 
 const DEFAULT_QUEUE_DEPTH: usize = 64;
 const DEFAULT_MAX_CONCURRENT: usize = 4;
-/// Worker-pool (outer) per-job safety ceiling. Must stay >= 1.5x the provider's inner
-/// timeout so a slow-but-progressing extraction is not cut off prematurely. The
-/// inner Ollama extraction ceiling is 120s (CPU `gemma4:12b`); that ceiling was
-/// baselined on the prior smaller `gemma4:e4b` (warm ~37s, cold-start ~66s; see
-/// `OllamaExtractionConfig::default` in infrastructure/src/extraction/ollama.rs) and
-/// kept generous for the larger 12b, so 180s = 1.5x preserves the margin.
-/// Override per deployment via `ExtractionWorkerPoolConfig::with_timeout`.
+/// Default outer per-job ceiling for the LEGACY SINGLE-SHOT path only — one bounded
+/// LLM call, where a fixed ceiling with requeue-on-elapsed (#190) is appropriate.
+/// The orchestrated path does NOT use this: it is a churning background worker with
+/// no fixed wall-clock ceiling (`timeout: None`); see the field docs on
+/// [`ExtractionWorkerPoolConfig::timeout`]. Operators may still override either path
+/// via `EXTRACTION_JOB_TIMEOUT_MS` (`0` = no ceiling).
 ///
-/// On ceiling hit the job is REQUEUED with bounded backoff (from `retry_policy`)
-/// rather than dropped. Only after `retry_policy.max_attempts` ceiling hits is
-/// `extraction.failed` emitted — no job is discarded for being slow.
+/// On ceiling hit (single-shot) the job is REQUEUED with bounded backoff (from
+/// `retry_policy`) rather than dropped. Only after `retry_policy.max_attempts`
+/// ceiling hits is `extraction.failed` emitted — no job is discarded for being slow.
 const DEFAULT_TIMEOUT_SECS: u64 = 180;
 
 #[derive(Debug, Clone)]
 pub struct ExtractionWorkerPoolConfig {
     pub queue_depth: usize,
     pub max_concurrent: usize,
-    pub timeout: std::time::Duration,
+    /// Optional OUTER per-job wall-clock ceiling.
+    ///
+    /// `None` = no fixed ceiling: a long-but-progressing job runs to completion.
+    /// This is the correct setting for the multi-call orchestrated extraction
+    /// path, which is a background worker that constantly churns through many
+    /// sequential LLM calls — a fixed wall-clock cap there only causes infinite
+    /// requeue-thrash on slow hardware (the job can never finish inside the cap),
+    /// never real progress. Liveness for that path comes from each provider call's
+    /// own per-request timeout plus the streaming idle-watchdog (#197), not a
+    /// hardcoded total-time kill.
+    ///
+    /// `Some(d)` = single-shot legacy path: one bounded LLM call, where a fixed
+    /// ceiling with requeue-on-elapsed (#190) is appropriate.
+    pub timeout: Option<std::time::Duration>,
     pub retry_policy: RetryPolicy,
 }
 
@@ -31,7 +43,9 @@ impl Default for ExtractionWorkerPoolConfig {
         Self {
             queue_depth: DEFAULT_QUEUE_DEPTH,
             max_concurrent: DEFAULT_MAX_CONCURRENT,
-            timeout: std::time::Duration::from_secs(DEFAULT_TIMEOUT_SECS),
+            // Default preserves the single-shot ceiling for back-compat; the
+            // orchestrated path opts into `None` at construction time.
+            timeout: Some(std::time::Duration::from_secs(DEFAULT_TIMEOUT_SECS)),
             retry_policy: RetryPolicy::default(),
         }
     }
@@ -49,6 +63,13 @@ impl ExtractionWorkerPoolConfig {
     }
 
     pub fn with_timeout(mut self, timeout: std::time::Duration) -> Self {
+        self.timeout = Some(timeout);
+        self
+    }
+
+    /// Sets the outer ceiling explicitly, including `None` for "no fixed ceiling"
+    /// (the churning orchestrated path).
+    pub fn with_optional_timeout(mut self, timeout: Option<std::time::Duration>) -> Self {
         self.timeout = timeout;
         self
     }
@@ -162,13 +183,18 @@ impl ExtractionWorkerPool {
 async fn worker_loop(
     job_rx: async_channel::Receiver<ExtractionJob>,
     job_tx: async_channel::Sender<ExtractionJob>,
-    timeout: std::time::Duration,
+    timeout: Option<std::time::Duration>,
     retry_policy: RetryPolicy,
 ) {
     while let Ok(mut job) = job_rx.recv().await {
-        match tokio::time::timeout(timeout, job.extractor.execute_job(&job.job_id, &job.request))
-            .await
-        {
+        // No fixed ceiling (orchestrated churning path): await the job directly so a
+        // slow-but-progressing extraction is never cut off or requeue-thrashed.
+        let run = job.extractor.execute_job(&job.job_id, &job.request);
+        let outcome = match timeout {
+            Some(ceiling) => tokio::time::timeout(ceiling, run).await,
+            None => Ok(run.await),
+        };
+        match outcome {
             Ok(ExtractionOutcome::Completed {
                 draft_paths,
                 source_session_id,
@@ -295,10 +321,10 @@ mod tests {
         let config = ExtractionWorkerPoolConfig::default();
         assert_eq!(config.queue_depth, 64);
         assert_eq!(config.max_concurrent, 4);
-        assert_eq!(config.timeout, Duration::from_secs(180));
-        // Outer pool timeout must remain >= 1.5x the Ollama inner timeout (120s)
-        // so a progressing CPU extraction is not cut off prematurely.
-        assert!(config.timeout >= Duration::from_secs(120 * 3 / 2));
+        // The DEFAULT preserves the bounded single-shot ceiling; the orchestrated
+        // path opts into `None` (no ceiling) at construction. See
+        // `ExtractionWorkerPoolConfig::timeout`.
+        assert_eq!(config.timeout, Some(Duration::from_secs(180)));
     }
 
     #[test]
@@ -310,7 +336,18 @@ mod tests {
 
         assert_eq!(config.queue_depth, 8);
         assert_eq!(config.max_concurrent, 2);
-        assert_eq!(config.timeout, Duration::from_secs(10));
+        assert_eq!(config.timeout, Some(Duration::from_secs(10)));
+    }
+
+    #[test]
+    fn optional_timeout_supports_no_ceiling() {
+        let bounded = ExtractionWorkerPoolConfig::default()
+            .with_optional_timeout(Some(Duration::from_secs(42)));
+        assert_eq!(bounded.timeout, Some(Duration::from_secs(42)));
+
+        // `None` = no fixed wall-clock ceiling for the churning orchestrated worker.
+        let unbounded = ExtractionWorkerPoolConfig::default().with_optional_timeout(None);
+        assert_eq!(unbounded.timeout, None);
     }
 
     fn sample_inline_transcript() -> String {
@@ -395,7 +432,7 @@ mod tests {
             event_publisher: Arc::new(crate::NoopExtractionEventPublisher),
             worker_pool: Some(pool),
             retry_policy: RetryPolicy::default(),
-            job_timeout: std::time::Duration::from_secs(30),
+            job_timeout: Some(std::time::Duration::from_secs(30)),
             skeleton_labeler: None,
             embedder: None,
             equivalence_verifier: None,
@@ -576,7 +613,7 @@ mod tests {
             event_publisher: Arc::new(crate::NoopExtractionEventPublisher),
             worker_pool: Some(pool),
             retry_policy: RetryPolicy::default(),
-            job_timeout: std::time::Duration::from_secs(30),
+            job_timeout: Some(std::time::Duration::from_secs(30)),
             skeleton_labeler: None,
             embedder: None,
             equivalence_verifier: None,

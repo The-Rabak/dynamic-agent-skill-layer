@@ -207,8 +207,6 @@ fn build_embedding_service() -> Result<OllamaEmbeddingService, Box<dyn std::erro
     let config = OllamaEmbeddingConfig {
         base_url,
         model: "nomic-embed-text".to_owned(),
-        timeout_ms: 5_000,
-        batch_timeout_ms: 10_000,
         max_concurrency: 4,
     };
     OllamaEmbeddingService::from_config(config).map_err(|e| e.to_string().into())

@@ -58,12 +58,6 @@ use crate::{
 /// same model used by the merge verifier and other infrastructure seams.
 const DEFAULT_SEAM_MODEL: &str = "gemma4:12b";
 
-/// Default per-request timeout (ms) for orchestration seam LLM calls.
-///
-/// Each call is a bounded transform over a small skeleton or candidate list;
-/// 90 seconds is generous for CPU inference on the reference host.
-const DEFAULT_SEAM_TIMEOUT_MS: u64 = 90_000;
-
 /// Reads the `OLLAMA_URL` environment variable and returns a loud error if absent.
 ///
 /// All three seams require the Ollama base URL. Missing configuration surfaces
@@ -84,15 +78,6 @@ fn seam_model() -> String {
         .unwrap_or_else(|_| DEFAULT_SEAM_MODEL.to_owned())
 }
 
-/// Reads the optional `ORCHESTRATION_SEAM_TIMEOUT_MS` override, defaulting to
-/// [`DEFAULT_SEAM_TIMEOUT_MS`].
-fn seam_timeout_ms() -> u64 {
-    std::env::var("ORCHESTRATION_SEAM_TIMEOUT_MS")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(DEFAULT_SEAM_TIMEOUT_MS)
-}
-
 // ─── PreambleNormalizer impl ──────────────────────────────────────────────────
 
 /// Real Ollama-backed [`PreambleNormalizer`].
@@ -106,14 +91,13 @@ pub struct OllamaPreambleNormalizer {
     client: reqwest::Client,
     endpoint: String,
     model: String,
-    timeout_ms: u64,
 }
 
 impl OllamaPreambleNormalizer {
     /// Constructs the normalizer from environment variables.
     ///
-    /// Reads `OLLAMA_URL` (required), `ORCHESTRATION_SEAM_MODEL` (optional, default
-    /// `gemma4:12b`), and `ORCHESTRATION_SEAM_TIMEOUT_MS` (optional, default 90 000).
+    /// Reads `OLLAMA_URL` (required) and `ORCHESTRATION_SEAM_MODEL` (optional, default
+    /// `gemma4:12b`).
     ///
     /// # Errors
     ///
@@ -122,12 +106,10 @@ impl OllamaPreambleNormalizer {
         let base_url = require_ollama_base_url()?;
         let endpoint = format!("{}/api/generate", base_url.trim_end_matches('/'));
         let model = seam_model();
-        let timeout_ms = seam_timeout_ms();
         Ok(Arc::new(Self {
             client: reqwest::Client::new(),
             endpoint,
             model,
-            timeout_ms,
         }))
     }
 }
@@ -233,7 +215,7 @@ impl PreambleNormalizer for OllamaPreambleNormalizer {
 
         debug!(model = %self.model, "OllamaPreambleNormalizer: sending normalisation request");
 
-        let raw_json = ollama_generate_text(&self.client, &self.endpoint, &request, self.timeout_ms)
+        let raw_json = ollama_generate_text(&self.client, &self.endpoint, &request)
             .await
             .map_err(|error| {
                 NormalizationError::ProviderFailure(format!("Ollama normalizer call failed: {error}"))
@@ -266,14 +248,12 @@ pub struct OllamaSkeletonLabeler {
     client: reqwest::Client,
     endpoint: String,
     model: String,
-    timeout_ms: u64,
 }
 
 impl OllamaSkeletonLabeler {
     /// Constructs the labeler from environment variables.
     ///
-    /// Reads `OLLAMA_URL` (required), `ORCHESTRATION_SEAM_MODEL` (optional),
-    /// and `ORCHESTRATION_SEAM_TIMEOUT_MS` (optional).
+    /// Reads `OLLAMA_URL` (required) and `ORCHESTRATION_SEAM_MODEL` (optional).
     ///
     /// # Errors
     ///
@@ -282,12 +262,10 @@ impl OllamaSkeletonLabeler {
         let base_url = require_ollama_base_url()?;
         let endpoint = format!("{}/api/generate", base_url.trim_end_matches('/'));
         let model = seam_model();
-        let timeout_ms = seam_timeout_ms();
         Ok(Arc::new(Self {
             client: reqwest::Client::new(),
             endpoint,
             model,
-            timeout_ms,
         }))
     }
 }
@@ -403,7 +381,7 @@ impl SkeletonLabeler for OllamaSkeletonLabeler {
 
         debug!(model = %self.model, "OllamaSkeletonLabeler: sending labeling request");
 
-        let raw_json = ollama_generate_text(&self.client, &self.endpoint, &request, self.timeout_ms)
+        let raw_json = ollama_generate_text(&self.client, &self.endpoint, &request)
             .await
             .map_err(|error| SkeletonError::LabelerFailed {
                 message: format!("Ollama labeler call failed: {error}"),
@@ -434,14 +412,12 @@ pub struct OllamaSynthesisPass {
     client: reqwest::Client,
     endpoint: String,
     model: String,
-    timeout_ms: u64,
 }
 
 impl OllamaSynthesisPass {
     /// Constructs the synthesis pass from environment variables.
     ///
-    /// Reads `OLLAMA_URL` (required), `ORCHESTRATION_SEAM_MODEL` (optional),
-    /// and `ORCHESTRATION_SEAM_TIMEOUT_MS` (optional).
+    /// Reads `OLLAMA_URL` (required) and `ORCHESTRATION_SEAM_MODEL` (optional).
     ///
     /// # Errors
     ///
@@ -450,12 +426,10 @@ impl OllamaSynthesisPass {
         let base_url = require_ollama_base_url()?;
         let endpoint = format!("{}/api/generate", base_url.trim_end_matches('/'));
         let model = seam_model();
-        let timeout_ms = seam_timeout_ms();
         Ok(Arc::new(Self {
             client: reqwest::Client::new(),
             endpoint,
             model,
-            timeout_ms,
         }))
     }
 }
@@ -598,7 +572,7 @@ impl SynthesisPass for OllamaSynthesisPass {
             "OllamaSynthesisPass: sending synthesis request"
         );
 
-        let raw_json = ollama_generate_text(&self.client, &self.endpoint, &request, self.timeout_ms)
+        let raw_json = ollama_generate_text(&self.client, &self.endpoint, &request)
             .await
             .map_err(|error| {
                 SynthesisError::ProviderFailure(format!("Ollama synthesis call failed: {error}"))

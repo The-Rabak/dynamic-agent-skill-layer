@@ -1,17 +1,10 @@
 use domain::{ExtractionError, SessionTranscript};
 
 pub(crate) fn validate_extraction_config(
-    timeout_ms: u64,
     max_entries: usize,
     max_entry_chars: usize,
     max_total_chars: usize,
 ) -> Result<(), ExtractionError> {
-    if timeout_ms == 0 {
-        return Err(ExtractionError::InvalidTranscript(
-            "extraction timeout must be greater than zero".to_owned(),
-        ));
-    }
-
     if max_entries == 0 || max_entry_chars == 0 || max_total_chars == 0 {
         return Err(ExtractionError::InvalidTranscript(
             "transcript limits must be greater than zero".to_owned(),

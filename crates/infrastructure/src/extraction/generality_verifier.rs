@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use tokio::time::timeout;
 
 use crate::extraction::{
-    http::post_json_with_timeout,
+    http::post_json,
     prompt_contract::DEFAULT_CLAUDE_MODEL,
 };
 
@@ -70,8 +70,6 @@ pub struct OllamaGeneralityVerifierConfig {
     pub endpoint: String,
     /// Ollama model to use for generality decisions.
     pub model: String,
-    /// Per-request timeout in milliseconds.
-    pub timeout_ms: u64,
 }
 
 impl Default for OllamaGeneralityVerifierConfig {
@@ -80,8 +78,6 @@ impl Default for OllamaGeneralityVerifierConfig {
             endpoint: "http://127.0.0.1:11434/api/generate".to_owned(),
             // Same default as the merge verifier path; override via GENERALITY_VERIFIER_MODEL.
             model: "gemma4:12b".to_owned(),
-            // Generality verification is a short prompt; 60s is generous on CPU inference.
-            timeout_ms: 60_000,
         }
     }
 }
@@ -163,11 +159,10 @@ impl SkillGeneralityVerifier for OllamaGeneralityVerifier {
             options: OllamaGenerateOptions { temperature: 0.0 },
         };
 
-        let raw: OllamaGenerateResponse = post_json_with_timeout(
+        let raw: OllamaGenerateResponse = post_json(
             &self.client,
             &self.config.endpoint,
             &request,
-            self.config.timeout_ms,
             "ollama-generality-verifier",
         )
         .await?;
@@ -456,7 +451,6 @@ mod tests {
         let config = OllamaGeneralityVerifierConfig {
             endpoint: String::new(),
             model: "gemma4:12b".to_owned(),
-            timeout_ms: 60_000,
         };
         let error = OllamaGeneralityVerifier::new(reqwest::Client::new(), config)
             .expect_err("blank endpoint must be rejected");
@@ -468,7 +462,6 @@ mod tests {
         let config = OllamaGeneralityVerifierConfig {
             endpoint: "http://127.0.0.1:11434/api/generate".to_owned(),
             model: String::new(),
-            timeout_ms: 60_000,
         };
         let error = OllamaGeneralityVerifier::new(reqwest::Client::new(), config)
             .expect_err("blank model must be rejected");
