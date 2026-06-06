@@ -243,7 +243,7 @@ The compose default therefore remains `ollama`. For containerised deployments us
 | `ANTHROPIC_BASE_URL` | Anthropic API base URL (no `/v1/messages` suffix). **Must be `https://`** — non-HTTPS URLs are rejected at construction with `ProviderUnavailable`. **Exfiltration warning:** transcripts may contain source code, secrets, and user data; never point this at an untrusted or HTTP-only endpoint. | `https://api.anthropic.com` |
 | `MCP_USAGE_LOGGING` | Usage write rollback flag. Set to `"off"` to disable usage row writes to `session_logs` / `skill_usage` (→ `health["usage_write"]="disabled"` in `compile_context` responses). Omitting the variable or any value other than `"off"` leaves usage writes enabled. | _(on — writes enabled)_ |
 | `CLAUDE_EXTRACTION_TIMEOUT_MS` | Inner per-call timeout for the API path | `30000` |
-| `OLLAMA_EXTRACTION_MODEL` | Local extraction model for the Ollama provider | `gemma4:e4b` |
+| `OLLAMA_EXTRACTION_MODEL` | Local extraction model for the Ollama provider | `gemma4:12b` |
 | `OLLAMA_EXTRACTION_TIMEOUT_MS` | Inner per-call timeout for Ollama CPU inference. The default (`120000`) is an **unmeasured placeholder** — confirm single-job p50/p95 against the target host. The worker-pool (outer) timeout stays ≥ 1.5× this value. | `120000` |
 
 **Opt into Claude CLI (subscription, host-only — use `claude-code` or `claude-cli`):**

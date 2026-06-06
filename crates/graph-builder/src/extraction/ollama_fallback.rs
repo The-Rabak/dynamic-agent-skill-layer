@@ -216,6 +216,8 @@ mod tests {
                 conventions: vec!["Stay deterministic".to_owned()],
                 assets: vec!["docs/skill.md".to_owned()],
                 confidence: 0.8,
+                generality: None,
+                generality_rationale: None,
             }]),
         };
 

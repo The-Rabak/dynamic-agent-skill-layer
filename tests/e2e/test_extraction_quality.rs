@@ -17,7 +17,7 @@
 //!   • human gate (only `.pending`, never an auto-approved `SKILL.md`).
 //!
 //! # No fakes
-//! Real Ollama extraction (production default `gemma4:e4b`), real PG ingest
+//! Real Ollama extraction (production default `gemma4:12b`), real PG ingest
 //! queue, real `/ingest/transcript` endpoint, the real `PendingDraftWriter`. The
 //! drain runs in-process — the SAME `TranscriptQueueDrain::drain_once()` code the
 //! deployed maintenance worker runs — which is the repo's sanctioned pattern for
@@ -197,7 +197,7 @@ async fn extracted_pending_draft_captures_the_taught_procedure() {
         // Production default model unless the caller overrides (granite4:3b is a
         // faster CPU option). Measuring the SHIPPED default is the honest choice.
         if std::env::var("OLLAMA_EXTRACTION_MODEL").is_err() {
-            std::env::set_var("OLLAMA_EXTRACTION_MODEL", "gemma4:e4b");
+            std::env::set_var("OLLAMA_EXTRACTION_MODEL", "gemma4:12b");
         }
         let ollama_base = std::env::var("OLLAMA_URL")
             .unwrap_or_else(|_| "http://localhost:11444".to_owned())

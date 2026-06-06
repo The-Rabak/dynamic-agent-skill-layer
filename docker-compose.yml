@@ -146,7 +146,7 @@ services:
       TRANSCRIPT_INGEST_SECRET: ${TRANSCRIPT_INGEST_SECRET:-}
     volumes:
       - ${GRAPH_BUILDER_PROJECT_ROOT:-.}:/skills/project:ro
-      - ${SKILL_GLOBAL_HOST_PATH:-./docs}:/skills/global
+      - ${SKILL_GLOBAL_HOST_PATH:-${HOME}/.claude/skills}:/skills/global
       - ${CLAUDE_TRANSCRIPT_ROOT:-./tests/fixtures}:/transcripts:ro
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3001/health"]
@@ -183,7 +183,7 @@ services:
       GRAPH_BUILDER_ADDR: 0.0.0.0:${GRAPH_BUILDER_PORT:-8080}
     volumes:
       - ${GRAPH_BUILDER_PROJECT_ROOT:-.}:/skills/project:ro
-      - ${SKILL_GLOBAL_HOST_PATH:-./docs}:/skills/global
+      - ${SKILL_GLOBAL_HOST_PATH:-${HOME}/.claude/skills}:/skills/global
     # Graph-builder port also bound to localhost-only (same exposure contract as mcp-server).
     ports:
       - "127.0.0.1:${GRAPH_BUILDER_PORT:-8080}:8080"
@@ -230,7 +230,7 @@ services:
     volumes:
       # Writable (not :ro): the drain writes .pending drafts into <repo>/.skills.
       - ${GRAPH_BUILDER_PROJECT_ROOT:-.}:/skills/project
-      - ${SKILL_GLOBAL_HOST_PATH:-./docs}:/skills/global
+      - ${SKILL_GLOBAL_HOST_PATH:-${HOME}/.claude/skills}:/skills/global
     restart: unless-stopped
 
 volumes:

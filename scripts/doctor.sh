@@ -118,6 +118,26 @@ else
     report_warn "SKILL_GLOBAL_PATHS not set — mcp-server container uses its own default (/skills/global); demo will seed into a temp directory"
 fi
 
+# Check that SKILL_GLOBAL_HOST_PATH resolves to a real machine-wide directory,
+# not a path inside the repo working tree. A repo-internal path (e.g. ./docs)
+# means "global skills" out of the box are this project's own documentation and
+# the maintenance-worker would write .pending drafts into the repo — both wrong.
+SKILL_GLOBAL_HOST_PATH="${SKILL_GLOBAL_HOST_PATH:-${HOME}/.claude/skills}"
+# Resolve relative paths and symlinks for the repo-prefix check.
+SKILL_GLOBAL_RESOLVED="$(cd "${SKILL_GLOBAL_HOST_PATH}" 2>/dev/null && pwd -P || echo "${SKILL_GLOBAL_HOST_PATH}")"
+REPO_ROOT_RESOLVED="$(cd "${REPO_ROOT}" 2>/dev/null && pwd -P || echo "${REPO_ROOT}")"
+
+if [ "$SKILL_GLOBAL_RESOLVED" = "$REPO_ROOT_RESOLVED" ] || \
+   echo "$SKILL_GLOBAL_RESOLVED" | grep -q "^${REPO_ROOT_RESOLVED}/"; then
+    report_fail "SKILL_GLOBAL_HOST_PATH resolves to '${SKILL_GLOBAL_RESOLVED}', which is inside the repo working tree (${REPO_ROOT_RESOLVED}). Set a machine-wide path, e.g. SKILL_GLOBAL_HOST_PATH=\${HOME}/.claude/skills in .env"
+elif [ ! -d "$SKILL_GLOBAL_HOST_PATH" ]; then
+    report_warn "SKILL_GLOBAL_HOST_PATH='${SKILL_GLOBAL_HOST_PATH}' does not exist yet — create it with: mkdir -p '${SKILL_GLOBAL_HOST_PATH}' (the maintenance-worker will fail at boot without it)"
+elif [ ! -w "$SKILL_GLOBAL_HOST_PATH" ]; then
+    report_warn "SKILL_GLOBAL_HOST_PATH='${SKILL_GLOBAL_HOST_PATH}' exists but is not writable — the maintenance-worker will fail at boot; fix permissions with: chmod u+w '${SKILL_GLOBAL_HOST_PATH}'"
+else
+    report_ok "SKILL_GLOBAL_HOST_PATH='${SKILL_GLOBAL_HOST_PATH}' exists and is writable (machine-wide global store ok)"
+fi
+
 # ---------------------------------------------------------------------------
 # 3. Infrastructure endpoints: PG / Redis / Qdrant
 # ---------------------------------------------------------------------------

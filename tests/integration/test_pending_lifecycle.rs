@@ -35,6 +35,8 @@ fn sample_candidate(name: &str) -> ExtractedSkillCandidate {
         conventions: vec!["Constrain scope".to_owned()],
         assets: vec!["docs/skill.md".to_owned()],
         confidence: 0.9,
+        generality: None,
+        generality_rationale: None,
     }
 }
 

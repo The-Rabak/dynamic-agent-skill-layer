@@ -38,15 +38,33 @@ scripts/run-demo.sh
 # 1. Copy environment template
 cp .env.example .env
 
-# 2. Build all service images
+# 2. (Recommended) Create the machine-wide global skills directory before starting.
+#    The default is ~/.claude/skills — the maintenance-worker will fail loudly at
+#    boot if this directory is missing or not writable.
+mkdir -p ~/.claude/skills
+
+# 3. Build all service images
 docker compose build
 
-# 3. Start infrastructure + services
+# 4. Start infrastructure + services
 docker compose up -d
 
-# 4. Verify health checks
+# 5. Verify health checks
 docker compose ps
 ```
+
+**Global skill store (`SKILL_GLOBAL_HOST_PATH`):**
+The `SKILL_GLOBAL_HOST_PATH` variable controls which host directory is mounted as
+`/skills/global` inside every container. The default is `${HOME}/.claude/skills` — a
+machine-wide directory shared across all projects on this host.
+
+- Do NOT set this to a path inside this repo (e.g. `./docs`). Doing so points the
+  "global" scope at project documentation, not a real machine-wide skill store, and
+  will pollute your repo when the maintenance-worker writes `.pending` promotion drafts.
+- The maintenance-worker probes this directory for writability at boot and exits with a
+  clear error if it is missing or not writable. mcp-server and graph-builder mount it
+  read-only and rely on the existing existence check.
+- Override in your `.env`: `SKILL_GLOBAL_HOST_PATH=/path/to/your/global/skills`
 
 The MCP server exposes tools on `http://127.0.0.1:3001`. Health endpoints:
 - MCP server: `http://127.0.0.1:3001/health`

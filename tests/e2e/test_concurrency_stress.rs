@@ -103,6 +103,8 @@ impl TranscriptSkillExtractionService for StressExtractor {
                 conventions: vec!["Never silently drop extraction lifecycle events.".to_owned()],
                 assets: vec!["tests/e2e/test_concurrency_stress.rs".to_owned()],
                 confidence: 0.87,
+                generality: None,
+                generality_rationale: None,
             }],
         })
     }

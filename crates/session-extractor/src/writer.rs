@@ -10,6 +10,7 @@ use domain::{
     ExtractedSkillCandidate, ExtractionResult, PENDING_SKILL_FILE_NAME, REJECTED_SKILL_FILE_NAME,
     is_rejected_tombstone, pending_default_expires_at, pending_default_warning_at,
 };
+use infrastructure::extraction::prompt_contract::normalize_generality;
 use serde::Serialize;
 use thiserror::Error;
 
@@ -388,6 +389,10 @@ fn render_pending_markdown(
     let created_at = Utc::now();
     let warning_at = pending_default_warning_at(created_at);
     let expires_at = pending_default_expires_at(created_at);
+    // Normalize: any absent or unrecognised provider hint becomes "uncertain"
+    // explicitly. "uncertain" is not a fallback — it is the asserted honest default.
+    let generality = normalize_generality(candidate.generality.as_deref());
+    let generality_rationale = candidate.generality_rationale.as_deref().unwrap_or("");
     let frontmatter = PendingDraftFrontmatter {
         name: candidate.name.as_str(),
         description: candidate.description.as_str(),
@@ -398,6 +403,8 @@ fn render_pending_markdown(
         created_at: created_at.to_rfc3339(),
         warning_at: warning_at.to_rfc3339(),
         expires_at: expires_at.to_rfc3339(),
+        generality,
+        generality_rationale,
     };
     let frontmatter_yaml = serialize_frontmatter(&frontmatter)?;
     let tags_line = if candidate.tags.is_empty() {
@@ -427,6 +434,11 @@ fn render_pending_markdown(
 }
 
 /// Frontmatter payload for pending skill proposals.
+///
+/// `generality` is always written as one of `"project"`, `"general"`, or
+/// `"uncertain"` — never absent. When the provider returned no hint the writer
+/// records `"uncertain"` explicitly so the maintenance promotion pass always has
+/// a concrete value to act on.
 #[derive(Serialize)]
 struct PendingDraftFrontmatter<'a> {
     name: &'a str,
@@ -438,6 +450,12 @@ struct PendingDraftFrontmatter<'a> {
     created_at: String,
     warning_at: String,
     expires_at: String,
+    /// Advisory scope-generality hint. One of "project", "general", "uncertain".
+    generality: &'a str,
+    /// One-line rationale from the LLM explaining the generality judgement.
+    /// Empty string when the provider supplied no rationale.
+    #[serde(skip_serializing_if = "str::is_empty")]
+    generality_rationale: &'a str,
 }
 
 #[derive(Debug, Clone)]
@@ -582,6 +600,8 @@ mod tests {
             conventions: vec![],
             assets: vec![],
             confidence: 0.9,
+            generality: None,
+            generality_rationale: None,
         }
     }
 
@@ -818,5 +838,131 @@ mod tests {
     fn reason_code_write_denied_returns_stable_string() {
         let err = WriterError::WriteDenied("write denied: path `/skills/global/skills/foo/SKILL.md` is a skill source directory (read-only)".to_owned());
         assert_eq!(err.reason_code(), "write_denied");
+    }
+
+    // ── generality frontmatter tests ─────────────────────────────────────────
+
+    /// A candidate with `generality: None` must write `"uncertain"` into the
+    /// frontmatter — the explicit honest default, not a silent omission.
+    #[test]
+    fn pending_markdown_writes_uncertain_when_generality_is_none() {
+        let candidate = minimal_candidate("no-hint-skill");
+        let markdown =
+            render_pending_markdown(&candidate, "session-abc", "test-provider")
+                .expect("render must succeed");
+        assert!(
+            markdown.contains("generality: uncertain"),
+            "absent generality must serialize as 'uncertain'; got:\n{markdown}"
+        );
+        // generality_rationale must be absent (empty string is skipped)
+        assert!(
+            !markdown.contains("generality_rationale"),
+            "absent rationale must be omitted from frontmatter; got:\n{markdown}"
+        );
+    }
+
+    #[test]
+    fn pending_markdown_writes_general_when_provider_signals_general() {
+        let mut candidate = minimal_candidate("cargo-test-workflow");
+        candidate.generality = Some("general".to_owned());
+        candidate.generality_rationale =
+            Some("No project-specific identifiers present.".to_owned());
+        let markdown =
+            render_pending_markdown(&candidate, "session-abc", "test-provider")
+                .expect("render must succeed");
+        assert!(
+            markdown.contains("generality: general"),
+            "provider 'general' hint must be preserved in frontmatter; got:\n{markdown}"
+        );
+        assert!(
+            markdown.contains("generality_rationale: No project-specific identifiers present."),
+            "rationale must be present in frontmatter; got:\n{markdown}"
+        );
+    }
+
+    #[test]
+    fn pending_markdown_writes_project_when_provider_signals_project() {
+        let mut candidate = minimal_candidate("dasl-scope-resolution");
+        candidate.generality = Some("project".to_owned());
+        candidate.generality_rationale =
+            Some("References SKILL_GLOBAL_ALLOWED_ROOTS env var.".to_owned());
+        let markdown =
+            render_pending_markdown(&candidate, "session-abc", "test-provider")
+                .expect("render must succeed");
+        assert!(
+            markdown.contains("generality: project"),
+            "provider 'project' hint must be preserved; got:\n{markdown}"
+        );
+    }
+
+    #[test]
+    fn pending_markdown_writes_uncertain_for_invalid_provider_generality() {
+        let mut candidate = minimal_candidate("bad-hint-skill");
+        // "global" and "tool-specific" are not valid enum values
+        candidate.generality = Some("global".to_owned());
+        let markdown =
+            render_pending_markdown(&candidate, "session-abc", "test-provider")
+                .expect("render must succeed");
+        assert!(
+            markdown.contains("generality: uncertain"),
+            "invalid provider hint must normalize to 'uncertain'; got:\n{markdown}"
+        );
+    }
+
+    /// Regression: with `repo_path` set, a `general`-hinted candidate MUST still
+    /// write into the project scope directory. The generality hint must NEVER
+    /// trigger a global write.
+    #[test]
+    fn general_hinted_candidate_with_repo_path_writes_to_project_scope_not_global() {
+        let sandbox = sandbox();
+        let project_root = sandbox.join("my-project");
+        let global_root = sandbox.join("global");
+        fs::create_dir_all(&project_root).expect("project root must be creatable");
+        fs::create_dir_all(&global_root).expect("global root must be creatable");
+
+        // The writer has a global scope path pointing to global_root. With
+        // repo_path set, it must ignore that and write to project_root/.skills.
+        let writer = PendingDraftWriter::new(vec![global_root.clone()]);
+
+        let mut candidate = minimal_candidate("rust-testing");
+        candidate.generality = Some("general".to_owned());
+        candidate.generality_rationale = Some("Uses only standard cargo commands.".to_owned());
+        let result = minimal_result(vec![candidate]);
+
+        let request = stub_request(Some(project_root.to_str().unwrap()));
+
+        unsafe {
+            env::set_var(
+                "SKILL_GLOBAL_ALLOWED_ROOTS",
+                sandbox.display().to_string(),
+            );
+            env::remove_var("SKILL_GLOBAL_WRITE_ROOTS");
+        }
+
+        let committed = writer
+            .write_pending_drafts(&result, &request, "test")
+            .expect("write must succeed");
+
+        unsafe {
+            env::remove_var("SKILL_GLOBAL_ALLOWED_ROOTS");
+        }
+
+        assert!(!committed.is_empty(), "at least one path must be committed");
+
+        // Every committed path must live inside project_root, not global_root.
+        for path in &committed {
+            assert!(
+                path.starts_with(&project_root),
+                "committed path {path:?} must be inside project_root {project_root:?}, \
+                 not global_root — generality hint must never redirect routing"
+            );
+        }
+
+        // Assert no file was written inside global_root.
+        let global_skills_dir = global_root.join(".skills");
+        assert!(
+            !global_skills_dir.exists(),
+            "global .skills dir must NOT exist — general hint must not trigger global write"
+        );
     }
 }

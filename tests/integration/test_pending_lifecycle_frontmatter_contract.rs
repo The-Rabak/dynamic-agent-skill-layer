@@ -29,6 +29,8 @@ fn sample_candidate(name: &str) -> ExtractedSkillCandidate {
         conventions: vec!["Constrain scope".to_owned()],
         assets: vec!["docs/skill.md".to_owned()],
         confidence: 0.9,
+        generality: None,
+        generality_rationale: None,
     }
 }
 
@@ -143,6 +145,8 @@ fn pending_frontmatter_serializes_multiline_and_special_characters_safely() {
             conventions: vec!["Fail closed".to_owned()],
             assets: vec!["docs/yaml.md".to_owned()],
             confidence: 0.88,
+            generality: None,
+            generality_rationale: None,
         }],
         provider: "claude".to_owned(),
     };

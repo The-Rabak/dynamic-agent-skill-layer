@@ -102,6 +102,8 @@ impl TranscriptSkillExtractionService for SuccessfulExtractor {
                 ],
                 assets: vec!["docs/rust-file-io.md".to_owned()],
                 confidence: 0.92,
+                generality: None,
+                generality_rationale: None,
             }],
         })
     }
@@ -383,6 +385,8 @@ fn providers_emit_same_contract_shape() {
             conventions: vec!["conv".to_owned()],
             assets: vec!["asset".to_owned()],
             confidence: 0.9,
+            generality: None,
+            generality_rationale: None,
         }],
     };
     let ollama_result = ExtractionResult {

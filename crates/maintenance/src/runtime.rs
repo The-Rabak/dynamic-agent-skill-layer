@@ -4,10 +4,12 @@ use async_trait::async_trait;
 use chrono::Utc;
 use domain::EmbeddingService;
 use infrastructure::{
-    ClaudeMergeVerifier, ClaudeMergeVerifierConfig, LlmEquivalenceVerifier, OllamaEmbeddingConfig,
-    OllamaEmbeddingService, OllamaMergeVerifier, OllamaMergeVerifierConfig, PostgresAdapter,
-    PostgresConfig, PostgresGraphSnapshotStore, PostgresUsageSampleStore, TranscriptIngestQueue,
-    UsageSampleStore,
+    ClaudeGeneralityVerifier, ClaudeGeneralityVerifierConfig, ClaudeMergeVerifier,
+    ClaudeMergeVerifierConfig, LlmEquivalenceVerifier, OllamaEmbeddingConfig,
+    OllamaEmbeddingService, OllamaGeneralityVerifier, OllamaGeneralityVerifierConfig,
+    OllamaMergeVerifier, OllamaMergeVerifierConfig, PostgresAdapter, PostgresConfig,
+    PostgresGraphSnapshotStore, PostgresPromotionRecurrenceStore, PostgresUsageSampleStore,
+    PromotionRecurrenceStore, SkillGeneralityVerifier, TranscriptIngestQueue, UsageSampleStore,
     logging::{ServiceLoggingConfig, init_service_logging},
 };
 use session_extractor::SessionExtractor;
@@ -18,10 +20,14 @@ use tracing::{error, info, warn};
 use crate::audit::MaintenanceAuditSink;
 use crate::audit_sink::PostgresMaintenanceAuditSink;
 use crate::cron::{
-    CronDecision, CronError, MaintenanceCron, MergePassRunner, RetirementPassRunner,
+    CronDecision, CronError, DemotionPassRunner, MaintenanceCron, MergePassRunner,
+    PromotionPassRunner, RetirementPassRunner,
 };
 use crate::merge::{MergeConfig, MergeProposal, MergeProposalWriter, SkillSnapshot};
 use crate::merge_verifier::LlmMergeSemanticVerifier;
+use crate::promote::{LivePromotionPassRunner, PromotionWriterConfig, RecurrenceConfig};
+#[cfg(test)]
+use crate::promote::DemotionProposal;
 use crate::retire::{RetirementConfig, RetirementProposal, RetirementProposalWriter, UsageSample};
 use crate::transcript_drain::{DEFAULT_TRANSCRIPT_DRAIN_BATCH, TranscriptQueueDrain};
 
@@ -34,13 +40,26 @@ pub const MERGE_VERIFIER_PROVIDER_ENV: &str = "MERGE_VERIFIER_PROVIDER";
 
 /// Ollama model used by the merge-verifier generate path.
 ///
-/// Overridable via `MERGE_VERIFIER_MODEL`. Defaults to `gemma4:e4b` (same model
+/// Overridable via `MERGE_VERIFIER_MODEL`. Defaults to `gemma4:12b` (same model
 /// as extraction) so a single local Ollama instance covers both workloads.
 pub const MERGE_VERIFIER_MODEL_ENV: &str = "MERGE_VERIFIER_MODEL";
 
 pub const DEFAULT_CRON_INTERVAL_SECS: u64 = 60;
 pub const CRON_INTERVAL_ENV: &str = "MAINTENANCE_CRON_INTERVAL_SECS";
 pub const RUN_ONCE_ENV: &str = "MAINTENANCE_RUN_ONCE";
+
+/// Environment variable selecting the generality-verifier LLM provider.
+///
+/// Accepted values:
+/// - unset / blank / `"ollama"` → Ollama `/api/generate` (local-first default)
+/// - `"claude"` → Anthropic Messages API (requires `ANTHROPIC_API_KEY`)
+pub const GENERALITY_VERIFIER_PROVIDER_ENV: &str = "GENERALITY_VERIFIER_PROVIDER";
+
+/// Ollama model used by the generality-verifier generate path.
+///
+/// Overridable via `GENERALITY_VERIFIER_MODEL`. Defaults to `gemma4:12b` (same model
+/// as extraction/merge verifier) so a single local Ollama instance covers all workloads.
+pub const GENERALITY_VERIFIER_MODEL_ENV: &str = "GENERALITY_VERIFIER_MODEL";
 
 /// Returns the value of `name` from the environment, or an error message suitable
 /// for boot-time failure. Required env vars must be present; there is no default.
@@ -376,11 +395,39 @@ impl RetirementPassRunner for NoopRetirementPassRunner {
     }
 }
 
+/// No-op promotion/demotion runner for tests that need these runners but no real work.
+#[cfg(any(test, feature = "test-utils"))]
+#[derive(Debug, Default)]
+pub struct NoopPromotionPassRunner;
+
+#[cfg(any(test, feature = "test-utils"))]
+#[async_trait]
+impl PromotionPassRunner for NoopPromotionPassRunner {
+    async fn run_promotion_pass(
+        &mut self,
+        _now: chrono::DateTime<Utc>,
+    ) -> Result<Vec<crate::promote::PromotionProposal>, CronError> {
+        Ok(Vec::new())
+    }
+}
+
+#[cfg(any(test, feature = "test-utils"))]
+#[async_trait]
+impl DemotionPassRunner for NoopPromotionPassRunner {
+    async fn run_demotion_pass(
+        &mut self,
+        _now: chrono::DateTime<Utc>,
+    ) -> Result<Vec<crate::promote::DemotionProposal>, CronError> {
+        Ok(Vec::new())
+    }
+}
+
 pub async fn run_maintenance_worker(
     config: MaintenanceWorkerConfig,
     cron: &mut MaintenanceCron,
     merge_runner: &mut impl MergePassRunner,
     retirement_runner: &mut impl RetirementPassRunner,
+    promotion_runner: &mut (impl PromotionPassRunner + DemotionPassRunner),
     transcript_drain: Option<&TranscriptQueueDrain>,
 ) -> Result<(), MaintenanceRuntimeError> {
     // Startup catch-up sweep: a laptop that was closed (no hook fired cleanly)
@@ -388,7 +435,7 @@ pub async fn run_maintenance_worker(
     drain_transcripts(transcript_drain).await;
 
     if config.run_once {
-        run_one_tick(cron, merge_runner, retirement_runner).await?;
+        run_one_tick(cron, merge_runner, retirement_runner, promotion_runner).await?;
         return Ok(());
     }
 
@@ -396,7 +443,9 @@ pub async fn run_maintenance_worker(
     ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
     loop {
         ticker.tick().await;
-        if let Err(error) = run_one_tick(cron, merge_runner, retirement_runner).await {
+        if let Err(error) =
+            run_one_tick(cron, merge_runner, retirement_runner, promotion_runner).await
+        {
             error!(
                 reason_code = error.reason_code(),
                 error = %error,
@@ -466,6 +515,9 @@ pub async fn run_maintenance_worker_from_environment() -> Result<(), Maintenance
 
     let scope_roots = build_scope_roots_from_environment();
 
+    probe_global_write_roots(&scope_roots)
+        .map_err(MaintenanceRuntimeError::InvalidConfiguration)?;
+
     let usage_store: Arc<dyn UsageSampleStore> =
         Arc::new(PostgresUsageSampleStore::new(pg_adapter.pool().clone()));
 
@@ -479,13 +531,23 @@ pub async fn run_maintenance_worker_from_environment() -> Result<(), Maintenance
         Arc::clone(&embedding_service),
     );
     let mut retirement_runner = LiveRetirementPassRunner::new_with_usage_store(
-        snapshot_store,
-        scope_roots,
+        snapshot_store.clone(),
+        scope_roots.clone(),
         RetirementConfig::default(),
         &pg_adapter,
         usage_store,
-        embedding_service,
+        Arc::clone(&embedding_service),
     );
+
+    let mut promotion_runner =
+        build_promotion_runner_from_environment(
+            snapshot_store,
+            &scope_roots,
+            &embedding_service,
+            pg_adapter.pool().clone(),
+        )
+        .await
+        .map_err(MaintenanceRuntimeError::InvalidConfiguration)?;
 
     let transcript_drain = build_transcript_drain(&pg_adapter);
 
@@ -494,6 +556,7 @@ pub async fn run_maintenance_worker_from_environment() -> Result<(), Maintenance
         &mut cron,
         &mut merge_runner,
         &mut retirement_runner,
+        &mut promotion_runner,
         transcript_drain.as_ref(),
     )
     .await
@@ -563,7 +626,7 @@ fn build_merge_verifier_from_environment() -> Result<Arc<dyn LlmEquivalenceVerif
             let base_url = env_var("OLLAMA_URL")
                 .map_err(|e| format!("merge verifier (Ollama): {e}"))?;
             let model = std::env::var(MERGE_VERIFIER_MODEL_ENV)
-                .unwrap_or_else(|_| "gemma4:e4b".to_owned());
+                .unwrap_or_else(|_| "gemma4:12b".to_owned());
             let endpoint = format!("{}/api/generate", base_url.trim_end_matches('/'));
             let config = OllamaMergeVerifierConfig {
                 endpoint,
@@ -594,6 +657,164 @@ fn build_merge_verifier_from_environment() -> Result<Arc<dyn LlmEquivalenceVerif
     }
 }
 
+/// Constructs a `LivePromotionPassRunner` from the environment.
+///
+/// Loads skill snapshots from the given scope roots, builds the generality verifier
+/// from `GENERALITY_VERIFIER_PROVIDER`, and derives project-identifier tokens from the
+/// project scope roots (path components). Also wires the recurrence path:
+///
+/// - PG recurrence store from the given pool (always constructed — the store is
+///   cheap and uses the same PG pool already held by the worker).
+/// - Equivalence verifier from `MERGE_VERIFIER_PROVIDER` (same provider routing
+///   as the merge pass; if it fails to build, the recurrence pass degrades loudly
+///   at startup rather than silently skipping).
+/// - Recurrence config from `PROMOTION_RECURRENCE_THRESHOLD` (default N=2).
+///
+/// Returns an error when the verifier cannot be built — there is no silent fallback.
+async fn build_promotion_runner_from_environment(
+    _snapshot_store: PostgresGraphSnapshotStore,
+    scope_roots: &[std::path::PathBuf],
+    embedding_service: &Arc<dyn EmbeddingService>,
+    pg_pool: sqlx::PgPool,
+) -> Result<LivePromotionPassRunner, String> {
+    let generality_verifier = build_generality_verifier_from_environment()?;
+
+    // Build the merge equivalence verifier for the recurrence clustering path.
+    // Same provider routing as the merge pass; fails loud if unavailable.
+    let equivalence_verifier = build_merge_verifier_from_environment()
+        .map_err(|e| format!("recurrence pass equivalence verifier: {e}"))?;
+
+    // Resolve the global scope root — the first root whose path contains "global".
+    let global_scope_root = scope_roots
+        .iter()
+        .find(|p| p.to_str().is_some_and(|s| s.contains("global")))
+        .cloned()
+        .ok_or_else(|| {
+            "no global scope root found in GRAPH_BUILDER_GLOBAL_ROOT — \
+             promotion pass requires a global root to write proposals"
+                .to_owned()
+        })?;
+
+    // Load current skill snapshots so the promotion pass can evaluate them.
+    let skill_snapshots = load_skill_snapshots(scope_roots, embedding_service.as_ref())
+        .await
+        .map_err(|e| format!("promotion runner: failed to load skill snapshots: {e}"))?;
+
+    // Derive project-identifier tokens from the project scope root path components.
+    let project_identifier_tokens = build_project_identifier_tokens(scope_roots);
+
+    // Wire the PG recurrence store using the shared PG pool.
+    let recurrence_store: Arc<dyn PromotionRecurrenceStore> = Arc::new(
+        PostgresPromotionRecurrenceStore::new(pg_pool.clone()),
+    );
+
+    // Wire the PG demotion store using the shared PG pool (todo #182).
+    // The demotion store reads scope='global' skills to check for mis-scoped content.
+    let demotion_store: Arc<dyn infrastructure::ScopeDemotionStore> = Arc::new(
+        infrastructure::PostgresScopeDemotionStore::new(pg_pool),
+    );
+
+    // Read recurrence threshold from env (default N=2).
+    let recurrence_config = RecurrenceConfig::from_env();
+
+    Ok(LivePromotionPassRunner {
+        skill_snapshots,
+        generality_verifier,
+        project_identifier_tokens,
+        promotion_writer_config: PromotionWriterConfig {
+            global_scope_root,
+            pending_directory_name: crate::merge::MergeConfig::default().pending_directory_name,
+        },
+        recurrence_store: Some(recurrence_store),
+        embedding_service: Some(Arc::clone(embedding_service)),
+        equivalence_verifier: Some(equivalence_verifier),
+        recurrence_config,
+        demotion_store: Some(demotion_store),
+    })
+}
+
+/// Extracts project-local identifier tokens from the project scope roots.
+///
+/// Used by the deterministic identifier veto in the promotion intrinsic gate.
+/// Tokens are the non-trivial path components (length > 2, not common OS dirs)
+/// of every root whose path does NOT contain "global".
+fn build_project_identifier_tokens(scope_roots: &[std::path::PathBuf]) -> Vec<String> {
+    use std::path::Component;
+
+    // Common directory names that are not project-specific and must not veto promotion.
+    const SKIP_COMPONENTS: &[&str] = &[
+        "home", "root", "tmp", "var", "usr", "opt", "etc", "srv", "data",
+        "workspace", "work", "projects", "repos", "src", "code",
+    ];
+
+    let mut tokens: Vec<String> = Vec::new();
+    for root in scope_roots {
+        if root.to_str().is_some_and(|s| s.contains("global")) {
+            continue;
+        }
+        for component in root.components() {
+            if let Component::Normal(name) = component {
+                if let Some(name_str) = name.to_str() {
+                    if name_str.len() > 2
+                        && !SKIP_COMPONENTS.contains(&name_str.to_ascii_lowercase().as_str())
+                    {
+                        tokens.push(name_str.to_owned());
+                    }
+                }
+            }
+        }
+    }
+    tokens
+}
+
+/// Builds the generality-verifier LLM provider from `GENERALITY_VERIFIER_PROVIDER`.
+///
+/// Provider routing:
+/// - unset / blank / `"ollama"` → Ollama `/api/generate` using `OLLAMA_URL` + `GENERALITY_VERIFIER_MODEL`
+/// - `"claude"` → Anthropic Messages API using `ANTHROPIC_API_KEY`
+///
+/// Missing required configuration (e.g. `OLLAMA_URL` for Ollama, or `ANTHROPIC_API_KEY`
+/// for Claude) returns `Err` and the promotion pass fails loudly at startup — there is no
+/// silent fallback.
+fn build_generality_verifier_from_environment() -> Result<Arc<dyn SkillGeneralityVerifier>, String>
+{
+    let provider_raw = std::env::var(GENERALITY_VERIFIER_PROVIDER_ENV).unwrap_or_default();
+    match provider_raw.trim().to_ascii_lowercase().as_str() {
+        "" | "ollama" => {
+            let base_url = env_var("OLLAMA_URL")
+                .map_err(|e| format!("generality verifier (Ollama): {e}"))?;
+            let model = std::env::var(GENERALITY_VERIFIER_MODEL_ENV)
+                .unwrap_or_else(|_| "gemma4:12b".to_owned());
+            let endpoint = format!("{}/api/generate", base_url.trim_end_matches('/'));
+            let config = OllamaGeneralityVerifierConfig {
+                endpoint,
+                model,
+                timeout_ms: 60_000,
+            };
+            let verifier = OllamaGeneralityVerifier::from_config(config)
+                .map_err(|e| format!("OllamaGeneralityVerifier init failed: {e}"))?;
+            Ok(Arc::new(verifier) as Arc<dyn SkillGeneralityVerifier>)
+        }
+        "claude" => {
+            let api_key = env_var("ANTHROPIC_API_KEY")
+                .map_err(|e| format!("generality verifier (Claude): {e}"))?;
+            let mut config = ClaudeGeneralityVerifierConfig::default();
+            config.api_key = api_key;
+            if let Ok(base_url) = std::env::var("ANTHROPIC_BASE_URL")
+                && !base_url.trim().is_empty()
+            {
+                config.base_url = base_url;
+            }
+            let verifier = ClaudeGeneralityVerifier::from_config(config)
+                .map_err(|e| format!("ClaudeGeneralityVerifier init failed: {e}"))?;
+            Ok(Arc::new(verifier) as Arc<dyn SkillGeneralityVerifier>)
+        }
+        other => Err(format!(
+            "{GENERALITY_VERIFIER_PROVIDER_ENV} must be one of [ollama, claude], got `{other}`"
+        )),
+    }
+}
+
 fn build_scope_roots_from_environment() -> Vec<std::path::PathBuf> {
     let mut roots = Vec::new();
     if let Ok(project_root) = std::env::var("GRAPH_BUILDER_PROJECT_ROOT") {
@@ -614,6 +835,73 @@ fn build_scope_roots_from_environment() -> Vec<std::path::PathBuf> {
         roots.push(cwd);
     }
     roots
+}
+
+/// Probes each global scope root for writability by creating the directory if
+/// absent and writing+removing a temporary marker file.
+///
+/// Called exclusively by the maintenance-worker at boot, not by mcp-server or
+/// graph-builder (which are read-only consumers of the global scope).
+///
+/// Existence is already validated loudly by `EnvPathGlobalResolver::resolve`
+/// via `fs::canonicalize`. This adds the missing **writability** gate: the
+/// maintenance-worker is the sole writer of global `.pending` promotion drafts,
+/// so a non-writable global root must be surfaced immediately rather than
+/// silently producing zero drafts.
+///
+/// `scope_roots` is the slice returned by `build_scope_roots_from_environment`.
+/// Roots whose paths contain `"global"` are treated as global write roots.
+/// Returns an error string (suitable for `MaintenanceRuntimeError::InvalidConfiguration`)
+/// if any global root cannot be created or is not writable.
+fn probe_global_write_roots(scope_roots: &[std::path::PathBuf]) -> Result<(), String> {
+    for root in scope_roots {
+        // Only probe paths that are part of the global scope. The heuristic
+        // matches the same path-contains("global") logic used by
+        // `load_skill_snapshots` to classify scope type.
+        if !root.to_str().is_some_and(|s| s.contains("global")) {
+            continue;
+        }
+
+        // Create the directory tree if it does not yet exist. This handles the
+        // first-boot case where the host dir was never created but the bind-mount
+        // destination already exists inside the container.
+        std::fs::create_dir_all(root).map_err(|error| {
+            format!(
+                "global skill root '{}' could not be created: {} — \
+                 set SKILL_GLOBAL_HOST_PATH to a writable machine-wide directory \
+                 (e.g. ${{HOME}}/.claude/skills) and ensure it exists on the host",
+                root.display(),
+                error,
+            )
+        })?;
+
+        // Write and immediately remove a temporary marker to confirm writability.
+        // A read-only bind-mount (or a permission-denied directory) will surface
+        // here with a clear message rather than silently writing zero drafts.
+        let marker = root.join(".maintenance_write_probe");
+        std::fs::write(&marker, b"write probe\n").map_err(|error| {
+            format!(
+                "global skill root '{}' is not writable: {} — \
+                 check that the host directory mounted at this path exists and is \
+                 writable, or override SKILL_GLOBAL_HOST_PATH in .env",
+                root.display(),
+                error,
+            )
+        })?;
+        std::fs::remove_file(&marker).map_err(|error| {
+            format!(
+                "global skill root '{}': write probe succeeded but cleanup failed: {}",
+                root.display(),
+                error,
+            )
+        })?;
+
+        info!(
+            root = %root.display(),
+            "global skill root write-probe passed"
+        );
+    }
+    Ok(())
 }
 
 #[derive(Debug, Error)]
@@ -640,9 +928,10 @@ async fn run_one_tick(
     cron: &mut MaintenanceCron,
     merge_runner: &mut impl MergePassRunner,
     retirement_runner: &mut impl RetirementPassRunner,
+    scope_pass_runner: &mut (impl PromotionPassRunner + DemotionPassRunner),
 ) -> Result<(), MaintenanceRuntimeError> {
     let decision = cron
-        .tick(Utc::now(), merge_runner, retirement_runner)
+        .tick(Utc::now(), merge_runner, retirement_runner, scope_pass_runner)
         .await?;
     match decision {
         CronDecision::SkippedNotDue { now, next_due_at } => {
@@ -660,6 +949,8 @@ async fn run_one_tick(
                 completed_at = %outcome.completed_at,
                 merge_proposals = outcome.merge_proposals.len(),
                 retirement_proposals = outcome.retirement_proposals.len(),
+                promotion_proposals = outcome.promotion_proposals.len(),
+                demotion_proposals = outcome.demotion_proposals.len(),
                 "maintenance cron tick executed"
             );
         }
@@ -731,6 +1022,32 @@ mod tests {
         }
     }
 
+    #[derive(Default)]
+    struct CountingPromotionRunner {
+        invocations: usize,
+    }
+
+    #[async_trait]
+    impl PromotionPassRunner for CountingPromotionRunner {
+        async fn run_promotion_pass(
+            &mut self,
+            _now: DateTime<Utc>,
+        ) -> Result<Vec<crate::promote::PromotionProposal>, CronError> {
+            self.invocations += 1;
+            Ok(Vec::new())
+        }
+    }
+
+    #[async_trait]
+    impl DemotionPassRunner for CountingPromotionRunner {
+        async fn run_demotion_pass(
+            &mut self,
+            _now: DateTime<Utc>,
+        ) -> Result<Vec<DemotionProposal>, CronError> {
+            Ok(Vec::new())
+        }
+    }
+
     #[tokio::test]
     async fn run_once_executes_one_maintenance_tick() {
         let config = MaintenanceWorkerConfig {
@@ -740,12 +1057,14 @@ mod tests {
         let mut cron = MaintenanceCron::new(Duration::from_secs(60)).expect("cron init");
         let mut merge_runner = CountingMergeRunner::default();
         let mut retirement_runner = CountingRetirementRunner::default();
+        let mut promotion_runner = CountingPromotionRunner::default();
 
         run_maintenance_worker(
             config,
             &mut cron,
             &mut merge_runner,
             &mut retirement_runner,
+            &mut promotion_runner,
             None,
         )
         .await
@@ -753,6 +1072,7 @@ mod tests {
 
         assert_eq!(merge_runner.invocations, 1);
         assert_eq!(retirement_runner.invocations, 1);
+        assert_eq!(promotion_runner.invocations, 1);
     }
 
     #[test]
@@ -851,5 +1171,73 @@ mod tests {
             std::env::remove_var("MAINTENANCE_TEST_SET_VAR_167");
         }
         assert_eq!(result.unwrap(), "postgres://localhost/test");
+    }
+
+    /// Proves the writability probe passes for a real writable global-named directory.
+    #[test]
+    fn probe_global_write_roots_passes_for_writable_dir() {
+        // Use a unique subdirectory under the system temp dir to avoid collisions
+        // between parallel test runs. The name includes "global" so the probe
+        // classifies it as a global write root.
+        let global_root = std::env::temp_dir()
+            .join(format!("maintenance_probe_test_global_{}", std::process::id()));
+        std::fs::create_dir_all(&global_root).expect("mkdir must succeed");
+
+        let result = probe_global_write_roots(&[global_root.clone()]);
+
+        // Clean up regardless of result.
+        let _ = std::fs::remove_dir_all(&global_root);
+
+        assert!(
+            result.is_ok(),
+            "write probe must pass for a writable directory"
+        );
+    }
+
+    /// Proves the writability probe returns a clear error for a read-only directory.
+    ///
+    /// Uses Unix permission bits to create a non-writable directory. Skipped on
+    /// non-Unix targets where `chmod` semantics differ.
+    #[test]
+    #[cfg(unix)]
+    fn probe_global_write_roots_fails_for_readonly_dir() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let global_root = std::env::temp_dir()
+            .join(format!("maintenance_probe_test_global_ro_{}", std::process::id()));
+        std::fs::create_dir_all(&global_root).expect("mkdir must succeed");
+        // Remove write permission from the directory so the marker write fails.
+        std::fs::set_permissions(&global_root, std::fs::Permissions::from_mode(0o555))
+            .expect("set_permissions must succeed");
+
+        let result = probe_global_write_roots(&[global_root.clone()]);
+
+        // Restore write permission so cleanup does not fail.
+        let _ = std::fs::set_permissions(&global_root, std::fs::Permissions::from_mode(0o755));
+        let _ = std::fs::remove_dir_all(&global_root);
+
+        assert!(
+            result.is_err(),
+            "write probe must fail for a read-only directory"
+        );
+        let error_message = result.unwrap_err();
+        assert!(
+            error_message.contains("not writable"),
+            "error message must explain the directory is not writable, got: {error_message}"
+        );
+    }
+
+    /// Proves the writability probe skips non-global roots (project scope).
+    #[test]
+    fn probe_global_write_roots_skips_project_roots() {
+        // A path without "global" in it should be silently skipped, even if the
+        // directory does not exist — the probe is exclusively for the global write root.
+        let non_existent_project_root =
+            std::path::PathBuf::from("/tmp/project-skills-probe-test-does-not-exist");
+        let result = probe_global_write_roots(&[non_existent_project_root]);
+        assert!(
+            result.is_ok(),
+            "probe must skip non-global roots without error"
+        );
     }
 }

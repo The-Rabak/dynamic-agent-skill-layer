@@ -114,6 +114,8 @@ impl TranscriptSkillExtractionService for InlineSuccessExtractor {
                 conventions: vec!["Publish requested/completed lifecycle events.".to_owned()],
                 assets: vec!["tests/e2e/test_live_data_plane_roundtrip.rs".to_owned()],
                 confidence: 0.95,
+                generality: None,
+                generality_rationale: None,
             }],
         })
     }
@@ -165,8 +167,9 @@ async fn wait_for_published_event_count(
 /// verification doc).
 ///
 /// Kept to a single focused Q&A exchange so CPU inference completes within the 150s
-/// inner timeout. The test pins `gemma4:e4b` with `temperature=0` (greedy/deterministic)
-/// — observed ~34s warm / ~90s cold on the reference host. `granite4:3b` was rejected
+/// inner timeout. The test pins `gemma4:12b` with `temperature=0` (greedy/deterministic).
+/// The prior gemma4:e4b baseline was ~34s warm / ~90s cold on the reference host; 12b is
+/// larger so the generous inner timeout is retained. `granite4:3b` was rejected
 /// because it nondeterministically returns zero candidates even from concrete content.
 fn inline_transcript_jsonl() -> String {
     // Each line is a standalone JSON object with "speaker" and "content" keys.
@@ -649,10 +652,10 @@ async fn extract_session_live_inline_payload_writes_pending_and_emits_completion
     unsafe {
         std::env::set_var("CLAUDE_TRANSCRIPT_ROOT", &sandbox);
         std::env::set_var("EXTRACT_SESSION_PROVIDER", "ollama");
-        // gemma4:e4b is the project-default extraction model (9.6GB). It reliably
-        // extracts candidates from a substantive transcript unlike granite4:3b (2.1GB)
-        // which nondeterministically returns zero candidates even from concrete content.
-        std::env::set_var("OLLAMA_EXTRACTION_MODEL", "gemma4:e4b");
+        // gemma4:12b is the project-default extraction model. It reliably extracts
+        // candidates from a substantive transcript unlike granite4:3b (2.1GB) which
+        // nondeterministically returns zero candidates even from concrete content.
+        std::env::set_var("OLLAMA_EXTRACTION_MODEL", "gemma4:12b");
         // temperature=0: greedy (deterministic) decoding prevents the model from
         // stochastically returning zero candidates on some runs. Live e2e tests must
         // not be flaky due to sampling randomness in an otherwise-healthy extractor.
@@ -703,10 +706,10 @@ async fn extract_session_live_inline_payload_writes_pending_and_emits_completion
     );
 
     // Bounded readiness poll: wait up to 180 s for extraction to complete.
-    // gemma4:e4b on CPU-only hosts takes ~37s warm / ~66s cold start; a dense
-    // multi-turn transcript can push past 120s. 180s = 360 × 500ms matches the
-    // worker pool's outer timeout (DEFAULT_TIMEOUT_SECS=180) so the poll never
-    // outlasts the extraction.
+    // The prior gemma4:e4b baseline was ~37s warm / ~66s cold on CPU-only hosts; the
+    // larger gemma4:12b default is slower, and a dense multi-turn transcript can push
+    // past 120s. 180s = 360 × 500ms matches the worker pool's outer timeout
+    // (DEFAULT_TIMEOUT_SECS=180) so the poll never outlasts the extraction.
     let wait_start = std::time::Instant::now();
     for iteration in 0..360 {
         let completed = tool

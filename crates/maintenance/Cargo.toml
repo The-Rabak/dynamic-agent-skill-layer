@@ -36,6 +36,11 @@ name = "test_cleanup_scan_resilience"
 path = "../../tests/integration/test_cleanup_scan_resilience.rs"
 
 [[test]]
+name = "test_promotion_recurrence"
+path = "../../tests/integration/test_promotion_recurrence.rs"
+required-features = ["test-utils"]
+
+[[test]]
 name = "test_maintenance_e2e"
 path = "../../tests/e2e/test_maintenance_e2e.rs"
 required-features = ["test-utils"]
