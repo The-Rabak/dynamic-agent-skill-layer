@@ -133,15 +133,17 @@ if [[ "${SKIP_INFRA}" -eq 0 ]]; then
       cargo test -p mcp-server --features test-utils --test test_extraction_quality -- --ignored \
         || echo "    [DIAGNOSTIC] extraction-quality reported failures — see tests/e2e/reports/ (non-gating)"
 
-      # GATING: 234-corpus retrieval quality sweep (#210).
-      # This test FAILS the suite if held-out MRR < 0.80, nDCG@3 < 0.80, or
-      # no_match precision < 0.90.  The committed target is FROZEN; do NOT lower
-      # it to force green.  If the target cannot be met, document the gap in
-      # docs/assessments/ and address the next architectural bet.
-      # Requires: live 234-corpus in skill_layer_test + Ollama + claude CLI.
-      echo "==> [GATING] Retrieval quality 234-corpus sweep (MRR/nDCG@3 >= 0.80, no_match precision >= 0.90)"
-      cargo test -p mcp-server --features test-utils \
-        --test test_retrieval_quality_234_sweep -- retrieval_quality_234_corpus_sweep --ignored
+      # Retrieval quality (#210) — drives the REAL running mcp-server over HTTP
+      # (find_skill) + the real claude judge; NO in-process reconstruction.
+      # Asserts the FROZEN target (judge-augmented held-out MRR >= 0.80,
+      # nDCG@3 >= 0.80, no_match precision >= 0.90). It is RED today by a
+      # documented gap (best measured MRR 0.644) — see
+      # docs/assessments/2026-06-07-retrieval-quality-234-corpus-measured.md.
+      # Do NOT lower the target; close the gap with the next architectural bet.
+      # Requires: live 234-corpus + Ollama + the `claude` CLI on PATH.
+      echo "==> [GATING] Retrieval quality on the real 234-corpus (held-out MRR/nDCG@3 >= 0.80, no_match precision >= 0.90)"
+      python3 "${REPO_ROOT}/scripts/retrieval_quality_live.py" --split held_out --gate \
+        --config-label "release-gate"
     fi
 
     echo "==> Tearing down service containers"

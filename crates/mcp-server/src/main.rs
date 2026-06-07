@@ -26,10 +26,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or_else(|_| DEFAULT_MCP_SERVER_ADDR.to_owned())
         .parse()?;
 
-    let retrieval_config = RetrievalConfig {
-        relevance_threshold: RetrievalConfig::relevance_threshold_from_env(),
-        ..RetrievalConfig::default()
-    };
+    // All ranking levers are env-overridable (fail-loud) for operational
+    // retuning without a redeploy and for the #210 retrieval-quality sweep,
+    // which measures each lever on the REAL running server by rebooting it per
+    // config. Absent variables fall back to the calibrated defaults.
+    let retrieval_config = RetrievalConfig::from_env();
     let app = McpServerApp::from_environment(retrieval_config)
         .await
         .map_err(|error| -> Box<dyn std::error::Error> { error.to_string().into() })?

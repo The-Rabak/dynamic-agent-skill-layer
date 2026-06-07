@@ -224,6 +224,67 @@ impl RetrievalConfig {
             Err(_) => RetrievalConfig::default().relevance_threshold,
         }
     }
+
+    /// Builds a config from `default()`, overriding each ranking lever from its
+    /// `RETRIEVAL_*` environment variable when present. Absent → the default.
+    ///
+    /// This is real operational tuning-without-redeploy (the same contract as
+    /// [`relevance_threshold_from_env`]): every override is parsed fail-loud —
+    /// a present-but-unparseable variable panics rather than silently falling
+    /// back, per the no-silent-fallback mandate. The retrieval-quality sweep
+    /// (#210) uses these to measure each lever on the REAL running server by
+    /// rebooting it per config; no in-process reconstruction.
+    ///
+    /// Recognised variables: `RETRIEVAL_ALPHA`, `RETRIEVAL_BETA`,
+    /// `RETRIEVAL_GAMMA`, `RETRIEVAL_LAMBDA`, `RETRIEVAL_MMR_LAMBDA`,
+    /// `RETRIEVAL_CANDIDATE_LIMIT`, `RETRIEVAL_MAX_RESULTS`,
+    /// `RETRIEVAL_MAX_SUBUNITS_PER_SKILL`, `RETRIEVAL_RESCUE_THRESHOLD`,
+    /// `RETRIEVAL_RELEVANCE_THRESHOLD`, `RETRIEVAL_PROJECT_SCOPE_WEIGHT`,
+    /// `RETRIEVAL_GLOBAL_SCOPE_WEIGHT`, `RETRIEVAL_RRF_K`.
+    pub fn from_env() -> Self {
+        let d = RetrievalConfig::default();
+        Self {
+            candidate_limit: env_or("RETRIEVAL_CANDIDATE_LIMIT", d.candidate_limit),
+            max_results: env_or("RETRIEVAL_MAX_RESULTS", d.max_results),
+            max_subunits_per_skill: env_or(
+                "RETRIEVAL_MAX_SUBUNITS_PER_SKILL",
+                d.max_subunits_per_skill,
+            ),
+            rescue_threshold: env_or("RETRIEVAL_RESCUE_THRESHOLD", d.rescue_threshold),
+            relevance_threshold: env_or("RETRIEVAL_RELEVANCE_THRESHOLD", d.relevance_threshold),
+            mmr_lambda: env_or("RETRIEVAL_MMR_LAMBDA", d.mmr_lambda),
+            scoring_weights: ScoringWeights {
+                alpha: env_or("RETRIEVAL_ALPHA", d.scoring_weights.alpha),
+                beta: env_or("RETRIEVAL_BETA", d.scoring_weights.beta),
+                gamma: env_or("RETRIEVAL_GAMMA", d.scoring_weights.gamma),
+                lambda: env_or("RETRIEVAL_LAMBDA", d.scoring_weights.lambda),
+            },
+            project_scope_weight: env_or("RETRIEVAL_PROJECT_SCOPE_WEIGHT", d.project_scope_weight),
+            global_scope_weight: env_or("RETRIEVAL_GLOBAL_SCOPE_WEIGHT", d.global_scope_weight),
+            rrf_k: env_or("RETRIEVAL_RRF_K", d.rrf_k),
+            ..d
+        }
+    }
+}
+
+/// Parses `name` from the environment as `T`, or returns `default` when absent.
+/// Panics fail-loud when the variable is present but unparseable (no silent
+/// fallback) — matching [`RetrievalConfig::relevance_threshold_from_env`].
+fn env_or<T>(name: &str, default: T) -> T
+where
+    T: std::str::FromStr,
+    <T as std::str::FromStr>::Err: std::fmt::Display,
+{
+    match std::env::var(name) {
+        // An empty/whitespace value is treated as absent so a compose
+        // `${VAR:-}` passthrough for an unset override falls back to the default
+        // rather than tripping the fail-loud parse below.
+        Ok(raw) if raw.trim().is_empty() => default,
+        Ok(raw) => raw.trim().parse().unwrap_or_else(|e| {
+            panic!("{name} is set but not a valid value ({e}): {raw:?}")
+        }),
+        Err(_) => default,
+    }
 }
 
 #[async_trait]
