@@ -260,12 +260,21 @@ async fn extract_session_parallel_burst_completes_all_jobs_and_persists_drafts()
 
 fn retrieval_config_stress() -> RetrievalConfig {
     RetrievalConfig {
+        // Stress-shaping only: wider candidate/result fan-out than default to push
+        // the concurrent read path harder. Deliberately raised, not floor-related.
         candidate_limit: 64,
         max_results: 4,
         max_subunits_per_skill: 4,
-        rescue_threshold: 0.05,
-        relevance_threshold: 0.15,
         mmr_lambda: 0.5,
+        // No-match gating (rescue_threshold / relevance_threshold) is INHERITED from
+        // RetrievalConfig::default() — the #192-calibrated production floor (0.450
+        // relevance, 0.15 rescue). The previous override (0.15 / 0.05) sat below
+        // nomic-embed-text's natural noise floor (~0.25-0.40 for unrelated text), so
+        // genuinely off-topic prompts like "what is the capital of france" (live-
+        // measured eq3 ~0.28) were admitted as Ok and the burst test never produced
+        // the NoMatch it asserts. Inheriting the calibrated floor makes the negatives
+        // miss (NoMatch) while the seeded-skill positives (~0.67-0.77) still hit (Ok),
+        // so the test exercises REAL production no-match gating. See todo #204.
         ..RetrievalConfig::default()
     }
 }

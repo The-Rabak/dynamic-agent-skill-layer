@@ -30,7 +30,7 @@ use std::{path::PathBuf, sync::Arc};
 use domain::{EmbeddingService, SessionEvent};
 use infrastructure::{
     LlmEquivalenceVerifier, OllamaEmbeddingConfig, OllamaEmbeddingService, OllamaMergeVerifier,
-    OllamaMergeVerifierConfig,
+    OllamaMergeVerifierConfig, StructuredTextLlm, TextLlmEquivalenceVerifier,
 };
 use session_extractor::{
     ExtractSessionRequest,
@@ -81,7 +81,8 @@ fn sandbox_dir(name: &str) -> PathBuf {
 /// To run: set `OLLAMA_URL` and ensure a compatible model (gemma4:12b or similar)
 /// is available on Ollama.
 #[tokio::test]
-#[ignore = "requires live Ollama (OLLAMA_URL) with gemma4:12b or compatible model"]
+#[ignore = "live: requires OLLAMA_URL (embeddings, always) + an LLM provider — \
+            EXTRACT_SESSION_PROVIDER=claude-code (host claude CLI/Sonnet) or ollama (gemma4:12b)"]
 async fn orchestrated_extraction_live_produces_grounded_pending_drafts() {
     let ollama_url = ollama_base_url()
         .expect("OLLAMA_URL must be set for live orchestrated extraction e2e test");
@@ -102,20 +103,37 @@ async fn orchestrated_extraction_live_produces_grounded_pending_drafts() {
         events.len()
     );
 
-    // ── Build real seams from OLLAMA_URL ─────────────────────────────────────
+    // ── Build provider-aware seams ────────────────────────────────────────────
+    // The four LLM seams (skeleton labeler, synthesis, equivalence verifier, prose
+    // map extractor) follow `EXTRACT_SESSION_PROVIDER`, mirroring exactly what
+    // `SessionExtractor::from_environment` wires for the DEFAULT orchestrated run
+    // path: with `claude-code` the whole reduce-step LLM workload runs on the host
+    // `claude` CLI (Sonnet); otherwise it runs on local Ollama. Embeddings are the
+    // ONE documented exception — ALWAYS local Ollama `nomic-embed-text` — so the
+    // embedder below is provider-invariant and `OLLAMA_URL` is required either way.
     let endpoint = format!("{}/api/generate", ollama_url.trim_end_matches('/'));
+    let provider = std::env::var("EXTRACT_SESSION_PROVIDER").unwrap_or_default();
+    let use_claude_code = matches!(provider.trim(), "claude-code" | "claude-cli");
+    let provider_label = if use_claude_code { "claude-code" } else { "ollama" };
 
-    let labeler: Arc<dyn SkeletonLabeler> = {
-        // Temporarily set OLLAMA_URL so from_environment() can read it.
+    // ONE provider-agnostic text-LLM transport shared by the labeler, synthesis, and
+    // equivalence seams (same as `lib.rs`). claude-code → host `claude` CLI on Sonnet
+    // (model from `EXTRACT_SESSION_MODEL`, default claude-sonnet-4-6); ollama → local.
+    let seam_llm: Arc<dyn StructuredTextLlm> = if use_claude_code {
+        session_extractor::providers::claude_code::build_text_llm()
+            .expect("live: claude-code seam transport must init (claude CLI authenticated)")
+    } else {
+        // Temporarily set OLLAMA_URL / model so the Ollama seam builder can read them.
         unsafe {
             std::env::set_var("OLLAMA_URL", &ollama_url);
-        }
-        unsafe {
             std::env::set_var("ORCHESTRATION_SEAM_MODEL", &seam_model);
         }
-        LlmSkeletonLabeler::from_environment()
-            .expect("live: LlmSkeletonLabeler must init from OLLAMA_URL")
+        session_extractor::seams::ollama_seam_llm()
+            .expect("live: ollama seam transport must init from OLLAMA_URL")
     };
+
+    let labeler: Arc<dyn SkeletonLabeler> = LlmSkeletonLabeler::new(seam_llm.clone());
+    let synthesis: Arc<dyn SynthesisPass> = LlmSynthesisPass::new(seam_llm.clone());
 
     let embedder: Arc<dyn EmbeddingService> = {
         let config = OllamaEmbeddingConfig {
@@ -129,7 +147,11 @@ async fn orchestrated_extraction_live_produces_grounded_pending_drafts() {
         )
     };
 
-    let equivalence_verifier: Arc<dyn LlmEquivalenceVerifier> = {
+    // Equivalence verifier shares the provider seam transport on claude-code (matching
+    // `lib.rs`); on ollama it uses the dedicated OllamaMergeVerifier as before.
+    let equivalence_verifier: Arc<dyn LlmEquivalenceVerifier> = if use_claude_code {
+        Arc::new(TextLlmEquivalenceVerifier::new(seam_llm.clone()))
+    } else {
         let config = OllamaMergeVerifierConfig {
             endpoint: endpoint.clone(),
             model: seam_model.clone(),
@@ -139,13 +161,11 @@ async fn orchestrated_extraction_live_produces_grounded_pending_drafts() {
         )
     };
 
-    let synthesis: Arc<dyn SynthesisPass> = {
-        LlmSynthesisPass::from_environment()
-            .expect("live: LlmSynthesisPass must init from OLLAMA_URL")
-    };
-
-    // Prose extractor (OllamaExtractor) — for prose-fallback map episodes.
-    let prose_extractor: Arc<dyn domain::TranscriptSkillExtractionService> = {
+    // Prose map extractor — claude-code CLI or local Ollama, per provider.
+    let prose_extractor: Arc<dyn domain::TranscriptSkillExtractionService> = if use_claude_code {
+        session_extractor::providers::claude_code::build_extractor()
+            .expect("live: claude-code prose extractor must init")
+    } else {
         use infrastructure::{OllamaExtractionConfig, OllamaExtractor};
         let config = OllamaExtractionConfig {
             endpoint: endpoint.clone(),
@@ -190,7 +210,7 @@ async fn orchestrated_extraction_live_produces_grounded_pending_drafts() {
         synthesis,
         &draft_writer,
         &request,
-        "ollama",
+        provider_label,
     )
     .await
     .expect("live: orchestrated extraction must succeed on the Tokio repro transcript");

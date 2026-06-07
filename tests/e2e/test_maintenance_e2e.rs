@@ -1,6 +1,7 @@
 use std::{
     fs,
     path::PathBuf,
+    sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -10,6 +11,13 @@ use graph_builder::graph::build::build_skills_from_scope_roots;
 use maintenance::{
     MergeProposalWriter, MergeSemanticVerifier, NoopMaintenanceAuditSink, SkillSnapshot,
 };
+
+/// Returns a deterministic embedder suitable for e2e pipeline tests that do not
+/// have a live Ollama instance. This is the same body-inclusive candidate embedder
+/// the production merge pass uses, but backed by deterministic hash-based vectors.
+fn test_candidate_embedder() -> Arc<dyn domain::EmbeddingService> {
+    Arc::new(graph_builder::graph::embeddings::DeterministicEmbeddingService)
+}
 
 fn _requires_docker_services() -> bool {
     std::env::var("SKILL_LAYER_E2E_ENABLED").is_ok_and(|v| v == "1")
@@ -125,17 +133,18 @@ async fn merge_pass_detects_cross_scope_duplicate_skills_finds_merges_and_writes
     assert_eq!(built.len(), 3);
 
     let snapshots = to_snapshots(built);
-    // Use a lower threshold because DeterministicEmbeddingService produces
-    // hash-based embeddings that achieve ~0.70 cosine for near-duplicate skills,
-    // not the 0.85 target for production. This test exercises the pipeline
-    // (build → embed → cosine filter → verifier → proposal write), not threshold tuning.
+    // Use MergeConfig::default() (merge_candidate_threshold = 0.58) with the body-inclusive
+    // merge vector. The two rust-auth skills have near-identical BODIES (shared procedures:
+    // "Validate JWT tokens", "Check scope permissions", "Renew credentials") but divergent
+    // summaries ("authentication and authorization workflow" vs "patterns for distributed
+    // systems"). The body-inclusive vector catches this case — it is merge's OWN dedup
+    // signal, distinct from the summary-only retrieval ℓ₁ vector in graph-builder. The
+    // divergent-summary / shared-body case is exactly what this path must catch.
     let writer = MergeProposalWriter::with_audit_sink(
-        maintenance::MergeConfig {
-            similarity_threshold: 0.65,
-            ..maintenance::MergeConfig::default()
-        },
+        maintenance::MergeConfig::default(),
         AlwaysEquivalentVerifier,
         &NoopMaintenanceAuditSink,
+        test_candidate_embedder(),
     );
 
     let proposals = writer
@@ -209,6 +218,7 @@ async fn merge_pass_no_duplicates_produces_no_proposals() {
         maintenance::MergeConfig::default(),
         AlwaysEquivalentVerifier,
         &NoopMaintenanceAuditSink,
+        test_candidate_embedder(),
     );
 
     let proposals = writer

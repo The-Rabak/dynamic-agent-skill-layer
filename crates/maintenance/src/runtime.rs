@@ -153,11 +153,12 @@ where
         let llm = build_merge_verifier_from_environment()
             .map_err(|e| CronError::MergePass(e.to_string()))?;
         let verifier = LlmMergeSemanticVerifier::new(llm);
-        let config = MergeConfig {
-            similarity_threshold: 0.85,
-            ..MergeConfig::default()
-        };
-        let writer = MergeProposalWriter::with_audit_sink(config, verifier, &self.audit_sink);
+        let writer = MergeProposalWriter::with_audit_sink(
+            MergeConfig::default(),
+            verifier,
+            &self.audit_sink,
+            self.embedding_service.clone(),
+        );
         writer
             .propose(&skills, now)
             .await
