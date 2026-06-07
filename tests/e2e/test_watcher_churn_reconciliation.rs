@@ -12,7 +12,8 @@ use graph_builder::{
     SkillWatcher, WatcherRecovery, watcher::build_snapshot,
 };
 use infrastructure::{
-    EventEnvelope, OutboxVectorStore, PostgresGraphSnapshotStore, RebuildCoordinator,
+    EventEnvelope, OllamaEmbeddingConfig, OllamaEmbeddingService, OutboxVectorStore,
+    PostgresGraphSnapshotStore, RebuildCoordinator,
 };
 use mcp_server::McpServerApp;
 use retrieval::RetrievalConfig;
@@ -22,6 +23,10 @@ mod report;
 
 #[path = "../integration/env_guard.rs"]
 mod env_guard;
+
+fn requires_live_stack() -> bool {
+    std::env::var("SKILL_LAYER_E2E_ENABLED").is_ok_and(|v| v == "1")
+}
 
 fn fixture_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -58,6 +63,12 @@ fn copy_tree(from: &Path, to: &Path) {
     }
 }
 
+/// Validates watcher churn detection and snapshot reconciliation without any live services.
+///
+/// This test covers file-system mechanics only: pending → active renames, modifications,
+/// snapshot-based deletion recovery, and reconciliation idempotency. It does NOT run the
+/// graph rebuild (which requires real embeddings); see
+/// `watcher_churn_graph_rebuild_correctness_with_live_ollama` for the live rebuild assertions.
 #[tokio::test]
 async fn watcher_churn_and_reconciliation_preserve_contracts_under_heavy_file_activity() {
     let sandbox = fresh_sandbox();
@@ -156,13 +167,138 @@ async fn watcher_churn_and_reconciliation_preserve_contracts_under_heavy_file_ac
         "reconciliation should remain idempotent for repeated snapshots"
     );
 
+    fs::remove_dir_all(&sandbox).expect("sandbox should clean up");
+}
+
+/// Proves that `GraphRebuildOrchestrator` correctly rebuilds the skill graph from churn-derived
+/// changes using real Ollama `nomic-embed-text` embeddings. Validates the durable-state
+/// operation sequence, published events, audit trail, and that only active SKILL.md files
+/// appear in the persisted mutation.
+///
+/// Uses `InMemoryDurableGraphState` (no live PG) to isolate the rebuild mechanics from
+/// database concerns. See `watcher_churn_and_reconciliation_converges_to_correct_graph_state_under_live_pg_qdrant`
+/// for the full PG+Qdrant live path.
+///
+/// To run:
+/// ```bash
+/// SKILL_LAYER_E2E_ENABLED=1 OLLAMA_URL=http://127.0.0.1:11444 \
+///   cargo test -p mcp-server --features test-utils --test test_watcher_churn_reconciliation \
+///   watcher_churn_graph_rebuild_correctness_with_live_ollama \
+///   -- --ignored --nocapture
+/// ```
+#[ignore = "live: requires SKILL_LAYER_E2E_ENABLED=1 + OLLAMA_URL (nomic-embed-text)"]
+#[tokio::test]
+async fn watcher_churn_graph_rebuild_correctness_with_live_ollama() {
+    if !requires_live_stack() {
+        eprintln!("SKIP: SKILL_LAYER_E2E_ENABLED != 1");
+        return;
+    }
+
+    let ollama_url = std::env::var("OLLAMA_URL")
+        .expect("OLLAMA_URL must be set for live watcher-rebuild e2e (e.g. http://127.0.0.1:11444)");
+
+    let sandbox = fresh_sandbox();
+    let project_root = sandbox.join("project");
+    let global_root = sandbox.join("global");
+    copy_tree(&fixture_root().join("project"), &project_root);
+    copy_tree(&fixture_root().join("global"), &global_root);
+
+    let scopes = vec![
+        ScopeRoot::new("project", ScopeType::Project, project_root.clone()),
+        ScopeRoot::new("global", ScopeType::Global, global_root.clone()),
+    ];
+
+    let mut watcher = SkillWatcher::new(scopes.clone()).expect("watcher should initialize");
+    let mut observed_changes = watcher
+        .collect_file_changes()
+        .expect("initial scan should succeed");
+
+    let mut active_paths = Vec::new();
+    for i in 0..20usize {
+        let skill_dir = project_root.join(format!("stress-skill-{i:02}"));
+        fs::create_dir_all(&skill_dir).expect("skill directory should be creatable");
+        let pending_path = skill_dir.join("SKILL.md.pending");
+        fs::write(
+            &pending_path,
+            format!(
+                "# stress-skill-{i:02}\n\ntags: stress\n\npending phase for churn scenario {i:02}\n"
+            ),
+        )
+        .expect("pending skill should be writable");
+        observed_changes.extend(
+            watcher
+                .collect_file_changes()
+                .expect("pending create should be detected"),
+        );
+
+        let active_path = skill_dir.join("SKILL.md");
+        fs::rename(&pending_path, &active_path).expect("pending file should rename to active");
+        let rename_changes = watcher
+            .collect_file_changes()
+            .expect("approval rename should be detected");
+        assert!(rename_changes.iter().any(|change| {
+            change.file_path == active_path && change.kind == SkillFileChangeKind::ApprovedRename
+        }));
+        observed_changes.extend(rename_changes);
+
+        if i % 2 == 0 {
+            fs::write(
+                &active_path,
+                format!(
+                    "# stress-skill-{i:02}\n\ntags: stress\n\nupdated content for churn scenario {i:02}\n"
+                ),
+            )
+            .expect("active skill should be writable");
+            let modify_changes = watcher
+                .collect_file_changes()
+                .expect("active modification should be detected");
+            assert!(modify_changes.iter().any(|change| {
+                change.file_path == active_path && change.kind == SkillFileChangeKind::Modified
+            }));
+            observed_changes.extend(modify_changes);
+        }
+
+        active_paths.push(active_path);
+    }
+
+    let previous_snapshot = watcher.current_snapshot();
+    let deleted_paths = active_paths
+        .iter()
+        .take(8)
+        .cloned()
+        .collect::<Vec<PathBuf>>();
+    for deleted in &deleted_paths {
+        fs::remove_file(deleted).expect("active skill should be removable");
+    }
+    let current_snapshot = build_snapshot(&scopes).expect("snapshot should rebuild");
+    let mut recovery = WatcherRecovery::with_generation_window(32);
+    let recovered_first = recovery.reconcile(&previous_snapshot, &current_snapshot, &scopes);
+    let recovered_second = recovery.reconcile(&previous_snapshot, &current_snapshot, &scopes);
+    assert_eq!(
+        recovered_first
+            .iter()
+            .filter(|change| change.kind == SkillFileChangeKind::Deleted)
+            .count(),
+        deleted_paths.len()
+    );
+    assert!(
+        recovered_second.is_empty(),
+        "reconciliation should remain idempotent for repeated snapshots"
+    );
+
     observed_changes.extend(recovered_first);
 
-    let embedder = graph_builder::graph::embeddings::DeterministicEmbeddingService;
+    let embedding_service = OllamaEmbeddingService::from_config(OllamaEmbeddingConfig {
+        base_url: ollama_url,
+        model: "nomic-embed-text".to_owned(),
+        max_concurrency: 4,
+    })
+    .expect("live: OllamaEmbeddingService must init from OLLAMA_URL");
+
     let mut durable_state = InMemoryDurableGraphState::with_synthetic_outbox_drain();
     let mut published_events: Vec<EventEnvelope> = Vec::new();
     let mut orchestrator =
-        GraphRebuildOrchestrator::new(&mut durable_state, &mut published_events, &embedder);
+        GraphRebuildOrchestrator::new(&mut durable_state, &mut published_events, &embedding_service);
     let outcome = orchestrator
         .rebuild_from_changes(&scopes, &observed_changes, &HdbscanConfig::default())
         .await

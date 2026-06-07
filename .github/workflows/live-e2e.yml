@@ -33,10 +33,31 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  no-fakes-guard:
+    name: No-fakes constitution guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Runs scripts/check-no-fakes.sh which enforces:
+      #   • tests/e2e/         — must be completely fake-free (hard-fail on any hit)
+      #   • crates/*/src       — no banned symbols outside #[cfg(test)] (hard-fail)
+      #   • tests/integration/ — no NEW fakes beyond the frozen allowlist (hard-fail)
+      # The integration allowlist may only shrink; adding a new file there fails here.
+      - name: Run no-fakes guard
+        run: |
+          set -euo pipefail
+          chmod +x scripts/check-no-fakes.sh
+          bash scripts/check-no-fakes.sh
+
   live-e2e:
     name: Live E2E suite (docker-compose.test.yml)
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    needs: no-fakes-guard
 
     steps:
       - name: Checkout
