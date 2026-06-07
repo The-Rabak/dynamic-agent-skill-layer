@@ -6,6 +6,12 @@ It watches plain `SKILL.md` files, builds a searchable skill graph, injects task
 
 This is **infrastructure, not an agent.** It does not orchestrate your agent, manage your chat, or hold a conversation. It is a fixed subsystem your harness calls — the way it calls a language server or a vector DB — to give the agent a working procedural memory.
 
+## See it run
+
+`scripts/run-demo.sh` closes the entire loop against the real local stack — seed skills → graph rebuild → `compile_context` → ingest a transcript → drain the queue → land `.pending` drafts — in ~50s with **zero cloud calls**:
+
+![run-demo.sh closing the full read+write loop on the local stack](docs/media/run-demo.gif)
+
 ---
 
 ## Why this exists
@@ -177,13 +183,15 @@ crates/
 ├── retrieval/         # Online read path: dual-scope cosine ranking over the CQRS snapshot, scoring, MMR
 ├── compiler/          # Context compilation: template, rescue, harness-ready formatting
 ├── mcp-server/        # MCP transport: bootstrap, tool handlers, session state, live snapshot refresh
-├── graph-builder/     # Offline write path: filesystem watcher, extraction, embeddings, incremental rebuild
+├── graph-builder/     # Offline write path: watcher, extraction, embeddings, HDBSCAN communities, rebuild
 ├── session-extractor/ # Self-growth: transcript parse, map→reduce orchestration, .pending writer
 ├── maintenance/       # Human-gated policy passes: merge, retire, promote/demote, cron
 └── admin/             # Online admin/debug MCP tools (localhost-only in this phase)
 ```
 
 **Data plane (all local):** PostgreSQL (relational state, durable transcript queue, before/after audit snapshots), Qdrant (vector search), Redis (event streams + graph-refresh signalling), Ollama (`nomic-embed-text` embeddings, and optional local extraction LLM).
+
+**Multi-level skill graph.** Skills (ℓ₁) and their procedure subunits (ℓ₀) are grouped into **communities** on every rebuild — semantically via **HDBSCAN** over the embeddings *and* lexically by tag, with dual membership — and persisted to Postgres. This is the SkillRAE graph structure that retrieval and future cross-skill reasoning ride on, not a flat list.
 
 ### Retrieval model
 
