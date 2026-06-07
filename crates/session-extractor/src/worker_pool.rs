@@ -5,17 +5,11 @@ use crate::{ExtractSessionRequest, ExtractSessionResponse, ExtractionOutcome, Se
 
 const DEFAULT_QUEUE_DEPTH: usize = 64;
 const DEFAULT_MAX_CONCURRENT: usize = 4;
-/// Default outer per-job ceiling for the LEGACY SINGLE-SHOT path only — one bounded
-/// LLM call, where a fixed ceiling with requeue-on-elapsed (#190) is appropriate.
-/// The orchestrated path does NOT use this: it is a churning background worker with
-/// no fixed wall-clock ceiling (`timeout: None`); see the field docs on
-/// [`ExtractionWorkerPoolConfig::timeout`]. Operators may still override either path
-/// via `EXTRACTION_JOB_TIMEOUT_MS` (`0` = no ceiling).
-///
-/// On ceiling hit (single-shot) the job is REQUEUED with bounded backoff (from
-/// `retry_policy`) rather than dropped. Only after `retry_policy.max_attempts`
-/// ceiling hits is `extraction.failed` emitted — no job is discarded for being slow.
-const DEFAULT_TIMEOUT_SECS: u64 = 180;
+// No `DEFAULT_TIMEOUT_SECS`: a background extraction worker has NO fixed
+// wall-clock ceiling by default (`timeout: None`). An operator who wants one
+// sets it explicitly via `EXTRACTION_JOB_TIMEOUT_MS` (`0` = no ceiling) or
+// `with_timeout`; on ceiling hit the job is REQUEUED with bounded backoff (from
+// `retry_policy`) rather than dropped — no job is discarded for being slow.
 
 #[derive(Debug, Clone)]
 pub struct ExtractionWorkerPoolConfig {
@@ -43,9 +37,10 @@ impl Default for ExtractionWorkerPoolConfig {
         Self {
             queue_depth: DEFAULT_QUEUE_DEPTH,
             max_concurrent: DEFAULT_MAX_CONCURRENT,
-            // Default preserves the single-shot ceiling for back-compat; the
-            // orchestrated path opts into `None` at construction time.
-            timeout: Some(std::time::Duration::from_secs(DEFAULT_TIMEOUT_SECS)),
+            // No fixed ceiling by default: a background extraction worker must run
+            // to completion, never be cut off by an arbitrary timer. The legacy
+            // single-shot path opts into a ceiling explicitly via `with_timeout`.
+            timeout: None,
             retry_policy: RetryPolicy::default(),
         }
     }
@@ -318,10 +313,10 @@ mod tests {
         let config = ExtractionWorkerPoolConfig::default();
         assert_eq!(config.queue_depth, 64);
         assert_eq!(config.max_concurrent, 4);
-        // The DEFAULT preserves the bounded single-shot ceiling; the orchestrated
-        // path opts into `None` (no ceiling) at construction. See
-        // `ExtractionWorkerPoolConfig::timeout`.
-        assert_eq!(config.timeout, Some(Duration::from_secs(180)));
+        // The DEFAULT has NO fixed wall-clock ceiling — a background extraction
+        // worker must run to completion. The legacy single-shot path opts into a
+        // ceiling explicitly. See `ExtractionWorkerPoolConfig::timeout`.
+        assert_eq!(config.timeout, None);
     }
 
     #[test]

@@ -372,12 +372,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // here (before the first rebuild cycle runs) ensures Qdrant converges on any
     // partially-vectorized corpus left by a prior crashed or capped rebuild.
     //
-    // Safety bound: 1 000 cycles × 10 claims/cycle = 10 000 events. Fails loud
-    // if anything remains after the bound — a genuinely stuck event must surface.
+    // Drains to completion — no arbitrary cycle cap; it relays until a pass
+    // claims nothing (queue drained). A durable outbox must drain fully.
     {
         let startup_relay = OutboxRelay::new(&outbox_coordinator, &qdrant_adapter, 10, 0)
             .map_err(|error| format!("startup outbox relay: {error}"))?;
-        match startup_relay.relay_all_pending_to_completion(1_000).await {
+        match startup_relay.relay_all_pending_to_completion().await {
             Ok(published) if published > 0 => {
                 tracing::info!(
                     published,

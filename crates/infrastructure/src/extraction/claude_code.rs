@@ -39,9 +39,14 @@ use crate::extraction::{
 //
 // See `extraction/mod.rs` for the full prompt strategy rationale.
 
-/// Default inner timeout (ms). Local CLI + cloud inference; 120s mirrors the
-/// Ollama CPU-inference default and gives the model ample time to respond.
-const DEFAULT_TIMEOUT_MS: u64 = 120_000;
+/// Default inner timeout (ms). `0` means **no timeout** — extraction is a
+/// background churner and must never be cut off by an arbitrary wall-clock timer
+/// (a slow cloud/CPU inference run must run to completion, not be killed and
+/// degraded). This mirrors the Ollama path, which removed all call timeouts and
+/// keeps models warm instead. An explicit positive override
+/// (`CLAUDE_CODE_EXTRACTION_TIMEOUT_MS`) re-enables a bound only if an operator
+/// deliberately asks for one.
+const DEFAULT_TIMEOUT_MS: u64 = 0;
 
 /// JSON-only system-prompt enforcer passed via `--system-prompt` to prevent the
 /// model from prefixing its reply with prose.
@@ -67,8 +72,10 @@ pub struct ClaudeCodeExtractionConfig {
     /// Model identifier to pass with `--model`. Default: `claude-sonnet-4-6`.
     /// Override via `EXTRACT_SESSION_MODEL`.
     pub model: String,
-    /// Inner per-call timeout in milliseconds. Default: 120 000.
-    /// Override via `CLAUDE_CODE_EXTRACTION_TIMEOUT_MS`.
+    /// Inner per-call timeout in milliseconds. Default: `0` = **no timeout**
+    /// (unbounded — the background extraction churner runs to completion).
+    /// Override via `CLAUDE_CODE_EXTRACTION_TIMEOUT_MS` only to deliberately
+    /// impose a bound.
     pub timeout_ms: u64,
     pub max_entries: usize,
     pub max_entry_chars: usize,
@@ -157,14 +164,20 @@ impl TranscriptSkillExtractionService for ClaudeCodeExtractor {
         let transcript_lines = render_sanitized_transcript_lines(transcript);
         let prompt = build_text_json_extraction_prompt(&transcript_lines);
 
-        let candidates = timeout(
-            Duration::from_millis(self.config.timeout_ms),
-            self.invoke_cli(&prompt),
-        )
-        .await
-        .map_err(|_| ExtractionError::Timeout {
-            timeout_ms: self.config.timeout_ms,
-        })??;
+        // timeout_ms == 0 → no bound: a background extraction must run to
+        // completion, never be cut off by an arbitrary timer.
+        let candidates = if self.config.timeout_ms == 0 {
+            self.invoke_cli(&prompt).await?
+        } else {
+            timeout(
+                Duration::from_millis(self.config.timeout_ms),
+                self.invoke_cli(&prompt),
+            )
+            .await
+            .map_err(|_| ExtractionError::Timeout {
+                timeout_ms: self.config.timeout_ms,
+            })??
+        };
 
         Ok(ExtractionResult {
             source_session_id: transcript.session_id.clone(),
@@ -334,14 +347,20 @@ pub async fn claude_code_generate_text(
     config: &ClaudeCodeExtractionConfig,
     prompt: &str,
 ) -> Result<String, ExtractionError> {
-    let stdout = timeout(
-        Duration::from_millis(config.timeout_ms),
-        spawn_claude_stdout(config, prompt),
-    )
-    .await
-    .map_err(|_| ExtractionError::Timeout {
-        timeout_ms: config.timeout_ms,
-    })??;
+    // timeout_ms == 0 → no bound: the seam transport (skeleton/synthesis/
+    // preamble/equivalence) is a background churner and must run to completion.
+    let stdout = if config.timeout_ms == 0 {
+        spawn_claude_stdout(config, prompt).await?
+    } else {
+        timeout(
+            Duration::from_millis(config.timeout_ms),
+            spawn_claude_stdout(config, prompt),
+        )
+        .await
+        .map_err(|_| ExtractionError::Timeout {
+            timeout_ms: config.timeout_ms,
+        })??
+    };
 
     let stripped = extract_result_text(&stdout)?;
     Ok(coerce_to_json_object_string(&stripped))
@@ -491,14 +510,18 @@ mod tests {
     // --- Config and construction tests ---
 
     #[test]
-    fn default_config_uses_sonnet_and_120s_timeout() {
+    fn default_config_uses_sonnet_and_no_timeout() {
         let config = ClaudeCodeExtractionConfig::default();
         assert_eq!(
             config.model, "claude-sonnet-4-6",
             "default model must be claude-sonnet-4-6"
         );
         assert_eq!(config.cli_path, "claude");
-        assert_eq!(config.timeout_ms, 120_000);
+        assert_eq!(
+            config.timeout_ms, 0,
+            "background extraction must default to NO timeout (unbounded) — \
+             a slow inference run must never be cut off by an arbitrary timer"
+        );
     }
 
     #[test]

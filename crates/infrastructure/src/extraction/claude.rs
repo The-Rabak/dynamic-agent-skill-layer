@@ -56,8 +56,9 @@ impl Default for ClaudeExtractionConfig {
             base_url: DEFAULT_ANTHROPIC_BASE_URL.to_owned(),
             api_key: String::new(),
             model: DEFAULT_CLAUDE_MODEL.to_owned(),
-            // Cloud inference is fast; 30s is generous for a single Haiku call.
-            timeout_ms: 30_000,
+            // No timeout by default: a background extraction churner must run to
+            // completion. Set a positive value only to deliberately impose a bound.
+            timeout_ms: 0,
             max_entries: 2_000,
             max_entry_chars: 8_192,
             max_total_chars: 1_000_000,
@@ -236,35 +237,42 @@ impl ClaudeExtractor {
     ) -> Result<Vec<domain::ExtractedSkillCandidate>, ExtractionError> {
         crate::extraction::http::acquire_claude_rate_limit().await?;
 
-        let response: MessagesResponse =
-            timeout(Duration::from_millis(self.config.timeout_ms), async {
-                let http_response = self
-                    .client
-                    .post(&self.messages_endpoint)
-                    .header("x-api-key", &self.config.api_key)
-                    .header("anthropic-version", ANTHROPIC_VERSION)
-                    .header("content-type", "application/json")
-                    .json(request)
-                    .send()
-                    .await
-                    .map_err(|error| ExtractionError::ProviderUnavailable(error.to_string()))?;
+        let send_request = async {
+            let http_response = self
+                .client
+                .post(&self.messages_endpoint)
+                .header("x-api-key", &self.config.api_key)
+                .header("anthropic-version", ANTHROPIC_VERSION)
+                .header("content-type", "application/json")
+                .json(request)
+                .send()
+                .await
+                .map_err(|error| ExtractionError::ProviderUnavailable(error.to_string()))?;
 
-                if http_response.status() != StatusCode::OK {
-                    return Err(ExtractionError::ProviderUnavailable(format!(
-                        "claude extraction endpoint returned {}",
-                        http_response.status()
-                    )));
-                }
+            if http_response.status() != StatusCode::OK {
+                return Err(ExtractionError::ProviderUnavailable(format!(
+                    "claude extraction endpoint returned {}",
+                    http_response.status()
+                )));
+            }
 
-                http_response
-                    .json::<MessagesResponse>()
-                    .await
-                    .map_err(|error| ExtractionError::Unexpected(error.to_string()))
-            })
-            .await
-            .map_err(|_| ExtractionError::Timeout {
-                timeout_ms: self.config.timeout_ms,
-            })??;
+            http_response
+                .json::<MessagesResponse>()
+                .await
+                .map_err(|error| ExtractionError::Unexpected(error.to_string()))
+        };
+
+        // timeout_ms == 0 → no bound: a background extraction churner must run to
+        // completion, never be cut off by an arbitrary timer.
+        let response: MessagesResponse = if self.config.timeout_ms == 0 {
+            send_request.await?
+        } else {
+            timeout(Duration::from_millis(self.config.timeout_ms), send_request)
+                .await
+                .map_err(|_| ExtractionError::Timeout {
+                    timeout_ms: self.config.timeout_ms,
+                })??
+        };
 
         let tool_input = response
             .content

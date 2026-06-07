@@ -311,59 +311,55 @@ where
 
     /// Drains outbox entries scoped to one correlation id before rebuild visibility changes.
     ///
-    /// Loops until `has_pending_for_correlation` returns false or `max_polls` cycles
-    /// are exhausted. `max_polls` must be sized generously relative to the expected
-    /// event count (e.g. `ceil(event_count / claim_limit) + slack`). A value of 1 000
-    /// covers corpora up to ~10 000 events at the default batch size of 10.
-    ///
-    /// Fails loud if the outbox is still non-empty after `max_polls` cycles —
-    /// a stuck event must surface as an explicit error, never silently ignored.
+    /// Drains **until the correlation's outbox is empty** — there is no arbitrary
+    /// poll-cycle cap. A durable queue must be drained to completion, never cut
+    /// off at a magic cycle count (that is the foot-gun that silently lost vectors
+    /// at scale). The loop terminates on exactly two conditions:
+    /// - the outbox is empty → `Ok`;
+    /// - a relay pass claims nothing while events are still pending → a genuine
+    ///   stall (events stuck in retry backoff or unprocessable). That is surfaced
+    ///   LOUDLY as an error rather than spinning forever — a real stuck state,
+    ///   derived from actual progress, not an arbitrary limit.
     pub async fn drain_correlation_outbox<I: OutboxInspection>(
         &self,
         inspection: &I,
         correlation_id: Uuid,
-        max_polls: u32,
     ) -> Result<(), OutboxRelayError> {
-        for _ in 0..max_polls {
+        loop {
             if !inspection
                 .has_pending_for_correlation(correlation_id)
                 .await?
             {
                 return Ok(());
             }
-            let _ = self.relay_once_for_correlation(correlation_id).await?;
+            let report = self.relay_once_for_correlation(correlation_id).await?;
+            if report.claimed == 0 {
+                return Err(OutboxRelayError::InvalidPayload(format!(
+                    "outbox for correlation `{correlation_id}` has pending events that could not \
+                     be claimed or relayed (stuck or in retry backoff); drain made no progress"
+                )));
+            }
         }
-
-        Err(OutboxRelayError::InvalidPayload(format!(
-            "outbox for correlation `{correlation_id}` did not drain after {max_polls} poll cycles"
-        )))
     }
 
     /// Relays all globally pending outbox events, regardless of correlation id.
     ///
     /// Intended for startup self-heal: if a previous rebuild failed mid-drain and
     /// left orphaned `pending` events behind, this method drains them before the
-    /// next rebuild cycle runs. Loops until one `relay_once` pass claims nothing,
-    /// or until `max_polls` safety cycles are exhausted.
+    /// next rebuild cycle runs. Drains **to completion** — no arbitrary cycle cap;
+    /// it loops until a `relay_once` pass claims nothing (queue drained / nothing
+    /// currently claimable).
     ///
     /// Returns the total number of events published across all cycles.
-    /// Fails loud if events remain after `max_polls` — a permanent relay failure
-    /// must surface as an error rather than silently blocking vectorization.
-    pub async fn relay_all_pending_to_completion(
-        &self,
-        max_polls: u32,
-    ) -> Result<usize, OutboxRelayError> {
+    pub async fn relay_all_pending_to_completion(&self) -> Result<usize, OutboxRelayError> {
         let mut total_published: usize = 0;
-        for _ in 0..max_polls {
+        loop {
             let report = self.relay_once().await?;
             total_published = total_published.saturating_add(report.published);
             if report.claimed == 0 {
                 return Ok(total_published);
             }
         }
-        Err(OutboxRelayError::InvalidPayload(format!(
-            "outbox pending events did not fully drain after {max_polls} relay cycles"
-        )))
     }
 }
 

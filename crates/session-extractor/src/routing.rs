@@ -24,22 +24,25 @@
 //!
 //! - Routing NEVER bypasses the extraction pipeline. It only selects provider
 //!   and granularity.
-//! - Local is always the default floor. An unset `EXTRACT_SESSION_ROUTING`
-//!   produces a local-tier decision.
+//! - The default is provider-aware: an unset `EXTRACT_SESSION_ROUTING` selects the
+//!   frontier tier for a frontier provider (claude / claude-code) and the local
+//!   tier for Ollama — a frontier provider is never silently capped at the small
+//!   local window.
 //! - The decision is logged at INFO level so every extraction records which
 //!   provider/tier/granularity handled it (observable).
 //!
 //! ## Environment variables
 //!
 //! - `EXTRACT_SESSION_ROUTING` — routing strategy. Values:
-//!   - unset / blank / `"local"` → local tier (Ollama, small budget, no dual-pass)
+//!   - unset / blank / `"tiered"` → provider-aware tier (frontier provider →
+//!     frontier tier; Ollama → local tier)
+//!   - `"local"` → local tier (explicit override; Ollama, small budget, no dual-pass)
 //!   - `"frontier"` → frontier tier (ClaudeCode, large budget, dual-pass)
-//!   - `"tiered"` → size-threshold routing: sessions above
-//!     `EXTRACT_SESSION_ROUTING_THRESHOLD_TOKENS` (default 50 000 tokens) use
-//!     the frontier tier; sessions at or below it use the local tier. Because
-//!     `SessionExtractor` is constructed once (not per-session), `"tiered"`
-//!     selects the frontier provider; the boundary is enforced by the per-call
-//!     `token_budget` choice, not by provider switching at runtime.
+//!
+//! - `EXTRACT_SESSION_FRONTIER_TOKEN_BUDGET` — frontier-tier segmentation budget
+//!   override (default 200 000, the real frontier context).
+//! - `EXTRACT_SESSION_LOCAL_TOKEN_BUDGET` — local-tier segmentation budget
+//!   override (default 8 192, the real local-model context).
 //!
 //! - `EXTRACT_SESSION_ROUTING_THRESHOLD_TOKENS` — token threshold for the
 //!   `"tiered"` strategy. Default: 50 000.
@@ -64,11 +67,11 @@ pub enum ExtractionRoutingTier {
     Local,
     /// Frontier (Claude Code or Claude API) extraction — opt-in upgrade.
     ///
-    /// `token_budget` = [`FRONTIER_TIER_TOKEN_BUDGET`] (~5× local, 40 960 tokens) —
-    /// a larger-but-bounded chunk, NOT the full 200k window. Big sessions are still
-    /// split into multiple overlapping windows (extracted + deduped, recall-first);
-    /// frontier just uses coarser granularity than local. A single 200k chunk
-    /// satisfices and drops the long tail, so we never do that even for frontier.
+    /// `token_budget` = [`FRONTIER_TIER_TOKEN_BUDGET`] (200 000 tokens, sized to
+    /// the model's real context). Most sessions fit in a single frontier window and
+    /// use the model's actual capacity; genuinely larger sessions are still split
+    /// into multiple overlapping windows (extracted + deduped, recall-first) so the
+    /// long tail is never dropped. Tunable via `EXTRACT_SESSION_FRONTIER_TOKEN_BUDGET`.
     Frontier,
 }
 
@@ -82,23 +85,36 @@ impl ExtractionRoutingTier {
     }
 }
 
-/// Segmentation `token_budget` for the local tier.
+/// Default segmentation `token_budget` for the local tier.
 ///
-/// Conservative 8 192-token budget (same as `OrchestrationConfig::default`),
-/// appropriate for local models with a small context window.
+/// 8 192 tokens — this is the **real context window of the local models**
+/// (nomic/gemma-class) the local tier targets, NOT an arbitrary cap. It is
+/// principled: feeding a local model more than its window is wasted. Override
+/// with `EXTRACT_SESSION_LOCAL_TOKEN_BUDGET` if you run a larger local model.
 pub const LOCAL_TIER_TOKEN_BUDGET: usize = 8_192;
 
-/// Segmentation `token_budget` for the frontier tier.
+/// Default segmentation `token_budget` for the frontier tier.
 ///
-/// ~5× the local tier (40 960 tokens), NOT the full model context window. Even a
-/// frontier model with a 200k window should NOT process a 200k-token transcript in
-/// one shot: a single giant chunk *satisfices* — the model returns the 3–5 headline
-/// skills and drops the long tail (a well-documented map-reduce failure mode). A
-/// larger-but-bounded chunk gives frontier its context advantage (≈5× the local
-/// window) while still splitting big sessions into multiple overlapping windows that
-/// are each extracted and deduped — recall-first. So a 200k session becomes ~5–6
-/// frontier chunks, not one.
-pub const FRONTIER_TIER_TOKEN_BUDGET: usize = 40_960;
+/// 200 000 tokens — sized to the **real frontier model context** (Claude is a
+/// 200k–1M context model). A frontier provider must NEVER be silently squeezed
+/// into a tiny window: most sessions fit in a single frontier window and use the
+/// model's actual capacity. Genuinely larger sessions are still split into
+/// multiple overlapping windows (extracted + deduped, recall-first), so we never
+/// lose the long tail. Tune with `EXTRACT_SESSION_FRONTIER_TOKEN_BUDGET` — set it
+/// smaller only if a measured satisficing/long-tail-drop effect warrants finer
+/// granularity (a Phase-3 quality knob), never as a default foot-gun.
+pub const FRONTIER_TIER_TOKEN_BUDGET: usize = 200_000;
+
+/// Reads a tier token-budget override from `env_var`, falling back to `default`.
+/// A non-integer or absent value uses the default. This keeps the budget a
+/// tunable config value rather than a hardcoded constant.
+fn token_budget_from_env(env_var: &str, default: usize) -> usize {
+    std::env::var(env_var)
+        .ok()
+        .and_then(|raw| raw.trim().parse::<usize>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(default)
+}
 
 /// Default session-size threshold (in estimated tokens) for the `"tiered"`
 /// strategy. Sessions above this are considered large/high-value and route to
@@ -151,15 +167,13 @@ impl RoutingDecision {
 ///
 /// ## Rules
 ///
-/// 1. If `EXTRACT_SESSION_ROUTING` is unset / blank / `"local"` → `Local` tier,
-///    regardless of `provider`. The provider was already selected by
-///    `EXTRACT_SESSION_PROVIDER`; routing does NOT override it but DOES record
-///    the tier for observability.
+/// 1. If `EXTRACT_SESSION_ROUTING` is unset / blank / `"tiered"` → **provider-aware**
+///    tier: `Frontier` for a frontier provider (`Claude` / `ClaudeCode`), `Local`
+///    for `Ollama`. A frontier provider is NEVER silently squeezed into the small
+///    local segmentation window just because the env var was not set.
 /// 2. If `EXTRACT_SESSION_ROUTING=frontier` → `Frontier` tier.
-/// 3. If `EXTRACT_SESSION_ROUTING=tiered` → `Frontier` tier when `provider` is
-///    a frontier variant (`Claude` or `ClaudeCode`); `Local` tier otherwise.
-///    This handles the case where the operator has selected a frontier provider
-///    via `EXTRACT_SESSION_PROVIDER` and wants the routing tier to reflect it.
+/// 3. If `EXTRACT_SESSION_ROUTING=local` → `Local` tier (explicit operator override).
+/// 4. Unknown values → provider-aware tier (with an observable warning).
 ///
 /// In all cases the `provider` field in the returned decision echoes the
 /// already-selected `provider` argument — routing does not switch providers at
@@ -177,31 +191,43 @@ pub fn compute_routing_decision(
     let routing_raw = std::env::var("EXTRACT_SESSION_ROUTING").unwrap_or_default();
     let routing_str = routing_raw.trim().to_ascii_lowercase();
 
-    let tier = match routing_str.as_str() {
-        "" | "local" => ExtractionRoutingTier::Local,
-        "frontier" => ExtractionRoutingTier::Frontier,
-        "tiered" => {
-            // "tiered" defers to the already-selected provider: if the operator
-            // chose a frontier provider, honour the frontier tier.
-            match provider {
-                ExtractionProvider::Claude | ExtractionProvider::ClaudeCode => {
-                    ExtractionRoutingTier::Frontier
-                }
-                ExtractionProvider::Ollama => ExtractionRoutingTier::Local,
-            }
+    // Unset/blank defaults to provider-aware ("tiered") routing — NOT a blanket
+    // local tier. A frontier provider (claude / claude-code) must never be
+    // silently capped at the small local segmentation window just because the
+    // routing env var wasn't set (the live compose never sets it). This is the
+    // fix for claude-code running with an 8 192-token budget despite being a
+    // 200k+ context model. Explicit "local" still forces the local tier.
+    let provider_aware_tier = match provider {
+        ExtractionProvider::Claude | ExtractionProvider::ClaudeCode => {
+            ExtractionRoutingTier::Frontier
         }
+        ExtractionProvider::Ollama => ExtractionRoutingTier::Local,
+    };
+    let tier = match routing_str.as_str() {
+        "" | "tiered" => provider_aware_tier,
+        "local" => ExtractionRoutingTier::Local,
+        "frontier" => ExtractionRoutingTier::Frontier,
         other => {
             tracing::warn!(
                 routing_value = other,
-                "unknown EXTRACT_SESSION_ROUTING value; defaulting to 'local' tier"
+                "unknown EXTRACT_SESSION_ROUTING value; defaulting to provider-aware tier"
             );
-            ExtractionRoutingTier::Local
+            provider_aware_tier
         }
     };
 
     let (token_budget, dual_pass_enabled) = match tier {
-        ExtractionRoutingTier::Frontier => (FRONTIER_TIER_TOKEN_BUDGET, true),
-        ExtractionRoutingTier::Local => (LOCAL_TIER_TOKEN_BUDGET, false),
+        ExtractionRoutingTier::Frontier => (
+            token_budget_from_env(
+                "EXTRACT_SESSION_FRONTIER_TOKEN_BUDGET",
+                FRONTIER_TIER_TOKEN_BUDGET,
+            ),
+            true,
+        ),
+        ExtractionRoutingTier::Local => (
+            token_budget_from_env("EXTRACT_SESSION_LOCAL_TOKEN_BUDGET", LOCAL_TIER_TOKEN_BUDGET),
+            false,
+        ),
     };
 
     let decision = RoutingDecision {
@@ -278,18 +304,17 @@ mod tests {
     /// - user_msg content: 100 chars → 25 tokens
     /// - tool_call name (4) + input_json (200 chars) → 51 tokens
     /// - tool_result output: 100 chars → 25 tokens
-    /// - Per block: ~101 tokens
-    /// - 300 blocks: ~30 300 tokens — comfortably exceeds local budget (8 192),
-    ///   fits frontier budget (200 000).
+    /// - Per iteration (3 events): ~101 tokens
     fn large_session_events() -> Vec<SessionEvent> {
         let long_content = "a".repeat(100);
         let long_input = "b".repeat(200);
         let long_output = "c".repeat(100);
-        // 700 iterations (~2 100 events, ~76k token estimate) — deliberately LARGER
-        // than FRONTIER_TIER_TOKEN_BUDGET (40 960) so the frontier tier must ALSO
-        // chunk it into multiple windows (never one giant 200k-style chunk), while
-        // local chunks it more finely. Proves bounded-5x frontier granularity.
-        (0..700_usize)
+        // 2 400 iterations (~7 200 events, ~240k token estimate) — deliberately LARGER
+        // than FRONTIER_TIER_TOKEN_BUDGET (200 000) so the frontier tier must ALSO
+        // chunk it into multiple overlapping windows (never one giant single chunk),
+        // while local chunks it far more finely. Proves both tiers use the same
+        // segmentation pipeline, frontier coarser than local.
+        (0..2_400_usize)
             .flat_map(|i| {
                 vec![
                     user_msg(i * 3, &format!("{long_content} task-{i:04}")),
@@ -415,8 +440,8 @@ mod tests {
     // ── granularity parity tests ──────────────────────────────────────────────
 
     /// Proves that:
-    /// - A frontier-tier token budget (40 960, ~5× local) → MULTIPLE windows for a
-    ///   large session (> budget): frontier never one-shots a big transcript.
+    /// - A frontier-tier token budget (200 000) → MULTIPLE windows for a session
+    ///   larger than the budget: frontier never one-shots an over-budget transcript.
     /// - A local-tier token budget (8 192) → even FINER granularity for the SAME
     ///   session. Same `segment_session` code path, only the budget differs.
     ///

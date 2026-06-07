@@ -487,10 +487,10 @@ impl SessionExtractor {
         // rule we do NOT impose a hardcoded wall-clock timeout on it — a fixed cap
         // only requeue-thrashes a slow-but-progressing job, never makes it finish.
         // Its liveness comes from each provider call's own per-request timeout plus
-        // the streaming idle-watchdog (#197). So: orchestrated → no ceiling (None)
-        // unless an operator explicitly opts into one via `EXTRACTION_JOB_TIMEOUT_MS`
-        // (set `0` to force "no ceiling" even on the single-shot path). The legacy
-        // single-shot path keeps its bounded one-call default.
+        // the streaming idle-watchdog (#197). So: BOTH paths default to no ceiling
+        // (None) — a background extraction worker is never cut off by an arbitrary
+        // timer — unless an operator explicitly opts into one via
+        // `EXTRACTION_JOB_TIMEOUT_MS` (`0` also forces "no ceiling").
         let timeout_override: Option<Option<std::time::Duration>> =
             match std::env::var("EXTRACTION_JOB_TIMEOUT_MS") {
                 Ok(raw) => {

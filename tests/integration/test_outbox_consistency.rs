@@ -438,7 +438,7 @@ async fn drain_correlation_outbox_completes_with_unrelated_backlog_present() {
         .expect("relay should initialize for valid contract");
 
     relay
-        .drain_correlation_outbox(&coordinator, target_correlation_id, 2)
+        .drain_correlation_outbox(&coordinator, target_correlation_id)
         .await
         .expect("drain should complete for target correlation");
 
@@ -840,18 +840,24 @@ async fn graph_rebuilt_fails_when_outbox_drain_reports_pending_items() {
     fs::remove_dir_all(&sandbox).expect("sandbox should clean up");
 }
 
-/// Proves the root cause of the 234-skill corpus failure: `drain_correlation_outbox`
-/// with `max_polls=5` and `claim_limit=10` errors before draining 60 events.
-///
-/// 60 events / 10 per cycle = 6 required cycles. With the old cap of 5, the drain
-/// stops at 50 events and returns an error, leaving 10 events stuck `pending`.
-/// This test documents the failure mode — it must always pass (the error is expected).
+/// Stall guard: the drain has NO arbitrary poll cap — it drains until empty.
+/// The only non-success exit is a genuine stall: a relay pass that claims nothing
+/// while events are still pending (e.g. all of them sitting in retry backoff with
+/// a future `available_at`). That must fail LOUD with a "made no progress" error,
+/// derived from real progress — never spin forever and never silently give up at
+/// an arbitrary cycle count. Regression for the no-arbitrary-limits mandate.
 #[tokio::test]
-async fn drain_correlation_outbox_errors_when_poll_cap_exhausted_before_empty() {
+async fn drain_correlation_outbox_fails_loud_on_genuine_stall_no_progress() {
     let target_correlation_id = Uuid::now_v7();
-    let seed_events: Vec<InMemoryOutboxEvent> = (0..60)
+    // Seed pending events whose `available_at` is in the future: they ARE pending
+    // (has_pending → true) but cannot be claimed yet (claim filters available_at
+    // <= now). So the very first relay pass claims 0 while pending remains → stall.
+    let seed_events: Vec<InMemoryOutboxEvent> = (0..3)
         .map(|i| {
-            seed_pending_vector_event(target_correlation_id, &format!("cap-exceeded-hash-{i}"))
+            let mut event =
+                seed_pending_vector_event(target_correlation_id, &format!("stalled-hash-{i}"));
+            event.available_at = Utc::now() + Duration::hours(1);
+            event
         })
         .collect();
     let coordinator = InMemoryOutboxCoordinator::new(seed_events);
@@ -860,35 +866,33 @@ async fn drain_correlation_outbox_errors_when_poll_cap_exhausted_before_empty() 
         .expect("relay should initialize for valid contract");
 
     let result = relay
-        .drain_correlation_outbox(&coordinator, target_correlation_id, 5)
+        .drain_correlation_outbox(&coordinator, target_correlation_id)
         .await;
 
     assert!(
         result.is_err(),
-        "drain must error when max_polls=5 is exhausted before 60 events drain (needs 6 cycles)"
+        "drain must fail loud when pending events cannot be claimed (genuine stall)"
     );
     let error_text = result.unwrap_err().to_string();
     assert!(
-        error_text.contains("did not drain after 5 poll cycles"),
-        "error must name the exhausted poll cap: {error_text}"
+        error_text.contains("made no progress"),
+        "error must describe a genuine stall, not an arbitrary cap: {error_text}"
     );
-    // Confirm 10 events are still stuck pending — exactly the last batch.
     assert_eq!(
         coordinator.pending_count_for_correlation(target_correlation_id),
-        10,
-        "with max_polls=5 at batch=10, the last 10 of 60 events remain stuck pending"
+        3,
+        "the unclaimable pending events remain pending and are surfaced loudly"
     );
 }
 
-/// Proves that `drain_correlation_outbox` completes fully when the event count exceeds
-/// one batch, requiring more than the old hardcoded cap of 5 poll cycles.
+/// Proves that `drain_correlation_outbox` drains a backlog far larger than one
+/// claim batch — to completion, with NO arbitrary poll cap.
 ///
-/// This is a direct regression guard for the 234-skill corpus failure where
-/// `max_polls=5` at batch=10 only reached 50 events and errored the rebuild.
-/// Here we seed 60 events for one correlation at batch=10 → 6 required cycles.
-/// Passing `max_polls=1_000` must drain all 60 and succeed.
+/// Direct regression guard for the 234-skill corpus failure where a hardcoded cap
+/// of 5 at batch=10 reached only 50 events and errored the rebuild. Here 60 events
+/// at batch=10 need 6 cycles; the drain must keep going until the outbox is empty.
 #[tokio::test]
-async fn drain_correlation_outbox_completes_fully_across_more_than_five_poll_cycles() {
+async fn drain_correlation_outbox_completes_fully_across_many_poll_cycles() {
     let target_correlation_id = Uuid::now_v7();
     // 60 events at claim_limit=10 requires exactly 6 poll cycles to drain —
     // the old cap of 5 would have errored at event 50, leaving 10 stuck.
@@ -906,7 +910,7 @@ async fn drain_correlation_outbox_completes_fully_across_more_than_five_poll_cyc
         .expect("relay should initialize for valid contract");
 
     relay
-        .drain_correlation_outbox(&coordinator, target_correlation_id, 1_000)
+        .drain_correlation_outbox(&coordinator, target_correlation_id)
         .await
         .expect("drain must complete for 60 events across 6 poll cycles");
 
@@ -951,7 +955,7 @@ async fn relay_all_pending_to_completion_drains_orphaned_events_from_multiple_co
         .expect("relay should initialize for valid contract");
 
     let total_published = relay
-        .relay_all_pending_to_completion(1_000)
+        .relay_all_pending_to_completion()
         .await
         .expect("relay must drain all orphaned pending events");
 

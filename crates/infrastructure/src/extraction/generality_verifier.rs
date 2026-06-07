@@ -204,8 +204,9 @@ impl Default for ClaudeGeneralityVerifierConfig {
             base_url: DEFAULT_ANTHROPIC_BASE_URL.to_owned(),
             api_key: String::new(),
             model: DEFAULT_CLAUDE_MODEL.to_owned(),
-            // Cloud inference is fast; 30s is generous.
-            timeout_ms: 30_000,
+            // No timeout by default: a background maintenance churner must run to
+            // completion. Set a positive value only to deliberately impose a bound.
+            timeout_ms: 0,
         }
     }
 }
@@ -356,35 +357,42 @@ impl SkillGeneralityVerifier for ClaudeGeneralityVerifier {
             },
         };
 
-        let response: GeneralityMessagesResponse =
-            timeout(Duration::from_millis(self.config.timeout_ms), async {
-                let http_response = self
-                    .client
-                    .post(&self.messages_endpoint)
-                    .header("x-api-key", &self.config.api_key)
-                    .header("anthropic-version", ANTHROPIC_VERSION)
-                    .header("content-type", "application/json")
-                    .json(&request)
-                    .send()
-                    .await
-                    .map_err(|error| ExtractionError::ProviderUnavailable(error.to_string()))?;
+        let send_request = async {
+            let http_response = self
+                .client
+                .post(&self.messages_endpoint)
+                .header("x-api-key", &self.config.api_key)
+                .header("anthropic-version", ANTHROPIC_VERSION)
+                .header("content-type", "application/json")
+                .json(&request)
+                .send()
+                .await
+                .map_err(|error| ExtractionError::ProviderUnavailable(error.to_string()))?;
 
-                if http_response.status() != StatusCode::OK {
-                    return Err(ExtractionError::ProviderUnavailable(format!(
-                        "claude generality-verifier endpoint returned {}",
-                        http_response.status()
-                    )));
-                }
+            if http_response.status() != StatusCode::OK {
+                return Err(ExtractionError::ProviderUnavailable(format!(
+                    "claude generality-verifier endpoint returned {}",
+                    http_response.status()
+                )));
+            }
 
-                http_response
-                    .json::<GeneralityMessagesResponse>()
-                    .await
-                    .map_err(|error| ExtractionError::Unexpected(error.to_string()))
-            })
-            .await
-            .map_err(|_| ExtractionError::Timeout {
-                timeout_ms: self.config.timeout_ms,
-            })??;
+            http_response
+                .json::<GeneralityMessagesResponse>()
+                .await
+                .map_err(|error| ExtractionError::Unexpected(error.to_string()))
+        };
+
+        // timeout_ms == 0 → no bound: a background maintenance churner must run to
+        // completion, never be cut off by an arbitrary timer.
+        let response: GeneralityMessagesResponse = if self.config.timeout_ms == 0 {
+            send_request.await?
+        } else {
+            timeout(Duration::from_millis(self.config.timeout_ms), send_request)
+                .await
+                .map_err(|_| ExtractionError::Timeout {
+                    timeout_ms: self.config.timeout_ms,
+                })??
+        };
 
         let tool_input = response
             .content

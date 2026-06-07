@@ -375,9 +375,9 @@ async fn drain_orphaned_outbox_pending_reaches_qdrant_point_parity() {
     println!("pending outbox events before drain: {before_count}");
 
     let published = relay
-        .relay_all_pending_to_completion(1_000)
+        .relay_all_pending_to_completion()
         .await
-        .expect("orphaned pending drain must succeed with 1_000 poll cap");
+        .expect("orphaned pending drain must drain to completion (no arbitrary cap)");
     println!("drained {published} events to Qdrant");
 
     let after_pending: i64 =
