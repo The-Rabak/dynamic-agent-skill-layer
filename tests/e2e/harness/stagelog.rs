@@ -1,27 +1,45 @@
 /// Per-run, per-stage durable file logger for the real-infra E2E harness.
 ///
-/// Every test run creates a directory under `tests/e2e/reports/<run_id>/<scenario>/`.
+/// Every test run creates a directory under the run-scoped report root.
+/// When the `E2E_RUN_REPORT_DIR` environment variable is set (always the case
+/// when invoked through `scripts/run-e2e-tests.sh`), all output lands under
+/// that directory, making each run's artifacts fully isolated from all prior
+/// runs.  When the variable is absent (a developer running a single
+/// `cargo test … -- --ignored` directly), output falls back to the canonical
+/// `tests/e2e/reports/` directory so the dev loop is not broken.
+///
 /// For each pipeline stage, `log_stage` writes:
 ///   - `NN-<name>.json` — full input, output, infra snapshot, and RFC3339 timestamp.
 ///   - appends a human-readable section to `<scenario>.md`.
 ///
 /// At the end of a run, `emit_report` serialises an `E2EReport` (the existing
-/// `report.rs` schema) to `tests/e2e/reports/<scenario>__<YYYYMMDDHHMMSS>.json`
-/// and also links the per-stage tree under `<run_id>/`.
+/// `report.rs` schema) to `<run_report_root>/<scenario>__<test_id>.json`
+/// (the flat file the aggregator globs) and also copies it to
+/// `<run_report_root>/<run_id>/report.json` for tree navigation.
 ///
-/// # Path layout
+/// # Path layout — with `E2E_RUN_REPORT_DIR` set (wrapper script always sets this)
 /// ```
-/// tests/e2e/reports/
-///   <run_id>/                          ← per-run tree
+/// $E2E_RUN_REPORT_DIR/
+///   <run_id>/
 ///     <scenario>/
 ///       00-ingest_input.json
 ///       01-approval.json
 ///       ...
 ///       <scenario>.md
-///   <scenario>__<YYYYMMDDHHMMSS>.json  ← E2EReport for the aggregator
+///     report.json              ← per-run copy for tree navigation
+///   <scenario>__<test_id>.json ← flat file for the aggregator glob
+/// ```
+///
+/// # Fallback layout — no `E2E_RUN_REPORT_DIR` (developer direct cargo test)
+/// ```
+/// tests/e2e/reports/
+///   <run_id>/
+///     <scenario>/…
+///     report.json
+///   <scenario>__<test_id>.json
 /// ```
 use std::{
-    fs,
+    env, fs,
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
 };
@@ -29,9 +47,7 @@ use std::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use super::super::report::{
-    ContractAssertion, ReportBuilder, ReportedAction,
-};
+use super::super::report::{ContractAssertion, ReportBuilder, ReportedAction};
 
 /// A single stage log entry persisted to disk.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -54,13 +70,16 @@ pub struct StageEntry {
 /// [`StageLogger::log_stage`] for each pipeline stage.  At the end of the test,
 /// call [`StageLogger::emit_report`] to write the summary `E2EReport` JSON.
 pub struct StageLogger {
-    /// Root `tests/e2e/reports/` directory.
-    reports_root: PathBuf,
+    /// Root directory where flat `<scenario>__<test_id>.json` reports are written.
+    ///
+    /// Set to `E2E_RUN_REPORT_DIR` when that variable is present; otherwise
+    /// falls back to the canonical `tests/e2e/reports/` tree.
+    run_report_root: PathBuf,
     /// Unique identifier for this run (e.g. `golden-path-20260604-123456789`).
     run_id: String,
     /// Scenario name (e.g. `"golden-path"`).
     scenario: String,
-    /// Per-stage directory: `reports/<run_id>/<scenario>/`.
+    /// Per-stage directory: `<run_report_root>/<run_id>/<scenario>/`.
     stage_dir: PathBuf,
     /// Counter for naming stage files `00-`, `01-`, etc.
     stage_counter: Arc<Mutex<usize>>,
@@ -71,26 +90,35 @@ pub struct StageLogger {
 }
 
 impl StageLogger {
-    /// Creates a new logger for `scenario`, rooted under the canonical
-    /// `tests/e2e/reports/` directory (resolved relative to `CARGO_MANIFEST_DIR`).
+    /// Creates a new logger for `scenario`.
     ///
-    /// The `<run_id>/<scenario>/` directory tree is created immediately.
+    /// When `E2E_RUN_REPORT_DIR` is set in the process environment, all output
+    /// is written under that directory.  The variable must point to a path that
+    /// either already exists or can be created; if the directory cannot be
+    /// created the process panics immediately with a clear message (fail-loud,
+    /// not silent fallback).
+    ///
+    /// When `E2E_RUN_REPORT_DIR` is absent the logger falls back to the
+    /// canonical `tests/e2e/reports/` directory resolved via `CARGO_MANIFEST_DIR`.
+    ///
+    /// The `<run_id>/<scenario>/` directory tree is created before this function
+    /// returns.
     pub fn new(scenario: &str) -> Self {
-        let reports_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../tests/e2e/reports")
-            .canonicalize()
-            .unwrap_or_else(|_| {
-                PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/e2e/reports")
-            });
+        let run_report_root = Self::resolve_run_report_root();
 
         let now = chrono::Utc::now();
         let run_id = format!("{scenario}-{}", now.format("%Y%m%d-%H%M%S-%3f"));
 
-        let stage_dir = reports_root.join(&run_id).join(scenario);
-        fs::create_dir_all(&stage_dir).expect("StageLogger: should create stage directory");
+        let stage_dir = run_report_root.join(&run_id).join(scenario);
+        fs::create_dir_all(&stage_dir).unwrap_or_else(|e| {
+            panic!(
+                "StageLogger: cannot create stage directory {stage_dir:?}: {e}. \
+                 Check that E2E_RUN_REPORT_DIR (if set) is writable.",
+            );
+        });
 
         Self {
-            reports_root,
+            run_report_root,
             run_id,
             scenario: scenario.to_owned(),
             stage_dir,
@@ -98,6 +126,49 @@ impl StageLogger {
             report_builder: Arc::new(Mutex::new(ReportBuilder::new(scenario))),
             started_at: std::time::Instant::now(),
         }
+    }
+
+    /// Resolves the directory under which all flat `*.json` report files are
+    /// written for this run.
+    ///
+    /// Priority:
+    /// 1. `E2E_RUN_REPORT_DIR` (absolute or repo-relative) — set by the
+    ///    wrapper script to keep each run's artifacts isolated.
+    /// 2. `CARGO_MANIFEST_DIR/../../tests/e2e/reports` — the historical
+    ///    fallback for bare `cargo test` invocations.
+    ///
+    /// Panics loudly if `E2E_RUN_REPORT_DIR` is set but its value cannot be
+    /// resolved to a creatable directory — a malformed variable must not
+    /// silently fall through to the broad shared directory.
+    fn resolve_run_report_root() -> PathBuf {
+        if let Ok(raw) = env::var("E2E_RUN_REPORT_DIR") {
+            let path = PathBuf::from(&raw);
+            // Accept absolute paths directly; make repo-relative paths absolute.
+            let resolved = if path.is_absolute() {
+                path
+            } else {
+                // Resolve relative to the current working directory, which for
+                // `cargo test` is the workspace root.
+                env::current_dir()
+                    .expect("StageLogger: cannot determine cwd for E2E_RUN_REPORT_DIR resolution")
+                    .join(path)
+            };
+            fs::create_dir_all(&resolved).unwrap_or_else(|e| {
+                panic!(
+                    "StageLogger: E2E_RUN_REPORT_DIR={raw:?} exists but cannot be created: {e}. \
+                     Fix the path or directory permissions before running E2E tests."
+                );
+            });
+            return resolved;
+        }
+
+        // Fallback: canonical reports dir relative to the crate that owns the test.
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tests/e2e/reports")
+            .canonicalize()
+            .unwrap_or_else(|_| {
+                PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/e2e/reports")
+            })
     }
 
     /// Logs a single pipeline stage to disk.
@@ -186,9 +257,13 @@ impl StageLogger {
     }
 
     /// Builds the `E2EReport` and writes it to
-    /// `tests/e2e/reports/<scenario>__<YYYYMMDDHHMMSS>.json`.
+    /// `<run_report_root>/<scenario>__<test_id>.json`.
     ///
-    /// Returns the path to the written report file.
+    /// The flat file path is what the aggregator glob (`$E2E_RUN_REPORT_DIR/**/*.json`)
+    /// picks up.  A copy is also written to `<run_report_root>/<run_id>/report.json`
+    /// for per-run tree navigation.
+    ///
+    /// Returns the path to the flat report file.
     pub fn emit_report(self) -> PathBuf {
         let builder = Arc::try_unwrap(self.report_builder)
             .expect("StageLogger: should be the sole owner of report_builder at emit time")
@@ -197,7 +272,7 @@ impl StageLogger {
 
         let report = builder.build();
         let report_filename = format!("{}__{}.json", self.scenario, report.test_id);
-        let report_path = self.reports_root.join(&report_filename);
+        let report_path = self.run_report_root.join(&report_filename);
 
         let report_json =
             serde_json::to_string_pretty(&report).expect("E2EReport should serialize");
@@ -205,14 +280,13 @@ impl StageLogger {
             eprintln!("StageLogger: failed to write report {report_path:?}: {e}");
         });
 
-        // Write a symlink-style reference in the run_id directory pointing to the
-        // flat report (informational only; not all platforms support symlinks).
-        let run_report_path = self
+        // Write a copy in the run_id directory for tree navigation.
+        let run_report_copy = self
             .stage_dir
             .parent()
-            .unwrap_or(&self.reports_root)
+            .unwrap_or(&self.run_report_root)
             .join("report.json");
-        fs::write(&run_report_path, &report_json).unwrap_or_default();
+        fs::write(&run_report_copy, &report_json).unwrap_or_default();
 
         report_path
     }

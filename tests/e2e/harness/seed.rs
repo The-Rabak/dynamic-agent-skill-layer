@@ -163,3 +163,46 @@ pub fn seed_and_approve(scope: SkillScope, slug: &str, skill_md: &str) -> Result
     write_pending(scope, slug, skill_md)?;
     approve(scope, slug)
 }
+
+/// Lists all slug directories currently present in the named volume.
+///
+/// Runs a transient alpine sidecar and executes `ls` on the mount root.
+/// Returns each directory name as a `String`.  Directories whose names
+/// end with `.pending` are NOT excluded — the caller is responsible for
+/// filtering if needed.
+///
+/// Returns `Err` when the sidecar command fails or the output is not
+/// valid UTF-8.
+pub fn list(scope: SkillScope) -> Result<Vec<String>, String> {
+    let volume = scope.volume_name();
+    let mount = scope.mount_path();
+
+    // `ls -1` outputs one entry per line; non-zero exit (empty dir) still
+    // succeeds — so we interpret an empty stdout as an empty list.
+    let script = format!("ls -1 {mount} 2>/dev/null || true");
+
+    let output = Command::new("docker")
+        .args(["run", "--rm"])
+        .arg(format!("-v={volume}:{mount}"))
+        .args(["alpine:3.23.4", "sh", "-c", &script])
+        .output()
+        .map_err(|e| format!("failed to spawn sidecar for list({scope:?}): {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!(
+            "sidecar list({scope:?}) failed ({})\nstderr: {stderr}",
+            output.status
+        ));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let slugs = stdout
+        .lines()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_owned)
+        .collect();
+
+    Ok(slugs)
+}

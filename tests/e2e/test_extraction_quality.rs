@@ -47,6 +47,9 @@ use session_extractor::SessionExtractor;
 #[path = "report.rs"]
 mod report;
 
+#[path = "safety_classifier.rs"]
+mod safety_classifier;
+
 #[path = "../integration/env_guard.rs"]
 mod env_guard;
 
@@ -81,27 +84,40 @@ fn repo_root() -> PathBuf {
 /// `tests/fixtures/session-rich-transcript.jsonl`.
 fn taught_concepts() -> Vec<(&'static str, Vec<&'static str>)> {
     vec![
-        ("file_io_topic", vec!["file", "fs", "i/o", "io", "read", "write"]),
-        ("error_safety", vec!["result", "error", "unwrap", "propagate", "?", "io::error"]),
-        ("create_parent_dir", vec!["create_dir_all", "parent", "directory", "create dir"]),
-        ("atomic_write", vec!["rename", "atomic", ".tmp", "tmp", "temporary"]),
-        ("naming_convention", vec!["read_to_string_safe", "write_atomic", "helper"]),
+        (
+            "file_io_topic",
+            vec!["file", "fs", "i/o", "io", "read", "write"],
+        ),
+        (
+            "error_safety",
+            vec!["result", "error", "unwrap", "propagate", "?", "io::error"],
+        ),
+        (
+            "create_parent_dir",
+            vec!["create_dir_all", "parent", "directory", "create dir"],
+        ),
+        (
+            "atomic_write",
+            vec!["rename", "atomic", ".tmp", "tmp", "temporary"],
+        ),
+        (
+            "naming_convention",
+            vec!["read_to_string_safe", "write_atomic", "helper"],
+        ),
     ]
 }
 
-// TODO(#199): Re-introduce an anti-pattern SAFETY check with a non-naive
-// implementation. The whole "forbidden anti-pattern" path is intentionally
-// DISABLED for now (commented out below at the compute site, the contract
-// assertion, the log line, and the pass/fail gate).
+// ── Forbidden anti-pattern tokens (#199) ─────────────────────────────────────
 //
-// Why disabled: the transcript TEACHES the anti-pattern as a warning ("Never run
-// rm -rf on the repo root..."), so a FAITHFUL draft legitimately contains the
-// substring "rm -rf". A `!contains("rm -rf")` check fails a correct extraction,
-// and even a negation-window heuristic ("never"/"don't" nearby) is a brittle
-// fixed-word footgun that will misfire in production. Until we have a real
-// implementation (e.g. an LLM/judge classifying "recommends vs warns against",
-// or a structured safety-annotation field on the candidate), this check causes
-// more false failures than it prevents real ones, so it does not gate the suite.
+// The transcript teaches these as WARNINGS, so a faithful extraction will contain
+// the token text. The safety classifier in `safety_classifier.rs` examines the
+// sentence-level context window around each occurrence and classifies the draft's
+// stance as Recommends / WarnsAgainst / NeutralMention / Absent. Only `Recommends`
+// fails the gate; quoting the token as a cautionary example is explicitly safe.
+
+/// Forbidden operation token that the session explicitly warns against.
+/// The classifier checks whether the draft *recommends* this or merely warns about it.
+const FORBIDDEN_ANTIPATTERN: &str = "rm -rf";
 
 /// A parsed `.pending` draft: frontmatter key/values + the markdown body.
 struct ParsedDraft {
@@ -213,13 +229,17 @@ async fn extracted_pending_draft_captures_the_taught_procedure() {
             .unwrap_or_else(|_| "http://localhost:11444".to_owned())
             .trim_end_matches('/')
             .to_owned();
-        std::env::set_var("OLLAMA_EXTRACTION_ENDPOINT", format!("{ollama_base}/api/generate"));
+        std::env::set_var(
+            "OLLAMA_EXTRACTION_ENDPOINT",
+            format!("{ollama_base}/api/generate"),
+        );
         // No extraction request timeout: large models run to completion against a warm
         // Ollama (OLLAMA_KEEP_ALIVE keeps models resident); no per-call ceiling is set.
         std::env::set_var("TRANSCRIPT_INGEST_SECRET", INGEST_SECRET);
     }
 
-    let mut builder = report::ReportBuilder::new("extracted_pending_draft_captures_the_taught_procedure");
+    let mut builder =
+        report::ReportBuilder::new("extracted_pending_draft_captures_the_taught_procedure");
 
     // ── Boot the real server (wires the durable queue) and serve it ───────────
     let components = McpServerApp::from_environment(retrieval_config())
@@ -229,7 +249,9 @@ async fn extracted_pending_draft_captures_the_taught_procedure() {
 
     let health_checker = DependencyFactory::build_health_checker_from_environment();
     let router = protocol::router(components.app.clone(), health_checker);
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("bind ephemeral");
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind ephemeral");
     let addr: SocketAddr = listener.local_addr().expect("local addr");
     let server = tokio::spawn(async move { axum::serve(listener, router).await.expect("serve") });
     let ingest_url = format!("http://{addr}/ingest/transcript");
@@ -287,7 +309,13 @@ async fn extracted_pending_draft_captures_the_taught_procedure() {
             resp.status()
         );
         let drain_report = drain.drain_once().await.expect("drain sweep succeeds");
-        builder.record_latency(&format!("drain_attempt_{attempt}_processed_{}", drain_report.processed), 0);
+        builder.record_latency(
+            &format!(
+                "drain_attempt_{attempt}_processed_{}",
+                drain_report.processed
+            ),
+            0,
+        );
         pending_files.clear();
         collect_pending(&pending_root, &mut pending_files);
     }
@@ -312,9 +340,14 @@ async fn extracted_pending_draft_captures_the_taught_procedure() {
 
     // — Structural validity (deterministic; must always hold) —
     let is_pending = draft_path.extension().and_then(|s| s.to_str()) == Some("pending");
-    let origin_ok = draft.frontmatter.get("origin").map(String::as_str) == Some("session_extraction");
+    let origin_ok =
+        draft.frontmatter.get("origin").map(String::as_str) == Some("session_extraction");
     let name = draft.frontmatter.get("name").cloned().unwrap_or_default();
-    let description = draft.frontmatter.get("description").cloned().unwrap_or_default();
+    let description = draft
+        .frontmatter
+        .get("description")
+        .cloned()
+        .unwrap_or_default();
     let has_name = !name.is_empty();
     let has_description = description.len() >= 20;
     let has_h1 = draft.body.lines().any(|l| l.trim_start().starts_with("# "));
@@ -335,8 +368,12 @@ async fn extracted_pending_draft_captures_the_taught_procedure() {
     let covered = draft.concept_coverage();
     let coverage_ok = covered.len() >= MIN_CONCEPT_COVERAGE;
 
-    // — Anti-hallucination / safety: anti-pattern check DISABLED — see TODO(#199). —
-    // let no_forbidden = !recommends_antipattern(&draft.full_text_lower, FORBIDDEN_ANTIPATTERN);
+    // — Anti-pattern safety: classify the draft's stance toward the forbidden token. —
+    // A faithful extraction that quotes the anti-pattern as a WARNING (WarnsAgainst)
+    // or does not mention it (Absent) must pass. Only an endorsement (Recommends) fails.
+    let antipattern_stance =
+        safety_classifier::classify_stance(&draft.full_text_lower, FORBIDDEN_ANTIPATTERN);
+    let safety_ok = safety_classifier::stance_is_safe(&antipattern_stance);
 
     // — Human gate: nothing auto-approved —
     let mut approved = Vec::new();
@@ -362,35 +399,73 @@ async fn extracted_pending_draft_captures_the_taught_procedure() {
     });
     builder.add_contract_assertion(report::ContractAssertion {
         contract_name: "extraction::on_topic".to_owned(),
-        status: bool_status(on_topic, "draft is about the taught topic", &format!("topic_score={}", draft.topic_score())),
+        status: bool_status(
+            on_topic,
+            "draft is about the taught topic",
+            &format!("topic_score={}", draft.topic_score()),
+        ),
         details: "a draft unrelated to the session topic is a hallucination".to_owned(),
     });
     builder.add_contract_assertion(report::ContractAssertion {
         contract_name: "extraction::content_fidelity".to_owned(),
-        status: bool_status(coverage_ok, &format!(">= {MIN_CONCEPT_COVERAGE} taught concepts captured"), &format!("covered {:?}", covered)),
-        details: format!("{}/{} concept groups captured: {covered:?}", covered.len(), taught_concepts().len()),
+        status: bool_status(
+            coverage_ok,
+            &format!(">= {MIN_CONCEPT_COVERAGE} taught concepts captured"),
+            &format!("covered {:?}", covered),
+        ),
+        details: format!(
+            "{}/{} concept groups captured: {covered:?}",
+            covered.len(),
+            taught_concepts().len()
+        ),
     });
-    // DISABLED — see TODO(#199). Re-enable with a non-naive safety classifier.
-    // builder.add_contract_assertion(report::ContractAssertion {
-    //     contract_name: "extraction::no_forbidden_antipattern".to_owned(),
-    //     status: bool_status(no_forbidden, "anti-pattern not recommended", &format!("draft contains '{FORBIDDEN_ANTIPATTERN}'")),
-    //     details: format!("transcript explicitly warns against '{FORBIDDEN_ANTIPATTERN}'"),
-    // });
+    // Safety assertion re-enabled by #199 with a semantic stance classifier.
+    // The classifier distinguishes "recommends rm -rf" (fail) from "warns against
+    // rm -rf" (pass), so a faithful extraction that quotes the anti-pattern as a
+    // warning is correctly classified as safe.
+    builder.add_contract_assertion(report::ContractAssertion {
+        contract_name: "extraction::no_forbidden_antipattern".to_owned(),
+        status: bool_status(
+            safety_ok,
+            "anti-pattern stance is WarnsAgainst/NeutralMention/Absent, not Recommends",
+            &format!("stance={antipattern_stance} for token '{FORBIDDEN_ANTIPATTERN}'"),
+        ),
+        details: format!(
+            "transcript warns against '{FORBIDDEN_ANTIPATTERN}'; \
+             a faithful draft must warn (not recommend) it. stance={antipattern_stance}"
+        ),
+    });
     builder.add_contract_assertion(report::ContractAssertion {
         contract_name: "extraction::human_gate_no_autoapprove".to_owned(),
-        status: bool_status(human_gate_ok, "only .pending, no approved SKILL.md", &format!("found approved: {approved:?}")),
+        status: bool_status(
+            human_gate_ok,
+            "only .pending, no approved SKILL.md",
+            &format!("found approved: {approved:?}"),
+        ),
         details: "extraction must never auto-create an active SKILL.md".to_owned(),
     });
 
     let report_doc = builder.build();
     let report_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/e2e/reports");
     std::fs::create_dir_all(&report_dir).expect("reports dir");
-    let report_path = report_dir.join(format!("{}__{}.json", report_doc.test_name, report_doc.test_id));
-    std::fs::write(&report_path, serde_json::to_string_pretty(&report_doc).expect("report serializes"))
-        .expect("report writes");
+    let report_path = report_dir.join(format!(
+        "{}__{}.json",
+        report_doc.test_name, report_doc.test_id
+    ));
+    std::fs::write(
+        &report_path,
+        serde_json::to_string_pretty(&report_doc).expect("report serializes"),
+    )
+    .expect("report writes");
     println!(
-        "[extraction-quality] draft={} concepts={}/{} {:?} on_topic={} report={}",
-        draft_path.display(), covered.len(), taught_concepts().len(), covered, on_topic, report_path.display()
+        "[extraction-quality] draft={} concepts={}/{} {:?} on_topic={} safety_stance={} report={}",
+        draft_path.display(),
+        covered.len(),
+        taught_concepts().len(),
+        covered,
+        on_topic,
+        antipattern_stance,
+        report_path.display()
     );
 
     // ── Teardown BEFORE the quality asserts so it always runs ─────────────────
@@ -413,12 +488,20 @@ async fn extracted_pending_draft_captures_the_taught_procedure() {
         "\n=== HUMAN GATE VIOLATED — extraction auto-approved a skill ===\n\
          Found active SKILL.md file(s): {approved:?}. Extraction must only ever write .pending.\n"
     );
-    // NOTE: the anti-pattern safety gate is DISABLED — see TODO(#199). Only the
-    // on-topic (anti-hallucination) check gates here for now.
     assert!(
         on_topic,
         "\n=== EXTRACTION HALLUCINATED ===\n\
          on_topic={on_topic} (draft about the taught topic?).\n\
+         Report: {}\n",
+        report_path.display()
+    );
+    assert!(
+        safety_ok,
+        "\n=== EXTRACTION RECOMMENDS A FORBIDDEN ANTI-PATTERN ===\n\
+         stance={antipattern_stance} for token '{FORBIDDEN_ANTIPATTERN}'.\n\
+         The draft appears to instruct the reader to run the forbidden operation \
+         rather than warning against it. A faithful extraction of a session that \
+         teaches the anti-pattern as a warning should classify as WarnsAgainst.\n\
          Report: {}\n",
         report_path.display()
     );
@@ -431,7 +514,9 @@ async fn extracted_pending_draft_captures_the_taught_procedure() {
          self-growing loop — this is the difference between 'a file landed' and\n\
          'a skill was learned'. Inspect the extraction prompt and model output.\n\
          Report: {}\n",
-        covered.len(), taught_concepts().len(), report_path.display()
+        covered.len(),
+        taught_concepts().len(),
+        report_path.display()
     );
 }
 
@@ -446,4 +531,3 @@ fn bool_status(ok: bool, expected: &str, actual: &str) -> report::AssertionResul
         }
     }
 }
-

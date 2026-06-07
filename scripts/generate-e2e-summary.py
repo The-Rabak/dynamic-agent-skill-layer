@@ -10,14 +10,21 @@ fabricating values), and emits ``tests/e2e/reports/latest-summary.md``.
 The summary makes "system passed" visible without opening raw JSON files. Every
 section is honestly marked ``n/a`` when the relevant data is genuinely absent.
 
-Usage:
-    # Find and summarise the latest aggregate automatically:
-    python3 scripts/generate-e2e-summary.py
+The summary header always states the run id, the absolute artifact root, the
+exact command used to produce the aggregate, and a GREEN/RED verdict derived
+exclusively from the reports in that aggregate.
 
-    # Explicit paths (useful for CI, tests, and debugging):
+Usage:
+    # Explicit path — always preferred; guarantees only this run is summarised:
     python3 scripts/generate-e2e-summary.py \\
-        --input  tests/e2e/fixtures/sample_run_aggregate.json \\
-        --output /tmp/latest-summary.md
+        --input  tests/e2e/reports/runs/run-20260606-120000-42/run__20260606120001.json \\
+        --output tests/e2e/reports/runs/run-20260606-120000-42/summary.md
+
+    # Auto-discover via E2E_RUN_REPORT_DIR (set by run-e2e-tests.sh):
+    E2E_RUN_REPORT_DIR=tests/e2e/reports/runs/run-… python3 scripts/generate-e2e-summary.py
+
+    # Fallback auto-discovery (legacy; globs the broad reports/ directory):
+    python3 scripts/generate-e2e-summary.py
 """
 
 from __future__ import annotations
@@ -75,10 +82,34 @@ def _parse_args() -> argparse.Namespace:
 # ---------------------------------------------------------------------------
 
 def _find_latest_aggregate() -> pathlib.Path:
-    """Return the newest run__*.json file from the default reports directory.
+    """Return the newest run__*.json file, honouring E2E_RUN_REPORT_DIR.
+
+    Discovery order:
+    1. ``E2E_RUN_REPORT_DIR`` env var (set by run-e2e-tests.sh) — glob only
+       that run-scoped directory.  This prevents stale cross-run contamination.
+    2. Legacy fallback: the broad ``tests/e2e/reports/`` tree (for developers
+       invoking the script directly without the wrapper).
 
     Raises SystemExit (exit code 1) with a clear message when no file exists.
     """
+    run_dir_env = os.environ.get("E2E_RUN_REPORT_DIR", "").strip()
+    if run_dir_env:
+        run_dir = pathlib.Path(run_dir_env)
+        if not run_dir.is_dir():
+            sys.exit(
+                f"ERROR: E2E_RUN_REPORT_DIR={run_dir_env!r} is not a directory.\n"
+                "The wrapper script should have created it before invoking this script."
+            )
+        pattern = str(run_dir / "run__*.json")
+        candidates = sorted(glob.glob(pattern))
+        if not candidates:
+            sys.exit(
+                f"ERROR: no aggregate report found in E2E_RUN_REPORT_DIR={run_dir_env!r}.\n"
+                "The aggregation step in run-e2e-tests.sh should have written one."
+            )
+        return pathlib.Path(candidates[-1])
+
+    # Legacy fallback: broad reports/ directory (developer direct invocation).
     pattern = str(_REPORTS_DIR / "run__*.json")
     candidates = sorted(glob.glob(pattern))
     if not candidates:
@@ -566,6 +597,49 @@ def _render_environment(run_summary: dict[str, Any], reports: list[dict[str, Any
 # Top-level assembly
 # ---------------------------------------------------------------------------
 
+def _render_run_identity(
+    aggregate: dict[str, Any],
+    input_path: pathlib.Path,
+    run_summary: dict[str, Any],
+    reports: list[dict[str, Any]],
+) -> str:
+    """Render the run-identity header block.
+
+    This section appears at the very top of every summary and states:
+    - The run id (from the aggregate JSON or derived from the file name).
+    - The absolute artifact root directory.
+    - The exact command that produced the aggregate.
+    - A GREEN/RED verdict for THIS run only.
+
+    The verdict is derived exclusively from `run_summary`, which contains only
+    the reports aggregated from the run-scoped directory.  Stale reports from
+    prior runs are structurally incapable of reaching this summary when the
+    wrapper script passes ``--input`` (or sets ``E2E_RUN_REPORT_DIR``).
+    """
+    run_id = aggregate.get("run_id") or input_path.stem
+    artifact_root = aggregate.get("run_artifact_root") or str(input_path.parent.resolve())
+    failed = run_summary.get("failed", 0)
+    passed = run_summary.get("passed", 0)
+    total = run_summary.get("total_tests", 0)
+    verdict = "GREEN" if failed == 0 else "RED"
+    command = (
+        f"python3 scripts/generate-e2e-summary.py --input {input_path}"
+    )
+
+    lines = [
+        "## Run Identity",
+        "",
+        f"| Field | Value |",
+        f"| --- | --- |",
+        f"| Run ID | `{run_id}` |",
+        f"| Artifact root | `{artifact_root}` |",
+        f"| Aggregate file | `{input_path}` |",
+        f"| Produced by | `{command}` |",
+        f"| Verdict | **{verdict}** — {passed}/{total} passed, {failed} failed |",
+    ]
+    return "\n".join(lines)
+
+
 def _render_summary(
     aggregate: dict[str, Any],
     e2e_test_dir: pathlib.Path,
@@ -587,7 +661,7 @@ def _render_summary(
     sections = [
         f"# Live Suite Run Summary",
         "",
-        f"_Generated from: `{input_path}`_",
+        _render_run_identity(aggregate, input_path, run_summary, reports),
         "",
         _render_overall_status(run_summary, reports),
         "",

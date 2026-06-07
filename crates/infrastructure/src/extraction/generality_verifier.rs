@@ -6,10 +6,7 @@ use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use tokio::time::timeout;
 
-use crate::extraction::{
-    http::post_json,
-    prompt_contract::DEFAULT_CLAUDE_MODEL,
-};
+use crate::extraction::{http::post_json, prompt_contract::DEFAULT_CLAUDE_MODEL};
 
 /// Default Anthropic API base URL for the generality verifier Claude path.
 const DEFAULT_ANTHROPIC_BASE_URL: &str = "https://api.anthropic.com";
@@ -129,6 +126,9 @@ struct OllamaGenerateRequest {
     stream: bool,
     format: String,
     prompt: String,
+    /// Disables thinking-mode leak into the JSON output (#176). gemma4:12b otherwise
+    /// emits chain-of-thought as JSON keys instead of the contracted generality shape.
+    think: bool,
     options: OllamaGenerateOptions,
 }
 
@@ -156,6 +156,7 @@ impl SkillGeneralityVerifier for OllamaGeneralityVerifier {
             stream: false,
             format: "json".to_owned(),
             prompt,
+            think: false,
             options: OllamaGenerateOptions { temperature: 0.0 },
         };
 
@@ -242,8 +243,7 @@ impl ClaudeGeneralityVerifier {
                 "ANTHROPIC_API_KEY must be set to use the Claude generality verifier".to_owned(),
             ));
         }
-        let messages_endpoint =
-            format!("{}/v1/messages", config.base_url.trim_end_matches('/'));
+        let messages_endpoint = format!("{}/v1/messages", config.base_url.trim_end_matches('/'));
         Ok(Self {
             client,
             config,
@@ -367,9 +367,7 @@ impl SkillGeneralityVerifier for ClaudeGeneralityVerifier {
                     .json(&request)
                     .send()
                     .await
-                    .map_err(|error| {
-                        ExtractionError::ProviderUnavailable(error.to_string())
-                    })?;
+                    .map_err(|error| ExtractionError::ProviderUnavailable(error.to_string()))?;
 
                 if http_response.status() != StatusCode::OK {
                     return Err(ExtractionError::ProviderUnavailable(format!(
@@ -493,7 +491,9 @@ mod tests {
 
     #[test]
     fn generality_prompt_contains_skill_text_and_decision_keys() {
-        let prompt = build_generality_prompt("declare cargo bin explicitly or binary is named after package");
+        let prompt = build_generality_prompt(
+            "declare cargo bin explicitly or binary is named after package",
+        );
         assert!(prompt.contains("declare cargo bin explicitly"));
         assert!(prompt.contains("general"));
         assert!(prompt.contains("rationale"));

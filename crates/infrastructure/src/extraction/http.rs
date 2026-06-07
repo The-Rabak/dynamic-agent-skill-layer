@@ -67,6 +67,13 @@ pub struct OllamaGenerateTextRequest {
     /// Must be `"json"` to guard against thinking-model free-form output (per #190).
     pub format: String,
     pub prompt: String,
+    /// Disables the model's "thinking" mode (#176). gemma4:12b is a thinking model:
+    /// even with `format:"json"` it otherwise emits its chain-of-thought AS JSON
+    /// keys instead of the contracted shape, which downstream parsers then read as
+    /// empty/malformed. `format` forces valid JSON syntax but does not stop the
+    /// reasoning leaking into the keys; `think:false` does. Set `false` for every
+    /// structured seam call (preamble/skeleton/synthesis).
+    pub think: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub options: Option<OllamaGenerateTextOptions>,
 }

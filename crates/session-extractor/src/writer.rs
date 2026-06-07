@@ -571,6 +571,12 @@ mod tests {
 
     use super::*;
 
+    /// Serializes tests that mutate the process-global `SKILL_GLOBAL_*` env vars so
+    /// they cannot clobber each other under parallel `cargo test` (these tests had
+    /// no serialization and raced). Every env-mutating test holds this for its body.
+    static ENV_LOCK: std::sync::LazyLock<std::sync::Mutex<()>> =
+        std::sync::LazyLock::new(|| std::sync::Mutex::new(()));
+
     fn sandbox() -> PathBuf {
         let nonce = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -688,6 +694,7 @@ mod tests {
 
     #[test]
     fn write_guard_respects_env_var() {
+        let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
         let sandbox = sandbox();
         let write_root = sandbox.join("output-env");
         fs::create_dir_all(&write_root).expect("output root should be creatable");
@@ -713,6 +720,7 @@ mod tests {
 
     #[test]
     fn write_guard_falls_back_to_allowed_roots_env_var() {
+        let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
         let sandbox = sandbox();
         let write_root = sandbox.join("fallback-root");
         fs::create_dir_all(&write_root).expect("fallback root should be creatable");
@@ -741,6 +749,7 @@ mod tests {
 
     #[test]
     fn writer_rejects_pending_drafts_when_pending_root_is_outside_guard() {
+        let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
         let sandbox = sandbox();
         let allowed_root = sandbox.join("allowed");
         let blocked_root = sandbox.join("blocked");
@@ -780,6 +789,7 @@ mod tests {
 
     #[test]
     fn writer_allows_pending_drafts_inside_guard() {
+        let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
         let sandbox = sandbox();
         let output_root = sandbox.join("output");
         fs::create_dir_all(&output_root).expect("output root should be creatable");
@@ -847,9 +857,8 @@ mod tests {
     #[test]
     fn pending_markdown_writes_uncertain_when_generality_is_none() {
         let candidate = minimal_candidate("no-hint-skill");
-        let markdown =
-            render_pending_markdown(&candidate, "session-abc", "test-provider")
-                .expect("render must succeed");
+        let markdown = render_pending_markdown(&candidate, "session-abc", "test-provider")
+            .expect("render must succeed");
         assert!(
             markdown.contains("generality: uncertain"),
             "absent generality must serialize as 'uncertain'; got:\n{markdown}"
@@ -867,9 +876,8 @@ mod tests {
         candidate.generality = Some("general".to_owned());
         candidate.generality_rationale =
             Some("No project-specific identifiers present.".to_owned());
-        let markdown =
-            render_pending_markdown(&candidate, "session-abc", "test-provider")
-                .expect("render must succeed");
+        let markdown = render_pending_markdown(&candidate, "session-abc", "test-provider")
+            .expect("render must succeed");
         assert!(
             markdown.contains("generality: general"),
             "provider 'general' hint must be preserved in frontmatter; got:\n{markdown}"
@@ -886,9 +894,8 @@ mod tests {
         candidate.generality = Some("project".to_owned());
         candidate.generality_rationale =
             Some("References SKILL_GLOBAL_ALLOWED_ROOTS env var.".to_owned());
-        let markdown =
-            render_pending_markdown(&candidate, "session-abc", "test-provider")
-                .expect("render must succeed");
+        let markdown = render_pending_markdown(&candidate, "session-abc", "test-provider")
+            .expect("render must succeed");
         assert!(
             markdown.contains("generality: project"),
             "provider 'project' hint must be preserved; got:\n{markdown}"
@@ -900,9 +907,8 @@ mod tests {
         let mut candidate = minimal_candidate("bad-hint-skill");
         // "global" and "tool-specific" are not valid enum values
         candidate.generality = Some("global".to_owned());
-        let markdown =
-            render_pending_markdown(&candidate, "session-abc", "test-provider")
-                .expect("render must succeed");
+        let markdown = render_pending_markdown(&candidate, "session-abc", "test-provider")
+            .expect("render must succeed");
         assert!(
             markdown.contains("generality: uncertain"),
             "invalid provider hint must normalize to 'uncertain'; got:\n{markdown}"
@@ -932,10 +938,7 @@ mod tests {
         let request = stub_request(Some(project_root.to_str().unwrap()));
 
         unsafe {
-            env::set_var(
-                "SKILL_GLOBAL_ALLOWED_ROOTS",
-                sandbox.display().to_string(),
-            );
+            env::set_var("SKILL_GLOBAL_ALLOWED_ROOTS", sandbox.display().to_string());
             env::remove_var("SKILL_GLOBAL_WRITE_ROOTS");
         }
 

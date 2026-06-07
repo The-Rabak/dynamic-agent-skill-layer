@@ -154,13 +154,74 @@ impl Default for RetrievalConfig {
             max_results: 3,
             max_subunits_per_skill: 3,
             rescue_threshold: 0.15,
-            relevance_threshold: 0.20,
+            // Calibrated negative-relevance floor (#192).
+            //
+            // nomic-embed-text cosine similarities are inflated for all text pairs,
+            // including off-topic ones. Live calibration on the isolated 8-skill quality
+            // corpus (2026-06-07, per-query-tagged eq3 scores, 772 events, 20 queries)
+            // produced the following score landscape for this embedding model + corpus:
+            //
+            //   Negative user queries — max eq3 across all corpus skills:
+            //     kubernetes TLS termination:  0.4386  (highest negative)
+            //     react useEffect / useMemo:   0.4289
+            //     sourdough bread ferment:     0.3557
+            //     self-employment tax:         0.3437  (lowest negative)
+            //
+            //   Disjoint positive queries — score of the TARGET skill for its own query:
+            //     vector-cosine-similarity:    0.4889  (highest disjoint target)
+            //     docker-compose-healthchecks: 0.4798
+            //     retry-backoff-resilience:    0.4798
+            //     postgres-connection-pooling: 0.4785
+            //     git-rebase-conflict:         0.4565  (lowest disjoint target hit)
+            //   (3 of 8 disjoint queries are permanent misses at any threshold — the
+            //    embedding model does not bridge those metaphors regardless of floor.)
+            //
+            //   Lexical positive queries: 0.6168 – 0.6705 (well above any threshold)
+            //
+            //   Score gap: max_negative(0.4386) < 0.450 < min_positive_disjoint(0.4565)
+            //
+            // Gap width: 0.0179 — a clean, stable bimodal separation between off-topic
+            // fabrications and semantically-relevant target skills. Floor 0.450 sits
+            // 0.0064 above the max negative and 0.0115 below the min positive target.
+            //
+            // NOTE: An earlier calibration from run 1 showed inflated negative scores
+            // (max 0.4794 for "sourdough bread") due to stale un-isolated skill data
+            // in the graph. With proper corpus isolation ([rq-isolation] verified 8
+            // skills) the negative max drops to 0.4386, widening the gap from 0.0009
+            // to 0.0179 and making 0.450 a stable and conservative choice.
+            //
+            // This value can be env-overridden via `RETRIEVAL_RELEVANCE_THRESHOLD` (see
+            // `RetrievalConfig::relevance_threshold_from_env`) for operational retuning
+            // without a redeploy.
+            relevance_threshold: 0.450,
             mmr_lambda: 0.65,
             scoring_weights: ScoringWeights::default(),
             project_scope_weight: 1.0,
             global_scope_weight: 0.7,
             rrf_k: 60.0,
             scope_timeout_ms: 400,
+        }
+    }
+}
+
+impl RetrievalConfig {
+    /// Reads `RETRIEVAL_RELEVANCE_THRESHOLD` from the environment and returns the
+    /// parsed value, or the calibrated default (0.450) if the variable is absent.
+    ///
+    /// Panics with a clear message when the variable is present but cannot be
+    /// parsed as `f32` — per the project fail-loud mandate (no silent fallbacks).
+    ///
+    /// The default is calibrated from live per-query-tagged measurements on 2026-06-07;
+    /// see the `RetrievalConfig::default()` comment for the full evidence table.
+    pub fn relevance_threshold_from_env() -> f32 {
+        match std::env::var("RETRIEVAL_RELEVANCE_THRESHOLD") {
+            Ok(raw) => raw.parse().unwrap_or_else(|_| {
+                panic!(
+                    "RETRIEVAL_RELEVANCE_THRESHOLD is set but not a valid f32: {:?}",
+                    raw
+                )
+            }),
+            Err(_) => RetrievalConfig::default().relevance_threshold,
         }
     }
 }
@@ -916,7 +977,12 @@ mod tests {
     impl CountingFailEmbeddingService {
         fn new() -> (Arc<std::sync::atomic::AtomicU32>, Self) {
             let counter = Arc::new(std::sync::atomic::AtomicU32::new(0));
-            (counter.clone(), Self { call_count: counter })
+            (
+                counter.clone(),
+                Self {
+                    call_count: counter,
+                },
+            )
         }
     }
 
@@ -1064,5 +1130,69 @@ mod tests {
             CircuitState::Closed,
             "breaker must close after a successful probe during half-open"
         );
+    }
+
+    /// Proves `relevance_threshold_from_env` returns the calibrated default when
+    /// `RETRIEVAL_RELEVANCE_THRESHOLD` is absent, and that the default is the
+    /// calibrated 0.450 floor from #192.
+    ///
+    /// The 0.450 value sits in the 0.0179-wide gap measured with per-query-tagged
+    /// scoring on 2026-06-07 (isolated 8-skill corpus, 772 events):
+    ///   max_negative(0.4386, kubernetes TLS) < 0.450 < min_positive_disjoint(0.4565, rebase).
+    #[test]
+    fn relevance_threshold_defaults_to_calibrated_floor() {
+        // Temporarily remove the env var if it happens to be set in the test process.
+        let _guard = EnvVarGuard::remove("RETRIEVAL_RELEVANCE_THRESHOLD");
+
+        let threshold = RetrievalConfig::relevance_threshold_from_env();
+        assert!(
+            (threshold - 0.450).abs() < 1e-6,
+            "calibrated default relevance_threshold must be 0.450 (#192); got {threshold:.6}"
+        );
+    }
+
+    /// Proves `relevance_threshold_from_env` reads a valid override from the environment.
+    #[test]
+    fn relevance_threshold_reads_valid_env_override() {
+        let _guard = EnvVarGuard::set("RETRIEVAL_RELEVANCE_THRESHOLD", "0.65");
+
+        let threshold = RetrievalConfig::relevance_threshold_from_env();
+        assert!(
+            (threshold - 0.65).abs() < 1e-6,
+            "env override must be respected; got {threshold:.6}"
+        );
+    }
+
+    /// Scoped env-var helper for test isolation. Restores the original value on drop.
+    struct EnvVarGuard {
+        name: &'static str,
+        original: Option<String>,
+    }
+
+    impl EnvVarGuard {
+        fn remove(name: &'static str) -> Self {
+            let original = std::env::var(name).ok();
+            // SAFETY: test-only helper; tests run sequentially in their binary
+            // (cargo test is single-threaded by default for unit tests in the same binary).
+            unsafe { std::env::remove_var(name) };
+            Self { name, original }
+        }
+
+        fn set(name: &'static str, value: &str) -> Self {
+            let original = std::env::var(name).ok();
+            // SAFETY: test-only helper; same rationale as above.
+            unsafe { std::env::set_var(name, value) };
+            Self { name, original }
+        }
+    }
+
+    impl Drop for EnvVarGuard {
+        fn drop(&mut self) {
+            match &self.original {
+                // SAFETY: test-only helper; same rationale as above.
+                Some(val) => unsafe { std::env::set_var(self.name, val) },
+                None => unsafe { std::env::remove_var(self.name) },
+            }
+        }
     }
 }

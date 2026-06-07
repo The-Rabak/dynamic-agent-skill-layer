@@ -86,6 +86,23 @@ use crate::{
 /// context.
 pub const REDUCE_SIMILARITY_THRESHOLD: f32 = 0.82;
 
+/// Maximum number of times `extract_prose_window` re-issues the LLM call after
+/// receiving an empty candidates response from a substantive window.
+///
+/// An empty response from a non-trivial window is almost always a model hiccup
+/// (momentary cold load, KV-cache pressure, or a first-inference quirk under
+/// `OLLAMA_NUM_PARALLEL`) rather than a genuine "nothing to extract". Two retries
+/// give the model three total attempts while keeping the retry fan-out bounded.
+///
+/// A window with fewer than [`PROSE_WINDOW_SUBSTANTIVE_CONTENT_CHARS`] characters
+/// of transcript text is NOT retried — an empty result there is plausible.
+const PROSE_WINDOW_EMPTY_RETRY_LIMIT: usize = 2;
+
+/// Minimum total transcript-text length (bytes) for a window to be considered
+/// substantive enough to retry on empty. Windows shorter than this may legitimately
+/// yield zero candidates (e.g. a one-line greeting).
+const PROSE_WINDOW_SUBSTANTIVE_CONTENT_CHARS: usize = 100;
+
 // ─── Synthesis seam ──────────────────────────────────────────────────────────
 
 /// Failure modes of the synthesis pass.
@@ -247,7 +264,9 @@ pub enum OrchestrationError {
     DraftWrite(#[from] WriterError),
     #[error("session has no events to process")]
     EmptySession,
-    #[error("all {window_count} map window(s) failed; extraction produced nothing. errors: {errors:?}")]
+    #[error(
+        "all {window_count} map window(s) failed; extraction produced nothing. errors: {errors:?}"
+    )]
     AllWindowsFailed {
         window_count: usize,
         errors: Vec<String>,
@@ -299,7 +318,10 @@ pub async fn run_orchestration(
     // ── Step 2: Segment into overlapping windows ──────────────────────────
     let windows: Vec<Episode> = segment_session(events, &config.segmentation);
     let total_windows = windows.len();
-    debug!(total_windows, "orchestrator: session segmented into windows");
+    debug!(
+        total_windows,
+        "orchestrator: session segmented into windows"
+    );
 
     // Salience gating is intentionally NOT applied here. Recall-first: every
     // window is extracted. On flat conversational transcripts (no tool events,
@@ -402,8 +424,13 @@ pub async fn run_orchestration(
     );
 
     // ── Step 4: Reduce (cosine + LLM equivalence) ─────────────────────────
-    let (deduped_candidates, reduce_audit) =
-        reduce_candidates(window_candidates, embedder.as_ref(), equivalence_verifier.as_ref(), config.reduce_similarity_threshold).await?;
+    let (deduped_candidates, reduce_audit) = reduce_candidates(
+        window_candidates,
+        embedder.as_ref(),
+        equivalence_verifier.as_ref(),
+        config.reduce_similarity_threshold,
+    )
+    .await?;
 
     let post_reduce_count = deduped_candidates.len();
     info!(
@@ -445,8 +472,7 @@ pub async fn run_orchestration(
 
     info!(
         synthesis_added_count,
-        final_count,
-        "orchestrator: synthesis step complete"
+        final_count, "orchestrator: synthesis step complete"
     );
 
     // ── Step 6: Write .pending drafts ─────────────────────────────────────
@@ -456,11 +482,8 @@ pub async fn run_orchestration(
         candidates: final_candidates,
     };
 
-    let draft_paths = draft_writer.write_pending_drafts(
-        &extraction_result,
-        extract_request,
-        provider_name,
-    )?;
+    let draft_paths =
+        draft_writer.write_pending_drafts(&extraction_result, extract_request, provider_name)?;
 
     Ok(OrchestrationReport {
         total_episodes: total_windows,
@@ -531,11 +554,90 @@ async fn map_one_window(
     Ok(candidates)
 }
 
+/// Outcome of a single prose extraction attempt on one window.
+///
+/// Separates "model returned usable candidates", "model returned empty/garbled
+/// output for a non-trivial window (retryable)", and "hard infrastructure error
+/// (not retryable)" so the caller can apply the right policy.
+enum ProseWindowAttemptOutcome {
+    /// At least one candidate extracted — stop retrying.
+    Candidates(Vec<ExtractedSkillCandidate>),
+    /// The model returned zero candidates or malformed JSON from a substantive
+    /// window. The attempt is logged as suspicious and eligible for retry.
+    EmptyOrMalformed { reason: String },
+    /// The provider was unreachable (connection error, non-200 status, or
+    /// transcript validation failure). Not retried — these won't fix themselves
+    /// between calls and the error must surface to the window map step.
+    HardError(OrchestrationError),
+}
+
+/// Classifies a single prose extraction result into a [`ProseWindowAttemptOutcome`].
+///
+/// `ExtractionError::Unexpected` (JSON parse failure) is the fingerprint of a
+/// cold or under-pressure `gemma4:12b` returning malformed JSON on its first call
+/// after a model reload. It is therefore treated as retryable, not a hard error.
+/// `ExtractionError::ProviderUnavailable` is a network/infra failure and is NOT
+/// retried — a retry cannot fix a dead connection.
+fn classify_prose_attempt(
+    result: Result<Vec<ExtractedSkillCandidate>, OrchestrationError>,
+    window_content_chars: usize,
+) -> ProseWindowAttemptOutcome {
+    match result {
+        // Model returned candidates — done.
+        Ok(candidates) if !candidates.is_empty() => {
+            ProseWindowAttemptOutcome::Candidates(candidates)
+        }
+
+        // Model returned zero candidates from a substantive window — suspicious,
+        // retry unless the window is trivially small.
+        Ok(_empty) if window_content_chars >= PROSE_WINDOW_SUBSTANTIVE_CONTENT_CHARS => {
+            ProseWindowAttemptOutcome::EmptyOrMalformed {
+                reason: "model returned zero candidates".to_owned(),
+            }
+        }
+
+        // Zero candidates from a trivial window — plausible, accept.
+        Ok(empty) => ProseWindowAttemptOutcome::Candidates(empty),
+
+        // JSON parse failure on a substantive window — cold-start or KV-cache hiccup.
+        // Treat as retryable: the same prompt succeeds reliably once the model is warm.
+        Err(OrchestrationError::EpisodeExtraction(ExtractionError::Unexpected(ref msg)))
+            if window_content_chars >= PROSE_WINDOW_SUBSTANTIVE_CONTENT_CHARS =>
+        {
+            ProseWindowAttemptOutcome::EmptyOrMalformed {
+                reason: format!("model returned malformed JSON: {msg}"),
+            }
+        }
+
+        // Any other error — not retryable. Surface loudly.
+        Err(hard_error) => ProseWindowAttemptOutcome::HardError(hard_error),
+    }
+}
+
 /// Builds a [`SessionTranscript`] from window events (prepending the preamble
 /// as a synthetic context message) and runs the prose extractor.
 ///
 /// This is the universal extraction floor: it works on any window regardless
 /// of whether tool events or imperative keywords are present.
+///
+/// ## Retry policy for substantive windows
+///
+/// For windows with ≥ [`PROSE_WINDOW_SUBSTANTIVE_CONTENT_CHARS`] bytes of real
+/// transcript content, the call is retried up to [`PROSE_WINDOW_EMPTY_RETRY_LIMIT`]
+/// additional times when the attempt returns:
+///
+/// - **Zero candidates** — the model may have returned `{}` or an empty array,
+///   which `serde(default)` silently accepts. Observed nondeterministically with
+///   `gemma4:12b` under `OLLAMA_NUM_PARALLEL`.
+/// - **Malformed JSON** (`ExtractionError::Unexpected`) — the model (particularly
+///   `gemma4:12b` on its cold first inference after a reload) occasionally mixes
+///   reasoning tokens into the `format:"json"` response, producing parse errors.
+///
+/// Provider connection failures (`ExtractionError::ProviderUnavailable`) are NOT
+/// retried — they are hard infrastructure errors that a retry cannot fix.
+///
+/// The retry is bounded (total attempts = 1 + limit), logs every attempt with the
+/// reason, and never injects fabricated candidates.
 async fn extract_prose_window(
     window_events: &[SessionEvent],
     session_id: &DomainId,
@@ -556,8 +658,96 @@ async fn extract_prose_window(
         transcript.entries.insert(0, preamble_entry);
     }
 
-    let result = prose_extractor.extract(&transcript).await?;
-    Ok(result.candidates)
+    // Measure the substantive content length: total chars across all window events
+    // (excluding the preamble system entry we just prepended). The preamble is not
+    // part of the window's learnable signal — only real session turns matter for
+    // the "is this worth retrying?" decision.
+    let window_content_chars: usize = window_events
+        .iter()
+        .filter_map(|ev| ev.as_transcript_entry())
+        .map(|entry| entry.content.len())
+        .sum();
+
+    // First attempt — the common path.
+    let first_result = prose_extractor
+        .extract(&transcript)
+        .await
+        .map(|r| r.candidates)
+        .map_err(OrchestrationError::EpisodeExtraction);
+
+    match classify_prose_attempt(first_result, window_content_chars) {
+        ProseWindowAttemptOutcome::Candidates(candidates) => return Ok(candidates),
+        ProseWindowAttemptOutcome::HardError(error) => return Err(error),
+        ProseWindowAttemptOutcome::EmptyOrMalformed { reason } => {
+            warn!(
+                session_id = session_id.as_str(),
+                window_content_chars,
+                reason = %reason,
+                "prose extractor returned unusable output from a substantive window; \
+                 will retry up to {} more time(s)",
+                PROSE_WINDOW_EMPTY_RETRY_LIMIT,
+            );
+        }
+    }
+
+    // Retry loop — only reached when the first attempt was EmptyOrMalformed.
+    for retry_index in 1..=PROSE_WINDOW_EMPTY_RETRY_LIMIT {
+        warn!(
+            session_id = session_id.as_str(),
+            retry = retry_index,
+            window_content_chars,
+            "prose extractor retry attempt {} of {}",
+            retry_index,
+            PROSE_WINDOW_EMPTY_RETRY_LIMIT,
+        );
+
+        let retry_result = prose_extractor
+            .extract(&transcript)
+            .await
+            .map(|r| r.candidates)
+            .map_err(OrchestrationError::EpisodeExtraction);
+
+        match classify_prose_attempt(retry_result, window_content_chars) {
+            ProseWindowAttemptOutcome::Candidates(candidates) => {
+                if !candidates.is_empty() {
+                    info!(
+                        session_id = session_id.as_str(),
+                        retry = retry_index,
+                        candidate_count = candidates.len(),
+                        "prose extractor recovered candidates on retry attempt {}",
+                        retry_index,
+                    );
+                }
+                return Ok(candidates);
+            }
+            ProseWindowAttemptOutcome::HardError(error) => {
+                // A hard error mid-retry surfaces as a window failure.
+                return Err(error);
+            }
+            ProseWindowAttemptOutcome::EmptyOrMalformed { reason } => {
+                warn!(
+                    session_id = session_id.as_str(),
+                    retry = retry_index,
+                    reason = %reason,
+                    "prose extractor retry {} still returned unusable output",
+                    retry_index,
+                );
+            }
+        }
+    }
+
+    // All attempts exhausted — accept empty rather than failing the whole window.
+    // An empty result allows other windows (or preamble candidates) to still flow
+    // through; the no-silent-failure contract is upheld via the warn logs above.
+    warn!(
+        session_id = session_id.as_str(),
+        window_content_chars,
+        retries = PROSE_WINDOW_EMPTY_RETRY_LIMIT,
+        "prose extractor returned unusable output for all {} attempts; \
+         accepting empty result for this window",
+        PROSE_WINDOW_EMPTY_RETRY_LIMIT + 1,
+    );
+    Ok(Vec::new())
 }
 
 // ─── Reduce step ─────────────────────────────────────────────────────────────
@@ -586,10 +776,7 @@ async fn reduce_candidates(
     }
 
     // Build semantic text blocks for embedding.
-    let semantic_texts: Vec<String> = candidates
-        .iter()
-        .map(candidate_semantic_text)
-        .collect();
+    let semantic_texts: Vec<String> = candidates.iter().map(candidate_semantic_text).collect();
 
     // Embed all candidates. The embedder seam is a trait; production uses
     // OllamaEmbeddingService; tests inject a deterministic fake.
@@ -673,7 +860,11 @@ async fn reduce_candidates(
         .into_iter()
         .enumerate()
         .filter_map(|(idx, candidate)| {
-            if removed.contains(&idx) { None } else { Some(candidate) }
+            if removed.contains(&idx) {
+                None
+            } else {
+                Some(candidate)
+            }
         })
         .collect();
 
@@ -695,10 +886,7 @@ fn candidate_semantic_text(candidate: &ExtractedSkillCandidate) -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        path::PathBuf,
-        sync::Arc,
-    };
+    use std::{path::PathBuf, sync::Arc};
 
     use async_trait::async_trait;
     use domain::{
@@ -723,8 +911,13 @@ mod tests {
 
     #[async_trait]
     impl PreambleNormalizer for SortingNormalizerFake {
-        async fn normalize(&self, mut draft: PreambleDraft) -> Result<PreambleDraft, NormalizationError> {
-            draft.preferences.sort_by(|a, b| a.raw_statement.cmp(&b.raw_statement));
+        async fn normalize(
+            &self,
+            mut draft: PreambleDraft,
+        ) -> Result<PreambleDraft, NormalizationError> {
+            draft
+                .preferences
+                .sort_by(|a, b| a.raw_statement.cmp(&b.raw_statement));
             Ok(draft)
         }
     }
@@ -735,8 +928,15 @@ mod tests {
 
     #[async_trait]
     impl SkeletonLabeler for EchoLabelerFake {
-        async fn label(&self, skeleton: &ProcedureSkeleton) -> Result<SkeletonLabel, SkeletonError> {
-            let tool = skeleton.steps.first().map(|s| s.tool_name.as_str()).unwrap_or("unknown");
+        async fn label(
+            &self,
+            skeleton: &ProcedureSkeleton,
+        ) -> Result<SkeletonLabel, SkeletonError> {
+            let tool = skeleton
+                .steps
+                .first()
+                .map(|s| s.tool_name.as_str())
+                .unwrap_or("unknown");
             Ok(SkeletonLabel {
                 name: format!("test-{tool}"),
                 description: "Test description".to_owned(),
@@ -760,7 +960,10 @@ mod tests {
 
     #[async_trait]
     impl TranscriptSkillExtractionService for FixedProseExtractor {
-        async fn extract(&self, _transcript: &SessionTranscript) -> Result<ExtractionResult, ExtractionError> {
+        async fn extract(
+            &self,
+            _transcript: &SessionTranscript,
+        ) -> Result<ExtractionResult, ExtractionError> {
             Ok(ExtractionResult {
                 source_session_id: DomainId::new_unchecked("prose-fake"),
                 provider: "fake-prose".to_owned(),
@@ -781,8 +984,113 @@ mod tests {
 
     #[async_trait]
     impl TranscriptSkillExtractionService for FailingProseExtractor {
-        async fn extract(&self, _transcript: &SessionTranscript) -> Result<ExtractionResult, ExtractionError> {
-            Err(ExtractionError::Timeout { timeout_ms: 120_000 })
+        async fn extract(
+            &self,
+            _transcript: &SessionTranscript,
+        ) -> Result<ExtractionResult, ExtractionError> {
+            Err(ExtractionError::Timeout {
+                timeout_ms: 120_000,
+            })
+        }
+    }
+
+    /// Prose extractor that returns empty candidates for the first `empty_count`
+    /// calls, then returns a fixed candidate list on subsequent calls.
+    ///
+    /// Models the real-world flake where gemma4:12b returns `{}` (parsed as zero
+    /// candidates) on a cold first call, then recovers on retry.
+    struct FlakyProseExtractor {
+        /// Number of empty-candidates calls to return before yielding real results.
+        empty_count: usize,
+        /// Call counter shared across clones (Arc ensures thread-safety).
+        call_count: Arc<std::sync::atomic::AtomicUsize>,
+        /// Candidates to return once past the initial empty phase.
+        recovery_candidates: Vec<ExtractedSkillCandidate>,
+    }
+
+    impl FlakyProseExtractor {
+        fn new(empty_count: usize, recovery_candidates: Vec<ExtractedSkillCandidate>) -> Arc<Self> {
+            Arc::new(Self {
+                empty_count,
+                call_count: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+                recovery_candidates,
+            })
+        }
+
+        fn times_called(&self) -> usize {
+            self.call_count.load(std::sync::atomic::Ordering::SeqCst)
+        }
+    }
+
+    #[async_trait]
+    impl TranscriptSkillExtractionService for FlakyProseExtractor {
+        async fn extract(
+            &self,
+            _transcript: &SessionTranscript,
+        ) -> Result<ExtractionResult, ExtractionError> {
+            let call_index = self
+                .call_count
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let candidates = if call_index < self.empty_count {
+                vec![]
+            } else {
+                self.recovery_candidates.clone()
+            };
+            Ok(ExtractionResult {
+                source_session_id: DomainId::new_unchecked("flaky-fake"),
+                provider: "flaky-fake".to_owned(),
+                candidates,
+            })
+        }
+    }
+
+    /// Prose extractor that returns `ExtractionError::Unexpected` (JSON parse
+    /// failure) for the first `error_count` calls, then returns real candidates.
+    ///
+    /// Models the real-world flake where `gemma4:12b` returns malformed JSON
+    /// on a cold first inference (mixing reasoning tokens into the response),
+    /// then recovers on retry once the model is properly warmed.
+    struct FlakyWithParseErrorProseExtractor {
+        error_count: usize,
+        call_count: Arc<std::sync::atomic::AtomicUsize>,
+        recovery_candidates: Vec<ExtractedSkillCandidate>,
+    }
+
+    impl FlakyWithParseErrorProseExtractor {
+        fn new(error_count: usize, recovery_candidates: Vec<ExtractedSkillCandidate>) -> Arc<Self> {
+            Arc::new(Self {
+                error_count,
+                call_count: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+                recovery_candidates,
+            })
+        }
+
+        fn times_called(&self) -> usize {
+            self.call_count.load(std::sync::atomic::Ordering::SeqCst)
+        }
+    }
+
+    #[async_trait]
+    impl TranscriptSkillExtractionService for FlakyWithParseErrorProseExtractor {
+        async fn extract(
+            &self,
+            _transcript: &SessionTranscript,
+        ) -> Result<ExtractionResult, ExtractionError> {
+            let call_index = self
+                .call_count
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            if call_index < self.error_count {
+                // Models cold-start malformed JSON: parse failure.
+                Err(ExtractionError::Unexpected(
+                    "invalid JSON: mixed reasoning tokens in response".to_owned(),
+                ))
+            } else {
+                Ok(ExtractionResult {
+                    source_session_id: DomainId::new_unchecked("flaky-parse-fake"),
+                    provider: "flaky-parse-fake".to_owned(),
+                    candidates: self.recovery_candidates.clone(),
+                })
+            }
         }
     }
 
@@ -803,7 +1111,7 @@ mod tests {
             let sum: u64 = bytes.iter().map(|&b| b as u64).sum();
             let xor: u64 = bytes.iter().map(|&b| b as u64).fold(0, |acc, b| acc ^ b);
             // Place the hash in different dimensions to create stable vectors.
-            let v0 = (sum % 256) as f32 + 1.0;   // always > 0 so no zero-magnitude
+            let v0 = (sum % 256) as f32 + 1.0; // always > 0 so no zero-magnitude
             let v1 = (xor % 256) as f32 + 1.0;
             let v2 = (bytes.len() % 256) as f32 + 1.0;
             let v3 = 1.0_f32;
@@ -832,22 +1140,31 @@ mod tests {
     impl PrefixEquivalenceFake {
         fn declaring_equivalent(pairs: Vec<(&str, &str)>) -> Arc<Self> {
             Arc::new(Self {
-                equivalent_pairs: pairs.into_iter().map(|(a, b)| (a.to_owned(), b.to_owned())).collect(),
+                equivalent_pairs: pairs
+                    .into_iter()
+                    .map(|(a, b)| (a.to_owned(), b.to_owned()))
+                    .collect(),
             })
         }
 
         fn never_equivalent() -> Arc<Self> {
-            Arc::new(Self { equivalent_pairs: Vec::new() })
+            Arc::new(Self {
+                equivalent_pairs: Vec::new(),
+            })
         }
     }
 
     #[async_trait]
     impl LlmEquivalenceVerifier for PrefixEquivalenceFake {
-        async fn decide_equivalence(&self, left_text: &str, right_text: &str) -> Result<EquivalenceDecision, ExtractionError> {
+        async fn decide_equivalence(
+            &self,
+            left_text: &str,
+            right_text: &str,
+        ) -> Result<EquivalenceDecision, ExtractionError> {
             // Check if either (left,right) or (right,left) is in our declared pairs.
             let equivalent = self.equivalent_pairs.iter().any(|(a, b)| {
                 (left_text.contains(a.as_str()) && right_text.contains(b.as_str()))
-                || (left_text.contains(b.as_str()) && right_text.contains(a.as_str()))
+                    || (left_text.contains(b.as_str()) && right_text.contains(a.as_str()))
             });
             Ok(EquivalenceDecision {
                 equivalent,
@@ -867,11 +1184,15 @@ mod tests {
 
     impl FixedSynthesisPassFake {
         fn adding(candidates: Vec<ExtractedSkillCandidate>) -> Arc<Self> {
-            Arc::new(Self { additional: candidates })
+            Arc::new(Self {
+                additional: candidates,
+            })
         }
 
         fn noop() -> Arc<Self> {
-            Arc::new(Self { additional: Vec::new() })
+            Arc::new(Self {
+                additional: Vec::new(),
+            })
         }
     }
 
@@ -1026,15 +1347,16 @@ mod tests {
             "Use tokio::sync::Mutex instead of std::sync::Mutex in async contexts",
         );
         let payoff_candidate = skill_candidate(
-            "use-tokio-mutex-for-async",  // same name → same semantic text → identical embedding
+            "use-tokio-mutex-for-async", // same name → same semantic text → identical embedding
             "Use tokio::sync::Mutex instead of std::sync::Mutex in async contexts",
         );
 
         // Same name + description → identical embedding → cosine = 1.0 → above threshold.
         // The verifier is configured to merge this pair.
-        let verifier = PrefixEquivalenceFake::declaring_equivalent(vec![
-            ("use-tokio-mutex-for-async", "use-tokio-mutex-for-async"),
-        ]);
+        let verifier = PrefixEquivalenceFake::declaring_equivalent(vec![(
+            "use-tokio-mutex-for-async",
+            "use-tokio-mutex-for-async",
+        )]);
 
         let (deduped, audit) = reduce_candidates(
             vec![setup_candidate, payoff_candidate],
@@ -1076,9 +1398,10 @@ mod tests {
             .collect();
 
         // All pairs are declared equivalent.
-        let verifier = PrefixEquivalenceFake::declaring_equivalent(vec![
-            ("duplicate-skill", "duplicate-skill"),
-        ]);
+        let verifier = PrefixEquivalenceFake::declaring_equivalent(vec![(
+            "duplicate-skill",
+            "duplicate-skill",
+        )]);
 
         let (deduped, audit) = reduce_candidates(
             duplicates,
@@ -1500,16 +1823,17 @@ mod tests {
         .await;
 
         match result {
-            Err(OrchestrationError::AllWindowsFailed { window_count, errors }) => {
+            Err(OrchestrationError::AllWindowsFailed {
+                window_count,
+                errors,
+            }) => {
                 assert!(window_count >= 1, "must report the failed window count");
                 assert!(
                     !errors.is_empty(),
                     "must carry the underlying per-window error(s), got none"
                 );
             }
-            other => panic!(
-                "total map failure must surface as AllWindowsFailed, got: {other:?}"
-            ),
+            other => panic!("total map failure must surface as AllWindowsFailed, got: {other:?}"),
         }
     }
 
@@ -1635,9 +1959,10 @@ mod tests {
 
         // Declare the candidate equivalent to itself so that duplicate copies
         // produced from multiple overlapping windows are merged down to one in reduce.
-        let verifier = PrefixEquivalenceFake::declaring_equivalent(vec![
-            ("tokio-async-patterns", "tokio-async-patterns"),
-        ]);
+        let verifier = PrefixEquivalenceFake::declaring_equivalent(vec![(
+            "tokio-async-patterns",
+            "tokio-async-patterns",
+        )]);
 
         let report = run_orchestration(
             session_id,
@@ -1731,6 +2056,237 @@ mod tests {
             "structured window must produce ≥2 pre-reduce candidates (skeleton + prose additive); \
              got pre_reduce={}",
             report.pre_reduce_candidate_count
+        );
+    }
+
+    // ── Retry-on-empty: prose extractor recovers candidates on retry ──────────
+
+    /// Proves that `extract_prose_window` retries the prose extractor when a
+    /// substantive window yields zero candidates on the first call.
+    ///
+    /// This covers the #176 flake: `gemma4:12b` with `format:"json"` occasionally
+    /// returns `{}` (parsed as zero candidates) on a cold or contended first call.
+    /// The retry gives the model another honest chance without injecting fake data.
+    #[tokio::test]
+    async fn prose_extractor_retries_on_empty_response_from_substantive_window() {
+        // A substantive flat session (> PROSE_WINDOW_SUBSTANTIVE_CONTENT_CHARS chars).
+        let events = vec![
+            SessionEvent::UserMessage {
+                index: 0,
+                content: "We keep hitting `Os { code: 35, kind: WouldBlock }` panics when \
+                          spawning Tokio tasks under load. How do we diagnose and fix this?"
+                    .to_owned(),
+            },
+            SessionEvent::AssistantMessage {
+                index: 1,
+                content: "WouldBlock under Tokio task spawn is almost always file-descriptor \
+                          exhaustion. Step 1: run `ulimit -n 65536` to raise the FD ceiling. \
+                          Step 2: add `console_subscriber::init()` and run `tokio-console`. \
+                          Step 3: replace `std::sync::Mutex` held across `.await` with \
+                          `tokio::sync::Mutex`."
+                    .to_owned(),
+            },
+        ];
+
+        let session_id = DomainId::new_unchecked("retry-on-empty");
+        let sandbox = sandbox_dir("retry-on-empty");
+        let draft_writer = PendingDraftWriter::new(vec![sandbox.clone()]);
+        let request = inline_request("retry-on-empty");
+
+        // The flaky extractor returns empty on the first call, then the real candidate.
+        let recovery_candidate = skill_candidate(
+            "diagnose-tokio-fd-exhaustion",
+            "Diagnose and fix WouldBlock FD exhaustion in Tokio",
+        );
+        let flaky_extractor = FlakyProseExtractor::new(1, vec![recovery_candidate.clone()]);
+
+        let config = OrchestrationConfig {
+            // Single window so we see exactly the retry behavior.
+            segmentation: SegmentationConfig::new(1_000_000, 3),
+            map_concurrency: 1,
+            reduce_similarity_threshold: REDUCE_SIMILARITY_THRESHOLD,
+            ..OrchestrationConfig::default()
+        };
+
+        let report = run_orchestration(
+            session_id,
+            &events,
+            &config,
+            None,
+            Arc::new(EchoLabelerFake),
+            flaky_extractor.clone(),
+            Arc::new(DeterministicEmbedderFake),
+            PrefixEquivalenceFake::never_equivalent(),
+            FixedSynthesisPassFake::noop(),
+            &draft_writer,
+            &request,
+            "test-provider",
+        )
+        .await
+        .expect("orchestration must succeed even when extractor flakes on first attempt");
+
+        // The retry must have recovered the candidate.
+        assert_eq!(
+            report.final_candidate_count, 1,
+            "orchestration must yield the candidate recovered on retry; \
+             got final_candidate_count={}",
+            report.final_candidate_count
+        );
+
+        // Verify the extractor was called at least twice (initial + 1 retry).
+        let call_count = flaky_extractor.times_called();
+        assert!(
+            call_count >= 2,
+            "prose extractor must be called at least twice (initial + 1 retry); \
+             got call_count={}",
+            call_count
+        );
+    }
+
+    /// Proves that a trivially-small window (below the substantive threshold) is NOT
+    /// retried even when it returns zero candidates. A one-line greeting producing
+    /// nothing is a legitimate result, not a model hiccup.
+    #[tokio::test]
+    async fn prose_extractor_does_not_retry_trivial_windows() {
+        // A trivially small window — well below PROSE_WINDOW_SUBSTANTIVE_CONTENT_CHARS.
+        let events = vec![SessionEvent::UserMessage {
+            index: 0,
+            content: "hi".to_owned(),
+        }];
+
+        let session_id = DomainId::new_unchecked("no-retry-trivial");
+        let sandbox = sandbox_dir("no-retry-trivial");
+        let draft_writer = PendingDraftWriter::new(vec![sandbox.clone()]);
+        let request = inline_request("no-retry-trivial");
+
+        // Always returns empty — but the window is trivial so no retry should fire.
+        let flaky_extractor = FlakyProseExtractor::new(usize::MAX, vec![]);
+
+        let config = OrchestrationConfig {
+            segmentation: SegmentationConfig::new(1_000_000, 3),
+            map_concurrency: 1,
+            reduce_similarity_threshold: REDUCE_SIMILARITY_THRESHOLD,
+            ..OrchestrationConfig::default()
+        };
+
+        // Orchestration may succeed with zero candidates (trivial window).
+        let report = run_orchestration(
+            session_id,
+            &events,
+            &config,
+            None,
+            Arc::new(EchoLabelerFake),
+            flaky_extractor.clone(),
+            Arc::new(DeterministicEmbedderFake),
+            PrefixEquivalenceFake::never_equivalent(),
+            FixedSynthesisPassFake::noop(),
+            &draft_writer,
+            &request,
+            "test-provider",
+        )
+        .await
+        .expect("orchestration on trivial window must succeed (zero candidates ok)");
+
+        // Zero candidates is acceptable for a trivial window.
+        assert_eq!(
+            report.final_candidate_count, 0,
+            "trivial window must not produce candidates; got {}",
+            report.final_candidate_count
+        );
+
+        // The extractor must have been called exactly once — no retry for trivial windows.
+        let call_count = flaky_extractor.times_called();
+        assert_eq!(
+            call_count, 1,
+            "prose extractor must be called exactly once for trivial windows (no retry); \
+             got call_count={}",
+            call_count
+        );
+    }
+
+    /// Proves that `extract_prose_window` retries when the prose extractor returns
+    /// a JSON parse error (`ExtractionError::Unexpected`) from a substantive window.
+    ///
+    /// This covers the cold-start variant of the #176 flake: `gemma4:12b` on its
+    /// first inference after a model reload mixes reasoning tokens into the
+    /// `format:"json"` response, producing malformed JSON that fails to parse.
+    /// The retry gives the (now-warmed) model another chance.
+    #[tokio::test]
+    async fn prose_extractor_retries_on_parse_error_from_substantive_window() {
+        // Same substantive transcript as the empty-candidates test.
+        let events = vec![
+            SessionEvent::UserMessage {
+                index: 0,
+                content: "We keep hitting `Os { code: 35, kind: WouldBlock }` panics when \
+                          spawning Tokio tasks under load. How do we diagnose and fix this?"
+                    .to_owned(),
+            },
+            SessionEvent::AssistantMessage {
+                index: 1,
+                content: "WouldBlock under Tokio task spawn is almost always file-descriptor \
+                          exhaustion. Step 1: run `ulimit -n 65536` to raise the FD ceiling. \
+                          Step 2: add `console_subscriber::init()` and run `tokio-console`. \
+                          Step 3: replace `std::sync::Mutex` held across `.await` with \
+                          `tokio::sync::Mutex`."
+                    .to_owned(),
+            },
+        ];
+
+        let session_id = DomainId::new_unchecked("retry-on-parse-error");
+        let sandbox = sandbox_dir("retry-on-parse-error");
+        let draft_writer = PendingDraftWriter::new(vec![sandbox.clone()]);
+        let request = inline_request("retry-on-parse-error");
+
+        // The extractor returns a parse error on the first call (cold-start malformed JSON),
+        // then the real candidate on the second call.
+        let recovery_candidate = skill_candidate(
+            "diagnose-tokio-fd-exhaustion",
+            "Diagnose and fix WouldBlock FD exhaustion in Tokio",
+        );
+        let flaky_extractor =
+            FlakyWithParseErrorProseExtractor::new(1, vec![recovery_candidate.clone()]);
+
+        let config = OrchestrationConfig {
+            segmentation: SegmentationConfig::new(1_000_000, 3),
+            map_concurrency: 1,
+            reduce_similarity_threshold: REDUCE_SIMILARITY_THRESHOLD,
+            ..OrchestrationConfig::default()
+        };
+
+        let report = run_orchestration(
+            session_id,
+            &events,
+            &config,
+            None,
+            Arc::new(EchoLabelerFake),
+            flaky_extractor.clone(),
+            Arc::new(DeterministicEmbedderFake),
+            PrefixEquivalenceFake::never_equivalent(),
+            FixedSynthesisPassFake::noop(),
+            &draft_writer,
+            &request,
+            "test-provider",
+        )
+        .await
+        .expect(
+            "orchestration must succeed even when extractor returns parse error on first attempt",
+        );
+
+        // The retry must have recovered the candidate.
+        assert_eq!(
+            report.final_candidate_count, 1,
+            "orchestration must yield the candidate recovered after parse-error retry; \
+             got final_candidate_count={}",
+            report.final_candidate_count
+        );
+
+        // Verify the extractor was called at least twice (initial + 1 retry).
+        let call_count = flaky_extractor.times_called();
+        assert!(
+            call_count >= 2,
+            "prose extractor must be called at least twice (initial error + 1 retry); \
+             got call_count={}",
+            call_count
         );
     }
 

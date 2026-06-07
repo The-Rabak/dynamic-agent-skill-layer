@@ -6,10 +6,7 @@ use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use tokio::time::timeout;
 
-use crate::extraction::{
-    http::post_json,
-    prompt_contract::DEFAULT_CLAUDE_MODEL,
-};
+use crate::extraction::{http::post_json, prompt_contract::DEFAULT_CLAUDE_MODEL};
 
 /// Default Anthropic API base URL for the merge verifier Claude path.
 const DEFAULT_ANTHROPIC_BASE_URL: &str = "https://api.anthropic.com";
@@ -120,6 +117,9 @@ struct OllamaGenerateRequest {
     stream: bool,
     format: String,
     prompt: String,
+    /// Disables thinking-mode leak into the JSON output (#176). gemma4:12b otherwise
+    /// emits chain-of-thought as JSON keys instead of the contracted equivalence shape.
+    think: bool,
     options: OllamaGenerateOptions,
 }
 
@@ -148,6 +148,7 @@ impl LlmEquivalenceVerifier for OllamaMergeVerifier {
             stream: false,
             format: "json".to_owned(),
             prompt,
+            think: false,
             options: OllamaGenerateOptions { temperature: 0.0 },
         };
 
@@ -234,8 +235,7 @@ impl ClaudeMergeVerifier {
                 "ANTHROPIC_API_KEY must be set to use the Claude merge verifier".to_owned(),
             ));
         }
-        let messages_endpoint =
-            format!("{}/v1/messages", config.base_url.trim_end_matches('/'));
+        let messages_endpoint = format!("{}/v1/messages", config.base_url.trim_end_matches('/'));
         Ok(Self {
             client,
             config,
@@ -353,9 +353,7 @@ impl LlmEquivalenceVerifier for ClaudeMergeVerifier {
                     .json(&request)
                     .send()
                     .await
-                    .map_err(|error| {
-                        ExtractionError::ProviderUnavailable(error.to_string())
-                    })?;
+                    .map_err(|error| ExtractionError::ProviderUnavailable(error.to_string()))?;
 
                 if http_response.status() != StatusCode::OK {
                     return Err(ExtractionError::ProviderUnavailable(format!(

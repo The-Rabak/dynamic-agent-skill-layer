@@ -83,10 +83,10 @@ impl ScopeResolver for FsMarkerProjectResolver {
         //    not exist inside the container), fall through to the configured root
         //    rather than erroring immediately — that fallback is exactly what makes
         //    the container usable when the client sends a host-only path.
-        if let Some(repo_path) = repo_path {
-            if let Some(root) = Self::walk_to_project_root(&PathBuf::from(repo_path)) {
-                return Ok(vec![Self::descriptor(root)]);
-            }
+        if let Some(repo_path) = repo_path
+            && let Some(root) = Self::walk_to_project_root(&PathBuf::from(repo_path))
+        {
+            return Ok(vec![Self::descriptor(root)]);
         }
 
         // 2. An explicitly configured `SKILL_PROJECT_ROOT` is an operator
@@ -511,13 +511,16 @@ mod tests {
             env::remove_var("SKILL_PROJECT_ROOT");
         }
 
-        let error = result.expect_err("a missing SKILL_PROJECT_ROOT must fail loud, not degrade silently");
+        let error =
+            result.expect_err("a missing SKILL_PROJECT_ROOT must fail loud, not degrade silently");
         match error {
             ScopeError::ResolverUnavailable(message) => assert!(
                 message.contains("SKILL_PROJECT_ROOT"),
                 "error must name the offending env var, got: {message}"
             ),
-            other => panic!("expected ResolverUnavailable naming SKILL_PROJECT_ROOT, got {other:?}"),
+            other => {
+                panic!("expected ResolverUnavailable naming SKILL_PROJECT_ROOT, got {other:?}")
+            }
         }
     }
 

@@ -17,6 +17,14 @@
 //! baseline (a measurement reference) and the metric math (pure, unit-tested).
 //! Test volumes/DB (`skill_layer_test`, `test-*-skills`) keep prod data clean.
 //!
+//! # Isolation (#199)
+//! The 4 live tests serialize behind `RQ_MEASUREMENT_LOCK` (NOT the bring-up
+//! lock from `stack.rs`) so each test's seed→measure→cleanup critical section
+//! is atomic with respect to the other 3.  At the start of each critical section
+//! the global skills volume is pruned to only this run's corpus (foreign leftovers
+//! from other suites are evicted) and the graph is polled until it reflects
+//! exactly the corpus size before any query is issued.
+//!
 //! # Running
 //! ```sh
 //! ./scripts/run-e2e-tests.sh --include-dream   # brings the stack up first
@@ -40,11 +48,14 @@ mod metrics;
 mod labeled_corpus;
 
 use std::collections::BTreeSet;
+use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use harness::{
     app::{CompileContextArgs, McpClient},
+    guard::SeededSkillGuard,
+    observe::PgObserver,
     poll::wait_for_rebuild,
     seed::{self, SkillScope},
     stack::Stack,
@@ -54,51 +65,183 @@ use labeled_corpus::{LabeledCorpus, LabeledQuery, lexical_baseline_ranking, load
 use metrics::{aggregate, query_metrics};
 use report::{AssertionResult, ContractAssertion};
 use serde_json::json;
+use tokio::sync::Mutex;
 
 /// Top-k cutoff. The server serves `max_results` (default 3), so k=3 measures
 /// exactly what the product actually injects.
 const K: usize = 3;
+
+/// Process-wide mutex that serializes the 4 live measurement tests.
+///
+/// Each test's seed→measure→cleanup critical section is atomic with respect to
+/// the others: only ONE test may be running its measurement at a time.  Bring-up
+/// parallelism (from `stack.rs::BRINGUP_LOCK`) is intentionally untouched — the
+/// 4 tests still bring the stack up concurrently, they just wait here before
+/// touching the shared global-skills volume.
+///
+/// IMPORTANT: do NOT reuse or reference `stack::BRINGUP_LOCK` for this purpose.
+/// The bring-up and the measurement are independent concerns with different
+/// lifetimes.
+static RQ_MEASUREMENT_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
 /// Per-run namespace so concurrent/repeat runs never collide or dedup.
 fn run_namespace() -> String {
     format!("rq{}", chrono::Utc::now().timestamp_millis())
 }
 
-/// Seeds every corpus skill into the global scope under `{ns}-{id}` and approves
-/// it, then waits for the graph to rebuild so the snapshot serves them.
+/// Returns a set of all slugs expected for this namespace+corpus combination.
+fn corpus_slugs(ns: &str, corpus: &LabeledCorpus) -> BTreeSet<String> {
+    corpus
+        .skills
+        .iter()
+        .map(|s| format!("{ns}-{}", s.id))
+        .collect()
+}
+
+/// Removes every global-skills directory that is NOT in `keep_slugs`.
 ///
-/// Returns the baseline graph_version observed before seeding (for diagnostics).
-async fn seed_corpus_and_wait(ns: &str, corpus: &LabeledCorpus) {
-    let pg = harness::observe::PgObserver::connect().await;
+/// This is the "isolation step": it evicts foreign leftovers (from other
+/// suites or from a previous aborted run) before seeding the new corpus.
+/// Per-slug `seed::remove` is used intentionally — a blanket `rm -rf` of
+/// the whole volume would destroy the SKILL.md files of any other test
+/// currently in its seeding phase (impossible when called inside the
+/// measurement lock, but good hygiene regardless).
+///
+/// Errors are logged loudly; removal failures do NOT panic (the calling
+/// test will either fail honestly when the graph count doesn't converge, or
+/// measure against a slightly dirtier scope and surface that in the numbers).
+fn evict_foreign_global_skills(keep_slugs: &BTreeSet<String>) {
+    match seed::list(SkillScope::Global) {
+        Err(e) => eprintln!(
+            "[rq-isolation] WARN: could not list global skills volume: {e} \
+             — proceeding without eviction (measurement may be contaminated)"
+        ),
+        Ok(present) => {
+            for slug in present {
+                if !keep_slugs.contains(&slug) {
+                    eprintln!("[rq-isolation] evicting foreign skill: {slug}");
+                    if let Err(e) = seed::remove(SkillScope::Global, &slug) {
+                        eprintln!(
+                            "[rq-isolation] WARN: failed to evict {slug}: {e} \
+                             — scope may still be contaminated"
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Polls Postgres until the `skills` table contains exactly `expected_count` rows,
+/// or fails loudly when the deadline passes.
+///
+/// This is the convergence proof for the isolation step: once the graph-builder
+/// reconciles all additions and deletions from the eviction+seeding step, the
+/// `skills` count must equal `expected_count`.  A count mismatch means the graph
+/// still reflects foreign or stale skills and the measurement would be invalid.
+///
+/// # Failure mode
+/// Returns `Err` with a diagnostic when the deadline passes without convergence.
+/// The caller MUST treat this as a hard failure — measuring against a dirty graph
+/// produces meaningless numbers that would be reported as quality problems.
+async fn poll_graph_skill_count(expected_count: i64, timeout: Duration) -> Result<(), String> {
+    let pg = PgObserver::connect().await;
+    let deadline = Instant::now() + timeout;
+    let interval = Duration::from_millis(1_000);
+
+    loop {
+        let count = pg
+            .row_count("skills")
+            .await
+            .map_err(|e| format!("poll_graph_skill_count: DB query failed: {e}"))?;
+
+        if count == expected_count {
+            return Ok(());
+        }
+
+        if Instant::now() >= deadline {
+            return Err(format!(
+                "graph skill count did not converge to {expected_count} within {}s \
+                 (current count = {count}). The graph-builder has not reconciled the \
+                 eviction+seeding step. Aborting measurement to avoid reporting \
+                 contaminated numbers.",
+                timeout.as_secs()
+            ));
+        }
+
+        tokio::time::sleep(interval).await;
+    }
+}
+
+/// Seeds every corpus skill into the global scope under `{ns}-{id}`, approves
+/// each, registers it in `guard`, then waits for the graph to rebuild so the
+/// snapshot serves exactly this corpus.
+///
+/// Must be called inside the `RQ_MEASUREMENT_LOCK` critical section so the
+/// eviction and seeding steps are atomic with respect to concurrent tests.
+///
+/// # Isolation guarantee
+/// Before seeding, calls `evict_foreign_global_skills` to remove any directories
+/// in the global-skills volume that are NOT part of this run's corpus.  Then
+/// polls `poll_graph_skill_count` until the DB `skills` table reflects exactly
+/// `corpus.skills.len()` rows.  If convergence fails within `timeout`, panics
+/// loudly — the measurement must not proceed against a dirty graph.
+async fn seed_isolated_corpus_and_wait(
+    ns: &str,
+    corpus: &LabeledCorpus,
+    guard: &mut SeededSkillGuard,
+    timeout: Duration,
+) {
+    let expected_slugs = corpus_slugs(ns, corpus);
+    let expected_count = corpus.skills.len() as i64;
+
+    // Step 1: evict every global-skills dir that isn't part of this corpus.
+    evict_foreign_global_skills(&expected_slugs);
+
+    // Step 2: read the baseline graph_version so wait_for_rebuild can detect
+    // when the graph has processed our seeding.
+    let pg = PgObserver::connect().await;
     let prev_version = pg
         .graph_version()
         .await
-        .expect("must read baseline graph_version");
+        .expect("[rq-isolation] must read baseline graph_version before seeding");
 
+    // Step 3: seed the corpus.
     for skill in &corpus.skills {
         let slug = format!("{ns}-{}", skill.id);
         let md = skill.skill_md(&slug);
         seed::write_pending(SkillScope::Global, &slug, &md)
-            .unwrap_or_else(|e| panic!("seed write_pending({slug}) failed: {e}"));
+            .unwrap_or_else(|e| panic!("[rq-isolation] seed write_pending({slug}) failed: {e}"));
         seed::approve(SkillScope::Global, &slug)
-            .unwrap_or_else(|e| panic!("seed approve({slug}) failed: {e}"));
+            .unwrap_or_else(|e| panic!("[rq-isolation] seed approve({slug}) failed: {e}"));
+        guard.record(SkillScope::Global, &slug);
     }
 
-    // graph-builder polls every 5s; allow generous headroom for embedding all
-    // skills + subunits through real Ollama on CPU.
-    wait_for_rebuild(prev_version, Duration::from_secs(180))
+    // Step 4: wait for graph-builder to pick up the seeded skills AND reconcile
+    // the deletions from the eviction step.
+    wait_for_rebuild(prev_version, timeout)
         .await
         .unwrap_or_else(|e| {
-            panic!("graph did not rebuild after seeding the labeled corpus: {e}")
+            panic!("[rq-isolation] graph did not rebuild after seeding the corpus: {e}")
         });
-}
 
-/// Removes every seeded skill for this namespace (best-effort cleanup).
-fn cleanup_corpus(ns: &str, corpus: &LabeledCorpus) {
-    for skill in &corpus.skills {
-        let slug = format!("{ns}-{}", skill.id);
-        let _ = seed::remove(SkillScope::Global, &slug);
-    }
+    // Step 5: assert the graph's skills table shows exactly the corpus size.
+    // A surplus means eviction deletions haven't propagated yet; a deficit means
+    // some skills failed to embed/ingest.  Either is a hard failure for measurement.
+    poll_graph_skill_count(expected_count, Duration::from_secs(60))
+        .await
+        .unwrap_or_else(|e| {
+            panic!(
+                "[rq-isolation] graph did not converge to isolated corpus: {e}\n\
+                 Current volume contents: {:?}",
+                seed::list(SkillScope::Global)
+            )
+        });
+
+    eprintln!(
+        "[rq-isolation] corpus isolated: {expected_count} skills in graph, \
+         volume contains only this run's slugs"
+    );
 }
 
 /// Parses the ranked skill ids out of a compiled `additional_context` markdown.
@@ -117,7 +260,11 @@ fn parse_ranked_ids(additional_context: &str, ns: &str) -> Vec<String> {
 }
 
 /// Runs one query against the live server and returns the ranked base ids it served.
-async fn live_ranking(client: &McpClient, ns: &str, query: &LabeledQuery) -> (Vec<String>, String, u64) {
+async fn live_ranking(
+    client: &McpClient,
+    ns: &str,
+    query: &LabeledQuery,
+) -> (Vec<String>, String, u64) {
     // A monotonic per-process counter guarantees unique session ids within a tight
     // loop so duplicate-suppression never collapses two probe calls.
     static PROBE_SEQ: AtomicU64 = AtomicU64::new(0);
@@ -168,7 +315,13 @@ async fn retrieval_quality_meets_thresholds_on_live_stack() {
     let logger = StageLogger::new("retrieval-quality");
     let client = McpClient::new();
 
-    seed_corpus_and_wait(&ns, &corpus).await;
+    // Serialize the seed→measure→cleanup section so sibling tests don't
+    // contaminate the global-skills volume while we are measuring.
+    let lock = RQ_MEASUREMENT_LOCK.get_or_init(|| Mutex::new(()));
+    let _measurement_guard = lock.lock().await;
+
+    let mut seeded_guard = SeededSkillGuard::new();
+    seed_isolated_corpus_and_wait(&ns, &corpus, &mut seeded_guard, Duration::from_secs(180)).await;
 
     // Score every non-negative query (negatives are checked separately).
     let mut results: Vec<(Vec<String>, BTreeSet<String>)> = Vec::new();
@@ -222,8 +375,18 @@ async fn retrieval_quality_meets_thresholds_on_live_stack() {
 
     for (name, ok, got, min) in [
         ("mean_mrr", mrr_ok, agg.mrr, t.mean_mrr_min),
-        ("mean_precision_at_1", p1_ok, agg.mean_precision_at_1, t.mean_precision_at_1_min),
-        ("mean_ndcg_at_3", ndcg_ok, agg.mean_ndcg_at_k, t.mean_ndcg_at_3_min),
+        (
+            "mean_precision_at_1",
+            p1_ok,
+            agg.mean_precision_at_1,
+            t.mean_precision_at_1_min,
+        ),
+        (
+            "mean_ndcg_at_3",
+            ndcg_ok,
+            agg.mean_ndcg_at_k,
+            t.mean_ndcg_at_3_min,
+        ),
     ] {
         logger.record_contract_assertion(ContractAssertion {
             contract_name: format!("quality::{name}"),
@@ -239,7 +402,11 @@ async fn retrieval_quality_meets_thresholds_on_live_stack() {
         });
     }
 
-    cleanup_corpus(&ns, &corpus);
+    seeded_guard.cleanup();
+    // Drop the measurement lock — the next test in this binary can now enter
+    // its own seed→measure→cleanup critical section.
+    drop(_measurement_guard);
+
     let path = logger.emit_report();
     println!("[retrieval-quality] report: {}", path.display());
     println!(
@@ -255,9 +422,12 @@ async fn retrieval_quality_meets_thresholds_on_live_stack() {
          Do NOT lower the thresholds — investigate scoring weights (α/β/γ), the\n\
          subunit-evidence aggregation, and the relevance threshold.\n\
          Report: {}\n",
-        agg.mrr, t.mean_mrr_min,
-        agg.mean_precision_at_1, t.mean_precision_at_1_min,
-        agg.mean_ndcg_at_k, t.mean_ndcg_at_3_min,
+        agg.mrr,
+        t.mean_mrr_min,
+        agg.mean_precision_at_1,
+        t.mean_precision_at_1_min,
+        agg.mean_ndcg_at_k,
+        t.mean_ndcg_at_3_min,
         path.display(),
     );
 }
@@ -279,9 +449,17 @@ async fn semantic_retrieval_beats_lexical_baseline_on_disjoint() {
     let logger = StageLogger::new("retrieval-quality-semantic-vs-lexical");
     let client = McpClient::new();
 
-    seed_corpus_and_wait(&ns, &corpus).await;
+    let lock = RQ_MEASUREMENT_LOCK.get_or_init(|| Mutex::new(()));
+    let _measurement_guard = lock.lock().await;
 
-    let disjoint: Vec<&LabeledQuery> = corpus.queries.iter().filter(|q| q.kind == "disjoint").collect();
+    let mut seeded_guard = SeededSkillGuard::new();
+    seed_isolated_corpus_and_wait(&ns, &corpus, &mut seeded_guard, Duration::from_secs(180)).await;
+
+    let disjoint: Vec<&LabeledQuery> = corpus
+        .queries
+        .iter()
+        .filter(|q| q.kind == "disjoint")
+        .collect();
 
     let mut semantic_results: Vec<(Vec<String>, BTreeSet<String>)> = Vec::new();
     let mut lexical_results: Vec<(Vec<String>, BTreeSet<String>)> = Vec::new();
@@ -345,11 +523,14 @@ async fn semantic_retrieval_beats_lexical_baseline_on_disjoint() {
             AssertionResult::Passed
         } else {
             AssertionResult::Failed {
-                expected: format!("semantic MAP ({semantic_map:.4}) >= lexical MAP ({lexical_map:.4})"),
+                expected: format!(
+                    "semantic MAP ({semantic_map:.4}) >= lexical MAP ({lexical_map:.4})"
+                ),
                 actual: "lexical baseline matched or beat the semantic pipeline".to_owned(),
             }
         },
-        details: "real nomic-embed-text vs token-overlap baseline on lexically-disjoint queries".to_owned(),
+        details: "real nomic-embed-text vs token-overlap baseline on lexically-disjoint queries"
+            .to_owned(),
     });
     logger.record_contract_assertion(ContractAssertion {
         contract_name: "quality::disjoint_recall_at_k".to_owned(),
@@ -361,10 +542,15 @@ async fn semantic_retrieval_beats_lexical_baseline_on_disjoint() {
                 actual: format!("recall@{K} = {disjoint_recall:.3}"),
             }
         },
-        details: format!("{semantic_recall_hits}/{} disjoint targets served in top-{K}", disjoint.len()),
+        details: format!(
+            "{semantic_recall_hits}/{} disjoint targets served in top-{K}",
+            disjoint.len()
+        ),
     });
 
-    cleanup_corpus(&ns, &corpus);
+    seeded_guard.cleanup();
+    drop(_measurement_guard);
+
     let path = logger.emit_report();
     println!(
         "[semantic-vs-lexical] semantic MAP={semantic_map:.3} lexical MAP={lexical_map:.3} disjoint recall@{K}={disjoint_recall:.3} report={}",
@@ -397,9 +583,17 @@ async fn negative_queries_do_not_fabricate_matches() {
     let logger = StageLogger::new("retrieval-quality-negatives");
     let client = McpClient::new();
 
-    seed_corpus_and_wait(&ns, &corpus).await;
+    let lock = RQ_MEASUREMENT_LOCK.get_or_init(|| Mutex::new(()));
+    let _measurement_guard = lock.lock().await;
 
-    let negatives: Vec<&LabeledQuery> = corpus.queries.iter().filter(|q| q.kind == "negative").collect();
+    let mut seeded_guard = SeededSkillGuard::new();
+    seed_isolated_corpus_and_wait(&ns, &corpus, &mut seeded_guard, Duration::from_secs(180)).await;
+
+    let negatives: Vec<&LabeledQuery> = corpus
+        .queries
+        .iter()
+        .filter(|q| q.kind == "negative")
+        .collect();
     let mut false_matches = 0usize;
 
     for query in &negatives {
@@ -428,15 +622,23 @@ async fn negative_queries_do_not_fabricate_matches() {
         } else {
             AssertionResult::Failed {
                 expected: format!("false_match_rate <= {}", t.negative_max_false_match_rate),
-                actual: format!("false_match_rate = {false_match_rate:.3} ({false_matches}/{})", negatives.len()),
+                actual: format!(
+                    "false_match_rate = {false_match_rate:.3} ({false_matches}/{})",
+                    negatives.len()
+                ),
             }
         },
         details: "off-topic queries must return no_match, not a spurious skill".to_owned(),
     });
 
-    cleanup_corpus(&ns, &corpus);
+    seeded_guard.cleanup();
+    drop(_measurement_guard);
+
     let path = logger.emit_report();
-    println!("[negatives] false_match_rate={false_match_rate:.3} report={}", path.display());
+    println!(
+        "[negatives] false_match_rate={false_match_rate:.3} report={}",
+        path.display()
+    );
 
     assert!(
         ok,
@@ -444,7 +646,9 @@ async fn negative_queries_do_not_fabricate_matches() {
          false_match_rate={false_match_rate:.3} (max {:.2}); {false_matches}/{} negatives served a skill.\n\
          The relevance threshold is too low — off-topic prompts cross it and inject\n\
          irrelevant context. Raise/justify relevance_threshold. Report: {}\n",
-        t.negative_max_false_match_rate, negatives.len(), path.display(),
+        t.negative_max_false_match_rate,
+        negatives.len(),
+        path.display(),
     );
 }
 
@@ -461,7 +665,11 @@ async fn compile_context_latency_p50_p95_within_budget() {
     let logger = StageLogger::new("retrieval-quality-latency");
     let client = McpClient::new();
 
-    seed_corpus_and_wait(&ns, &corpus).await;
+    let lock = RQ_MEASUREMENT_LOCK.get_or_init(|| Mutex::new(()));
+    let _measurement_guard = lock.lock().await;
+
+    let mut seeded_guard = SeededSkillGuard::new();
+    seed_isolated_corpus_and_wait(&ns, &corpus, &mut seeded_guard, Duration::from_secs(180)).await;
 
     // Warm the pipeline (snapshot + any lazy init) before measuring.
     let warm = &corpus.queries[0];
@@ -470,7 +678,11 @@ async fn compile_context_latency_p50_p95_within_budget() {
     }
 
     // Measure both server-reported and wall-clock latency over a burst.
-    let prompts: Vec<&LabeledQuery> = corpus.queries.iter().filter(|q| q.kind != "negative").collect();
+    let prompts: Vec<&LabeledQuery> = corpus
+        .queries
+        .iter()
+        .filter(|q| q.kind != "negative")
+        .collect();
     let mut server_ms: Vec<u64> = Vec::new();
     let mut wall_ms: Vec<u64> = Vec::new();
     let rounds = 4;
@@ -511,7 +723,9 @@ async fn compile_context_latency_p50_p95_within_budget() {
         details: format!("{} samples over {rounds} rounds", server_ms.len()),
     });
 
-    cleanup_corpus(&ns, &corpus);
+    seeded_guard.cleanup();
+    drop(_measurement_guard);
+
     let path = logger.emit_report();
     println!(
         "[latency] server p50={server_p50}ms p95={server_p95}ms | wall p50={wall_p50}ms p95={wall_p95}ms | budget={budget}ms report={}",

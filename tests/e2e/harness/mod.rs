@@ -20,11 +20,13 @@
 /// # Module responsibilities
 /// - [`stack`]    — bring the full stack up; `kill`/`stop`/`start`/`pause`/`unpause`.
 /// - [`app`]      — `McpClient` over HTTP: `compile_context`, `health`, `ingest_transcript`.
-/// - [`seed`]     — sidecar volume writer/approver: `write_pending`, `approve`, `remove`.
+/// - [`seed`]     — sidecar volume writer/approver: `write_pending`, `approve`, `remove`, `list`.
+/// - [`guard`]    — `SeededSkillGuard`: panic-safe RAII cleanup for volume-seeded skills.
 /// - [`observe`]  — read-only `PgObserver`, `QdrantObserver`, `RedisObserver`.
 /// - [`poll`]     — `poll_until`, `wait_for_rebuild`, `wait_for_health`.
 /// - [`stagelog`] — per-run/per-stage JSON + MD logs; `E2EReport` emission.
 pub mod app;
+pub mod guard;
 pub mod observe;
 pub mod poll;
 pub mod seed;

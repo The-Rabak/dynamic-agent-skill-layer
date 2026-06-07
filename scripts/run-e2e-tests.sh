@@ -32,6 +32,24 @@ COMPOSE_FILE="docker-compose.test.yml"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 
+# ---------------------------------------------------------------------------
+# Run-scoped report directory
+#
+# Every run writes its flat <scenario>__<test_id>.json reports and its
+# per-run stage tree under this unique directory.  The aggregator and the
+# summary script read ONLY from here, so stale artifacts from prior runs
+# (still sitting in tests/e2e/reports/) can never contaminate this run's
+# result.
+#
+# The env var is exported BEFORE any `cargo test` invocation so every test
+# process inherits it and StageLogger picks it up automatically.
+# ---------------------------------------------------------------------------
+REPORTS_BASE_DIR="${REPO_ROOT}/tests/e2e/reports"
+RUN_ID="run-$(date +%Y%m%d-%H%M%S)-$$"
+export E2E_RUN_REPORT_DIR="${REPORTS_BASE_DIR}/runs/${RUN_ID}"
+mkdir -p "${E2E_RUN_REPORT_DIR}"
+echo "==> Run artifacts dir: ${E2E_RUN_REPORT_DIR}"
+
 # Port mappings — keep in sync with docker-compose.test.yml
 OLLAMA_PORT=11444
 QDRANT_HTTP_PORT=16333
@@ -167,25 +185,31 @@ fi
 echo "==> All selected E2E suites completed"
 
 echo "==> Aggregating E2E reports"
-REPORTS_DIR="${REPO_ROOT}/tests/e2e/reports"
 TIMESTAMP=$(date +%Y%m%d%H%M%S)
-AGGREGATE_REPORT="${REPORTS_DIR}/run__${TIMESTAMP}.json"
+AGGREGATE_REPORT="${E2E_RUN_REPORT_DIR}/run__${TIMESTAMP}.json"
 
-# Count test results from report files
-if ls "${REPORTS_DIR}"/*.json 2>/dev/null | grep -qv "run__"; then
+# Glob ONLY the flat <scenario>__<test_id>.json files written by StageLogger
+# into this run's scoped directory.  The broader tests/e2e/reports/ tree is
+# intentionally NOT globbed here — stale files from prior runs must not
+# affect this run's aggregate.
+if ls "${E2E_RUN_REPORT_DIR}"/*.json 2>/dev/null | grep -qv "run__"; then
   echo "Found individual report files, aggregating..."
-  # Use python3 to merge all individual reports into one aggregate
+  # Use python3 to merge run-scoped reports into one aggregate.
   python3 -c "
-import json, glob, os
-reports_dir = '${REPORTS_DIR}'
+import json, glob, os, sys
+run_dir = '${E2E_RUN_REPORT_DIR}'
 reports = []
-for path in sorted(glob.glob(os.path.join(reports_dir, '*.json'))):
+for path in sorted(glob.glob(os.path.join(run_dir, '*.json'))):
+    basename = os.path.basename(path)
+    # Skip any pre-existing aggregate files (run__*.json) from re-ingestion.
+    if basename.startswith('run__'):
+        continue
     with open(path) as f:
         try:
             report = json.load(f)
             reports.append(report)
         except json.JSONDecodeError:
-            print(f'Warning: could not parse {path}')
+            print(f'Warning: could not parse {path}', file=sys.stderr)
 
 total = len(reports)
 passed = sum(1 for r in reports if r.get('outcome', {}).get('status') == 'Passed')
@@ -194,6 +218,8 @@ degraded_passed = sum(1 for r in reports if r.get('outcome', {}).get('status') =
                        and any(d.get('service') for d in r.get('degradation_events', [])))
 
 aggregate = {
+    'run_id': '${RUN_ID}',
+    'run_artifact_root': run_dir,
     'run_summary': {
         'total_tests': total,
         'passed': passed,
@@ -214,25 +240,40 @@ print(f'Aggregated {total} reports ({passed} passed, {failed} failed) into ${AGG
 "
 else
   echo "No individual reports found, creating minimal aggregate"
-  echo '{"run_summary":{"total_tests":0,"passed":0,"failed":0,"degraded_passed":0,"total_duration_ms":0,"start_time":"","end_time":"","container_versions":{}},"reports":[]}' > "${AGGREGATE_REPORT}"
+  python3 -c "
+import json
+aggregate = {
+    'run_id': '${RUN_ID}',
+    'run_artifact_root': '${E2E_RUN_REPORT_DIR}',
+    'run_summary': {'total_tests': 0, 'passed': 0, 'failed': 0, 'degraded_passed': 0,
+                    'total_duration_ms': 0, 'start_time': '', 'end_time': '',
+                    'container_versions': {}},
+    'reports': []
+}
+with open('${AGGREGATE_REPORT}', 'w') as f:
+    json.dump(aggregate, f, indent=2)
+"
 fi
 
 echo "==> Generating human-readable run summary"
-python3 "${SCRIPT_DIR}/generate-e2e-summary.py" 2>&1 || echo "Warning: summary generation failed (non-fatal)"
+# Pass --input pointing at this run's aggregate so the summary reflects
+# ONLY this run, never stale artifacts from prior runs.
+python3 "${SCRIPT_DIR}/generate-e2e-summary.py" \
+    --input "${AGGREGATE_REPORT}" \
+    --output "${E2E_RUN_REPORT_DIR}/summary.md" \
+  2>&1 || echo "Warning: summary generation failed (non-fatal)"
+
+# Also write latest-summary.md so the repo-level convenience pointer is fresh.
+cp "${E2E_RUN_REPORT_DIR}/summary.md" \
+   "${REPORTS_BASE_DIR}/latest-summary.md" 2>/dev/null || true
 
 echo "==> Running judge contract validation"
-JUDGE_REPORT="${REPORTS_DIR}/judge_evaluation.json"
+JUDGE_REPORT="${E2E_RUN_REPORT_DIR}/judge_evaluation.json"
 python3 -c "
 import json, os
-reports_dir = '${REPORTS_DIR}'
 
-# Find the latest aggregate report
-agg_files = sorted([f for f in os.listdir(reports_dir) if f.startswith('run__') and f.endswith('.json')])
-if not agg_files:
-    print('No aggregate report found')
-    exit(1)
-
-with open(os.path.join(reports_dir, agg_files[-1])) as f:
+# Read ONLY the aggregate for THIS run — never glob the broad reports/ dir.
+with open('${AGGREGATE_REPORT}') as f:
     aggregate = json.load(f)
 
 reports = aggregate.get('reports', [])

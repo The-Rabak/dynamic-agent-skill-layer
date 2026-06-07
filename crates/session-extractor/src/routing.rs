@@ -174,8 +174,7 @@ impl RoutingDecision {
 pub fn compute_routing_decision(
     provider: ExtractionProvider,
 ) -> Result<RoutingDecision, RoutingConfigError> {
-    let routing_raw = std::env::var("EXTRACT_SESSION_ROUTING")
-        .unwrap_or_default();
+    let routing_raw = std::env::var("EXTRACT_SESSION_ROUTING").unwrap_or_default();
     let routing_str = routing_raw.trim().to_ascii_lowercase();
 
     let tier = match routing_str.as_str() {
@@ -223,16 +222,24 @@ pub fn compute_routing_decision(
 /// Error produced when routing environment configuration is malformed.
 #[derive(Debug, thiserror::Error)]
 pub enum RoutingConfigError {
-    #[error(
-        "EXTRACT_SESSION_ROUTING_THRESHOLD_TOKENS is not a valid integer: {raw:?} — {cause}"
-    )]
+    #[error("EXTRACT_SESSION_ROUTING_THRESHOLD_TOKENS is not a valid integer: {raw:?} — {cause}")]
     InvalidThreshold { raw: String, cause: String },
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{ExtractionProvider, segmentation::{SegmentationConfig, segment_session}};
+
+    /// Serializes tests that mutate the process-global `EXTRACT_SESSION_ROUTING`
+    /// env var so they cannot clobber each other under parallel `cargo test`
+    /// (#176 follow-up: the previous `let _guard = env::var(..).ok()` was a no-op
+    /// — an Option, not a lock). Every env-mutating test holds this for its body.
+    static ENV_LOCK: std::sync::LazyLock<std::sync::Mutex<()>> =
+        std::sync::LazyLock::new(|| std::sync::Mutex::new(()));
+    use crate::{
+        ExtractionProvider,
+        segmentation::{SegmentationConfig, segment_session},
+    };
     use domain::SessionEvent;
 
     // ── helpers ──────────────────────────────────────────────────────────────
@@ -308,8 +315,10 @@ mod tests {
     #[test]
     fn unset_routing_env_yields_local_tier() {
         // Ensure the env var is absent for this test.
-        let _guard = std::env::var("EXTRACT_SESSION_ROUTING").ok();
-        unsafe { std::env::remove_var("EXTRACT_SESSION_ROUTING"); }
+        let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
+        unsafe {
+            std::env::remove_var("EXTRACT_SESSION_ROUTING");
+        }
 
         let decision =
             compute_routing_decision(ExtractionProvider::Ollama).expect("decision must succeed");
@@ -322,53 +331,73 @@ mod tests {
     /// EXTRACT_SESSION_ROUTING=frontier → Frontier tier with the frontier token budget.
     #[test]
     fn frontier_routing_env_yields_frontier_tier() {
-        let _guard = std::env::var("EXTRACT_SESSION_ROUTING").ok();
-        unsafe { std::env::set_var("EXTRACT_SESSION_ROUTING", "frontier"); }
+        let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
+        unsafe {
+            std::env::set_var("EXTRACT_SESSION_ROUTING", "frontier");
+        }
 
-        let decision =
-            compute_routing_decision(ExtractionProvider::ClaudeCode).expect("decision must succeed");
+        let decision = compute_routing_decision(ExtractionProvider::ClaudeCode)
+            .expect("decision must succeed");
         assert_eq!(decision.tier, ExtractionRoutingTier::Frontier);
         assert_eq!(decision.provider, ExtractionProvider::ClaudeCode);
-        assert_eq!(decision.segmentation_token_budget, FRONTIER_TIER_TOKEN_BUDGET);
+        assert_eq!(
+            decision.segmentation_token_budget,
+            FRONTIER_TIER_TOKEN_BUDGET
+        );
         assert!(decision.dual_pass_enabled);
 
-        unsafe { std::env::remove_var("EXTRACT_SESSION_ROUTING"); }
+        unsafe {
+            std::env::remove_var("EXTRACT_SESSION_ROUTING");
+        }
     }
 
     /// EXTRACT_SESSION_ROUTING=tiered with a frontier provider → Frontier tier.
     #[test]
     fn tiered_routing_with_frontier_provider_yields_frontier_tier() {
-        let _guard = std::env::var("EXTRACT_SESSION_ROUTING").ok();
-        unsafe { std::env::set_var("EXTRACT_SESSION_ROUTING", "tiered"); }
+        let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
+        unsafe {
+            std::env::set_var("EXTRACT_SESSION_ROUTING", "tiered");
+        }
 
-        let decision =
-            compute_routing_decision(ExtractionProvider::ClaudeCode).expect("decision must succeed");
+        let decision = compute_routing_decision(ExtractionProvider::ClaudeCode)
+            .expect("decision must succeed");
         assert_eq!(decision.tier, ExtractionRoutingTier::Frontier);
-        assert_eq!(decision.segmentation_token_budget, FRONTIER_TIER_TOKEN_BUDGET);
+        assert_eq!(
+            decision.segmentation_token_budget,
+            FRONTIER_TIER_TOKEN_BUDGET
+        );
 
-        unsafe { std::env::remove_var("EXTRACT_SESSION_ROUTING"); }
+        unsafe {
+            std::env::remove_var("EXTRACT_SESSION_ROUTING");
+        }
     }
 
     /// EXTRACT_SESSION_ROUTING=tiered with Ollama → Local tier.
     #[test]
     fn tiered_routing_with_ollama_provider_yields_local_tier() {
-        let _guard = std::env::var("EXTRACT_SESSION_ROUTING").ok();
-        unsafe { std::env::set_var("EXTRACT_SESSION_ROUTING", "tiered"); }
+        let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
+        unsafe {
+            std::env::set_var("EXTRACT_SESSION_ROUTING", "tiered");
+        }
 
         let decision =
             compute_routing_decision(ExtractionProvider::Ollama).expect("decision must succeed");
         assert_eq!(decision.tier, ExtractionRoutingTier::Local);
         assert_eq!(decision.segmentation_token_budget, LOCAL_TIER_TOKEN_BUDGET);
 
-        unsafe { std::env::remove_var("EXTRACT_SESSION_ROUTING"); }
+        unsafe {
+            std::env::remove_var("EXTRACT_SESSION_ROUTING");
+        }
     }
 
     /// Unknown EXTRACT_SESSION_ROUTING value → Local tier (observable warning,
     /// not a fatal error — the test just checks the fallback, not the warning log).
     #[test]
     fn unknown_routing_env_falls_back_to_local_tier() {
-        let _guard = std::env::var("EXTRACT_SESSION_ROUTING").ok();
-        unsafe { std::env::set_var("EXTRACT_SESSION_ROUTING", "unknown-future-strategy"); }
+        let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
+        unsafe {
+            std::env::set_var("EXTRACT_SESSION_ROUTING", "unknown-future-strategy");
+        }
 
         let decision =
             compute_routing_decision(ExtractionProvider::Ollama).expect("decision must succeed");
@@ -378,7 +407,9 @@ mod tests {
             "unknown routing value must fall back to Local (loud warn, not fatal)"
         );
 
-        unsafe { std::env::remove_var("EXTRACT_SESSION_ROUTING"); }
+        unsafe {
+            std::env::remove_var("EXTRACT_SESSION_ROUTING");
+        }
     }
 
     // ── granularity parity tests ──────────────────────────────────────────────
@@ -442,10 +473,7 @@ mod tests {
             frontier_covered, expected,
             "frontier tier must cover all events"
         );
-        assert_eq!(
-            local_covered, expected,
-            "local tier must cover all events"
-        );
+        assert_eq!(local_covered, expected, "local tier must cover all events");
     }
 
     /// Proves that the routing decision for a frontier-configured provider matches
@@ -457,16 +485,26 @@ mod tests {
     #[test]
     fn routing_decision_budget_matches_segmentation_tier_expectation() {
         // Frontier routing must produce the frontier token budget.
-        let _guard = std::env::var("EXTRACT_SESSION_ROUTING").ok();
-        unsafe { std::env::set_var("EXTRACT_SESSION_ROUTING", "frontier"); }
+        let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
+        unsafe {
+            std::env::set_var("EXTRACT_SESSION_ROUTING", "frontier");
+        }
         let frontier_decision =
             compute_routing_decision(ExtractionProvider::ClaudeCode).expect("must succeed");
-        assert_eq!(frontier_decision.segmentation_token_budget, FRONTIER_TIER_TOKEN_BUDGET);
-        unsafe { std::env::remove_var("EXTRACT_SESSION_ROUTING"); }
+        assert_eq!(
+            frontier_decision.segmentation_token_budget,
+            FRONTIER_TIER_TOKEN_BUDGET
+        );
+        unsafe {
+            std::env::remove_var("EXTRACT_SESSION_ROUTING");
+        }
 
         // Local routing (unset) must produce the local token budget.
         let local_decision =
             compute_routing_decision(ExtractionProvider::Ollama).expect("must succeed");
-        assert_eq!(local_decision.segmentation_token_budget, LOCAL_TIER_TOKEN_BUDGET);
+        assert_eq!(
+            local_decision.segmentation_token_budget,
+            LOCAL_TIER_TOKEN_BUDGET
+        );
     }
 }

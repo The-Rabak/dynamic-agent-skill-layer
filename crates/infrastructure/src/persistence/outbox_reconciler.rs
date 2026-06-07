@@ -153,3 +153,110 @@ fn outbox_record_is_newer(candidate: &OutboxRecord, current: &OutboxRecord) -> b
     (candidate.occurred_at, candidate.event.event_id)
         > (current.occurred_at, current.event.event_id)
 }
+
+#[cfg(test)]
+mod tests {
+    use chrono::Utc;
+    use serde_json::json;
+    use uuid::Uuid;
+
+    use super::*;
+    use crate::persistence::outbox::{OutboxEvent, OutboxRecord, VECTOR_UPSERT_EVENT_TYPE};
+
+    fn make_published_record(content_hash: &str, occurred_offset_ms: i64) -> OutboxRecord {
+        let occurred_at = Utc::now() + chrono::Duration::milliseconds(occurred_offset_ms);
+        let payload = json!({
+            "content_hash": content_hash,
+            "vector": [0.1_f32, 0.2_f32],
+            "payload": {}
+        });
+        OutboxRecord {
+            event: OutboxEvent {
+                event_id: Uuid::now_v7(),
+                event_type: VECTOR_UPSERT_EVENT_TYPE.to_owned(),
+                correlation_id: Uuid::now_v7(),
+                idempotency_key: format!("key:{content_hash}:{occurred_offset_ms}"),
+                schema_version: 1,
+                timestamp: occurred_at,
+                payload,
+            },
+            attempts: 0,
+            stream_id: None,
+            last_error: None,
+            occurred_at,
+            available_at: occurred_at,
+        }
+    }
+
+    /// Regression test for the DS-005 double-count bug.
+    ///
+    /// When the reconciler enqueues a repair event for a missing vector, both the
+    /// original published event and the repair event end up in `outbox_events` with
+    /// `status='published'` and the SAME `content_hash`. A naive `COUNT(*)` would
+    /// return 2 for one Qdrant point, creating a phantom mismatch (published=2,
+    /// qdrant=1) that falsely looks like drift.
+    ///
+    /// `expected_points_by_event` must deduplicate: two records with the same
+    /// `content_hash` → one entry in the expected map (the newer record wins).
+    /// The count of that map equals the true number of Qdrant points expected,
+    /// not the number of outbox rows.
+    #[test]
+    fn expected_points_deduplicates_repair_duplicate_for_same_content_hash() {
+        let content_hash = "test-content-hash-abc123";
+        // Simulate the DS-005 scenario: original published event + reconciler repair event,
+        // both with the same content_hash but different event_ids and idempotency keys.
+        let original = make_published_record(content_hash, 0);
+        let repair = make_published_record(content_hash, 100); // repair is newer
+
+        let records = vec![original, repair];
+        let expected = expected_points_by_event(&records)
+            .expect("deduplication must succeed for valid payloads");
+
+        // Two outbox rows with the same content_hash collapse to one point_id in the map.
+        assert_eq!(
+            expected.len(),
+            1,
+            "two published events with the same content_hash must map to exactly one expected \
+             Qdrant point — counting raw outbox rows would give 2, masking the real count"
+        );
+    }
+
+    /// Proves that two records with DIFFERENT content_hashes produce two distinct expected
+    /// points — the deduplication does not collapse genuinely different vectors.
+    #[test]
+    fn expected_points_preserves_distinct_content_hashes_as_separate_points() {
+        let record_a = make_published_record("hash-alpha", 0);
+        let record_b = make_published_record("hash-beta", 0);
+
+        let records = vec![record_a, record_b];
+        let expected = expected_points_by_event(&records)
+            .expect("two distinct hashes must produce two expected points");
+
+        assert_eq!(
+            expected.len(),
+            2,
+            "distinct content_hashes must each produce their own expected Qdrant point"
+        );
+    }
+
+    /// Proves the newer-wins deduplication policy: when two events share a content_hash,
+    /// the one with the later `occurred_at` is kept as the replay candidate.
+    #[test]
+    fn expected_points_keeps_newer_record_when_deduplicating() {
+        let content_hash = "same-hash";
+        let older = make_published_record(content_hash, 0);
+        let newer = make_published_record(content_hash, 500);
+        let older_event_id = older.event.event_id;
+        let newer_event_id = newer.event.event_id;
+
+        // Insert older first, then newer — deduplication must keep the newer one.
+        let records = vec![older, newer];
+        let expected = expected_points_by_event(&records).expect("deduplication must succeed");
+
+        let kept = expected.values().next().expect("one entry must remain");
+        assert_eq!(
+            kept.event.event_id, newer_event_id,
+            "newer record (event_id={newer_event_id}) must win over older (event_id={older_event_id})"
+        );
+    }
+}

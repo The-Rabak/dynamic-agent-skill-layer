@@ -16,6 +16,9 @@ use std::path::PathBuf;
 
 #[path = "../integration/env_guard.rs"]
 mod env_guard;
+#[path = "harness/mod.rs"]
+#[allow(dead_code, unused_imports)]
+mod harness;
 #[path = "report.rs"]
 mod report;
 #[path = "support/mod.rs"]
@@ -1569,15 +1572,21 @@ async fn qdrant_pg_drift_detection_and_reconciliation_closes_all_gaps() {
 
     // --- Phase 5: Post-reconcile store-count equality (the durable invariant) ---
     //
-    // After full convergence: the count of Qdrant vectors must equal the count of
-    // published vector.upsert outbox events. This is the fundamental consistency
-    // invariant: every published event must have a live vector, and every live vector
-    // must have a published event.
+    // After full convergence: the count of DISTINCT Qdrant point IDs expected from
+    // published vector.upsert outbox events must equal the count of live Qdrant vectors.
     //
-    // We measure both counts from the real stores.
-    let published_event_count: i64 = sqlx::query_scalar(
+    // IMPORTANT: The reconciler appends repair events for missing vectors. Those repair
+    // events carry the same content_hash as the original published events, so they map
+    // to the same Qdrant point_id when relayed. Counting raw published-event rows with
+    // COUNT(*) would therefore count both the original event and its repair duplicate,
+    // yielding 2× the expected Qdrant vector count and falsely reporting divergence.
+    //
+    // The correct invariant is over DISTINCT content_hashes (which are the canonical
+    // input to qdrant_point_id_from_content_hash). Two published events with the same
+    // content_hash map to one Qdrant vector — that is intentional idempotency, not drift.
+    let distinct_published_point_count: i64 = sqlx::query_scalar(
         r#"
-        SELECT COUNT(*)
+        SELECT COUNT(DISTINCT payload->>'content_hash')
         FROM outbox_events
         WHERE status = 'published'
           AND event_type = $1
@@ -1586,34 +1595,62 @@ async fn qdrant_pg_drift_detection_and_reconciliation_closes_all_gaps() {
     .bind(VECTOR_UPSERT_EVENT_TYPE)
     .fetch_one(&pool)
     .await
-    .expect("DS-005: count published vector.upsert events");
+    .expect("DS-005: count distinct published content_hashes (unique Qdrant point IDs)");
 
-    let qdrant_listing = components
-        .qdrant_adapter
-        .list_point_ids()
-        .await
-        .expect("DS-005: list Qdrant point IDs for final count assertion");
-
-    let qdrant_vector_count = qdrant_listing.point_ids.len() as i64;
+    // Settle-poll: give Qdrant a bounded window to reflect any in-flight upserts that
+    // the relay already acknowledged but Qdrant has not yet indexed. Each poll checks
+    // the real Qdrant REST API and retries until the vector count matches the expected
+    // distinct count or the window expires. NOT a fixed sleep — each iteration reads
+    // the live state and exits as soon as convergence is observed.
+    const SETTLE_POLL_MAX: u32 = 20;
+    const SETTLE_POLL_INTERVAL_MS: u64 = 100;
+    let (qdrant_vector_count, listing_is_complete) = {
+        let mut last_count: i64 = 0;
+        let mut last_is_complete = true;
+        for _ in 0..SETTLE_POLL_MAX {
+            let listing = components
+                .qdrant_adapter
+                .list_point_ids()
+                .await
+                .expect("DS-005: list Qdrant point IDs for settle-poll count assertion");
+            last_count = listing.point_ids.len() as i64;
+            last_is_complete = listing.is_complete;
+            if last_count == distinct_published_point_count {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(SETTLE_POLL_INTERVAL_MS)).await;
+        }
+        (last_count, last_is_complete)
+    };
 
     // The equality is only meaningful when the Qdrant listing is complete (no pagination).
     // If the listing is paginated, the test cannot make a reliable count comparison.
     assert!(
-        qdrant_listing.is_complete,
+        listing_is_complete,
         "DS-005: Qdrant listing must be complete for post-reconcile count assertion; \
          increase the list_point_ids page limit if needed"
     );
 
-    let store_counts_equal = published_event_count == qdrant_vector_count;
-    builder.assert_contract(
+    let store_counts_equal = distinct_published_point_count == qdrant_vector_count;
+    let contract_passed = builder.assert_contract(
         "post_reconcile_pg_published_count_equals_qdrant_vector_count",
         store_counts_equal,
-        "published_event_count == qdrant_vector_count",
+        "distinct_published_point_count == qdrant_vector_count",
         &format!(
-            "published_event_count={published_event_count} qdrant_vector_count={qdrant_vector_count}"
+            "distinct_published_point_count={distinct_published_point_count} qdrant_vector_count={qdrant_vector_count}"
         ),
-        "After reconciliation, every published vector.upsert event must have a live Qdrant vector \
+        "After reconciliation, every distinct published content_hash must have a live Qdrant vector \
          and every live Qdrant vector must have a published event — the fundamental consistency invariant",
+    );
+    // Enforce fail-loud: the test must fail immediately when the convergence invariant breaks,
+    // not silently write a Failed report and exit with ok. The report captures evidence; this
+    // assert fires the Rust test failure so the CI sees a real red test.
+    assert!(
+        contract_passed,
+        "DS-005: post-reconcile convergence invariant violated — \
+         distinct_published_point_count={distinct_published_point_count} \
+         qdrant_vector_count={qdrant_vector_count}; \
+         published=100/qdrant=50 means repair events were double-counted or relay did not converge"
     );
 
     let report = builder.build();
@@ -1628,81 +1665,651 @@ async fn qdrant_pg_drift_detection_and_reconciliation_closes_all_gaps() {
     namespace.cleanup().await;
 }
 
+/// DS-006 — Self-Growth Saturation & Convergence Proof
+///
+/// Proves the real self-growth loop closes end-to-end over the live containerized stack:
+///
+///   POST /ingest/transcript (real HTTP, N≥3 transcripts)
+///     → TranscriptQueueDrain::drain_once() (real LLM extraction via gemma4:12b)
+///     → observe ≥1 .pending draft on the host sandbox
+///     → sidecar write to Docker volume + approve (human gate)
+///     → graph-builder picks up, rebuilds, bumps graph_version
+///     → mcp-server snapshot advances (wait_for_rebuild)
+///     → 24 concurrent compile_context HTTP calls:
+///         assert ok_count > 0 AND ≥1 response serves the newly-approved slug
+///     → poll transcript queue to zero pending/processing
+///     → no duplicate active PG rows for the approved slug set
+///
+/// Every acceptance criterion is enforced with a real `assert!` / `assert_eq!` —
+/// NOT only `builder.assert_contract` (which records to the report but does NOT fail
+/// the Rust test). The report is evidence; the assert is the gate.
+///
+/// # Why no `from_environment` / in-process server
+/// The old DS-006 drove compile_context through an in-process `McpServerApp`, which
+/// tested only the retrieval layer, not the real HTTP transport. This revision uses
+/// the running containerized mcp-server at :3001 via `McpClient` throughout, which
+/// is what production actually uses.
 #[ignore = "requires live containers"]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn sustained_watcher_and_extraction_saturation_keeps_eventual_consistency() {
-    let namespace = env_guard::isolated_namespace().await;
-    let mut builder = report::ReportBuilder::new("DS-006_watcher_extraction_saturation");
-
-    let components = McpServerApp::from_environment(dream_retrieval_config())
-        .await
-        .expect("live");
-    let seeded_version = dream_seed_skills(
-        components.rebuild_coordinator.as_ref(),
-        &[
-            ("ds006-sat-skill-1", "Saturation skill alpha", &["alpha"]),
-            ("ds006-sat-skill-2", "Saturation skill beta", &["beta"]),
-            ("ds006-sat-skill-3", "Saturation skill gamma", &["gamma"]),
-        ],
-    )
-    .await;
-
-    let repo = test_repo_path();
-
-    // Publish graph.rebuilt to the sandbox Redis stream so the in-process
-    // graph_refresh_subscriber swaps the in-memory snapshot to the seeded state.
-    // Without this, compile_context would see 0 skills (empty boot snapshot) and
-    // return NoMatch for every request — the exact failure mode we must prevent.
-    dream_trigger_graph_refresh(
-        &components,
-        seeded_version,
-        &repo,
-        "ds006-refresh-probe",
-        "saturation refresh probe",
-    )
-    .await;
+    use infrastructure::TranscriptIngestQueue;
+    use maintenance::{DEFAULT_TRANSCRIPT_DRAIN_BATCH, TranscriptQueueDrain};
+    use session_extractor::SessionExtractor;
+    use std::time::{Duration, Instant};
     use tokio::task::JoinSet;
-    let mut set = JoinSet::new();
-    let app = components.app.clone();
-    for i in 0..24 {
-        let a = app.clone();
-        let repo_clone = repo.clone();
-        set.spawn(async move {
-            a.compile_context(CompileContextRequest {
-                prompt: format!("saturation stress {i}"),
-                session_id: format!("ds006-session-{i}"),
-                repo_path: repo_clone,
-                trigger: None,
-            })
+
+    use harness::{
+        app::{CompileContextArgs, IngestTranscriptBody, McpClient},
+        guard::SeededSkillGuard,
+        observe::PgObserver,
+        poll::wait_for_rebuild,
+        seed::{self, SkillScope},
+        stack::{POSTGRES_DSN, Stack},
+    };
+
+    // ── Ensure the containerized stack is healthy ──────────────────────────────
+    Stack::up().await;
+    let client = McpClient::new();
+
+    let mut builder = report::ReportBuilder::new("DS-006_watcher_extraction_saturation");
+    let mut seeded_guard = SeededSkillGuard::new();
+
+    // Unique run namespace prevents cross-run slug collisions (dedup on content_hash
+    // could otherwise suppress a transcript from a previous run that shares content).
+    let run_id = chrono::Utc::now().timestamp_millis();
+
+    // ── Env: configure in-process extraction to target the live Ollama ─────────
+    //
+    // The in-process TranscriptQueueDrain reads SKILL_GLOBAL_PATHS to know where
+    // to write .pending files. We point it at a host sandbox directory (inside
+    // target/, which is under SKILL_GLOBAL_ALLOWED_ROOTS) so the drain writes
+    // drafts on the host. We then read those drafts and write their content to the
+    // Docker volume via sidecar so graph-builder can pick them up.
+    //
+    // SAFETY: set_var is unsafe in multithreaded programs. The test runtime is
+    // multi-threaded (worker_threads=4), but env mutation is common in this test
+    // suite (test_extraction_quality.rs follows the same pattern). We set the vars
+    // before spawning tasks that read them, and only this function mutates them.
+    let sandbox = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .join(format!("target/ds006-sandbox-{run_id}"));
+    std::fs::create_dir_all(&sandbox).expect("DS-006: sandbox dir should create");
+
+    let ollama_base =
+        std::env::var("OLLAMA_URL").unwrap_or_else(|_| "http://localhost:11444".to_owned());
+    let ollama_base = ollama_base.trim_end_matches('/');
+    let ollama_extraction_endpoint = format!("{ollama_base}/api/generate");
+
+    // Scope env vars to this function: save prior values, restore on return.
+    // Since we run under a single-threaded async test, no other async task reads
+    // these vars concurrently inside this function's lifetime.
+    macro_rules! save_env {
+        ($key:expr) => {
+            std::env::var($key).ok()
+        };
+    }
+    macro_rules! set_env {
+        ($key:expr, $val:expr) => {
+            // SAFETY: see comment above.
+            unsafe { std::env::set_var($key, $val) };
+        };
+    }
+    macro_rules! restore_env {
+        ($key:expr, $prior:expr) => {
+            // SAFETY: see comment above.
+            unsafe {
+                match $prior {
+                    Some(ref v) => std::env::set_var($key, v),
+                    None => std::env::remove_var($key),
+                }
+            }
+        };
+    }
+
+    let prior_extract_provider = save_env!("EXTRACT_SESSION_PROVIDER");
+    let prior_extraction_model = save_env!("OLLAMA_EXTRACTION_MODEL");
+    let prior_extraction_endpoint = save_env!("OLLAMA_EXTRACTION_ENDPOINT");
+    let prior_global_paths = save_env!("SKILL_GLOBAL_PATHS");
+    let prior_allowed_roots = save_env!("SKILL_GLOBAL_ALLOWED_ROOTS");
+    let prior_transcript_root = save_env!("CLAUDE_TRANSCRIPT_ROOT");
+
+    set_env!("EXTRACT_SESSION_PROVIDER", "ollama");
+    // Use gemma4:12b (the production default confirmed working) unless an override
+    // is provided.  The ticket specifies gemma4:12b for this test.
+    if std::env::var("OLLAMA_EXTRACTION_MODEL")
+        .unwrap_or_default()
+        .is_empty()
+    {
+        set_env!("OLLAMA_EXTRACTION_MODEL", "gemma4:12b");
+    }
+    set_env!("OLLAMA_EXTRACTION_ENDPOINT", &ollama_extraction_endpoint);
+    set_env!("SKILL_GLOBAL_PATHS", sandbox.display().to_string());
+    set_env!(
+        "SKILL_GLOBAL_ALLOWED_ROOTS",
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .canonicalize()
+            .unwrap_or_else(|_| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../.."))
+            .display()
+            .to_string()
+    );
+    // CLAUDE_TRANSCRIPT_ROOT is required by SessionExtractor::from_environment
+    // even though TranscriptQueueDrain always uses transcript_inline (never reads
+    // a path on disk). Point it at the fixtures dir so the env check passes.
+    set_env!(
+        "CLAUDE_TRANSCRIPT_ROOT",
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tests/fixtures")
+            .display()
+            .to_string()
+    );
+
+    // ── Baseline graph_version ─────────────────────────────────────────────────
+    let pg = PgObserver::connect().await;
+    let prev_graph_version = pg
+        .graph_version()
+        .await
+        .expect("DS-006: must read baseline graph_version from PG");
+
+    eprintln!("[DS-006] baseline: graph_version={prev_graph_version}, run_id={run_id}");
+
+    // ── AC1: Health check — real HTTP transport is live ────────────────────────
+    let (health_code, _health_body) = client
+        .health()
+        .await
+        .expect("DS-006: GET /health must succeed — is the stack running?");
+    assert_eq!(
+        health_code, 200,
+        "DS-006: mcp-server must be healthy before the test starts"
+    );
+
+    // ── AC2: Ingest N≥3 transcripts through the real /ingest/transcript endpoint
+    //
+    // Load the fixture transcript (rich enough for gemma4:12b to yield ≥1 candidate)
+    // and create N=3 variants with unique content so each gets a distinct content_hash
+    // (the queue deduplicates on content_hash, so identical payloads would become one row).
+    let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .unwrap_or_else(|_| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../.."));
+    let fixture = repo_root.join("tests/fixtures/session-rich-transcript.jsonl");
+    let base_transcript = std::fs::read_to_string(&fixture)
+        .expect("DS-006: rich transcript fixture must be readable");
+
+    const N_TRANSCRIPTS: usize = 3;
+    let mut content_hashes = Vec::with_capacity(N_TRANSCRIPTS);
+
+    let ingest_start = Instant::now();
+    for i in 0..N_TRANSCRIPTS {
+        // Each variant appends a unique sentinel so the content_hash differs.
+        let variant = format!(
+            "{base_transcript}{{\"type\":\"message\",\"message\":{{\"role\":\"user\",\
+             \"content\":\"DS-006 capture variant {i} run {run_id}: \
+             please record the Rust file I/O skill.\"}}}}\n"
+        );
+        let hash = TranscriptIngestQueue::content_hash(&variant);
+        let session_id = format!("ds006-ingest-{run_id}-{i}");
+
+        let (status_code, body) = client
+            .ingest_transcript(
+                IngestTranscriptBody {
+                    session_id: session_id.clone(),
+                    repo_path: None,
+                    source: "session_end".to_owned(),
+                    content: variant,
+                },
+                None, // no secret required: the container has no TRANSCRIPT_INGEST_SECRET set
+            )
             .await
-        });
+            .unwrap_or_else(|e| {
+                panic!("DS-006: POST /ingest/transcript failed for variant {i}: {e}")
+            });
+
+        assert!(
+            status_code == 200 || status_code == 202,
+            "DS-006: /ingest/transcript must return 200 or 202 for variant {i}; got {status_code}: {body}"
+        );
+        content_hashes.push(hash);
+        eprintln!("[DS-006] ingested transcript variant {i}, session={session_id}");
     }
-    let mut ok_count = 0usize;
-    let mut no_match_count = 0usize;
-    while let Some(result) = set.join_next().await {
-        let r = result.expect("task");
-        match r.status {
-            CompileContextStatus::Ok => ok_count += 1,
-            CompileContextStatus::NoMatch => no_match_count += 1,
-            CompileContextStatus::Degraded => {}
-            CompileContextStatus::DuplicateSuppressed => {}
-        }
-    }
-    // Brutal, fail-loud assertion: saturation must yield at least one REAL OK retrieval.
-    // The previous `ok_count + no_match_count > 0` masked the ok=0/no_match=N failure mode
-    // (retrieval silently returning nothing for every request still counted as success).
-    let saturation_yields_ok = ok_count > 0;
-    assert!(
-        saturation_yields_ok,
-        "saturation must yield at least one OK retrieval; got ok={ok_count} no_match={no_match_count} \
-         (ok=0 means retrieval returned nothing for every concurrent request — the masked failure mode)"
+    let ingest_elapsed_ms = ingest_start.elapsed().as_millis() as u64;
+    builder.record_latency("ingest_transcripts", ingest_elapsed_ms);
+
+    assert_eq!(
+        content_hashes.len(),
+        N_TRANSCRIPTS,
+        "DS-006: expected exactly {N_TRANSCRIPTS} distinct content hashes"
     );
     builder.assert_contract(
-        "saturation_yields_ok_retrievals",
-        saturation_yields_ok,
-        "ok_count > 0 under concurrent saturation",
-        &format!("ok={ok_count} no_match={no_match_count}"),
-        "concurrent compile_context saturation must produce real OK retrievals, not all-NoMatch",
+        "transcripts_ingested",
+        content_hashes.len() == N_TRANSCRIPTS,
+        &format!("{N_TRANSCRIPTS} transcripts ingested via HTTP"),
+        &format!("{} hashes recorded", content_hashes.len()),
+        "DS-006 AC2: N≥3 transcripts must reach the queue through the real HTTP endpoint",
+    );
+
+    eprintln!("[DS-006] {N_TRANSCRIPTS} transcripts ingested via HTTP ({ingest_elapsed_ms}ms)");
+
+    // ── AC2 cont: drain the queue in-process (real LLM extraction) ────────────
+    //
+    // TranscriptQueueDrain connects to the same PG pool as the container's queue.
+    // drain_once() claims pending rows and calls the real SessionExtractor (gemma4:12b
+    // via Ollama) for each, writing .pending drafts to SKILL_GLOBAL_PATHS (= sandbox).
+    // This is the SAME code the deployed maintenance worker runs — sanctioned by the
+    // harness contract (test_transcript_ingest_queue_e2e.rs follows the same pattern).
+    let pg_pool = sqlx::PgPool::connect(POSTGRES_DSN)
+        .await
+        .expect("DS-006: must connect to PG to build drain");
+    let queue = TranscriptIngestQueue::new(pg_pool);
+    let extractor = SessionExtractor::from_environment()
+        .expect("DS-006: SessionExtractor must build from environment");
+    let drain = TranscriptQueueDrain::new(queue.clone(), extractor, DEFAULT_TRANSCRIPT_DRAIN_BATCH);
+
+    // Drain with bounded retry: if the first sweep yields zero .pending files (the
+    // LLM returned no candidates), retry up to MAX_DRAIN_ATTEMPTS times with a small
+    // delay. Each retry drains any remaining pending rows from the queue.
+    const MAX_DRAIN_ATTEMPTS: usize = 4;
+
+    fn collect_pending_files(dir: &std::path::Path) -> Vec<PathBuf> {
+        let mut out = Vec::new();
+        if !dir.exists() {
+            return out;
+        }
+        fn walk(dir: &std::path::Path, out: &mut Vec<PathBuf>) {
+            if let Ok(entries) = std::fs::read_dir(dir) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.is_dir() {
+                        walk(&path, out);
+                    } else if path.extension().and_then(|s| s.to_str()) == Some("pending") {
+                        out.push(path);
+                    }
+                }
+            }
+        }
+        walk(dir, &mut out);
+        out
+    }
+
+    let drain_start = Instant::now();
+    let mut total_drained_processed = 0usize;
+    let mut pending_files: Vec<PathBuf> = Vec::new();
+
+    for attempt in 0..MAX_DRAIN_ATTEMPTS {
+        let drain_report = drain
+            .drain_once()
+            .await
+            .unwrap_or_else(|e| panic!("DS-006: drain_once attempt {attempt} failed: {e}"));
+        total_drained_processed += drain_report.processed;
+
+        eprintln!(
+            "[DS-006] drain attempt {}: claimed={}, processed={}, failed={}",
+            attempt, drain_report.claimed, drain_report.processed, drain_report.failed
+        );
+
+        pending_files = collect_pending_files(&sandbox);
+        if !pending_files.is_empty() {
+            break;
+        }
+
+        if attempt + 1 < MAX_DRAIN_ATTEMPTS {
+            // Brief pause to allow the LLM to finish before re-checking.
+            tokio::time::sleep(Duration::from_secs(2)).await;
+        }
+    }
+    let drain_elapsed_ms = drain_start.elapsed().as_millis() as u64;
+    builder.record_latency("drain_transcripts", drain_elapsed_ms);
+
+    // AC2 hard gate: at least one .pending draft must have landed.
+    // If extraction returned zero candidates for every attempt → fail loud.
+    assert!(
+        !pending_files.is_empty(),
+        "DS-006: queue drain produced zero .pending drafts after {MAX_DRAIN_ATTEMPTS} attempts \
+         (sandbox={sandbox:?}); total_processed={total_drained_processed}. \
+         Either the extractor is broken or the transcript yielded no grounded candidates — \
+         do NOT accept this as success; fix extraction or the fixture."
+    );
+    builder.assert_contract(
+        "pending_drafts_observed",
+        !pending_files.is_empty(),
+        "≥1 .pending draft observed on sandbox",
+        &format!("{} .pending files found", pending_files.len()),
+        "DS-006 AC2: drain must produce at least one .pending draft from real LLM extraction",
+    );
+
+    eprintln!(
+        "[DS-006] drain complete: {total_drained_processed} processed, {} .pending files in sandbox ({drain_elapsed_ms}ms)",
+        pending_files.len()
+    );
+
+    // ── AC3: Approve ≥1 draft — write to Docker volume via sidecar ────────────
+    //
+    // The container's graph-builder watches the Docker volume, not the host sandbox.
+    // We read the extracted draft content and write it to the Docker volume via
+    // the alpine sidecar (the same mechanism used by test_retrieval_quality.rs and
+    // test_golden_path_real_app.rs). The SeededSkillGuard ensures cleanup on panic.
+    //
+    // Use the extracted draft's parent directory name as the slug basis (preserves
+    // the content-slug relationship), but suffix with the run_id to prevent cross-run
+    // collisions in the Docker volume (important: volumes persist between test runs).
+    let draft_parent_slug = pending_files[0]
+        .parent() // .../sandbox/.skills/<slug-from-extraction>/
+        .and_then(|p| p.file_name())
+        .and_then(|n| n.to_str())
+        .unwrap_or("ds006-extracted")
+        .to_owned();
+    let approved_slug = format!("{draft_parent_slug}-{run_id}");
+
+    let draft_content = std::fs::read_to_string(&pending_files[0])
+        .expect("DS-006: must read extracted .pending draft");
+
+    // Extract the skill name (H1) from the draft: graph-builder uses the H1 as the
+    // skill.name field, which the compiler emits as `## Skill: <name>` in the context.
+    // We must match against this name (not the slug/directory) in compile_context responses.
+    let skill_name_in_context: String = draft_content
+        .lines()
+        .find(|line| line.trim_start().starts_with("# "))
+        .and_then(|line| line.trim_start().strip_prefix("# "))
+        .map(str::trim)
+        .filter(|n| !n.is_empty())
+        .unwrap_or(&draft_parent_slug)
+        .to_owned();
+
+    eprintln!(
+        "[DS-006] draft: parent_slug={draft_parent_slug}, approved_slug={approved_slug}, \
+         skill_name_in_context={skill_name_in_context}"
+    );
+
+    // Write the extracted draft to the Docker volume as SKILL.md.pending.
+    seed::write_pending(SkillScope::Global, &approved_slug, &draft_content)
+        .unwrap_or_else(|e| panic!("DS-006: sidecar write_pending({approved_slug}) failed: {e}"));
+
+    // Register with the panic-safe guard before approving so cleanup runs even if
+    // approve or subsequent assertions panic.
+    seeded_guard.record(SkillScope::Global, &approved_slug);
+
+    let approve_start = Instant::now();
+    seed::approve(SkillScope::Global, &approved_slug)
+        .unwrap_or_else(|e| panic!("DS-006: sidecar approve({approved_slug}) failed: {e}"));
+    let approve_elapsed_ms = approve_start.elapsed().as_millis() as u64;
+    builder.record_latency("approve_draft", approve_elapsed_ms);
+
+    eprintln!(
+        "[DS-006] approved draft as slug={approved_slug} in Docker volume ({approve_elapsed_ms}ms)"
+    );
+
+    // ── AC3 cont: poll graph_version advance (bounded window) ─────────────────
+    //
+    // wait_for_rebuild polls both PG graph_state and the mcp-server's served
+    // graph_version over HTTP until both advance past prev_graph_version.
+    // Budget 180s (graph-builder polls every 5s + embedding time).
+    let rebuild_start = Instant::now();
+    let rebuild_result = wait_for_rebuild(prev_graph_version, Duration::from_secs(180)).await;
+    let rebuild_elapsed_ms = rebuild_start.elapsed().as_millis() as u64;
+
+    let post_graph_version = pg.graph_version().await.unwrap_or(prev_graph_version);
+
+    // AC3 hard gate: graph_version must have advanced.
+    assert!(
+        rebuild_result.is_ok(),
+        "DS-006: graph version did not advance past v{prev_graph_version} within 180s after \
+         approve. post_version={post_graph_version}. rebuild_result={:?}",
+        rebuild_result
+    );
+    assert!(
+        post_graph_version > prev_graph_version,
+        "DS-006: PG graph_version must exceed baseline after approval; \
+         prev={prev_graph_version}, post={post_graph_version}"
+    );
+    builder.assert_contract(
+        "graph_version_advanced",
+        post_graph_version > prev_graph_version,
+        &format!("graph_version > {prev_graph_version}"),
+        &format!("graph_version = {post_graph_version}"),
+        "DS-006 AC3: approving the draft must trigger a graph rebuild that advances graph_version",
+    );
+
+    eprintln!(
+        "[DS-006] rebuild: graph_version {prev_graph_version}→{post_graph_version} ({rebuild_elapsed_ms}ms)"
+    );
+
+    // ── AC4: Concurrent compile_context HTTP traffic + newly-learned skill check
+    //
+    // 24 concurrent calls over HTTP to the containerized mcp-server. Two assertions:
+    //   a) ok_count > 0 — at least one response successfully served skills
+    //   b) ≥1 response's additional_context contains our newly-learned skill — the
+    //      growth loop produces a skill that the retrieval layer actually serves.
+    //
+    // The compiler emits `## Skill: <skill.name>` headings in the context. The name
+    // comes from the SKILL.md H1 (extracted above as `skill_name_in_context`), NOT
+    // from the volume directory slug. We match on name, not slug.
+    fn parse_skill_names_from_context(additional_context: &str) -> Vec<String> {
+        additional_context
+            .lines()
+            .filter_map(|line| line.trim().strip_prefix("## Skill: "))
+            .map(|name| name.trim().to_owned())
+            .collect()
+    }
+
+    let mut join_set = JoinSet::new();
+    for i in 0..24usize {
+        let c = McpClient::new();
+        let expected_name = skill_name_in_context.clone();
+        let run = run_id;
+        join_set.spawn(async move {
+            // Unique session_id per call prevents duplicate-suppression collapsing
+            // concurrent probes into a single cached response.
+            let session_id = format!("ds006-concurrent-{run}-{i}");
+            let result = c
+                .compile_context(CompileContextArgs {
+                    prompt: "Rust file I/O reusable skill with error handling procedures"
+                        .to_owned(),
+                    session_id,
+                    repo_path: "/tmp".to_owned(),
+                    trigger: None,
+                })
+                .await;
+            (i, expected_name, result)
+        });
+    }
+
+    let concurrent_start = Instant::now();
+    let mut ok_count = 0usize;
+    let mut no_match_count = 0usize;
+    let mut degraded_count = 0usize;
+    let mut new_skill_served_count = 0usize;
+    let mut last_graph_version_seen = 0i64;
+
+    while let Some(task_result) = join_set.join_next().await {
+        let (i, expected_name, response) =
+            task_result.expect("DS-006: concurrent compile_context task must not panic");
+        match response {
+            Err(e) => {
+                eprintln!("[DS-006] concurrent request {i}: HTTP error: {e}");
+            }
+            Ok(resp) => {
+                last_graph_version_seen = last_graph_version_seen.max(resp.graph_version);
+                match resp.status.as_str() {
+                    "ok" => {
+                        ok_count += 1;
+                        let ctx = resp.additional_context.as_deref().unwrap_or("");
+                        let served_names = parse_skill_names_from_context(ctx);
+                        if served_names.iter().any(|name| name == &expected_name) {
+                            new_skill_served_count += 1;
+                        }
+                    }
+                    "no_match" => no_match_count += 1,
+                    _ => degraded_count += 1,
+                }
+            }
+        }
+    }
+    let concurrent_elapsed_ms = concurrent_start.elapsed().as_millis() as u64;
+    builder.record_latency("concurrent_compile_context", concurrent_elapsed_ms);
+
+    eprintln!(
+        "[DS-006] concurrent: ok={ok_count}, no_match={no_match_count}, degraded={degraded_count}, \
+         new_skill_served={new_skill_served_count}, graph_version_seen={last_graph_version_seen} \
+         ({concurrent_elapsed_ms}ms)"
+    );
+
+    // AC4a hard gate: at least one OK response.
+    assert!(
+        ok_count > 0,
+        "DS-006: concurrent compile_context must yield ≥1 OK response; \
+         got ok={ok_count}, no_match={no_match_count}, degraded={degraded_count}. \
+         ok=0 means retrieval returned nothing for every concurrent request."
+    );
+    builder.assert_contract(
+        "concurrent_ok_count",
+        ok_count > 0,
+        "ok_count > 0 across 24 concurrent compile_context calls",
+        &format!("ok={ok_count} no_match={no_match_count} degraded={degraded_count}"),
+        "DS-006 AC4: concurrent compile_context saturation must produce real OK retrievals",
+    );
+
+    // AC4b hard gate: the newly-learned skill must appear in at least one response.
+    // This proves the self-growth loop produces a skill that gets SERVED — not just
+    // ingested and stored but never retrieved.
+    // We match on skill_name_in_context (the H1 from the SKILL.md) which is what
+    // appears in `## Skill: <name>` headings in the compiled context.
+    assert!(
+        new_skill_served_count > 0,
+        "DS-006: the newly-approved skill (name='{skill_name_in_context}', slug='{approved_slug}') \
+         was NEVER served in any of the {ok_count} OK responses. \
+         This means extraction+ingestion produced a skill that the retrieval layer never ranks \
+         for a relevant query — the growth loop does not close. \
+         ok={ok_count}, new_skill_served_count={new_skill_served_count}"
+    );
+    builder.assert_contract(
+        "newly_learned_skill_served",
+        new_skill_served_count > 0,
+        &format!("'{skill_name_in_context}' appears in ≥1 compile_context OK response"),
+        &format!("appeared in {new_skill_served_count}/{ok_count} OK responses"),
+        "DS-006 AC4: the self-growth loop must produce a skill that the retrieval layer actually serves",
+    );
+
+    // ── AC5: Queue drains to zero pending/processing rows ─────────────────────
+    //
+    // Poll the queue until pending + processing = 0, bounded to 60s.
+    let queue_drain_deadline = Instant::now() + Duration::from_secs(60);
+    let queue_drain_interval = Duration::from_secs(2);
+
+    // Poll the queue counts. Initialize to a sentinel that makes the first
+    // iteration non-trivially different from the converged state.
+    let mut final_pending_count;
+    let mut final_processing_count;
+
+    loop {
+        final_pending_count = queue.count_with_status("pending").await.unwrap_or(i64::MAX);
+        final_processing_count = queue
+            .count_with_status("processing")
+            .await
+            .unwrap_or(i64::MAX);
+
+        if final_pending_count == 0 && final_processing_count == 0 {
+            break;
+        }
+        if Instant::now() >= queue_drain_deadline {
+            break;
+        }
+        tokio::time::sleep(queue_drain_interval).await;
+    }
+
+    // AC5 hard gate: queue must be drained.
+    assert_eq!(
+        final_pending_count, 0,
+        "DS-006: transcript_ingest_queue must have 0 pending rows after drain; \
+         got pending={final_pending_count}, processing={final_processing_count}"
+    );
+    assert_eq!(
+        final_processing_count, 0,
+        "DS-006: transcript_ingest_queue must have 0 processing rows after drain; \
+         got pending={final_pending_count}, processing={final_processing_count}"
+    );
+    builder.assert_contract(
+        "queue_drained_to_zero",
+        final_pending_count == 0 && final_processing_count == 0,
+        "pending=0 AND processing=0 in transcript_ingest_queue",
+        &format!("pending={final_pending_count}, processing={final_processing_count}"),
+        "DS-006 AC5: the transcript queue must drain completely — no abandoned rows",
+    );
+
+    eprintln!(
+        "[DS-006] queue drained: pending={final_pending_count}, processing={final_processing_count}"
+    );
+
+    // ── AC5 cont: no duplicate active PG rows for the approved skill name ────────
+    //
+    // The graph-builder rebuilds atomically (replace_snapshot_and_bump_version).
+    // After a correct rebuild there must be ≤1 skill row with our skill's name.
+    //
+    // Note: graph-builder derives stable_id from the FILE PATH hash (blake3), not
+    // the directory slug. So we query by skill name (the H1 from SKILL.md), which
+    // is also stable and unique for our approved skill.
+    let dup_count: Option<i64> = {
+        let pool = sqlx::PgPool::connect(POSTGRES_DSN).await.ok();
+        if let Some(pool) = pool {
+            sqlx::query_as::<_, (i64,)>("SELECT COUNT(*) FROM skills WHERE name = $1")
+                .bind(&skill_name_in_context)
+                .fetch_one(&pool)
+                .await
+                .ok()
+                .map(|(c,)| c)
+        } else {
+            None
+        }
+    };
+
+    if let Some(count) = dup_count {
+        // AC5 hard gate: no duplicate rows for the generated skill name.
+        assert!(
+            count <= 1,
+            "DS-006: PG skills table has {count} rows for name='{skill_name_in_context}'; \
+             expected ≤1. Duplicate rows indicate a rebuild atomicity failure."
+        );
+        builder.assert_contract(
+            "no_duplicate_active_skills",
+            count <= 1,
+            "skills table has ≤1 row per newly-learned skill name",
+            &format!("count={count} for name={skill_name_in_context}"),
+            "DS-006 AC5: the graph rebuild must not produce duplicate active skill rows",
+        );
+        eprintln!("[DS-006] PG skills row count for name='{skill_name_in_context}': {count}");
+        if count == 0 {
+            // Not yet visible in PG — graph-builder may not have completed this rebuild
+            // cycle yet. Not a failure: we proved graph_version advanced and the skill
+            // was served by compile_context (AC4b). The absence here is an observation.
+            eprintln!(
+                "[DS-006] WARN: skill name '{skill_name_in_context}' not yet in PG skills; \
+                 the rebuild completed (AC3 passed) but PG may reflect an earlier snapshot."
+            );
+        }
+    } else {
+        eprintln!(
+            "[DS-006] WARN: could not query dup count for name='{skill_name_in_context}' \
+             — PG pool unavailable"
+        );
+    }
+
+    // ── Report ─────────────────────────────────────────────────────────────────
+    builder.push_action(
+        "self_growth_loop",
+        report::ReportedAction {
+            description: format!(
+                "DS-006 self-growth loop: {N_TRANSCRIPTS} transcripts ingested, \
+                 {} .pending drafts, graph_version {prev_graph_version}→{post_graph_version}, \
+                 ok={ok_count}, new_skill_served={new_skill_served_count}, \
+                 queue pending={final_pending_count}/processing={final_processing_count}",
+                pending_files.len()
+            ),
+            status: report::AssertionResult::Passed,
+            side_effects: vec![],
+            duration_ms: rebuild_elapsed_ms
+                + ingest_elapsed_ms
+                + drain_elapsed_ms
+                + concurrent_elapsed_ms,
+        },
     );
 
     let report = builder.build();
@@ -1713,8 +2320,24 @@ async fn sustained_watcher_and_extraction_saturation_keeps_eventual_consistency(
         serde_json::to_string_pretty(&report).unwrap(),
     )
     .unwrap();
-    components.teardown().await.expect("teardown");
-    namespace.cleanup().await;
+
+    // ── Cleanup ────────────────────────────────────────────────────────────────
+    // Restore env vars before cleanup so no other test is affected.
+    restore_env!("EXTRACT_SESSION_PROVIDER", prior_extract_provider);
+    restore_env!("OLLAMA_EXTRACTION_MODEL", prior_extraction_model);
+    restore_env!("OLLAMA_EXTRACTION_ENDPOINT", prior_extraction_endpoint);
+    restore_env!("SKILL_GLOBAL_PATHS", prior_global_paths);
+    restore_env!("SKILL_GLOBAL_ALLOWED_ROOTS", prior_allowed_roots);
+    restore_env!("CLAUDE_TRANSCRIPT_ROOT", prior_transcript_root);
+
+    // Remove the seeded skill from the Docker volume (SeededSkillGuard also runs
+    // on panic so the volume stays clean regardless).
+    seeded_guard.cleanup();
+
+    // Remove the host sandbox directory.
+    let _ = std::fs::remove_dir_all(&sandbox);
+
+    eprintln!("[DS-006] cleanup complete");
 }
 
 #[ignore = "requires live containers"]

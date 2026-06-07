@@ -26,7 +26,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or_else(|_| DEFAULT_MCP_SERVER_ADDR.to_owned())
         .parse()?;
 
-    let app = McpServerApp::from_environment(RetrievalConfig::default())
+    let retrieval_config = RetrievalConfig {
+        relevance_threshold: RetrievalConfig::relevance_threshold_from_env(),
+        ..RetrievalConfig::default()
+    };
+    let app = McpServerApp::from_environment(retrieval_config)
         .await
         .map_err(|error| -> Box<dyn std::error::Error> { error.to_string().into() })?
         .app;

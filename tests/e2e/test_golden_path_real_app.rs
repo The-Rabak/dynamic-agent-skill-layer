@@ -40,6 +40,7 @@ use std::time::Duration;
 
 use harness::{
     app::{CompileContextArgs, McpClient},
+    guard::SeededSkillGuard,
     observe::{InfraSnapshot, PgObserver, QdrantObserver, RedisObserver},
     poll::wait_for_rebuild,
     seed::SkillScope,
@@ -79,6 +80,10 @@ async fn golden_path_real_app() {
     let slug = unique_slug();
     let skill_name = slug.replace('-', " ");
     let skill_md = golden_skill_md(&slug);
+
+    // Panic-safe guard: even if this test panics before the explicit `seed::remove`
+    // at the end, the seeded skill is removed from the volume on drop.
+    let mut seeded_guard = SeededSkillGuard::new();
 
     let logger = StageLogger::new("golden-path");
     let client = McpClient::new();
@@ -181,6 +186,10 @@ async fn golden_path_real_app() {
     );
 
     assert!(approve_ok, "approve must succeed — {approve_detail}");
+
+    // Register the skill with the panic-safe guard AFTER a successful approve so
+    // the guard removes it from the volume even if a subsequent assertion panics.
+    seeded_guard.record(SkillScope::Global, &slug);
 
     // ── Stage: wait_for_rebuild — the loop must CLOSE within the bounded wait ──
     //
@@ -396,8 +405,11 @@ async fn golden_path_real_app() {
     }
 
     // ── Cleanup: remove the seeded skill from the volume ─────────────────────
-    // Best-effort; failure here does not affect the test outcome.
+    // `seeded_guard.cleanup()` logs failures loudly and marks the guard done
+    // so its Drop impl is a no-op. This is the happy-path removal; the guard's
+    // Drop handles the panic path automatically.
     let cleanup_result = harness::seed::remove(SkillScope::Global, &slug);
+    seeded_guard.cleanup(); // guard is consumed here; Drop is a no-op afterwards.
     logger.log_stage(
         "cleanup",
         json!({"scope": "global", "slug": slug}),

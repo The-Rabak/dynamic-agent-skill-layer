@@ -94,6 +94,15 @@ struct OllamaExtractionRequest {
     stream: bool,
     format: String,
     prompt: String,
+    /// Disables the model's "thinking" mode (#176). gemma4:12b is a thinking model:
+    /// even with `format:"json"` it otherwise emits its chain-of-thought AS JSON
+    /// keys (`{"thought1":…,"thought2":…,"skill_1":{…}}`) instead of the contracted
+    /// `{"candidates":[…]}` shape. That parsed (via the old `#[serde(default)]`) to
+    /// ZERO candidates with no error — a reliable, silent empty extraction. `format`
+    /// forces valid JSON syntax but does NOT stop reasoning leaking into the keys;
+    /// `think:false` does. Verified: with this set, temp=0 yields the correct shape
+    /// deterministically.
+    think: bool,
     /// Forwarded to Ollama's `options` field. Omitted entirely when all fields
     /// are `None` so existing behavior is unchanged for callers that do not
     /// override inference options.
@@ -108,7 +117,14 @@ struct OllamaExtractionResponse {
 
 #[derive(Debug, Deserialize)]
 struct StructuredExtraction {
-    #[serde(default)]
+    /// Required — NOT `#[serde(default)]` (#176). A response lacking a top-level
+    /// `candidates` key (e.g. a thinking-model leak `{"thought1":…}`, or an
+    /// alternate shape) is a MALFORMED extraction, not a legitimate empty result.
+    /// Defaulting it to `[]` silently swallowed the shape mismatch into a fake
+    /// "0 candidates" success (a no-silent-fallback violation). Without the default
+    /// a missing key surfaces as a serde error → `ExtractionError::Unexpected` →
+    /// classified as retryable by the orchestrator's `classify_prose_attempt`. A
+    /// present-but-empty `"candidates": []` still deserializes to an honest empty.
     candidates: Vec<domain::ExtractedSkillCandidate>,
 }
 
@@ -128,24 +144,25 @@ impl TranscriptSkillExtractionService for OllamaExtractor {
         let transcript_lines = render_sanitized_transcript_lines(transcript);
         let prompt = build_text_json_extraction_prompt(&transcript_lines);
 
-        let options = self.config.temperature.map(|temperature| OllamaGenerateOptions {
-            temperature: Some(temperature),
-        });
+        let options = self
+            .config
+            .temperature
+            .map(|temperature| OllamaGenerateOptions {
+                temperature: Some(temperature),
+            });
         let request = OllamaExtractionRequest {
             model: self.config.model.clone(),
             stream: false,
             format: "json".to_owned(),
             prompt,
+            // Never let the thinking model leak reasoning into the structured output
+            // (#176). See the field doc on `OllamaExtractionRequest::think`.
+            think: false,
             options,
         };
 
-        let raw: OllamaExtractionResponse = post_json(
-            &self.client,
-            &self.config.endpoint,
-            &request,
-            "ollama",
-        )
-        .await?;
+        let raw: OllamaExtractionResponse =
+            post_json(&self.client, &self.config.endpoint, &request, "ollama").await?;
         let parsed: StructuredExtraction = serde_json::from_str(&raw.response)
             .map_err(|error| ExtractionError::Unexpected(error.to_string()))?;
 
@@ -222,12 +239,26 @@ mod tests {
             stream: false,
             format: "json".to_owned(),
             prompt: "test prompt".to_owned(),
+            think: false,
             options: None,
         };
         assert_eq!(
             request.format, "json",
             "format must be 'json' — omitting it causes thinking models (gemma4:12b) \
              to return empty output silently"
+        );
+        // #176: think must be false so the thinking model does not leak reasoning
+        // into the JSON keys (which parses to a silent zero-candidate extraction).
+        assert!(
+            !request.think,
+            "think must be false — a thinking model otherwise emits its reasoning as \
+             JSON keys instead of the contracted candidates array (#176)"
+        );
+        let serialized_think = serde_json::to_value(&request).expect("request must serialize");
+        assert_eq!(
+            serialized_think.get("think").and_then(|v| v.as_bool()),
+            Some(false),
+            "serialized request JSON must contain think:false (#176)"
         );
         assert!(
             !request.stream,

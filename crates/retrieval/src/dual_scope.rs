@@ -909,4 +909,185 @@ mod tests {
             "empty graph must return zero candidates (honest no_match)"
         );
     }
+
+    /// Proves the relevance floor rejects a candidate whose eq3 score is below
+    /// `relevance_threshold`, even when the skill embedding partially aligns.
+    ///
+    /// Background (#192): the old default floor (0.20) was too low for
+    /// `nomic-embed-text` — its cosine similarities are inflated for all text
+    /// pairs, including off-topic ones. Live calibration with per-query-tagged
+    /// scoring on the isolated 8-skill quality corpus (2026-06-07, 772 events)
+    /// established a threshold of 0.450 sitting in the 0.0179-wide gap between
+    /// the worst negative's eq3 (0.4386, kubernetes TLS) and the lowest
+    /// true-positive disjoint hit's eq3 (0.4565, git-rebase-conflict-resolution).
+    ///
+    /// This test locks the floor contract so a future config change cannot silently
+    /// lower it below the level that blocks fabricated matches for off-topic prompts.
+    ///
+    /// The prompt embedding `[1.0, 0.0]` and the skill embedding `[0.0, 1.0]` are
+    /// orthogonal, giving cosine similarity = 0.0 (α term = 0). With the default
+    /// weights (α=0.45, β=0.35, γ=0.20, λ=0.25) and no subunit evidence (β=0) and
+    /// no prior (γ=0), the eq3 score is 0.0 — clearly below 0.450.
+    /// The floor must exclude this candidate, leaving an empty candidates list.
+    #[tokio::test]
+    async fn relevance_floor_excludes_candidate_below_threshold() {
+        use std::collections::BTreeMap;
+
+        // Use the calibrated default threshold (0.450) as configured in RetrievalConfig.
+        // A skill with zero cosine alignment gets eq3 = 0 — well below the floor.
+        let floor_config = RetrievalConfig {
+            candidate_limit: 10,
+            max_results: 3,
+            max_subunits_per_skill: 3,
+            rescue_threshold: 0.15,
+            relevance_threshold: 0.450, // calibrated floor from #192
+            mmr_lambda: 0.65,
+            ..RetrievalConfig::default()
+        };
+
+        let skill = domain::Skill {
+            id: domain::DomainId::new_unchecked("below-floor-skill"),
+            name: "below-floor-skill".to_owned(),
+            description: "A skill whose eq3 score falls below the relevance floor".to_owned(),
+            scope: domain::ScopeType::Global,
+            status: domain::SkillStatus::Ready,
+            lifecycle: domain::LifecycleStatus::Active,
+            tags: vec![],
+            subunit_ids: vec![],
+            community_id: None,
+        };
+
+        let snapshot = RetrievalSnapshot::new(
+            vec![crate::orchestrator::SeededSkill {
+                skill,
+                scope_id: "global".to_owned(),
+                source_paths: vec![],
+                // Orthogonal to the query embedding: cosine = 0.
+                embedding: vec![0.0, 1.0],
+                // No subunits: subunit_evidence (β) = 0.
+                subunit_embeddings: vec![],
+                subunits: vec![],
+                // No usage history: prior (γ) = 0.
+                prior: 0.0,
+                community_boost: 0.0,
+            }],
+            1,
+        );
+
+        let global_scope = ScopeDescriptor {
+            scope_id: "global".to_owned(),
+            scope_type: domain::ScopeType::Global,
+            paths: vec![],
+            config: BTreeMap::new(),
+        };
+
+        let (results, failures) = search_scopes_concurrently(
+            "query with no subunit or prior signal",
+            &[1.0, 0.0],
+            Arc::new(snapshot),
+            &floor_config,
+            &[global_scope],
+        )
+        .await;
+
+        assert!(failures.is_empty(), "search must not fail");
+        assert_eq!(results.len(), 1, "should have one scope result");
+        assert!(
+            results[0].candidates.is_empty(),
+            "candidate whose eq3 = 0 must be excluded by the 0.450 relevance floor; \
+             got {} candidates (expected 0 — floor must block fabricated matches)",
+            results[0].candidates.len()
+        );
+    }
+
+    /// Proves that a candidate with strong subunit evidence that pushes eq3 above
+    /// the relevance floor IS admitted, while the floor still blocks weaker candidates.
+    ///
+    /// This test demonstrates that a threshold of 0.450 does not over-reject:
+    /// a skill with real subunit evidence (β > 0) clears the floor when its
+    /// combined score α×0.45 + β×0.35 ≥ 0.450.
+    ///
+    /// With default weights and cosine=1.0 for both skill and subunit:
+    ///   eq3 = 0.45 × 1.0 + 0.35 × 1.0 = 0.80 → well above 0.450.
+    #[tokio::test]
+    async fn relevance_floor_admits_candidate_with_sufficient_combined_score() {
+        use std::collections::BTreeMap;
+
+        let floor_config = RetrievalConfig {
+            candidate_limit: 10,
+            max_results: 3,
+            max_subunits_per_skill: 3,
+            rescue_threshold: 0.15,
+            relevance_threshold: 0.450, // calibrated floor from #192
+            mmr_lambda: 0.65,
+            ..RetrievalConfig::default()
+        };
+
+        let skill = domain::Skill {
+            id: domain::DomainId::new_unchecked("above-floor-skill"),
+            name: "above-floor-skill".to_owned(),
+            description: "above floor skill with strong subunit alignment".to_owned(),
+            scope: domain::ScopeType::Global,
+            status: domain::SkillStatus::Ready,
+            lifecycle: domain::LifecycleStatus::Active,
+            tags: vec![],
+            subunit_ids: vec![domain::DomainId::new_unchecked("sub-1")],
+            community_id: None,
+        };
+
+        // With α=0.45, β=0.35, and cosine(query, skill)=1.0, cosine(query, subunit)=1.0:
+        // eq3 = 0.45 × 1.0 + 0.35 × 1.0 + 0.20 × 0.0 = 0.80 → above the 0.450 floor.
+        let snapshot = RetrievalSnapshot::new(
+            vec![crate::orchestrator::SeededSkill {
+                skill,
+                scope_id: "global".to_owned(),
+                source_paths: vec![],
+                embedding: vec![1.0, 1.0],
+                subunit_embeddings: vec![vec![1.0, 1.0]], // perfect subunit alignment
+                subunits: vec![domain::Subunit {
+                    id: domain::DomainId::new_unchecked("sub-1"),
+                    skill_id: domain::DomainId::new_unchecked("above-floor-skill"),
+                    kind: domain::SubunitType::Procedure,
+                    title: "Strong subunit".to_owned(),
+                    content: "Aligned with the query".to_owned(),
+                    lifecycle: domain::LifecycleStatus::Active,
+                }],
+                prior: 0.0,
+                community_boost: 0.0,
+            }],
+            1,
+        );
+
+        let global_scope = ScopeDescriptor {
+            scope_id: "global".to_owned(),
+            scope_type: domain::ScopeType::Global,
+            paths: vec![],
+            config: BTreeMap::new(),
+        };
+
+        let (results, failures) = search_scopes_concurrently(
+            "query with strong skill and subunit alignment",
+            &[1.0, 1.0],
+            Arc::new(snapshot),
+            &floor_config,
+            &[global_scope],
+        )
+        .await;
+
+        assert!(failures.is_empty(), "search must not fail");
+        assert_eq!(results.len(), 1, "should have one scope result");
+        assert_eq!(
+            results[0].candidates.len(),
+            1,
+            "candidate with eq3 ≈ 0.80 must be admitted above the 0.450 relevance floor; \
+             got {} candidates (expected 1)",
+            results[0].candidates.len()
+        );
+        let admitted = &results[0].candidates[0];
+        assert!(
+            admitted.score >= 0.450,
+            "admitted candidate must have score >= floor (0.450); got {:.4}",
+            admitted.score
+        );
+    }
 }

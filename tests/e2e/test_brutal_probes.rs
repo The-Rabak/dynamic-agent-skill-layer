@@ -30,6 +30,7 @@ use std::time::Duration;
 
 use harness::{
     app::{CompileContextArgs, McpClient},
+    guard::SeededSkillGuard,
     observe::PgObserver,
     poll::{wait_for_health, wait_for_rebuild},
     seed::{self, SkillScope},
@@ -68,17 +69,24 @@ fn project_skill_md(name: &str) -> String {
 #[ignore = "requires live containers"]
 async fn containerized_project_scope_over_http_returns_ok() {
     Stack::up().await;
-    wait_for_health(Duration::from_secs(60)).await.expect("mcp-server healthy");
+    wait_for_health(Duration::from_secs(60))
+        .await
+        .expect("mcp-server healthy");
 
     let logger = StageLogger::new("brutal-project-scope");
     let client = McpClient::new();
     let pg = PgObserver::connect().await;
     let name = slug("brutal-project");
 
+    // Panic-safe guard: ensures the project-scoped skill is removed from the volume
+    // even if an assertion below panics before the explicit `seed::remove` at the end.
+    let mut seeded_guard = SeededSkillGuard::new();
+
     let prev_version = pg.graph_version().await.expect("baseline graph_version");
     seed::write_pending(SkillScope::Project, &name, &project_skill_md(&name))
         .expect("seed project pending");
     seed::approve(SkillScope::Project, &name).expect("approve project skill");
+    seeded_guard.record(SkillScope::Project, &name);
     wait_for_rebuild(prev_version, Duration::from_secs(180))
         .await
         .expect("graph must rebuild after seeding a project skill");
@@ -87,7 +95,9 @@ async fn containerized_project_scope_over_http_returns_ok() {
     // configured project root (SKILL_PROJECT_ROOT=/skills/project in compose).
     let resp = client
         .compile_context(CompileContextArgs {
-            prompt: "resolve project scope and match project-scoped skills under the configured root".to_owned(),
+            prompt:
+                "resolve project scope and match project-scoped skills under the configured root"
+                    .to_owned(),
             session_id: format!("brutal-project-{}", chrono::Utc::now().timestamp_millis()),
             repo_path: "/skills/project".to_owned(),
             trigger: None,
@@ -123,9 +133,14 @@ async fn containerized_project_scope_over_http_returns_ok() {
         details: "the deployed container must resolve project scope, not degrade (#154)".to_owned(),
     });
 
-    let _ = seed::remove(SkillScope::Project, &name);
+    seeded_guard.cleanup(); // removes the project skill; Drop is a no-op afterwards.
     let path = logger.emit_report();
-    println!("[brutal-project-scope] status={} reason={:?} report={}", resp.status, resp.reason_code, path.display());
+    println!(
+        "[brutal-project-scope] status={} reason={:?} report={}",
+        resp.status,
+        resp.reason_code,
+        path.display()
+    );
 
     assert!(
         is_ok,
@@ -135,7 +150,9 @@ async fn containerized_project_scope_over_http_returns_ok() {
          The in-process test_project_scope_container passes, but the deployed musl\n\
          container (cwd=/, SKILL_PROJECT_ROOT must drive the resolver) does not reach ok.\n\
          A real `docker compose up` user gets degraded on every project query. Report: {}\n",
-        resp.status, resp.reason_code, path.display(),
+        resp.status,
+        resp.reason_code,
+        path.display(),
     );
 }
 
@@ -148,16 +165,24 @@ async fn containerized_project_scope_over_http_returns_ok() {
 #[ignore = "requires live containers"]
 async fn builder_crash_does_not_permanently_freeze_the_loop() {
     let stack = Stack::up().await;
-    wait_for_health(Duration::from_secs(60)).await.expect("mcp-server healthy");
+    wait_for_health(Duration::from_secs(60))
+        .await
+        .expect("mcp-server healthy");
 
     let logger = StageLogger::new("brutal-builder-crash");
     let pg = PgObserver::connect().await;
     let name = slug("brutal-crash");
 
+    // Panic-safe guard: ensures the global skill seeded during the crash simulation
+    // is removed from the volume even if an assertion panics before explicit cleanup.
+    let mut seeded_guard = SeededSkillGuard::new();
+
     let version_before_kill = pg.graph_version().await.expect("baseline graph_version");
 
     // ── Kill graph-builder (SIGKILL via docker compose kill) ──────────────────
-    stack.kill("graph-builder").expect("docker compose kill graph-builder");
+    stack
+        .kill("graph-builder")
+        .expect("docker compose kill graph-builder");
     logger.log_stage(
         "builder_killed",
         json!({"service": "graph-builder", "version_before_kill": version_before_kill}),
@@ -166,8 +191,10 @@ async fn builder_crash_does_not_permanently_freeze_the_loop() {
     );
 
     // ── Seed + approve while the builder is DOWN ──────────────────────────────
-    seed::write_pending(SkillScope::Global, &name, &project_skill_md(&name)).expect("seed pending while down");
+    seed::write_pending(SkillScope::Global, &name, &project_skill_md(&name))
+        .expect("seed pending while down");
     seed::approve(SkillScope::Global, &name).expect("approve while down");
+    seeded_guard.record(SkillScope::Global, &name);
 
     // ── Prove the snapshot does NOT advance while the builder is dead ──────────
     // Poll for a bounded window; the version must stay put because nothing is
@@ -204,7 +231,10 @@ async fn builder_crash_does_not_permanently_freeze_the_loop() {
     let resp = client
         .compile_context(CompileContextArgs {
             prompt: format!("resolve project scope under the configured root {name}"),
-            session_id: format!("brutal-crash-retrieve-{}", chrono::Utc::now().timestamp_millis()),
+            session_id: format!(
+                "brutal-crash-retrieve-{}",
+                chrono::Utc::now().timestamp_millis()
+            ),
             repo_path: "/tmp".to_owned(),
             trigger: None,
         })
@@ -237,12 +267,17 @@ async fn builder_crash_does_not_permanently_freeze_the_loop() {
                 actual: recovered.clone().err().unwrap_or_default(),
             }
         },
-        details: "graph-builder restart must re-drive the loop; #156 replay covers a mid-publish crash".to_owned(),
+        details:
+            "graph-builder restart must re-drive the loop; #156 replay covers a mid-publish crash"
+                .to_owned(),
     });
 
-    let _ = seed::remove(SkillScope::Global, &name);
+    seeded_guard.cleanup(); // removes the global skill; Drop is a no-op afterwards.
     let path = logger.emit_report();
-    println!("[brutal-builder-crash] recovered={recovered_ok} skill_retrievable={skill_retrievable} report={}", path.display());
+    println!(
+        "[brutal-builder-crash] recovered={recovered_ok} skill_retrievable={skill_retrievable} report={}",
+        path.display()
+    );
 
     assert!(
         !advanced_while_down,

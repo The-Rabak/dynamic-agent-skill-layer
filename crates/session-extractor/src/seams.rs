@@ -46,7 +46,10 @@ use tracing::debug;
 
 use crate::{
     orchestrator::{SynthesisError, SynthesisPass},
-    preamble::{DetectedPreference, NormalizationError, PreambleDraft, PreambleNormalizer, PreferenceGenerality},
+    preamble::{
+        DetectedPreference, NormalizationError, PreambleDraft, PreambleNormalizer,
+        PreferenceGenerality,
+    },
     skeleton::{ProcedureSkeleton, SkeletonError, SkeletonLabel, SkeletonLabeler},
 };
 
@@ -74,8 +77,7 @@ pub fn require_ollama_base_url() -> Result<String, ExtractionError> {
 
 /// Reads the optional `ORCHESTRATION_SEAM_MODEL` override, defaulting to [`DEFAULT_SEAM_MODEL`].
 fn seam_model() -> String {
-    std::env::var("ORCHESTRATION_SEAM_MODEL")
-        .unwrap_or_else(|_| DEFAULT_SEAM_MODEL.to_owned())
+    std::env::var("ORCHESTRATION_SEAM_MODEL").unwrap_or_else(|_| DEFAULT_SEAM_MODEL.to_owned())
 }
 
 // ─── PreambleNormalizer impl ──────────────────────────────────────────────────
@@ -164,12 +166,11 @@ pub fn parse_normalization_response(
     raw_json: &str,
     original_draft: &PreambleDraft,
 ) -> Result<Vec<DetectedPreference>, NormalizationError> {
-    let parsed: NormalisationResponse =
-        serde_json::from_str(raw_json).map_err(|error| {
-            NormalizationError::ParseFailure(format!(
-                "preamble normalizer response was not valid JSON {{preferences:[...]}}: {error}"
-            ))
-        })?;
+    let parsed: NormalisationResponse = serde_json::from_str(raw_json).map_err(|error| {
+        NormalizationError::ParseFailure(format!(
+            "preamble normalizer response was not valid JSON {{preferences:[...]}}: {error}"
+        ))
+    })?;
 
     // Re-classify each returned preference using the same heuristic as the mining pass
     // (we no longer have per-statement generality from the LLM; we preserve the
@@ -210,6 +211,8 @@ impl PreambleNormalizer for OllamaPreambleNormalizer {
             stream: false,
             format: "json".to_owned(),
             prompt,
+            // #176: never let the thinking model leak reasoning into the JSON keys.
+            think: false,
             options: Some(OllamaGenerateTextOptions { temperature: 0.0 }),
         };
 
@@ -218,7 +221,9 @@ impl PreambleNormalizer for OllamaPreambleNormalizer {
         let raw_json = ollama_generate_text(&self.client, &self.endpoint, &request)
             .await
             .map_err(|error| {
-                NormalizationError::ProviderFailure(format!("Ollama normalizer call failed: {error}"))
+                NormalizationError::ProviderFailure(format!(
+                    "Ollama normalizer call failed: {error}"
+                ))
             })?;
 
         let normalised_preferences = parse_normalization_response(&raw_json, &draft)?;
@@ -341,14 +346,13 @@ fn default_confidence() -> f32 {
 ///
 /// Pure and synchronous — testable from a raw JSON string without a live model.
 pub fn parse_skeleton_label_response(raw_json: &str) -> Result<SkeletonLabel, SkeletonError> {
-    let parsed: SkeletonLabelResponse = serde_json::from_str(raw_json).map_err(|error| {
-        SkeletonError::LabelerFailed {
+    let parsed: SkeletonLabelResponse =
+        serde_json::from_str(raw_json).map_err(|error| SkeletonError::LabelerFailed {
             message: format!(
                 "skeleton labeler response was not valid JSON \
                  {{name,description,generality,keep,confidence}}: {error}"
             ),
-        }
-    })?;
+        })?;
 
     let name = parsed.name.trim().to_owned();
     if name.is_empty() {
@@ -376,6 +380,8 @@ impl SkeletonLabeler for OllamaSkeletonLabeler {
             stream: false,
             format: "json".to_owned(),
             prompt,
+            // #176: never let the thinking model leak reasoning into the JSON keys.
+            think: false,
             options: Some(OllamaGenerateTextOptions { temperature: 0.0 }),
         };
 
@@ -449,10 +455,7 @@ pub fn build_synthesis_prompt(
                 "{}. {} — {}",
                 i + 1,
                 c.name,
-                c.description
-                    .chars()
-                    .take(120)
-                    .collect::<String>()
+                c.description.chars().take(120).collect::<String>()
             )
         })
         .collect::<Vec<_>>()
@@ -563,6 +566,8 @@ impl SynthesisPass for OllamaSynthesisPass {
             stream: false,
             format: "json".to_owned(),
             prompt,
+            // #176: never let the thinking model leak reasoning into the JSON keys.
+            think: false,
             options: Some(OllamaGenerateTextOptions { temperature: 0.0 }),
         };
 
@@ -648,7 +653,10 @@ pub mod tests {
     /// Proves that `build_normalization_prompt` includes each preference verbatim.
     #[test]
     fn normalization_prompt_contains_each_preference() {
-        let draft = simple_draft(vec!["Never use unwrap.", "Always run tests before committing."]);
+        let draft = simple_draft(vec![
+            "Never use unwrap.",
+            "Always run tests before committing.",
+        ]);
         let prompt = build_normalization_prompt(&draft);
         assert!(
             prompt.contains("Never use unwrap."),
@@ -667,10 +675,13 @@ pub mod tests {
     /// Proves `parse_normalization_response` returns the deduplicated list.
     #[test]
     fn parse_normalization_response_returns_merged_list() {
-        let draft = simple_draft(vec!["Never use unwrap.", "Always run tests before committing."]);
+        let draft = simple_draft(vec![
+            "Never use unwrap.",
+            "Always run tests before committing.",
+        ]);
         let raw = r#"{"preferences":["Never use unwrap in production.","Always run tests."]}"#;
-        let result = parse_normalization_response(raw, &draft)
-            .expect("parse must succeed for valid JSON");
+        let result =
+            parse_normalization_response(raw, &draft).expect("parse must succeed for valid JSON");
         assert_eq!(result.len(), 2, "two preferences expected after parse");
         assert!(
             result.iter().any(|p| p.raw_statement.contains("unwrap")),
@@ -682,8 +693,8 @@ pub mod tests {
     #[test]
     fn parse_normalization_response_fails_on_invalid_json() {
         let draft = simple_draft(vec!["pref"]);
-        let err = parse_normalization_response("not json", &draft)
-            .expect_err("invalid JSON must fail");
+        let err =
+            parse_normalization_response("not json", &draft).expect_err("invalid JSON must fail");
         assert!(
             matches!(err, NormalizationError::ParseFailure(_)),
             "expected ParseFailure, got {err:?}"
@@ -742,8 +753,8 @@ pub mod tests {
     /// Proves `parse_skeleton_label_response` fails loudly on bad JSON.
     #[test]
     fn parse_skeleton_label_response_fails_on_invalid_json() {
-        let err = parse_skeleton_label_response("not json")
-            .expect_err("invalid JSON must fail loudly");
+        let err =
+            parse_skeleton_label_response("not json").expect_err("invalid JSON must fail loudly");
         assert!(
             matches!(err, SkeletonError::LabelerFailed { .. }),
             "expected LabelerFailed, got {err:?}"
@@ -754,8 +765,7 @@ pub mod tests {
     #[test]
     fn parse_skeleton_label_response_fails_on_empty_name() {
         let raw = r#"{"name":"","description":"desc","generality":"general","keep":true,"confidence":0.8}"#;
-        let err = parse_skeleton_label_response(raw)
-            .expect_err("empty name must fail loudly");
+        let err = parse_skeleton_label_response(raw).expect_err("empty name must fail loudly");
         assert!(
             matches!(err, SkeletonError::LabelerFailed { .. }),
             "expected LabelerFailed for empty name"
@@ -800,7 +810,10 @@ pub mod tests {
     fn parse_synthesis_response_returns_empty_on_no_candidates() {
         let raw = r#"{"candidates":[]}"#;
         let candidates = parse_synthesis_response(raw).expect("parse must succeed");
-        assert!(candidates.is_empty(), "no candidates expected for empty response");
+        assert!(
+            candidates.is_empty(),
+            "no candidates expected for empty response"
+        );
     }
 
     /// Proves `parse_synthesis_response` fails loudly on bad JSON.
