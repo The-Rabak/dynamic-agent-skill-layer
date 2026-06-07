@@ -45,7 +45,7 @@ use async_trait::async_trait;
 use domain::{ExtractedSkillCandidate, ExtractionError};
 use infrastructure::{OllamaTextLlm, StructuredTextLlm};
 use serde::Deserialize;
-use tracing::debug;
+use tracing::{debug, warn};
 
 use crate::{
     orchestrator::{SynthesisError, SynthesisPass},
@@ -365,9 +365,19 @@ pub fn parse_skeleton_label_response(raw_json: &str) -> Result<SkeletonLabel, Sk
         });
     }
 
+    let description = parsed.description.trim().to_owned();
+    if description.is_empty() {
+        return Err(SkeletonError::LabelerFailed {
+            message: format!(
+                "skeleton labeler returned an empty description for candidate '{name}'; \
+                 a label without a description is not a usable skill"
+            ),
+        });
+    }
+
     Ok(SkeletonLabel {
         name,
-        description: parsed.description.trim().to_owned(),
+        description,
         generality: parsed.generality,
         keep: parsed.keep,
         confidence: parsed.confidence.clamp(0.0, 1.0),
@@ -517,9 +527,33 @@ struct SynthesisCandidate {
     generality_rationale: Option<String>,
 }
 
+/// Returns `true` when a parsed synthesis candidate carries at least one piece of
+/// actionable skill content.
+///
+/// A candidate must have at least one of: a non-empty `procedures` list, a non-empty
+/// `conventions` list, or a non-empty `assets` list. A candidate with a name and
+/// description but zero of these fields is structurally broken — the model produced a
+/// named shell with no teachable content.
+fn synthesis_candidate_has_usable_payload(c: &SynthesisCandidate) -> bool {
+    !c.procedures.is_empty() || !c.conventions.is_empty() || !c.assets.is_empty()
+}
+
 /// Parses the LLM's synthesis response into a list of additional skill candidates.
 ///
 /// Pure and synchronous — testable from a raw JSON string without a live model.
+///
+/// ## Validation contract
+///
+/// Two cases are distinguished:
+/// - "Model legitimately produced nothing" (`{"candidates":[]}`) → `Ok(vec![])`, clean no-op.
+/// - "Model produced a structurally-broken candidate" (non-empty name but zero usable payload
+///   across `procedures`, `conventions`, and `assets`) → `Err(SynthesisError::ParseFailure)`
+///   with the raw model body and the offending candidate name embedded for diagnosis.
+///
+/// A batch containing ANY broken candidate fails entirely. This is intentional: a model
+/// output that mixes valid and broken candidates is suspect as a whole, and partial
+/// admission risks silently writing content-free `.pending` drafts when the parse caller
+/// retries with a different model response.
 pub fn parse_synthesis_response(
     raw_json: &str,
 ) -> Result<Vec<ExtractedSkillCandidate>, SynthesisError> {
@@ -529,10 +563,28 @@ pub fn parse_synthesis_response(
         ))
     })?;
 
+    // Validate every candidate before admitting any of them. A single broken candidate
+    // fails the whole batch loudly with the raw body included for downstream diagnosis.
+    for c in &parsed.candidates {
+        let name = c.name.trim();
+        if name.is_empty() {
+            return Err(SynthesisError::ParseFailure(format!(
+                "synthesis candidate has an empty name — no content-free skill may reach \
+                 .pending; raw body: {raw_json}"
+            )));
+        }
+        if !synthesis_candidate_has_usable_payload(c) {
+            return Err(SynthesisError::ParseFailure(format!(
+                "synthesis candidate '{name}' has no usable payload \
+                 (procedures, conventions, and assets are all empty) — \
+                 no content-free skill may reach .pending; raw body: {raw_json}"
+            )));
+        }
+    }
+
     let candidates: Vec<ExtractedSkillCandidate> = parsed
         .candidates
         .into_iter()
-        .filter(|c| !c.name.trim().is_empty())
         .map(|c| ExtractedSkillCandidate {
             name: c.name.trim().to_owned(),
             description: c.description.trim().to_owned(),
@@ -572,7 +624,21 @@ impl SynthesisPass for LlmSynthesisPass {
             ))
         })?;
 
-        let additional = parse_synthesis_response(&raw_json)?;
+        let additional = parse_synthesis_response(&raw_json).map_err(|error| {
+            // Emit a warn-level log with the raw body so the gap is diagnosable from
+            // the log stream without needing to re-run the model (mirrors the
+            // thinking-model-leak diagnosis approach). The raw body is also embedded
+            // in the error message for callers that propagate or record errors.
+            warn!(
+                provider = self.llm.provider_label(),
+                model = self.llm.model(),
+                raw_body = %raw_json,
+                error = %error,
+                "LlmSynthesisPass: synthesis response contained broken candidate(s) — \
+                 no content-free skill admitted to .pending"
+            );
+            error
+        })?;
 
         debug!(
             additional_count = additional.len(),
@@ -824,6 +890,126 @@ pub mod tests {
         assert!(
             !prompt.contains("Session preamble"),
             "empty preamble must not inject a preamble section"
+        );
+    }
+
+    // ── Synthesis pass — content-free candidate rejection ─────────────────────
+
+    /// Proves a synthesis candidate with no procedures, conventions, or assets is
+    /// rejected loudly, with the raw body captured in the error message.
+    ///
+    /// Case (a) from the ticket: empty-procedures candidate → loud failure.
+    #[test]
+    fn parse_synthesis_response_rejects_content_free_candidate_loudly() {
+        // Has a name and description but ZERO usable payload.
+        let raw = r#"{"candidates":[{"name":"hollow-skill","description":"A description with no steps.","tags":[],"procedures":[],"conventions":[],"assets":[],"confidence":0.9,"generality":"general"}]}"#;
+        let err =
+            parse_synthesis_response(raw).expect_err("content-free candidate must be rejected");
+        let err_msg = format!("{err}");
+        assert!(
+            matches!(err, SynthesisError::ParseFailure(_)),
+            "expected ParseFailure for content-free candidate, got {err:?}"
+        );
+        assert!(
+            err_msg.contains("hollow-skill"),
+            "error must name the offending candidate; got: {err_msg}"
+        );
+        assert!(
+            err_msg.contains("hollow-skill") || err_msg.contains("no usable payload"),
+            "error must surface the broken candidate identity; got: {err_msg}"
+        );
+        // The raw body must be embedded so the gap is diagnosable.
+        assert!(
+            err_msg.contains("hollow-skill"),
+            "raw body context must appear in the error; got: {err_msg}"
+        );
+    }
+
+    /// Proves that an empty-procedures candidate embeds the raw model body in the error,
+    /// enabling diagnosis without re-running the model (mirrors thinking-model-leak approach).
+    #[test]
+    fn parse_synthesis_response_captures_raw_body_in_broken_candidate_error() {
+        let raw = r#"{"candidates":[{"name":"no-steps-skill","description":"desc","procedures":[],"conventions":[],"assets":[]}]}"#;
+        let err = parse_synthesis_response(raw).expect_err("broken candidate must fail loudly");
+        let err_msg = format!("{err}");
+        // The raw JSON must appear in the error so downstream logging has the full body.
+        assert!(
+            err_msg.contains("no-steps-skill"),
+            "raw body context (candidate name) must appear in error; got: {err_msg}"
+        );
+    }
+
+    /// Case (b) from the ticket: legitimate empty result from the model is NOT an error.
+    #[test]
+    fn parse_synthesis_response_treats_empty_candidates_list_as_clean_no_op() {
+        // Model legitimately produced nothing — valid empty result.
+        let raw = r#"{"candidates":[]}"#;
+        let result = parse_synthesis_response(raw).expect("legitimate empty result must succeed");
+        assert!(
+            result.is_empty(),
+            "empty candidates list must yield an empty Vec, not an error"
+        );
+    }
+
+    /// Case (c) from the ticket: a well-formed candidate with at least one procedure is accepted.
+    #[test]
+    fn parse_synthesis_response_accepts_well_formed_candidate_with_procedures() {
+        let raw = r#"{"candidates":[{"name":"well-formed-skill","description":"Does something real.","tags":["rust"],"procedures":["step one","step two"],"conventions":[],"assets":[],"confidence":0.85,"generality":"general"}]}"#;
+        let candidates =
+            parse_synthesis_response(raw).expect("well-formed candidate must be accepted");
+        assert_eq!(candidates.len(), 1, "exactly one candidate expected");
+        assert_eq!(candidates[0].name, "well-formed-skill");
+        assert_eq!(candidates[0].procedures.len(), 2);
+    }
+
+    /// Proves a candidate with no procedures but at least one convention is accepted
+    /// (conventions count as usable payload).
+    #[test]
+    fn parse_synthesis_response_accepts_candidate_with_convention_only_payload() {
+        let raw = r#"{"candidates":[{"name":"convention-skill","description":"Style guide.","procedures":[],"conventions":["always use snake_case"],"assets":[]}]}"#;
+        let candidates = parse_synthesis_response(raw).expect("convention-only candidate must be accepted");
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].name, "convention-skill");
+    }
+
+    /// Proves a candidate with no procedures or conventions but at least one asset is accepted.
+    #[test]
+    fn parse_synthesis_response_accepts_candidate_with_asset_only_payload() {
+        let raw = r#"{"candidates":[{"name":"asset-skill","description":"Template.","procedures":[],"conventions":[],"assets":["template.rs"]}]}"#;
+        let candidates = parse_synthesis_response(raw).expect("asset-only candidate must be accepted");
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].name, "asset-skill");
+    }
+
+    /// Proves that when a mixed batch contains one broken and one valid candidate,
+    /// the entire parse fails loudly — no partial admission of valid candidates
+    /// alongside a broken one (the whole model output is suspect).
+    #[test]
+    fn parse_synthesis_response_rejects_batch_containing_any_broken_candidate() {
+        let raw = r#"{"candidates":[
+            {"name":"good-skill","description":"desc","procedures":["step one"],"conventions":[],"assets":[]},
+            {"name":"bad-skill","description":"desc","procedures":[],"conventions":[],"assets":[]}
+        ]}"#;
+        let err = parse_synthesis_response(raw)
+            .expect_err("batch with any broken candidate must fail loudly");
+        let err_msg = format!("{err}");
+        assert!(
+            err_msg.contains("bad-skill"),
+            "error must identify the broken candidate; got: {err_msg}"
+        );
+    }
+
+    // ── Skeleton labeler — description validation ──────────────────────────────
+
+    /// Proves `parse_skeleton_label_response` fails loudly when description is empty.
+    #[test]
+    fn parse_skeleton_label_response_fails_on_empty_description() {
+        let raw = r#"{"name":"valid-name","description":"","generality":"general","keep":true,"confidence":0.8}"#;
+        let err = parse_skeleton_label_response(raw)
+            .expect_err("empty description must fail loudly");
+        assert!(
+            matches!(err, SkeletonError::LabelerFailed { .. }),
+            "expected LabelerFailed for empty description, got {err:?}"
         );
     }
 
