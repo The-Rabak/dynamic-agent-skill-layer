@@ -164,7 +164,7 @@ async fn extract_session_parallel_burst_completes_all_jobs_and_persists_drafts()
         ExtractionProvider::Claude,
         Arc::new(StressExtractor),
         TranscriptLoader::new(transcript_root).expect("loader should initialize"),
-        PendingDraftWriter::new(vec![global_root.clone()]),
+        PendingDraftWriter::new_unbounded_for_tests(vec![global_root.clone()]),
         publisher.clone(),
     );
     let tool = ExtractSessionTool::new_for_tests(extractor);

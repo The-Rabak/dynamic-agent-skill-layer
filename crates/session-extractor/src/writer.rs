@@ -75,7 +75,7 @@ impl WriteTargetGuard {
 }
 
 /// Writes extracted candidates as `.pending` drafts for human approval by rename.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct PendingDraftWriter {
     global_scope_paths: Vec<PathBuf>,
     write_guard: WriteTargetGuard,
@@ -83,14 +83,10 @@ pub struct PendingDraftWriter {
 
 impl PendingDraftWriter {
     /// Creates a writer with configured global scope roots and a write-target guard.
-    pub fn new(global_scope_paths: Vec<PathBuf>) -> Self {
-        Self {
-            global_scope_paths,
-            write_guard: WriteTargetGuard::permissive(),
-        }
-    }
-
-    /// Creates a writer with an explicit write-target guard for testing.
+    ///
+    /// This is the standard bounded constructor for non-test code that already holds
+    /// pre-resolved scope paths and an explicit guard. Both arguments are required so
+    /// no call site can accidentally omit the write boundary.
     pub fn new_with_guard(global_scope_paths: Vec<PathBuf>, write_guard: WriteTargetGuard) -> Self {
         Self {
             global_scope_paths,
@@ -98,21 +94,50 @@ impl PendingDraftWriter {
         }
     }
 
-    /// Builds a writer from `SKILL_GLOBAL_PATHS`.
+    /// Creates a writer with a permissive (write-anywhere) guard.
+    ///
+    /// **Test-only.** Production code must use [`Self::from_environment`], which fails
+    /// loud when `SKILL_GLOBAL_PATHS` is unset. Naming this explicitly forces every
+    /// call site to acknowledge it is bypassing the write boundary — which is the right
+    /// trade-off inside a sandbox but never acceptable at runtime.
+    #[cfg(any(test, feature = "test-utils"))]
+    pub fn new_unbounded_for_tests(global_scope_paths: Vec<PathBuf>) -> Self {
+        Self {
+            global_scope_paths,
+            write_guard: WriteTargetGuard::permissive(),
+        }
+    }
+
+    /// Builds a writer from environment variables.
+    ///
+    /// # Required environment variables
+    ///
+    /// - `SKILL_GLOBAL_PATHS` — colon-separated list of global scope root directories.
+    ///   **Must be set and non-empty.** An absent or empty value is an explicit
+    ///   misconfiguration: the writer refuses to start rather than silently write
+    ///   `.pending` drafts to an unbounded location.
+    /// - `SKILL_GLOBAL_WRITE_ROOTS` or `SKILL_GLOBAL_ALLOWED_ROOTS` — at least one must
+    ///   be set to configure the write-target guard.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`WriterError::MissingConfig`] when `SKILL_GLOBAL_PATHS` is unset or
+    /// resolves to zero entries after trimming.
     pub fn from_environment() -> Result<Self, WriterError> {
         let configured = std::env::var("SKILL_GLOBAL_PATHS").unwrap_or_default();
-        let mut global_scope_paths = configured
+        let global_scope_paths: Vec<PathBuf> = configured
             .split(':')
             .map(str::trim)
             .filter(|entry| !entry.is_empty())
             .map(PathBuf::from)
-            .collect::<Vec<_>>();
+            .collect();
         if global_scope_paths.is_empty() {
-            global_scope_paths.push(std::env::current_dir().map_err(|error| {
-                WriterError::ScopeResolution(format!(
-                    "could not resolve current directory fallback: {error}"
-                ))
-            })?);
+            return Err(WriterError::MissingConfig(
+                "SKILL_GLOBAL_PATHS is not set or is empty; \
+                 the writer refuses to start without an explicit, bounded scope root — \
+                 set SKILL_GLOBAL_PATHS to at least one directory path"
+                    .to_owned(),
+            ));
         }
 
         let write_guard = WriteTargetGuard::from_environment()?;
@@ -276,6 +301,10 @@ pub enum WriterError {
     RejectedTombstonePresent(String),
     #[error("write denied: path `{0}` is outside write-allowed output roots")]
     WriteDenied(String),
+    /// Required configuration is absent; the writer refused to start rather than silently
+    /// enter an unbounded write mode. Set the missing environment variable and restart.
+    #[error("writer configuration error: {0}")]
+    MissingConfig(String),
 }
 
 impl WriterError {
@@ -289,6 +318,7 @@ impl WriterError {
             Self::BatchValidation(_) => "pending_draft_batch_validation_failed",
             Self::RejectedTombstonePresent(_) => "rejected_tombstone_present",
             Self::WriteDenied(_) => "write_denied",
+            Self::MissingConfig(_) => "writer_missing_config",
         }
         .to_owned()
     }
@@ -928,7 +958,7 @@ mod tests {
 
         // The writer has a global scope path pointing to global_root. With
         // repo_path set, it must ignore that and write to project_root/.skills.
-        let writer = PendingDraftWriter::new(vec![global_root.clone()]);
+        let writer = PendingDraftWriter::new_unbounded_for_tests(vec![global_root.clone()]);
 
         let mut candidate = minimal_candidate("rust-testing");
         candidate.generality = Some("general".to_owned());
@@ -966,6 +996,68 @@ mod tests {
         assert!(
             !global_skills_dir.exists(),
             "global .skills dir must NOT exist — general hint must not trigger global write"
+        );
+    }
+
+    /// Safety invariant: an absent or empty `SKILL_GLOBAL_PATHS` must be a loud
+    /// construction failure, never a silent fall-through to permissive write-anywhere
+    /// mode.  This test proves the production path (`from_environment`) enforces the
+    /// boundary at boot time before any draft can be written.
+    #[test]
+    fn from_environment_fails_loud_when_skill_global_paths_is_unset() {
+        let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
+
+        unsafe {
+            env::remove_var("SKILL_GLOBAL_PATHS");
+            // Provide a valid write-roots entry so the test isolates only the
+            // SKILL_GLOBAL_PATHS check and not the downstream write-roots check.
+            env::set_var("SKILL_GLOBAL_WRITE_ROOTS", env::temp_dir().display().to_string());
+        }
+
+        let result = PendingDraftWriter::from_environment();
+
+        unsafe {
+            env::remove_var("SKILL_GLOBAL_WRITE_ROOTS");
+        }
+
+        let err = result.expect_err(
+            "from_environment must fail when SKILL_GLOBAL_PATHS is unset — \
+             the writer must not silently enter permissive write-anywhere mode",
+        );
+        assert!(
+            matches!(err, WriterError::MissingConfig(_)),
+            "expected MissingConfig, got {err:?}"
+        );
+        assert!(
+            err.to_string().contains("SKILL_GLOBAL_PATHS"),
+            "error message must name the missing env var; got: {err}"
+        );
+    }
+
+    /// Variant: an empty string value for `SKILL_GLOBAL_PATHS` is treated the same as
+    /// unset — both are explicit misconfiguration, not a valid empty-roots list.
+    #[test]
+    fn from_environment_fails_loud_when_skill_global_paths_is_empty_string() {
+        let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
+
+        unsafe {
+            env::set_var("SKILL_GLOBAL_PATHS", "");
+            env::set_var("SKILL_GLOBAL_WRITE_ROOTS", env::temp_dir().display().to_string());
+        }
+
+        let result = PendingDraftWriter::from_environment();
+
+        unsafe {
+            env::remove_var("SKILL_GLOBAL_PATHS");
+            env::remove_var("SKILL_GLOBAL_WRITE_ROOTS");
+        }
+
+        let err = result.expect_err(
+            "from_environment must fail when SKILL_GLOBAL_PATHS is an empty string",
+        );
+        assert!(
+            matches!(err, WriterError::MissingConfig(_)),
+            "expected MissingConfig, got {err:?}"
         );
     }
 }

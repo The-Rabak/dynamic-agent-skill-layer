@@ -200,7 +200,7 @@ async fn extract_session_returns_processing_and_writes_pending_draft() {
         ExtractionProvider::Claude,
         Arc::new(SuccessfulExtractor),
         TranscriptLoader::new(transcript_root.clone()).expect("loader should initialize"),
-        PendingDraftWriter::new(vec![global_root.clone()]),
+        PendingDraftWriter::new_unbounded_for_tests(vec![global_root.clone()]),
         event_publisher.clone(),
     );
     let tool = ExtractSessionTool::new_for_tests(extractor);
@@ -270,7 +270,7 @@ async fn extract_session_rejects_repo_path_outside_allowed_roots() {
         ExtractionProvider::Claude,
         Arc::new(SuccessfulExtractor),
         TranscriptLoader::new(transcript_root.clone()).expect("loader should initialize"),
-        PendingDraftWriter::new(vec![global_root.clone()]),
+        PendingDraftWriter::new_unbounded_for_tests(vec![global_root.clone()]),
     );
     let tool = ExtractSessionTool::new_for_tests(extractor);
 
@@ -301,7 +301,7 @@ async fn extract_session_rejects_traversal_transcript_refs() {
         ExtractionProvider::Claude,
         Arc::new(SuccessfulExtractor),
         TranscriptLoader::new(transcript_root).expect("loader should initialize"),
-        PendingDraftWriter::new(vec![global_root]),
+        PendingDraftWriter::new_unbounded_for_tests(vec![global_root]),
     );
     let tool = ExtractSessionTool::new_for_tests(extractor);
 
@@ -341,7 +341,7 @@ async fn extract_session_emits_failed_lifecycle_event_on_background_error() {
         ExtractionProvider::Ollama,
         Arc::new(FailingExtractor),
         TranscriptLoader::new(transcript_root).expect("loader should initialize"),
-        PendingDraftWriter::new(vec![global_root]),
+        PendingDraftWriter::new_unbounded_for_tests(vec![global_root]),
         event_publisher.clone(),
     );
     let tool = ExtractSessionTool::new_for_tests(extractor);

@@ -26,10 +26,12 @@ required-features = ["test-utils"]
 [[test]]
 name = "test_pending_lifecycle"
 path = "../../tests/integration/test_pending_lifecycle.rs"
+required-features = ["test-utils"]
 
 [[test]]
 name = "test_pending_lifecycle_frontmatter_contract"
 path = "../../tests/integration/test_pending_lifecycle_frontmatter_contract.rs"
+required-features = ["test-utils"]
 
 [[test]]
 name = "test_cleanup_scan_resilience"
@@ -46,7 +48,7 @@ path = "../../tests/e2e/test_maintenance_e2e.rs"
 required-features = ["test-utils"]
 
 [features]
-test-utils = ["graph-builder/test-utils"]
+test-utils = ["graph-builder/test-utils", "session-extractor/test-utils"]
 
 [dependencies]
 async-trait = "0.1.89"

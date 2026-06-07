@@ -1574,7 +1574,7 @@ mod tests {
         let synthesis = FixedSynthesisPassFake::noop();
 
         let sandbox = sandbox_dir("live-100k");
-        let draft_writer = PendingDraftWriter::new(vec![sandbox.clone()]);
+        let draft_writer = PendingDraftWriter::new_unbounded_for_tests(vec![sandbox.clone()]);
         let session_id = DomainId::new_unchecked("live-100k-session");
         let request = inline_request("live-100k-session");
         let config = OrchestrationConfig {
@@ -1732,7 +1732,7 @@ mod tests {
         let events = multi_arc_session_events();
         let session_id = DomainId::new_unchecked("smoke-test");
         let sandbox = sandbox_dir("smoke");
-        let draft_writer = PendingDraftWriter::new(vec![sandbox.clone()]);
+        let draft_writer = PendingDraftWriter::new_unbounded_for_tests(vec![sandbox.clone()]);
         let request = inline_request("smoke-test");
 
         let config = OrchestrationConfig {
@@ -1794,7 +1794,7 @@ mod tests {
         let events = multi_arc_session_events();
         let session_id = DomainId::new_unchecked("all-fail");
         let sandbox = sandbox_dir("all-fail");
-        let draft_writer = PendingDraftWriter::new(vec![sandbox]);
+        let draft_writer = PendingDraftWriter::new_unbounded_for_tests(vec![sandbox]);
         let request = inline_request("all-fail");
 
         let config = OrchestrationConfig {
@@ -1849,7 +1849,7 @@ mod tests {
         let events = multi_arc_session_events();
         let session_id = DomainId::new_unchecked("synth-fail");
         let sandbox = sandbox_dir("synth-fail");
-        let draft_writer = PendingDraftWriter::new(vec![sandbox]);
+        let draft_writer = PendingDraftWriter::new_unbounded_for_tests(vec![sandbox]);
         let request = inline_request("synth-fail");
 
         let config = OrchestrationConfig {
@@ -1939,7 +1939,7 @@ mod tests {
 
         let session_id = DomainId::new_unchecked("flat-session-regression");
         let sandbox = sandbox_dir("flat-regression");
-        let draft_writer = PendingDraftWriter::new(vec![sandbox.clone()]);
+        let draft_writer = PendingDraftWriter::new_unbounded_for_tests(vec![sandbox.clone()]);
         let request = inline_request("flat-session-regression");
 
         // The prose extractor returns a candidate for this content.
@@ -2017,7 +2017,7 @@ mod tests {
         let events = multi_arc_session_events();
         let session_id = DomainId::new_unchecked("additive-test");
         let sandbox = sandbox_dir("additive");
-        let draft_writer = PendingDraftWriter::new(vec![sandbox.clone()]);
+        let draft_writer = PendingDraftWriter::new_unbounded_for_tests(vec![sandbox.clone()]);
         let request = inline_request("additive-test");
 
         // Prose extractor returns one candidate per call.
@@ -2090,7 +2090,7 @@ mod tests {
 
         let session_id = DomainId::new_unchecked("retry-on-empty");
         let sandbox = sandbox_dir("retry-on-empty");
-        let draft_writer = PendingDraftWriter::new(vec![sandbox.clone()]);
+        let draft_writer = PendingDraftWriter::new_unbounded_for_tests(vec![sandbox.clone()]);
         let request = inline_request("retry-on-empty");
 
         // The flaky extractor returns empty on the first call, then the real candidate.
@@ -2156,7 +2156,7 @@ mod tests {
 
         let session_id = DomainId::new_unchecked("no-retry-trivial");
         let sandbox = sandbox_dir("no-retry-trivial");
-        let draft_writer = PendingDraftWriter::new(vec![sandbox.clone()]);
+        let draft_writer = PendingDraftWriter::new_unbounded_for_tests(vec![sandbox.clone()]);
         let request = inline_request("no-retry-trivial");
 
         // Always returns empty — but the window is trivial so no retry should fire.
@@ -2234,7 +2234,7 @@ mod tests {
 
         let session_id = DomainId::new_unchecked("retry-on-parse-error");
         let sandbox = sandbox_dir("retry-on-parse-error");
-        let draft_writer = PendingDraftWriter::new(vec![sandbox.clone()]);
+        let draft_writer = PendingDraftWriter::new_unbounded_for_tests(vec![sandbox.clone()]);
         let request = inline_request("retry-on-parse-error");
 
         // The extractor returns a parse error on the first call (cold-start malformed JSON),
@@ -2296,7 +2296,7 @@ mod tests {
     async fn empty_session_returns_error() {
         let session_id = DomainId::new_unchecked("empty");
         let sandbox = sandbox_dir("empty");
-        let draft_writer = PendingDraftWriter::new(vec![sandbox.clone()]);
+        let draft_writer = PendingDraftWriter::new_unbounded_for_tests(vec![sandbox.clone()]);
         let request = inline_request("empty");
         let config = OrchestrationConfig::default();
 

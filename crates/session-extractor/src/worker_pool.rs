@@ -424,7 +424,7 @@ mod tests {
             extractor: extractor_impl,
             transcript_loader: TranscriptLoader::new(transcript_root.to_path_buf())
                 .expect("loader"),
-            draft_writer: PendingDraftWriter::new(vec![sandbox.to_path_buf()]),
+            draft_writer: PendingDraftWriter::new_unbounded_for_tests(vec![sandbox.to_path_buf()]),
             lifecycle_events: crate::ExtractionLifecycleEvents::default(),
             event_publisher: Arc::new(crate::NoopExtractionEventPublisher),
             worker_pool: Some(pool),
@@ -605,7 +605,7 @@ mod tests {
             extractor: slow_extractor,
             transcript_loader: TranscriptLoader::new(transcript_root.to_path_buf())
                 .expect("loader"),
-            draft_writer: PendingDraftWriter::new(vec![sandbox.to_path_buf()]),
+            draft_writer: PendingDraftWriter::new_unbounded_for_tests(vec![sandbox.to_path_buf()]),
             lifecycle_events: crate::ExtractionLifecycleEvents::default(),
             event_publisher: Arc::new(crate::NoopExtractionEventPublisher),
             worker_pool: Some(pool),

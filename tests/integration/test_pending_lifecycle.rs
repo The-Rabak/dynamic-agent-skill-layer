@@ -52,7 +52,7 @@ fn frontmatter_from_markdown(markdown: &str) -> Value {
 #[test]
 fn pending_writer_emits_lifecycle_frontmatter_with_provenance() {
     let sandbox = fresh_sandbox("pending-lifecycle-writer");
-    let writer = PendingDraftWriter::new(vec![sandbox.clone()]);
+    let writer = PendingDraftWriter::new_unbounded_for_tests(vec![sandbox.clone()]);
     let extraction_result = ExtractionResult {
         source_session_id: DomainId::new_unchecked("session-123"),
         candidates: vec![sample_candidate("Rust File IO Setup")],
@@ -104,7 +104,7 @@ fn pending_writer_emits_lifecycle_frontmatter_with_provenance() {
 #[test]
 fn pending_writer_uses_shared_lifecycle_policy_defaults() {
     let sandbox = fresh_sandbox("pending-lifecycle-shared-policy");
-    let writer = PendingDraftWriter::new(vec![sandbox.clone()]);
+    let writer = PendingDraftWriter::new_unbounded_for_tests(vec![sandbox.clone()]);
     let extraction_result = ExtractionResult {
         source_session_id: DomainId::new_unchecked("session-shared-policy"),
         candidates: vec![sample_candidate("Shared Lifecycle Policy Skill")],
@@ -273,7 +273,7 @@ fn rejected_tombstone_blocks_reproposal_until_tombstone_pruning() {
         "---\nis_tombstone: true\ncreated_at: 2026-01-01T00:00:00Z\norigin: manual\n---\n",
     )
     .expect("tombstone should be written");
-    let writer = PendingDraftWriter::new(vec![sandbox.clone()]);
+    let writer = PendingDraftWriter::new_unbounded_for_tests(vec![sandbox.clone()]);
     let extraction_result = ExtractionResult {
         source_session_id: DomainId::new_unchecked("session-456"),
         candidates: vec![sample_candidate("Rust File IO Setup")],
@@ -363,7 +363,7 @@ fn malformed_rejected_tombstone_is_pruned_and_unblocks_reproposal() {
         "---\ncreated_at: [malformed\norigin: manual\n---\n",
     )
     .expect("malformed tombstone should be written");
-    let writer = PendingDraftWriter::new(vec![sandbox.clone()]);
+    let writer = PendingDraftWriter::new_unbounded_for_tests(vec![sandbox.clone()]);
     let extraction_result = ExtractionResult {
         source_session_id: DomainId::new_unchecked("session-789"),
         candidates: vec![sample_candidate("Rust File IO Setup")],

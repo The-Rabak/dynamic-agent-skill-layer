@@ -181,7 +181,7 @@ async fn orchestrated_extraction_live_produces_grounded_pending_drafts() {
     // ── Session + draft writer ────────────────────────────────────────────────
     let session_id = domain::DomainId::new_unchecked("tokio-repro-live-e2e");
     let sandbox = sandbox_dir("tokio-repro");
-    let draft_writer = PendingDraftWriter::new(vec![sandbox.clone()]);
+    let draft_writer = PendingDraftWriter::new_unbounded_for_tests(vec![sandbox.clone()]);
 
     let request = ExtractSessionRequest {
         transcript_ref: "ignored".to_owned(),

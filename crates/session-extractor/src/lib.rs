@@ -1106,6 +1106,7 @@ impl SessionExtractionError {
                 WriterError::BatchValidation(_) => "pending_draft_batch_validation_failed",
                 WriterError::RejectedTombstonePresent(_) => "rejected_tombstone_present",
                 WriterError::WriteDenied(_) => "write_denied",
+                WriterError::MissingConfig(_) => "writer_missing_config",
             },
             Self::EventPublication(_) => "event_publication_failed",
             Self::Orchestration(_) => "orchestration_failed",
@@ -1435,7 +1436,7 @@ mod tests {
             extractor: extractor_impl,
             transcript_loader: TranscriptLoader::new(transcript_root.to_path_buf())
                 .expect("loader"),
-            draft_writer: PendingDraftWriter::new(vec![sandbox.to_path_buf()]),
+            draft_writer: PendingDraftWriter::new_unbounded_for_tests(vec![sandbox.to_path_buf()]),
             lifecycle_events: ExtractionLifecycleEvents::default(),
             event_publisher: Arc::new(NoopExtractionEventPublisher),
             worker_pool,
@@ -1805,7 +1806,7 @@ mod tests {
             extractor: Arc::new(StaticExtractor::ok(Duration::ZERO)),
             transcript_loader: TranscriptLoader::new(transcript_root.to_path_buf())
                 .expect("loader"),
-            draft_writer: PendingDraftWriter::new(vec![sandbox.to_path_buf()]),
+            draft_writer: PendingDraftWriter::new_unbounded_for_tests(vec![sandbox.to_path_buf()]),
             lifecycle_events: ExtractionLifecycleEvents::default(),
             event_publisher: Arc::new(NoopExtractionEventPublisher),
             worker_pool: None,

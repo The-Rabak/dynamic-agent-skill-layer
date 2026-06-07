@@ -375,7 +375,7 @@ async fn extract_session_inline_payload_writes_pending_and_emits_completion_even
         ExtractionProvider::Claude,
         Arc::new(InlineSuccessExtractor),
         TranscriptLoader::new(transcript_root).expect("loader should initialize"),
-        PendingDraftWriter::new(vec![global_root.clone()]),
+        PendingDraftWriter::new_unbounded_for_tests(vec![global_root.clone()]),
         publisher.clone(),
     );
     let tool = ExtractSessionTool::new_for_tests(extractor);
@@ -424,7 +424,7 @@ async fn extract_session_invalid_inline_payload_surfaces_failed_event_without_pe
         ExtractionProvider::Claude,
         Arc::new(InlineSuccessExtractor),
         TranscriptLoader::new(transcript_root).expect("loader should initialize"),
-        PendingDraftWriter::new(vec![global_root.clone()]),
+        PendingDraftWriter::new_unbounded_for_tests(vec![global_root.clone()]),
         publisher.clone(),
     );
     let tool = ExtractSessionTool::new_for_tests(extractor);

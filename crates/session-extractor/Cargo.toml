@@ -26,3 +26,4 @@ uuid = { version = "1.18.1", features = ["v7"] }
 [[test]]
 name = "test_orchestrated_extraction_live"
 path = "../../tests/e2e/test_orchestrated_extraction_live.rs"
+required-features = ["test-utils"]
