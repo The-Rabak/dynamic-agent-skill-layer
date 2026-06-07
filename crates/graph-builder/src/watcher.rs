@@ -96,8 +96,8 @@ impl SkillWatcher {
             debouncer
                 .watch(&scope.root, RecursiveMode::NonRecursive)
                 .map_err(|error| WatcherError::WatchSetup(error.to_string()))?;
-            for entry in
-                fs::read_dir(&scope.root).map_err(|error| WatcherError::WatchSetup(error.to_string()))?
+            for entry in fs::read_dir(&scope.root)
+                .map_err(|error| WatcherError::WatchSetup(error.to_string()))?
             {
                 let entry = entry.map_err(|error| WatcherError::WatchSetup(error.to_string()))?;
                 if !entry.file_type().map(|kind| kind.is_dir()).unwrap_or(false) {

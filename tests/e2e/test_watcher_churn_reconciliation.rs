@@ -12,8 +12,7 @@ use graph_builder::{
     SkillWatcher, WatcherRecovery, watcher::build_snapshot,
 };
 use infrastructure::{
-    EventEnvelope, OutboxVectorStore,
-    PostgresGraphSnapshotStore, RebuildCoordinator,
+    EventEnvelope, OutboxVectorStore, PostgresGraphSnapshotStore, RebuildCoordinator,
 };
 use mcp_server::McpServerApp;
 use retrieval::RetrievalConfig;
@@ -347,18 +346,14 @@ async fn watcher_churn_and_reconciliation_converges_to_correct_graph_state_under
     )
     .expect("OllamaEmbeddingService should build with valid config");
 
-    let skills = graph_builder::graph::build::build_skills_from_scope_roots(
-        &scopes,
-        &embedding_service,
-    )
-    .await
-    .expect("build should succeed");
+    let skills =
+        graph_builder::graph::build::build_skills_from_scope_roots(&scopes, &embedding_service)
+            .await
+            .expect("build should succeed");
 
-    let communities = graph_builder::graph::communities::assign_communities(
-        &skills,
-        &HdbscanConfig::default(),
-    )
-    .expect("community assignment must succeed");
+    let communities =
+        graph_builder::graph::communities::assign_communities(&skills, &HdbscanConfig::default())
+            .expect("community assignment must succeed");
     let audits = observed_changes
         .iter()
         .map(|change| graph_builder::graph::rebuild::AuditRecord {

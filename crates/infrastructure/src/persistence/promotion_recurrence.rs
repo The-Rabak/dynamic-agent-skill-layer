@@ -89,10 +89,7 @@ impl ProjectSkillRow {
         for ancestor in path.ancestors().skip(1) {
             depth_from_file += 1;
 
-            let last_component = ancestor
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("");
+            let last_component = ancestor.file_name().and_then(|n| n.to_str()).unwrap_or("");
 
             // depth-1 is the skill-id directory (e.g. "cargo-bin") — always skip
             // it regardless of name, as it is NOT the project root.
@@ -254,7 +251,10 @@ mod tests {
         let text = row.semantic_text();
         assert!(text.contains("declare cargo bin explicitly"));
         assert!(text.contains("Declare [[bin]] explicitly"));
-        assert!(text.contains('\n'), "name and description must be separated by newline");
+        assert!(
+            text.contains('\n'),
+            "name and description must be separated by newline"
+        );
     }
 
     /// Proves `project_root_key()` returns a key from the first source path parent,
@@ -266,9 +266,7 @@ mod tests {
             name: "test skill".to_owned(),
             description: "desc".to_owned(),
             tags: vec![],
-            source_paths: vec![
-                "/workspace/project-a/skills/cargo-bin/SKILL.md".to_owned(),
-            ],
+            source_paths: vec!["/workspace/project-a/skills/cargo-bin/SKILL.md".to_owned()],
         };
         let key = row.project_root_key();
         assert!(key.is_some(), "key must be Some for a valid path");
@@ -327,9 +325,7 @@ mod tests {
             name: "skill-1".to_owned(),
             description: "desc1".to_owned(),
             tags: vec![],
-            source_paths: vec![
-                "/workspace/myproject/skills/cargo-bin/SKILL.md".to_owned(),
-            ],
+            source_paths: vec!["/workspace/myproject/skills/cargo-bin/SKILL.md".to_owned()],
         };
         let row_b = ProjectSkillRow {
             id: "b".to_owned(),

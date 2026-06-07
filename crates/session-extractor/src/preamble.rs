@@ -266,7 +266,9 @@ pub fn mine_draft_deterministic(events: &[SessionEvent]) -> PreambleDraft {
                 let detected = detect_preferences_in_user_turn(content);
                 preferences.extend(detected);
             }
-            SessionEvent::ToolCall { name, input_json, .. } => {
+            SessionEvent::ToolCall {
+                name, input_json, ..
+            } => {
                 if name == "Bash" {
                     if let Some(cmd) = extract_bash_command(input_json) {
                         if let Some(lang) = detect_language_from_command(&cmd) {
@@ -1085,10 +1087,7 @@ mod tests {
     #[test]
     fn extract_bash_command_parses_command_field() {
         let input = r#"{"command": "cargo test", "timeout_ms": 5000}"#;
-        assert_eq!(
-            extract_bash_command(input),
-            Some("cargo test".to_owned())
-        );
+        assert_eq!(extract_bash_command(input), Some("cargo test".to_owned()));
     }
 
     #[test]
@@ -1098,7 +1097,10 @@ mod tests {
 
     #[test]
     fn language_detected_from_cargo_command() {
-        assert_eq!(detect_language_from_command("cargo build --release"), Some("Rust"));
+        assert_eq!(
+            detect_language_from_command("cargo build --release"),
+            Some("Rust")
+        );
     }
 
     #[test]

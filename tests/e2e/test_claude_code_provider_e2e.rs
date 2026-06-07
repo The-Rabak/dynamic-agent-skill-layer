@@ -108,14 +108,8 @@ fn load_rich_transcript_fixture() -> domain::SessionTranscript {
         }
         let value: serde_json::Value =
             serde_json::from_str(line).expect("fixture must be valid JSON per line");
-        if let Some(role) = value
-            .pointer("/message/role")
-            .and_then(|v| v.as_str())
-        {
-            if let Some(text) = value
-                .pointer("/message/content")
-                .and_then(|v| v.as_str())
-            {
+        if let Some(role) = value.pointer("/message/role").and_then(|v| v.as_str()) {
+            if let Some(text) = value.pointer("/message/content").and_then(|v| v.as_str()) {
                 entries.push(TranscriptEntry {
                     speaker: role.to_owned(),
                     content: text.to_owned(),
@@ -158,11 +152,7 @@ fn probe_claude_cli() -> Option<String> {
         .and_then(|out| {
             if out.status.success() {
                 let path = String::from_utf8_lossy(&out.stdout).trim().to_owned();
-                if !path.is_empty() {
-                    Some(path)
-                } else {
-                    None
-                }
+                if !path.is_empty() { Some(path) } else { None }
             } else {
                 None
             }
@@ -205,19 +195,15 @@ fn write_parity_report(
         lines.push(format!("## SKIPPED"));
         lines.push(format!("Reason: {reason}"));
         lines.push(String::new());
-        lines.push("This report is a stub — the test was skipped because the claude CLI".to_owned());
+        lines
+            .push("This report is a stub — the test was skipped because the claude CLI".to_owned());
         lines.push(
             "is not available on this host. On a host with the CLI, the test runs".to_owned(),
         );
-        lines.push(
-            "end-to-end and populates the 'Claude Code extraction' section.".to_owned(),
-        );
+        lines.push("end-to-end and populates the 'Claude Code extraction' section.".to_owned());
     } else {
         lines.push("## Claude Code extraction".to_owned());
-        lines.push(format!(
-            "CLI path: {}",
-            cli_path.unwrap_or("(unknown)")
-        ));
+        lines.push(format!("CLI path: {}", cli_path.unwrap_or("(unknown)")));
         lines.push(format!(
             "Concepts covered ({}/{}): {}",
             concepts_covered.len(),
@@ -307,14 +293,7 @@ async fn claude_code_provider_extracts_content_faithful_result_from_fixture() {
             "claude CLI not found on this host (CLAUDE_CLI_PATH not set or not reachable via PATH)";
         eprintln!("EXPLICIT SKIP: {skip_reason}");
         println!("SKIP RECORDED: {skip_reason}");
-        write_parity_report(
-            &reports_dir,
-            &run_id,
-            None,
-            Some(skip_reason),
-            None,
-            &[],
-        );
+        write_parity_report(&reports_dir, &run_id, None, Some(skip_reason), None, &[]);
         // Return without panic — the skip is explicit and recorded. The test does
         // NOT assert success (which would be a fake pass). The caller sees the
         // skip message in stdout and the parity report stub.
@@ -374,7 +353,10 @@ async fn claude_code_provider_extracts_content_faithful_result_from_fixture() {
         result.candidates.len()
     );
     for (i, c) in result.candidates.iter().enumerate() {
-        println!("  Candidate {i}: {:?} (confidence: {:.2})", c.name, c.confidence);
+        println!(
+            "  Candidate {i}: {:?} (confidence: {:.2})",
+            c.name, c.confidence
+        );
     }
 
     // Assert content fidelity: the combined candidate text must cover enough
@@ -450,10 +432,7 @@ async fn claude_code_provider_extracts_content_faithful_result_from_fixture() {
 #[tokio::test]
 async fn skip_loud_mechanism_records_skip_not_pass_when_cli_absent() {
     let run_id = "skip-loud-unit-test";
-    let tmp = std::env::temp_dir().join(format!(
-        "claude-code-skip-test-{}",
-        std::process::id()
-    ));
+    let tmp = std::env::temp_dir().join(format!("claude-code-skip-test-{}", std::process::id()));
     std::fs::create_dir_all(&tmp).expect("tmp dir creatable");
 
     let skip_reason = "claude CLI not found on this host (unit-test simulation)";

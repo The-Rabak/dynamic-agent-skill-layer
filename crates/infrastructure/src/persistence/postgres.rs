@@ -20,8 +20,7 @@ const MIGRATION_005: &str = include_str!("../../migrations/005_skill_source_path
 /// widens the PK to `(community_id, skill_id, source)` so a skill can belong to
 /// both an HDBSCAN cluster community and a tag community simultaneously (dual
 /// membership per CONTEXT.md §2.2).
-const MIGRATION_006: &str =
-    include_str!("../../migrations/006_community_skills_source.sql");
+const MIGRATION_006: &str = include_str!("../../migrations/006_community_skills_source.sql");
 
 /// Ordered migration set: each entry is `(stable_id, sql)`.
 ///
@@ -283,13 +282,10 @@ impl PostgresAdapter {
         .map_err(|err| PostgresError::Migration(format!("bootstrap schema_migrations: {err}")))?;
 
         // Collect the ids that have already been applied so we only hit the DB once.
-        let applied_ids: Vec<String> =
-            sqlx::query_scalar("SELECT id FROM schema_migrations")
-                .fetch_all(&self.pool)
-                .await
-                .map_err(|err| {
-                    PostgresError::Migration(format!("query schema_migrations: {err}"))
-                })?;
+        let applied_ids: Vec<String> = sqlx::query_scalar("SELECT id FROM schema_migrations")
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|err| PostgresError::Migration(format!("query schema_migrations: {err}")))?;
 
         for (migration_id, migration_sql) in MIGRATIONS {
             if applied_ids.iter().any(|applied| applied == migration_id) {
@@ -399,21 +395,16 @@ impl PostgresAdapter {
 ///
 /// The migration id is included in the error message so the caller can surface
 /// exactly which file violated the convention.
-fn strip_begin_commit_wrapper(
-    migration_id: &str,
-    sql: &str,
-) -> Result<String, PostgresError> {
+fn strip_begin_commit_wrapper(migration_id: &str, sql: &str) -> Result<String, PostgresError> {
     let trimmed = sql.trim();
 
     // Validate and strip the leading `BEGIN;`.
-    let after_begin = trimmed
-        .strip_prefix("BEGIN;")
-        .ok_or_else(|| {
-            PostgresError::Migration(format!(
-                "migration {migration_id} is not wrapped in BEGIN;/COMMIT; — \
+    let after_begin = trimmed.strip_prefix("BEGIN;").ok_or_else(|| {
+        PostgresError::Migration(format!(
+            "migration {migration_id} is not wrapped in BEGIN;/COMMIT; — \
                  cannot guarantee atomic apply+record (expected first token: BEGIN;)"
-            ))
-        })?;
+        ))
+    })?;
 
     // Validate and strip the trailing `COMMIT;`.
     let inner = after_begin
@@ -644,8 +635,14 @@ mod tests {
         let sql = "BEGIN;\n\nCREATE TABLE foo(id INT);\n\nCOMMIT;\n";
         let body = strip_begin_commit_wrapper("test_migration", sql).unwrap();
         assert!(!body.starts_with("BEGIN"), "body must not start with BEGIN");
-        assert!(!body.trim_end().ends_with("COMMIT;"), "body must not end with COMMIT;");
-        assert!(body.contains("CREATE TABLE foo(id INT);"), "body must retain inner DDL");
+        assert!(
+            !body.trim_end().ends_with("COMMIT;"),
+            "body must not end with COMMIT;"
+        );
+        assert!(
+            body.contains("CREATE TABLE foo(id INT);"),
+            "body must retain inner DDL"
+        );
     }
 
     #[test]
@@ -653,9 +650,14 @@ mod tests {
         // PL/pgSQL BEGIN…END inside $$…$$ must not be touched.
         let sql = "BEGIN;\n\nDO $$\nBEGIN\n  RAISE NOTICE 'hi';\nEND\n$$;\n\nCOMMIT;\n";
         let body = strip_begin_commit_wrapper("004", sql).unwrap();
-        assert!(body.contains("DO $$\nBEGIN\n  RAISE NOTICE 'hi';\nEND\n$$;"),
-            "dollar-quoted BEGIN…END block must be preserved verbatim");
-        assert!(!body.trim_start().starts_with("BEGIN"), "outer BEGIN; must be stripped");
+        assert!(
+            body.contains("DO $$\nBEGIN\n  RAISE NOTICE 'hi';\nEND\n$$;"),
+            "dollar-quoted BEGIN…END block must be preserved verbatim"
+        );
+        assert!(
+            !body.trim_start().starts_with("BEGIN"),
+            "outer BEGIN; must be stripped"
+        );
     }
 
     #[test]
@@ -676,7 +678,10 @@ mod tests {
         // SQL that starts with BEGIN; but has no trailing COMMIT; must be rejected.
         let sql = "BEGIN;\n\nCREATE TABLE foo(id INT);\n";
         let result = strip_begin_commit_wrapper("999_no_commit", sql);
-        assert!(result.is_err(), "SQL missing trailing COMMIT; must produce an error");
+        assert!(
+            result.is_err(),
+            "SQL missing trailing COMMIT; must produce an error"
+        );
         let msg = result.unwrap_err().to_string();
         assert!(
             msg.contains("999_no_commit") && msg.contains("COMMIT;"),

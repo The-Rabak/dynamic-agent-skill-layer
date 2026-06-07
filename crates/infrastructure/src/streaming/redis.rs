@@ -246,9 +246,7 @@ impl RedisStreamsAdapter {
         block_ms: usize,
     ) -> Result<Vec<StreamMessage>, RedisStreamError> {
         match self.read_group_once(count, block_ms).await {
-            Err(RedisStreamError::Redis(redis_error))
-                if redis_error.code() == Some("NOGROUP") =>
-            {
+            Err(RedisStreamError::Redis(redis_error)) if redis_error.code() == Some("NOGROUP") => {
                 warn!(
                     stream_key = %self.config.stream_key,
                     consumer_group = %self.config.consumer_group,

@@ -8,10 +8,7 @@ use std::{
 use chrono::{DateTime, Duration, Utc};
 use thiserror::Error;
 
-use crate::audit::{
-    MaintenanceAuditEvent, MaintenanceAuditSink,
-    RetirementProposalAuditEvent,
-};
+use crate::audit::{MaintenanceAuditEvent, MaintenanceAuditSink, RetirementProposalAuditEvent};
 use crate::merge::SkillSnapshot;
 
 /// Recorded usage event for retirement scoring.

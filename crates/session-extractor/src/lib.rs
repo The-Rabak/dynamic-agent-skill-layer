@@ -21,7 +21,9 @@ pub mod writer;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
-use domain::{DomainId, EmbeddingService, ExtractionError, ExtractionResult, TranscriptSkillExtractionService};
+use domain::{
+    DomainId, EmbeddingService, ExtractionError, ExtractionResult, TranscriptSkillExtractionService,
+};
 use infrastructure::{
     EventEnvelope, LlmEquivalenceVerifier, OllamaEmbeddingConfig, OllamaEmbeddingService,
     OllamaMergeVerifier, OllamaMergeVerifierConfig, RedisStreamError, RedisStreamsAdapter,
@@ -378,10 +380,7 @@ impl SessionExtractor {
             .unwrap_or_default()
             .parse::<ExtractionRunPath>()?;
 
-        tracing::info!(
-            run_path = run_path.as_str(),
-            "extraction run path resolved"
-        );
+        tracing::info!(run_path = run_path.as_str(), "extraction run path resolved");
 
         if run_path == ExtractionRunPath::SingleShot {
             tracing::info!(
@@ -429,8 +428,7 @@ impl SessionExtractor {
                     OllamaSynthesisPass::from_environment()?;
 
                 // Preamble normalizer: optional (mine_preamble works without it).
-                let preamble_normalizer =
-                    Some(OllamaPreambleNormalizer::from_environment()?);
+                let preamble_normalizer = Some(OllamaPreambleNormalizer::from_environment()?);
 
                 tracing::info!(
                     ollama_url = %ollama_url,
@@ -668,12 +666,8 @@ impl SessionExtractor {
         request: &ExtractSessionRequest,
     ) -> ExtractionOutcome {
         match self.run_path {
-            ExtractionRunPath::Orchestrated => {
-                self.execute_job_orchestrated(job_id, request).await
-            }
-            ExtractionRunPath::SingleShot => {
-                self.execute_job_single_shot(job_id, request).await
-            }
+            ExtractionRunPath::Orchestrated => self.execute_job_orchestrated(job_id, request).await,
+            ExtractionRunPath::SingleShot => self.execute_job_single_shot(job_id, request).await,
         }
     }
 
@@ -724,7 +718,7 @@ impl SessionExtractor {
                     TranscriptError::InvalidPayload(format!(
                         "invalid session_id for orchestration: {error}"
                     )),
-                ))
+                ));
             }
         };
 
@@ -768,10 +762,10 @@ impl SessionExtractor {
             .clone();
 
         // Optional preamble normalizer: None skips LLM normalization (grounded and valid).
-        let preamble_normalizer_ref: Option<&dyn preamble::PreambleNormalizer> =
-            self.preamble_normalizer
-                .as_ref()
-                .map(|n| n.as_ref() as &dyn preamble::PreambleNormalizer);
+        let preamble_normalizer_ref: Option<&dyn preamble::PreambleNormalizer> = self
+            .preamble_normalizer
+            .as_ref()
+            .map(|n| n.as_ref() as &dyn preamble::PreambleNormalizer);
 
         match run_orchestration(
             session_id.clone(),
@@ -1176,8 +1170,8 @@ mod tests {
 
     use async_trait::async_trait;
     use domain::{
-        DomainId, ExtractedSkillCandidate, ExtractionError, ExtractionResult,
-        SessionTranscript, TranscriptSkillExtractionService,
+        DomainId, ExtractedSkillCandidate, ExtractionError, ExtractionResult, SessionTranscript,
+        TranscriptSkillExtractionService,
     };
 
     use super::*;
@@ -1670,11 +1664,14 @@ mod tests {
     /// Proves that as_str() outputs round-trip through from_str().
     #[test]
     fn run_path_as_str_round_trips() {
-        for variant in [ExtractionRunPath::Orchestrated, ExtractionRunPath::SingleShot] {
+        for variant in [
+            ExtractionRunPath::Orchestrated,
+            ExtractionRunPath::SingleShot,
+        ] {
             let serialised = variant.as_str();
-            let deserialised = serialised
-                .parse::<ExtractionRunPath>()
-                .unwrap_or_else(|_| panic!("as_str() '{serialised}' must round-trip through parse()"));
+            let deserialised = serialised.parse::<ExtractionRunPath>().unwrap_or_else(|_| {
+                panic!("as_str() '{serialised}' must round-trip through parse()")
+            });
             assert_eq!(
                 deserialised, variant,
                 "parse(as_str({variant:?})) must equal {variant:?}"
@@ -1706,7 +1703,10 @@ mod tests {
             .extract_blocking(&request_for("run-path-single-shot"))
             .await
             .expect("single-shot extraction must succeed");
-        assert!(!paths.is_empty(), "single-shot path must produce at least one .pending draft");
+        assert!(
+            !paths.is_empty(),
+            "single-shot path must produce at least one .pending draft"
+        );
     }
 
     /// Proves that `execute_job_orchestrated` returns Failed when the session ID
@@ -1755,15 +1755,27 @@ mod tests {
         struct NoopVerifier;
         #[async_trait]
         impl LlmEquivalenceVerifier for NoopVerifier {
-            async fn decide_equivalence(&self, _l: &str, _r: &str) -> Result<EquivalenceDecision, ExtractionError> {
-                Ok(EquivalenceDecision { equivalent: false, rationale: "noop".to_owned() })
+            async fn decide_equivalence(
+                &self,
+                _l: &str,
+                _r: &str,
+            ) -> Result<EquivalenceDecision, ExtractionError> {
+                Ok(EquivalenceDecision {
+                    equivalent: false,
+                    rationale: "noop".to_owned(),
+                })
             }
         }
 
         struct NoopSynthesis;
         #[async_trait]
         impl SynthesisPass for NoopSynthesis {
-            async fn synthesize(&self, _c: &[ExtractedSkillCandidate], _p: &str) -> Result<Vec<ExtractedSkillCandidate>, crate::orchestrator::SynthesisError> {
+            async fn synthesize(
+                &self,
+                _c: &[ExtractedSkillCandidate],
+                _p: &str,
+            ) -> Result<Vec<ExtractedSkillCandidate>, crate::orchestrator::SynthesisError>
+            {
                 Ok(vec![])
             }
         }
@@ -1786,7 +1798,8 @@ mod tests {
             run_path: ExtractionRunPath::Orchestrated,
             routing_decision,
             extractor: Arc::new(StaticExtractor::ok(Duration::ZERO)),
-            transcript_loader: TranscriptLoader::new(transcript_root.to_path_buf()).expect("loader"),
+            transcript_loader: TranscriptLoader::new(transcript_root.to_path_buf())
+                .expect("loader"),
             draft_writer: PendingDraftWriter::new(vec![sandbox.to_path_buf()]),
             lifecycle_events: ExtractionLifecycleEvents::default(),
             event_publisher: Arc::new(NoopExtractionEventPublisher),

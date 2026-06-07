@@ -94,8 +94,8 @@ where
         hdbscan_config: &HdbscanConfig,
     ) -> Result<GraphRebuildOutcome, GraphRebuildError> {
         let skills = build_skills_from_scope_roots(scope_roots, self.embedding_service).await?;
-        let communities = assign_communities(&skills, hdbscan_config)
-            .map_err(GraphRebuildError::DurableWrite)?;
+        let communities =
+            assign_communities(&skills, hdbscan_config).map_err(GraphRebuildError::DurableWrite)?;
         let audits = file_changes
             .iter()
             .map(|change| AuditRecord {
@@ -426,4 +426,3 @@ mod tests {
         );
     }
 }
-

@@ -14,9 +14,7 @@ use infrastructure::cosine_similarity as shared_cosine_similarity;
 use serde::Serialize;
 use thiserror::Error;
 
-use crate::audit::{
-    MaintenanceAuditEvent, MaintenanceAuditSink, MergeProposalAuditEvent,
-};
+use crate::audit::{MaintenanceAuditEvent, MaintenanceAuditSink, MergeProposalAuditEvent};
 
 /// Boundary projection for adapting external seeded-skill models into maintenance snapshots.
 #[derive(Debug, Clone, PartialEq)]
@@ -391,7 +389,9 @@ pub(crate) fn canonicalize_scope_root(scope_root: &Path) -> Result<PathBuf, Merg
 }
 
 /// Restricts pending directory configuration to a single normal path component.
-pub(crate) fn validate_pending_directory_name(pending_directory_name: &str) -> Result<&str, MergeError> {
+pub(crate) fn validate_pending_directory_name(
+    pending_directory_name: &str,
+) -> Result<&str, MergeError> {
     if pending_directory_name.is_empty() {
         return Err(MergeError::InvalidPendingDirectoryName(
             pending_directory_name.to_owned(),

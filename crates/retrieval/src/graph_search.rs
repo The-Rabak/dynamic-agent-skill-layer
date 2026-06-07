@@ -86,7 +86,8 @@ pub fn search_graph(
 
             // subunit_evidence (β) = mean of the top-k SEMANTIC scores, so it
             // reflects subunit meaning independent of the lexical tiebreaker.
-            let mut semantic_scores: Vec<f32> = scored.iter().map(|(_, semantic)| *semantic).collect();
+            let mut semantic_scores: Vec<f32> =
+                scored.iter().map(|(_, semantic)| *semantic).collect();
             semantic_scores.sort_by(|left, right| right.total_cmp(left));
             let top_k = semantic_scores.iter().take(max_subunits_per_skill);
             let top_k_len = semantic_scores.len().min(max_subunits_per_skill);
@@ -99,8 +100,10 @@ pub fn search_graph(
             // Displayed/ranked projections use the blended relevance.
             scored.sort_by(|left, right| right.0.relevance.total_cmp(&left.0.relevance));
             scored.truncate(max_subunits_per_skill);
-            let projections: Vec<SubunitProjection> =
-                scored.into_iter().map(|(projection, _)| projection).collect();
+            let projections: Vec<SubunitProjection> = scored
+                .into_iter()
+                .map(|(projection, _)| projection)
+                .collect();
 
             Some(GraphHit {
                 skill_index: *skill_index,

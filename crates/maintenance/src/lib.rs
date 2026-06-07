@@ -9,12 +9,12 @@ pub mod retire;
 pub mod runtime;
 pub mod transcript_drain;
 
+#[cfg(any(test, feature = "test-utils"))]
+pub use audit::NoopMaintenanceAuditSink;
 pub use audit::{
     MaintenanceAuditError, MaintenanceAuditEvent, MaintenanceAuditSink, MergeProposalAuditEvent,
     RetirementProposalAuditEvent,
 };
-#[cfg(any(test, feature = "test-utils"))]
-pub use audit::NoopMaintenanceAuditSink;
 pub use cleanup::{
     CleanupError, MalformedPendingFileDiagnostic, PendingScanReport, PendingWarning,
     PendingWarningScanner,
@@ -28,9 +28,10 @@ pub use merge::{
     MergeSemanticVerifier, ScopeSelectionPolicy, SeededSkillProjection, SkillSnapshot,
 };
 pub use promote::{
-    DemotionProposal, LivePromotionPassRunner, PromotionError, PromotionEvidence, PromotionProposal,
-    PromotionProposalWriter, PromotionScopePolicy, PromotionWriterConfig, RecurrenceConfig,
-    collect_project_local_identifiers, skill_text_contains_project_local_identifier,
+    DemotionProposal, LivePromotionPassRunner, PromotionError, PromotionEvidence,
+    PromotionProposal, PromotionProposalWriter, PromotionScopePolicy, PromotionWriterConfig,
+    RecurrenceConfig, collect_project_local_identifiers,
+    skill_text_contains_project_local_identifier,
 };
 pub use retire::{
     RetirementConfig, RetirementError, RetirementProposal, RetirementProposalWriter, UsageSample,

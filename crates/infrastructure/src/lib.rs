@@ -52,34 +52,34 @@ pub use persistence::outbox_reconciler::{OutboxReconciler, OutboxReconciliationR
 pub use persistence::postgres::{
     PostgresAdapter, PostgresConfig, PostgresError, ensure_database_exists,
 };
+pub use persistence::promotion_recurrence::{
+    PostgresPromotionRecurrenceStore, ProjectSkillRow, PromotionRecurrenceError,
+    PromotionRecurrenceStore,
+};
 pub use persistence::rebuild::{
     LiveGraphCommunityRecord, LiveGraphSkillRecord, LiveGraphSnapshotMutation,
     LiveGraphSubunitRecord, PersistedGraphCommunityRecord, PersistedGraphSkillRecord,
     PersistedGraphSubunitRecord, PostgresGraphSnapshotStore, PostgresRebuildCoordinator,
     RebuildCoordinator, RebuildError, stable_skill_uuid,
 };
+pub use persistence::scope_demotion::{
+    GlobalSkillRow, PostgresScopeDemotionStore, ScopeDemotionError, ScopeDemotionStore,
+};
 pub use persistence::transcript_queue::{
     EnqueueOutcome, MAX_TRANSCRIPT_DRAIN_ATTEMPTS, MAX_TRANSCRIPT_INGEST_BYTES,
     TranscriptIngestQueue, TranscriptIngestRequest, TranscriptQueueError, TranscriptQueueRecord,
     TranscriptSource,
 };
-pub use persistence::promotion_recurrence::{
-    PostgresPromotionRecurrenceStore, ProjectSkillRow, PromotionRecurrenceError,
-    PromotionRecurrenceStore,
-};
-pub use persistence::scope_demotion::{
-    GlobalSkillRow, PostgresScopeDemotionStore, ScopeDemotionError, ScopeDemotionStore,
-};
 pub use persistence::usage::{
     PostgresUsageSampleStore, PostgresUsageWriter, SessionUsageRecord, SkillSelectionRecord,
     SkillUsageSummary, UsagePersistenceError, UsagePersistencePort, UsageSampleStore,
 };
-pub use similarity::{CosineSimilarityError, cosine_similarity};
 pub use resilience::{
     CircuitBreaker, CircuitState, ResilienceError, RetryPolicy, execute_with_resilience,
     retry_with_backoff,
 };
 pub use scope::{EnvPathGlobalResolver, FsMarkerProjectResolver, GitRootProjectResolver};
+pub use similarity::{CosineSimilarityError, cosine_similarity};
 pub use streaming::redis::{
     EventEnvelope, RedisStreamError, RedisStreamsAdapter, RedisStreamsConfig,
     SKILL_LAYER_CONSUMER_GROUP, SKILL_LAYER_STREAM_KEY, StreamMessage,

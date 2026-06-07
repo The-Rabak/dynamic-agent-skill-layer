@@ -256,7 +256,11 @@ async fn merge_workflow_serializes_frontmatter_with_special_characters_and_newli
         SkillSnapshot::from_seeded_skill_projection(seeded_project),
         SkillSnapshot::from_seeded_skill_projection(seeded_global),
     ];
-    let writer = MergeProposalWriter::with_audit_sink(MergeConfig::default(), EquivalentSemanticVerifier, &NoopMaintenanceAuditSink);
+    let writer = MergeProposalWriter::with_audit_sink(
+        MergeConfig::default(),
+        EquivalentSemanticVerifier,
+        &NoopMaintenanceAuditSink,
+    );
 
     let proposals = writer
         .propose(&snapshots, Utc::now())
@@ -312,7 +316,11 @@ async fn merge_workflow_writes_global_scoped_proposal_under_global_root_for_team
         SkillSnapshot::from_seeded_skill_projection(seeded_team),
         SkillSnapshot::from_seeded_skill_projection(seeded_global),
     ];
-    let writer = MergeProposalWriter::with_audit_sink(MergeConfig::default(), EquivalentSemanticVerifier, &NoopMaintenanceAuditSink);
+    let writer = MergeProposalWriter::with_audit_sink(
+        MergeConfig::default(),
+        EquivalentSemanticVerifier,
+        &NoopMaintenanceAuditSink,
+    );
 
     let proposals = writer
         .propose(&snapshots, Utc::now())
@@ -353,7 +361,11 @@ async fn merge_workflow_rejects_filename_collision_without_overwriting_existing_
         SkillSnapshot::from_seeded_skill_projection(seeded_project),
         SkillSnapshot::from_seeded_skill_projection(seeded_global),
     ];
-    let writer = MergeProposalWriter::with_audit_sink(MergeConfig::default(), EquivalentSemanticVerifier, &NoopMaintenanceAuditSink);
+    let writer = MergeProposalWriter::with_audit_sink(
+        MergeConfig::default(),
+        EquivalentSemanticVerifier,
+        &NoopMaintenanceAuditSink,
+    );
     let now = Utc::now();
 
     let first_proposals = writer
@@ -457,7 +469,11 @@ async fn merge_workflow_handles_high_cardinality_input_without_lookup_regression
         ));
     }
 
-    let writer = MergeProposalWriter::with_audit_sink(MergeConfig::default(), EquivalentSemanticVerifier, &NoopMaintenanceAuditSink);
+    let writer = MergeProposalWriter::with_audit_sink(
+        MergeConfig::default(),
+        EquivalentSemanticVerifier,
+        &NoopMaintenanceAuditSink,
+    );
     let proposals = writer
         .propose(&snapshots, Utc::now())
         .await
@@ -505,7 +521,11 @@ async fn merge_workflow_rejects_symlinked_pending_root_that_escapes_scope_root()
     std::os::unix::fs::symlink(&outside_root, &pending_symlink_path)
         .expect("pending symlink should be created");
 
-    let writer = MergeProposalWriter::with_audit_sink(MergeConfig::default(), EquivalentSemanticVerifier, &NoopMaintenanceAuditSink);
+    let writer = MergeProposalWriter::with_audit_sink(
+        MergeConfig::default(),
+        EquivalentSemanticVerifier,
+        &NoopMaintenanceAuditSink,
+    );
     let result = writer.propose(&snapshots, Utc::now()).await;
 
     assert!(

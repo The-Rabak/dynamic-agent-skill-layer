@@ -253,7 +253,12 @@ mod tests {
         let mut retirement_runner = NoopRetirementRunner;
         let mut scope_runner = NoopScopePassRunner;
         let first = cron
-            .tick(now, &mut merge_runner, &mut retirement_runner, &mut scope_runner)
+            .tick(
+                now,
+                &mut merge_runner,
+                &mut retirement_runner,
+                &mut scope_runner,
+            )
             .await
             .expect("first run");
         assert!(matches!(first, CronDecision::Executed(_)));
@@ -279,7 +284,12 @@ mod tests {
         let mut scope_runner = NoopScopePassRunner;
 
         let decision = cron
-            .tick(now, &mut merge_runner, &mut retirement_runner, &mut scope_runner)
+            .tick(
+                now,
+                &mut merge_runner,
+                &mut retirement_runner,
+                &mut scope_runner,
+            )
             .await
             .expect("tick must succeed");
 

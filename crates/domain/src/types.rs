@@ -321,7 +321,10 @@ pub fn events_to_transcript(session_id: DomainId, events: &[SessionEvent]) -> Se
         .iter()
         .filter_map(SessionEvent::as_transcript_entry)
         .collect();
-    SessionTranscript { session_id, entries }
+    SessionTranscript {
+        session_id,
+        entries,
+    }
 }
 
 /// Advisory hint describing whether an extracted skill lesson is project-specific

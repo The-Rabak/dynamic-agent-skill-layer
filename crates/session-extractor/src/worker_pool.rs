@@ -235,9 +235,8 @@ async fn worker_loop(
                 let next_hits = job.ceiling_hits + 1;
                 if next_hits < retry_policy.max_attempts {
                     // Retries remain: backoff then requeue. No terminal event.
-                    let jitter = std::time::Duration::from_millis(
-                        (next_hits as u64).saturating_mul(7),
-                    );
+                    let jitter =
+                        std::time::Duration::from_millis((next_hits as u64).saturating_mul(7));
                     let backoff = retry_policy
                         .base_delay
                         .saturating_mul(next_hits)
@@ -281,9 +280,7 @@ async fn worker_loop(
                     // Retries exhausted: emit terminal failure.
                     let provider = job.extractor.provider.as_str().to_owned();
                     let job_id = job.job_id.clone();
-                    job.extractor
-                        .publish_ceiling_exhausted_event(&job_id)
-                        .await;
+                    job.extractor.publish_ceiling_exhausted_event(&job_id).await;
                     let response = ExtractSessionResponse {
                         status: "failed".to_owned(),
                         reason_code: Some("extraction_timed_out_retries_exhausted".to_owned()),
@@ -631,9 +628,9 @@ mod tests {
         // Assert: no terminal extraction.failed has been emitted yet — the job
         // must have been requeued, not dropped.
         let events_after_first_hit = extractor.lifecycle_events();
-        let has_terminal_failure = events_after_first_hit.iter().any(|event| {
-            event.event_type == "extraction.failed"
-        });
+        let has_terminal_failure = events_after_first_hit
+            .iter()
+            .any(|event| event.event_type == "extraction.failed");
         assert!(
             !has_terminal_failure,
             "extraction.failed must not be emitted on the first ceiling hit — job should be requeued"

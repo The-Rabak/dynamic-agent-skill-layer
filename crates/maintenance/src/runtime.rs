@@ -25,9 +25,9 @@ use crate::cron::{
 };
 use crate::merge::{MergeConfig, MergeProposal, MergeProposalWriter, SkillSnapshot};
 use crate::merge_verifier::LlmMergeSemanticVerifier;
-use crate::promote::{LivePromotionPassRunner, PromotionWriterConfig, RecurrenceConfig};
 #[cfg(test)]
 use crate::promote::DemotionProposal;
+use crate::promote::{LivePromotionPassRunner, PromotionWriterConfig, RecurrenceConfig};
 use crate::retire::{RetirementConfig, RetirementProposal, RetirementProposalWriter, UsageSample};
 use crate::transcript_drain::{DEFAULT_TRANSCRIPT_DRAIN_BATCH, TranscriptQueueDrain};
 
@@ -144,10 +144,9 @@ where
         &mut self,
         now: chrono::DateTime<Utc>,
     ) -> Result<Vec<MergeProposal>, CronError> {
-        let skills =
-            load_skill_snapshots(&self.scope_roots, self.embedding_service.as_ref())
-                .await
-                .map_err(|e| CronError::MergePass(e.to_string()))?;
+        let skills = load_skill_snapshots(&self.scope_roots, self.embedding_service.as_ref())
+            .await
+            .map_err(|e| CronError::MergePass(e.to_string()))?;
         if skills.len() < 2 {
             return Ok(Vec::new());
         }
@@ -246,10 +245,9 @@ where
         &mut self,
         now: chrono::DateTime<Utc>,
     ) -> Result<Vec<RetirementProposal>, CronError> {
-        let skills =
-            load_skill_snapshots(&self.scope_roots, self.embedding_service.as_ref())
-                .await
-                .map_err(|e| CronError::RetirementPass(e.to_string()))?;
+        let skills = load_skill_snapshots(&self.scope_roots, self.embedding_service.as_ref())
+            .await
+            .map_err(|e| CronError::RetirementPass(e.to_string()))?;
         if skills.is_empty() {
             return Ok(Vec::new());
         }
@@ -539,15 +537,14 @@ pub async fn run_maintenance_worker_from_environment() -> Result<(), Maintenance
         Arc::clone(&embedding_service),
     );
 
-    let mut promotion_runner =
-        build_promotion_runner_from_environment(
-            snapshot_store,
-            &scope_roots,
-            &embedding_service,
-            pg_adapter.pool().clone(),
-        )
-        .await
-        .map_err(MaintenanceRuntimeError::InvalidConfiguration)?;
+    let mut promotion_runner = build_promotion_runner_from_environment(
+        snapshot_store,
+        &scope_roots,
+        &embedding_service,
+        pg_adapter.pool().clone(),
+    )
+    .await
+    .map_err(MaintenanceRuntimeError::InvalidConfiguration)?;
 
     let transcript_drain = build_transcript_drain(&pg_adapter);
 
@@ -596,8 +593,7 @@ fn build_transcript_drain(pg_adapter: &PostgresAdapter) -> Option<TranscriptQueu
 /// Returns an error (causing the worker to fail at boot) when `OLLAMA_URL` is unset.
 /// There is no silent fallback — missing configuration must surface loudly.
 fn build_embedding_service_from_environment() -> Result<Arc<dyn EmbeddingService>, String> {
-    let base_url =
-        std::env::var("OLLAMA_URL").map_err(|_| "OLLAMA_URL must be set".to_owned())?;
+    let base_url = std::env::var("OLLAMA_URL").map_err(|_| "OLLAMA_URL must be set".to_owned())?;
     let config = OllamaEmbeddingConfig {
         base_url,
         model: "nomic-embed-text".to_owned(),
@@ -621,15 +617,12 @@ fn build_merge_verifier_from_environment() -> Result<Arc<dyn LlmEquivalenceVerif
     let provider_raw = std::env::var(MERGE_VERIFIER_PROVIDER_ENV).unwrap_or_default();
     match provider_raw.trim().to_ascii_lowercase().as_str() {
         "" | "ollama" => {
-            let base_url = env_var("OLLAMA_URL")
-                .map_err(|e| format!("merge verifier (Ollama): {e}"))?;
-            let model = std::env::var(MERGE_VERIFIER_MODEL_ENV)
-                .unwrap_or_else(|_| "gemma4:12b".to_owned());
+            let base_url =
+                env_var("OLLAMA_URL").map_err(|e| format!("merge verifier (Ollama): {e}"))?;
+            let model =
+                std::env::var(MERGE_VERIFIER_MODEL_ENV).unwrap_or_else(|_| "gemma4:12b".to_owned());
             let endpoint = format!("{}/api/generate", base_url.trim_end_matches('/'));
-            let config = OllamaMergeVerifierConfig {
-                endpoint,
-                model,
-            };
+            let config = OllamaMergeVerifierConfig { endpoint, model };
             let verifier = OllamaMergeVerifier::from_config(config)
                 .map_err(|e| format!("OllamaMergeVerifier init failed: {e}"))?;
             Ok(Arc::new(verifier) as Arc<dyn LlmEquivalenceVerifier>)
@@ -701,15 +694,13 @@ async fn build_promotion_runner_from_environment(
     let project_identifier_tokens = build_project_identifier_tokens(scope_roots);
 
     // Wire the PG recurrence store using the shared PG pool.
-    let recurrence_store: Arc<dyn PromotionRecurrenceStore> = Arc::new(
-        PostgresPromotionRecurrenceStore::new(pg_pool.clone()),
-    );
+    let recurrence_store: Arc<dyn PromotionRecurrenceStore> =
+        Arc::new(PostgresPromotionRecurrenceStore::new(pg_pool.clone()));
 
     // Wire the PG demotion store using the shared PG pool (todo #182).
     // The demotion store reads scope='global' skills to check for mis-scoped content.
-    let demotion_store: Arc<dyn infrastructure::ScopeDemotionStore> = Arc::new(
-        infrastructure::PostgresScopeDemotionStore::new(pg_pool),
-    );
+    let demotion_store: Arc<dyn infrastructure::ScopeDemotionStore> =
+        Arc::new(infrastructure::PostgresScopeDemotionStore::new(pg_pool));
 
     // Read recurrence threshold from env (default N=2).
     let recurrence_config = RecurrenceConfig::from_env();
@@ -740,8 +731,21 @@ fn build_project_identifier_tokens(scope_roots: &[std::path::PathBuf]) -> Vec<St
 
     // Common directory names that are not project-specific and must not veto promotion.
     const SKIP_COMPONENTS: &[&str] = &[
-        "home", "root", "tmp", "var", "usr", "opt", "etc", "srv", "data",
-        "workspace", "work", "projects", "repos", "src", "code",
+        "home",
+        "root",
+        "tmp",
+        "var",
+        "usr",
+        "opt",
+        "etc",
+        "srv",
+        "data",
+        "workspace",
+        "work",
+        "projects",
+        "repos",
+        "src",
+        "code",
     ];
 
     let mut tokens: Vec<String> = Vec::new();
@@ -778,15 +782,12 @@ fn build_generality_verifier_from_environment() -> Result<Arc<dyn SkillGeneralit
     let provider_raw = std::env::var(GENERALITY_VERIFIER_PROVIDER_ENV).unwrap_or_default();
     match provider_raw.trim().to_ascii_lowercase().as_str() {
         "" | "ollama" => {
-            let base_url = env_var("OLLAMA_URL")
-                .map_err(|e| format!("generality verifier (Ollama): {e}"))?;
+            let base_url =
+                env_var("OLLAMA_URL").map_err(|e| format!("generality verifier (Ollama): {e}"))?;
             let model = std::env::var(GENERALITY_VERIFIER_MODEL_ENV)
                 .unwrap_or_else(|_| "gemma4:12b".to_owned());
             let endpoint = format!("{}/api/generate", base_url.trim_end_matches('/'));
-            let config = OllamaGeneralityVerifierConfig {
-                endpoint,
-                model,
-            };
+            let config = OllamaGeneralityVerifierConfig { endpoint, model };
             let verifier = OllamaGeneralityVerifier::from_config(config)
                 .map_err(|e| format!("OllamaGeneralityVerifier init failed: {e}"))?;
             Ok(Arc::new(verifier) as Arc<dyn SkillGeneralityVerifier>)
@@ -927,7 +928,12 @@ async fn run_one_tick(
     scope_pass_runner: &mut (impl PromotionPassRunner + DemotionPassRunner),
 ) -> Result<(), MaintenanceRuntimeError> {
     let decision = cron
-        .tick(Utc::now(), merge_runner, retirement_runner, scope_pass_runner)
+        .tick(
+            Utc::now(),
+            merge_runner,
+            retirement_runner,
+            scope_pass_runner,
+        )
         .await?;
     match decision {
         CronDecision::SkippedNotDue { now, next_due_at } => {
@@ -1121,9 +1127,8 @@ mod tests {
         let snapshot_store = PostgresGraphSnapshotStore::new(pool);
 
         let usage_store: Arc<dyn UsageSampleStore> = Arc::new(EmptyUsageSampleStore);
-        let embedding_service: Arc<dyn EmbeddingService> = Arc::new(
-            graph_builder::graph::embeddings::DeterministicEmbeddingService,
-        );
+        let embedding_service: Arc<dyn EmbeddingService> =
+            Arc::new(graph_builder::graph::embeddings::DeterministicEmbeddingService);
         let mut runner = LiveRetirementPassRunner::with_audit_sink(
             snapshot_store,
             Vec::new(), // empty scope_roots: load_skill_snapshots returns [] -> early return
@@ -1175,8 +1180,10 @@ mod tests {
         // Use a unique subdirectory under the system temp dir to avoid collisions
         // between parallel test runs. The name includes "global" so the probe
         // classifies it as a global write root.
-        let global_root = std::env::temp_dir()
-            .join(format!("maintenance_probe_test_global_{}", std::process::id()));
+        let global_root = std::env::temp_dir().join(format!(
+            "maintenance_probe_test_global_{}",
+            std::process::id()
+        ));
         std::fs::create_dir_all(&global_root).expect("mkdir must succeed");
 
         let result = probe_global_write_roots(&[global_root.clone()]);
@@ -1199,8 +1206,10 @@ mod tests {
     fn probe_global_write_roots_fails_for_readonly_dir() {
         use std::os::unix::fs::PermissionsExt;
 
-        let global_root = std::env::temp_dir()
-            .join(format!("maintenance_probe_test_global_ro_{}", std::process::id()));
+        let global_root = std::env::temp_dir().join(format!(
+            "maintenance_probe_test_global_ro_{}",
+            std::process::id()
+        ));
         std::fs::create_dir_all(&global_root).expect("mkdir must succeed");
         // Remove write permission from the directory so the marker write fails.
         std::fs::set_permissions(&global_root, std::fs::Permissions::from_mode(0o555))

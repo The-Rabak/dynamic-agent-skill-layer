@@ -24,7 +24,11 @@ impl DeterministicEmbeddingService {
             buckets[index] += 1.0;
         }
 
-        let norm: f32 = buckets.iter().map(|value| value * value).sum::<f32>().sqrt();
+        let norm: f32 = buckets
+            .iter()
+            .map(|value| value * value)
+            .sum::<f32>()
+            .sqrt();
         if norm > 0.0 {
             for bucket in &mut buckets {
                 *bucket /= norm;
@@ -41,15 +45,15 @@ impl domain::EmbeddingService for DeterministicEmbeddingService {
         Ok(Self::deterministic_768(text))
     }
 
-    async fn embed_batch(
-        &self,
-        texts: &[&str],
-    ) -> Result<Vec<Vec<f32>>, domain::EmbeddingError> {
+    async fn embed_batch(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>, domain::EmbeddingError> {
         if texts.is_empty() {
             return Err(domain::EmbeddingError::InvalidInput(
                 "batch input must contain at least one text".to_owned(),
             ));
         }
-        Ok(texts.iter().map(|text| Self::deterministic_768(text)).collect())
+        Ok(texts
+            .iter()
+            .map(|text| Self::deterministic_768(text))
+            .collect())
     }
 }

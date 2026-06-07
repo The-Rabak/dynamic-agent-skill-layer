@@ -96,7 +96,9 @@ pub struct HdbscanConfig {
 
 impl Default for HdbscanConfig {
     fn default() -> Self {
-        Self { min_cluster_size: 3 }
+        Self {
+            min_cluster_size: 3,
+        }
     }
 }
 

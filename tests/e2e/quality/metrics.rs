@@ -282,7 +282,11 @@ mod tests {
         // A ranking that repeats the single relevant id must not score >1 relevant.
         let m = query_metrics(&ranked(&["a", "a", "a"]), &rel(&["a"]), 3);
         // After dedupe: ["a"] → precision@3 = 1/3.
-        assert!((m.precision_at_k - 1.0 / 3.0).abs() < 1e-9, "p@k={}", m.precision_at_k);
+        assert!(
+            (m.precision_at_k - 1.0 / 3.0).abs() < 1e-9,
+            "p@k={}",
+            m.precision_at_k
+        );
     }
 
     #[test]

@@ -36,13 +36,12 @@ async fn pg_schema_exists(base_db_url: &str, schema: &str) -> bool {
     let pool = sqlx::PgPool::connect(base_db_url)
         .await
         .expect("admin pool connects");
-    let exists: bool = sqlx::query_scalar(
-        "SELECT EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = $1)",
-    )
-    .bind(schema)
-    .fetch_one(&pool)
-    .await
-    .expect("schema existence query");
+    let exists: bool =
+        sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = $1)")
+            .bind(schema)
+            .fetch_one(&pool)
+            .await
+            .expect("schema existence query");
     pool.close().await;
     exists
 }

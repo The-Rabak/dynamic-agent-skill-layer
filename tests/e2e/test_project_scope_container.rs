@@ -347,7 +347,10 @@ async fn project_scope_resolves_via_skill_project_root_without_repo_path() {
         response.reason_code,
     );
 
-    components.teardown().await.expect("teardown should succeed");
+    components
+        .teardown()
+        .await
+        .expect("teardown should succeed");
     seed_components
         .teardown()
         .await

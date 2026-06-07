@@ -167,9 +167,7 @@ pub fn mine_skeleton(events: &[SessionEvent]) -> Option<ProcedureSkeleton> {
 
     let trigger = match &events[trigger_index] {
         SessionEvent::ToolResult {
-            output,
-            exit_code,
-            ..
+            output, exit_code, ..
         } => (output.clone(), *exit_code),
         _ => unreachable!("position filter guarantees ToolResult"),
     };
@@ -227,7 +225,11 @@ fn find_resolution_arc_end(arc_events: &[SessionEvent]) -> usize {
 
     for (pos, event) in arc_events.iter().enumerate() {
         match event {
-            SessionEvent::ToolResult { is_error, exit_code, .. } => {
+            SessionEvent::ToolResult {
+                is_error,
+                exit_code,
+                ..
+            } => {
                 let is_success = !is_error && exit_code.map_or(true, |code| code == 0);
                 let is_failure = *is_error || exit_code.map_or(false, |code| code != 0);
                 if is_success {
@@ -328,12 +330,15 @@ fn build_steps_deduplicated(events: &[SessionEvent]) -> Vec<MinedStep> {
 fn extract_command_text(tool_name: &str, input_json: &str) -> String {
     let parsed: Result<serde_json::Value, _> = serde_json::from_str(input_json);
     match tool_name {
-        "Bash" => {
-            parsed
-                .ok()
-                .and_then(|value| value.get("command").and_then(|v| v.as_str()).map(String::from))
-                .unwrap_or_else(|| format!("Bash({input_json})"))
-        }
+        "Bash" => parsed
+            .ok()
+            .and_then(|value| {
+                value
+                    .get("command")
+                    .and_then(|v| v.as_str())
+                    .map(String::from)
+            })
+            .unwrap_or_else(|| format!("Bash({input_json})")),
         _ => {
             // For non-Bash tools, produce `<name>(<key>=<value>, ...)` from top-level input keys.
             let summary = parsed
@@ -565,7 +570,8 @@ mod tests {
                 tool_use_id: "b-001".to_owned(),
                 is_error: true,
                 exit_code: Some(101),
-                output: "thread 'my_feature' panicked at 'assertion failed: left == right'".to_owned(),
+                output: "thread 'my_feature' panicked at 'assertion failed: left == right'"
+                    .to_owned(),
             },
             SessionEvent::ToolCall {
                 index: 2,

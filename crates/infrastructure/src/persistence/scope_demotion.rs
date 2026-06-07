@@ -169,7 +169,10 @@ mod tests {
         let text = row.semantic_text();
         assert!(text.contains("declare cargo bin explicitly"));
         assert!(text.contains("Declare [[bin]] explicitly"));
-        assert!(text.contains('\n'), "name and description must be separated by newline");
+        assert!(
+            text.contains('\n'),
+            "name and description must be separated by newline"
+        );
     }
 
     /// Proves `semantic_text()` works for a global skill with no source paths.
@@ -178,8 +181,9 @@ mod tests {
         let row = GlobalSkillRow {
             id: "hand-authored".to_owned(),
             name: "musl cross-compile".to_owned(),
-            description: "Cross-compiling Rust to musl needs musl-tools in dynamic-agent-skill-layer"
-                .to_owned(),
+            description:
+                "Cross-compiling Rust to musl needs musl-tools in dynamic-agent-skill-layer"
+                    .to_owned(),
             tags: vec![],
             source_paths: vec![],
         };

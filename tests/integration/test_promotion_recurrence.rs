@@ -26,8 +26,8 @@ use async_trait::async_trait;
 use chrono::Utc;
 use domain::{EmbeddingError, EmbeddingService, ExtractionError};
 use infrastructure::{
-    EquivalenceDecision, LlmEquivalenceVerifier, PostgresAdapter,
-    PostgresPromotionRecurrenceStore, PromotionRecurrenceStore, ensure_database_exists,
+    EquivalenceDecision, LlmEquivalenceVerifier, PostgresAdapter, PostgresPromotionRecurrenceStore,
+    PromotionRecurrenceStore, ensure_database_exists,
 };
 use maintenance::{
     CronError, LivePromotionPassRunner, PromotionEvidence, PromotionPassRunner,
@@ -42,10 +42,7 @@ use sqlx::PgPool;
 /// Calls `ensure_database_exists` first so the database is created if absent
 /// (handles fresh volumes / first-boot). Then creates the scratch schema and
 /// returns a pool whose search_path is set to the scratch schema.
-async fn make_isolated_pool(
-    base_db_url: &str,
-    schema: &str,
-) -> Result<PgPool, String> {
+async fn make_isolated_pool(base_db_url: &str, schema: &str) -> Result<PgPool, String> {
     // Ensure the target database exists (self-healing, matches run_maintenance_worker_from_environment).
     ensure_database_exists(base_db_url)
         .await
@@ -221,9 +218,8 @@ async fn live_pg_two_distinct_roots_produce_recurrence_proposal_with_project_cou
     let global_root = std::env::temp_dir().join(format!("promo_rec_test_global_{schema}"));
     std::fs::create_dir_all(&global_root).expect("global root must be created");
 
-    let recurrence_store: Arc<dyn PromotionRecurrenceStore> = Arc::new(
-        PostgresPromotionRecurrenceStore::new(pool.clone()),
-    );
+    let recurrence_store: Arc<dyn PromotionRecurrenceStore> =
+        Arc::new(PostgresPromotionRecurrenceStore::new(pool.clone()));
 
     let mut runner = LivePromotionPassRunner {
         skill_snapshots: vec![], // no intrinsic candidates
@@ -255,7 +251,12 @@ async fn live_pg_two_distinct_roots_produce_recurrence_proposal_with_project_cou
     // AC #4: at least one Recurrence proposal with project_count == 2.
     let recurrence_proposals: Vec<_> = proposals
         .iter()
-        .filter(|p| matches!(p.evidence, PromotionEvidence::Recurrence { project_count: 2 }))
+        .filter(|p| {
+            matches!(
+                p.evidence,
+                PromotionEvidence::Recurrence { project_count: 2 }
+            )
+        })
         .collect();
 
     assert!(
@@ -314,9 +315,8 @@ async fn live_pg_single_root_produces_no_recurrence_proposal() {
     let global_root = std::env::temp_dir().join(format!("promo_rec_test_global_{schema}"));
     std::fs::create_dir_all(&global_root).expect("global root must be created");
 
-    let recurrence_store: Arc<dyn PromotionRecurrenceStore> = Arc::new(
-        PostgresPromotionRecurrenceStore::new(pool.clone()),
-    );
+    let recurrence_store: Arc<dyn PromotionRecurrenceStore> =
+        Arc::new(PostgresPromotionRecurrenceStore::new(pool.clone()));
 
     let mut runner = LivePromotionPassRunner {
         skill_snapshots: vec![],
@@ -370,11 +370,10 @@ async fn live_pg_single_root_produces_no_recurrence_proposal() {
 #[tokio::test]
 async fn recurrence_store_db_failure_surfaces_as_cron_error_with_reason_code() {
     // Build a pool that will fail on the first real query (invalid endpoint).
-    let failing_pool =
-        sqlx::postgres::PgPoolOptions::new()
-            .max_connections(1)
-            .connect_lazy("postgres://invalid:invalid@127.0.0.1:1/nonexistent")
-            .expect("lazy pool construction does not connect");
+    let failing_pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(1)
+        .connect_lazy("postgres://invalid:invalid@127.0.0.1:1/nonexistent")
+        .expect("lazy pool construction does not connect");
 
     let global_root = std::env::temp_dir().join(format!(
         "promo_rec_db_fail_test_{}",
@@ -385,9 +384,8 @@ async fn recurrence_store_db_failure_surfaces_as_cron_error_with_reason_code() {
     ));
     std::fs::create_dir_all(&global_root).expect("global root must be created");
 
-    let recurrence_store: Arc<dyn PromotionRecurrenceStore> = Arc::new(
-        PostgresPromotionRecurrenceStore::new(failing_pool),
-    );
+    let recurrence_store: Arc<dyn PromotionRecurrenceStore> =
+        Arc::new(PostgresPromotionRecurrenceStore::new(failing_pool));
 
     let mut runner = LivePromotionPassRunner {
         skill_snapshots: vec![],

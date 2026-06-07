@@ -125,7 +125,9 @@ fn estimate_tokens(event: &SessionEvent) -> usize {
             name, input_json, ..
         } => name.len() + input_json.len(),
         SessionEvent::ToolResult { output, .. } => output.len(),
-        SessionEvent::FileEdit { path, operation, .. } => path.len() + operation.len(),
+        SessionEvent::FileEdit {
+            path, operation, ..
+        } => path.len() + operation.len(),
         SessionEvent::Metadata { event_type, .. } => event_type.len(),
     };
     // Minimum of 1 token per event so empty events don't silently vanish from
@@ -162,10 +164,7 @@ fn estimate_tokens(event: &SessionEvent) -> usize {
 /// # Panics
 ///
 /// Never panics. All slice arithmetic is bounds-checked.
-pub fn segment_session(
-    events: &[SessionEvent],
-    config: &SegmentationConfig,
-) -> Vec<Episode> {
+pub fn segment_session(events: &[SessionEvent], config: &SegmentationConfig) -> Vec<Episode> {
     if events.is_empty() {
         return Vec::new();
     }
@@ -323,11 +322,17 @@ mod tests {
     fn flat_transcript_produces_non_empty_windows_covering_all_events() {
         let events = vec![
             user_msg(0, "How do I use tokio::spawn?"),
-            assistant_msg(1, "You call tokio::spawn with an async block. The task runs concurrently."),
+            assistant_msg(
+                1,
+                "You call tokio::spawn with an async block. The task runs concurrently.",
+            ),
             user_msg(2, "What about cancellation?"),
             assistant_msg(3, "Use a JoinHandle and call abort() on it to cancel."),
             user_msg(4, "And error propagation?"),
-            assistant_msg(5, "The task returns a JoinError if it panics; unwrap the Result."),
+            assistant_msg(
+                5,
+                "The task returns a JoinError if it panics; unwrap the Result.",
+            ),
         ];
 
         // Use a budget that forces multiple windows on this 6-event session.
@@ -412,7 +417,10 @@ mod tests {
             .flat_map(|i| {
                 vec![
                     user_msg(i * 2, &format!("question {i} about something interesting")),
-                    assistant_msg(i * 2 + 1, &format!("answer {i} with substantial content here")),
+                    assistant_msg(
+                        i * 2 + 1,
+                        &format!("answer {i} with substantial content here"),
+                    ),
                 ]
             })
             .collect();
@@ -562,7 +570,11 @@ mod tests {
         let events = vec![user_msg(0, "hi")];
         let config = SegmentationConfig::new(1, 1); // even budget=1
         let episodes = segment_session(&events, &config);
-        assert_eq!(episodes.len(), 1, "single event must yield exactly 1 window");
+        assert_eq!(
+            episodes.len(),
+            1,
+            "single event must yield exactly 1 window"
+        );
         assert_eq!(episodes[0].event_indices, vec![0]);
     }
 
@@ -597,8 +609,14 @@ mod tests {
         let events: Vec<SessionEvent> = (0..10)
             .flat_map(|i| {
                 vec![
-                    user_msg(i * 2, &format!("user turn {i} with some content to fill budget")),
-                    assistant_msg(i * 2 + 1, &format!("assistant reply {i} substantial content")),
+                    user_msg(
+                        i * 2,
+                        &format!("user turn {i} with some content to fill budget"),
+                    ),
+                    assistant_msg(
+                        i * 2 + 1,
+                        &format!("assistant reply {i} substantial content"),
+                    ),
                 ]
             })
             .collect();
@@ -618,19 +636,13 @@ mod tests {
 
         // Every window is non-empty.
         for (i, ep) in episodes.iter().enumerate() {
-            assert!(
-                !ep.event_indices.is_empty(),
-                "window {i} must be non-empty"
-            );
+            assert!(!ep.event_indices.is_empty(), "window {i} must be non-empty");
         }
 
         // Full coverage.
         let covered = all_covered_indices(&episodes);
         let expected = expected_indices(&events);
-        assert_eq!(
-            covered, expected,
-            "all events must be covered (no drops)"
-        );
+        assert_eq!(covered, expected, "all events must be covered (no drops)");
 
         // Consecutive overlap ≥ overlap_events for pairs where both windows are large
         // enough to carry the configured overlap. Tail windows that are smaller than

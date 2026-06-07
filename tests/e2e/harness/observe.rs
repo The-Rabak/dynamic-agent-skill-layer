@@ -308,17 +308,18 @@ impl RedisObserver {
         let entries = self.xread_recent(20).await?;
         for entry in &entries {
             if let Some(envelope_json) = entry.fields.get("envelope")
-                && let Ok(envelope) = serde_json::from_str::<Value>(envelope_json) {
-                    let is_rebuilt = envelope.get("event_type").and_then(|v| v.as_str())
-                        == Some("graph.rebuilt");
-                    let version = envelope
-                        .pointer("/payload/graph_version")
-                        .and_then(|v| v.as_i64())
-                        .unwrap_or(0);
-                    if is_rebuilt && version > prev_version {
-                        return Ok(true);
-                    }
+                && let Ok(envelope) = serde_json::from_str::<Value>(envelope_json)
+            {
+                let is_rebuilt =
+                    envelope.get("event_type").and_then(|v| v.as_str()) == Some("graph.rebuilt");
+                let version = envelope
+                    .pointer("/payload/graph_version")
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or(0);
+                if is_rebuilt && version > prev_version {
+                    return Ok(true);
                 }
+            }
         }
         Ok(false)
     }

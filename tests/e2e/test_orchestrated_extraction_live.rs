@@ -29,8 +29,8 @@ use std::{path::PathBuf, sync::Arc};
 
 use domain::{EmbeddingService, SessionEvent};
 use infrastructure::{
-    LlmEquivalenceVerifier, OllamaEmbeddingConfig, OllamaEmbeddingService,
-    OllamaMergeVerifier, OllamaMergeVerifierConfig,
+    LlmEquivalenceVerifier, OllamaEmbeddingConfig, OllamaEmbeddingService, OllamaMergeVerifier,
+    OllamaMergeVerifierConfig,
 };
 use session_extractor::{
     ExtractSessionRequest,
@@ -67,10 +67,7 @@ fn ollama_base_url() -> Option<String> {
 }
 
 fn sandbox_dir(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!(
-        "e2e-orch-live-{name}-{}",
-        uuid::Uuid::now_v7()
-    ));
+    let dir = std::env::temp_dir().join(format!("e2e-orch-live-{name}-{}", uuid::Uuid::now_v7()));
     std::fs::create_dir_all(&dir).expect("sandbox dir must be creatable");
     dir
 }
@@ -86,18 +83,16 @@ fn sandbox_dir(name: &str) -> PathBuf {
 #[tokio::test]
 #[ignore = "requires live Ollama (OLLAMA_URL) with gemma4:12b or compatible model"]
 async fn orchestrated_extraction_live_produces_grounded_pending_drafts() {
-    let ollama_url = ollama_base_url().expect(
-        "OLLAMA_URL must be set for live orchestrated extraction e2e test"
-    );
+    let ollama_url = ollama_base_url()
+        .expect("OLLAMA_URL must be set for live orchestrated extraction e2e test");
 
-    let seam_model = std::env::var("ORCHESTRATION_SEAM_MODEL")
-        .unwrap_or_else(|_| "gemma4:12b".to_owned());
+    let seam_model =
+        std::env::var("ORCHESTRATION_SEAM_MODEL").unwrap_or_else(|_| "gemma4:12b".to_owned());
 
     // ── Parse the Tokio repro transcript to events ───────────────────────────
     let parsed = parse_session_events(TOKIO_REPRO_TRANSCRIPT);
     assert_eq!(
-        parsed.malformed_count,
-        0,
+        parsed.malformed_count, 0,
         "Tokio repro transcript must have zero malformed lines"
     );
     let events: Vec<SessionEvent> = parsed.events;
@@ -112,8 +107,12 @@ async fn orchestrated_extraction_live_produces_grounded_pending_drafts() {
 
     let labeler: Arc<dyn SkeletonLabeler> = {
         // Temporarily set OLLAMA_URL so from_environment() can read it.
-        unsafe { std::env::set_var("OLLAMA_URL", &ollama_url); }
-        unsafe { std::env::set_var("ORCHESTRATION_SEAM_MODEL", &seam_model); }
+        unsafe {
+            std::env::set_var("OLLAMA_URL", &ollama_url);
+        }
+        unsafe {
+            std::env::set_var("ORCHESTRATION_SEAM_MODEL", &seam_model);
+        }
         OllamaSkeletonLabeler::from_environment()
             .expect("live: OllamaSkeletonLabeler must init from OLLAMA_URL")
     };
@@ -126,7 +125,7 @@ async fn orchestrated_extraction_live_produces_grounded_pending_drafts() {
         };
         Arc::new(
             OllamaEmbeddingService::from_config(config)
-                .expect("live: OllamaEmbeddingService must init")
+                .expect("live: OllamaEmbeddingService must init"),
         )
     };
 
@@ -136,8 +135,7 @@ async fn orchestrated_extraction_live_produces_grounded_pending_drafts() {
             model: seam_model.clone(),
         };
         Arc::new(
-            OllamaMergeVerifier::from_config(config)
-                .expect("live: OllamaMergeVerifier must init")
+            OllamaMergeVerifier::from_config(config).expect("live: OllamaMergeVerifier must init"),
         )
     };
 
@@ -156,7 +154,7 @@ async fn orchestrated_extraction_live_produces_grounded_pending_drafts() {
         };
         Arc::new(
             OllamaExtractor::new(reqwest::Client::new(), config)
-                .expect("live: OllamaExtractor must init")
+                .expect("live: OllamaExtractor must init"),
         )
     };
 

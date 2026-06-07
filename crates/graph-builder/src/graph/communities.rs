@@ -283,7 +283,11 @@ fn derive_cluster_label(
     let mut label = if scored.is_empty() {
         format!("{scope_prefix}-cluster-{cluster_label}")
     } else {
-        let core: Vec<&str> = scored.iter().take(2).map(|(term, _)| term.as_str()).collect();
+        let core: Vec<&str> = scored
+            .iter()
+            .take(2)
+            .map(|(term, _)| term.as_str())
+            .collect();
         format!("{scope_prefix}-cluster-{}", core.join("-"))
     };
 
@@ -389,12 +393,11 @@ fn tokenize(text: &str) -> impl Iterator<Item = String> + '_ {
 /// than connective words that appear in every skill.
 fn is_stopword(term: &str) -> bool {
     const STOPWORDS: &[&str] = &[
-        "the", "and", "for", "are", "but", "not", "you", "all", "any", "can",
-        "had", "has", "her", "was", "one", "our", "out", "use", "uses", "used",
-        "using", "with", "this", "that", "from", "into", "your", "them", "they",
-        "then", "than", "when", "what", "which", "while", "will", "would", "should",
-        "could", "have", "how", "its", "via", "per", "etc", "such", "also", "each",
-        "more", "most", "some", "only", "over", "under", "between", "about", "after",
+        "the", "and", "for", "are", "but", "not", "you", "all", "any", "can", "had", "has", "her",
+        "was", "one", "our", "out", "use", "uses", "used", "using", "with", "this", "that", "from",
+        "into", "your", "them", "they", "then", "than", "when", "what", "which", "while", "will",
+        "would", "should", "could", "have", "how", "its", "via", "per", "etc", "such", "also",
+        "each", "more", "most", "some", "only", "over", "under", "between", "about", "after",
         "before", "during",
     ];
     STOPWORDS.contains(&term)
@@ -525,32 +528,62 @@ mod tests {
         // document (low IDF → demoted); "retrieval"/"scoring" are repeated within
         // their cluster (high tf) and absent elsewhere (high IDF) → they win.
         let skills = vec![
-            make_skill_with_content("a1", ScopeType::Project, &["retrieval"],
+            make_skill_with_content(
+                "a1",
+                ScopeType::Project,
+                &["retrieval"],
                 "This skill performs retrieval retrieval retrieval over search vectors",
-                vec![10.0, 0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
-            make_skill_with_content("a2", ScopeType::Project, &["retrieval"],
+                vec![10.0, 0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            ),
+            make_skill_with_content(
+                "a2",
+                ScopeType::Project,
+                &["retrieval"],
                 "This skill performs retrieval retrieval retrieval over search vectors",
-                vec![10.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
-            make_skill_with_content("a3", ScopeType::Project, &["retrieval"],
+                vec![10.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            ),
+            make_skill_with_content(
+                "a3",
+                ScopeType::Project,
+                &["retrieval"],
                 "This skill performs retrieval retrieval retrieval over search vectors",
-                vec![9.9, 0.2, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
-            make_skill_with_content("b1", ScopeType::Project, &["scoring"],
+                vec![9.9, 0.2, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            ),
+            make_skill_with_content(
+                "b1",
+                ScopeType::Project,
+                &["scoring"],
                 "This skill performs scoring scoring scoring over ranking weights",
-                vec![0.1, 10.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
-            make_skill_with_content("b2", ScopeType::Project, &["scoring"],
+                vec![0.1, 10.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            ),
+            make_skill_with_content(
+                "b2",
+                ScopeType::Project,
+                &["scoring"],
                 "This skill performs scoring scoring scoring over ranking weights",
-                vec![0.0, 10.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
-            make_skill_with_content("b3", ScopeType::Project, &["scoring"],
+                vec![0.0, 10.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            ),
+            make_skill_with_content(
+                "b3",
+                ScopeType::Project,
+                &["scoring"],
                 "This skill performs scoring scoring scoring over ranking weights",
-                vec![0.2, 9.9, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
+                vec![0.2, 9.9, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            ),
             // Bridging skill — assigned to whichever cluster HDBSCAN finds denser.
             // We do not assert on this skill's assignment.
-            make_skill_with_content("bridge", ScopeType::Project, &["unrelated"],
+            make_skill_with_content(
+                "bridge",
+                ScopeType::Project,
+                &["unrelated"],
                 "This skill is a miscellaneous helper",
-                vec![5.0, 5.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
+                vec![5.0, 5.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            ),
         ];
 
-        let config = HdbscanConfig { min_cluster_size: 3 };
+        let config = HdbscanConfig {
+            min_cluster_size: 3,
+        };
         let assignments = assign_communities(&skills, &config)
             .expect("HDBSCAN must not error on valid embeddings");
 
@@ -567,7 +600,10 @@ mod tests {
         assert!(
             named_clusters.len() >= 2,
             "HDBSCAN must form at least two clusters from two dense groups (found {:?})",
-            named_clusters.iter().map(|c| &c.community_name).collect::<Vec<_>>()
+            named_clusters
+                .iter()
+                .map(|c| &c.community_name)
+                .collect::<Vec<_>>()
         );
 
         // Cluster A members (a1/a2/a3 — "retrieval") must all be in the same cluster.
@@ -643,21 +679,47 @@ mod tests {
     fn dual_membership_skill_appears_in_hdbscan_and_tag_community() {
         // Two tight clusters: 3 "auth" skills + 3 "infra" skills.
         let skills = vec![
-            make_skill("s1", ScopeType::Project, &["auth"],
-                vec![10.0, 0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
-            make_skill("s2", ScopeType::Project, &["auth"],
-                vec![10.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
-            make_skill("s3", ScopeType::Project, &["auth"],
-                vec![9.9, 0.2, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
-            make_skill("s4", ScopeType::Project, &["infra"],
-                vec![0.1, 10.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
-            make_skill("s5", ScopeType::Project, &["infra"],
-                vec![0.0, 10.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
-            make_skill("s6", ScopeType::Project, &["infra"],
-                vec![0.2, 9.9, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
+            make_skill(
+                "s1",
+                ScopeType::Project,
+                &["auth"],
+                vec![10.0, 0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            ),
+            make_skill(
+                "s2",
+                ScopeType::Project,
+                &["auth"],
+                vec![10.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            ),
+            make_skill(
+                "s3",
+                ScopeType::Project,
+                &["auth"],
+                vec![9.9, 0.2, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            ),
+            make_skill(
+                "s4",
+                ScopeType::Project,
+                &["infra"],
+                vec![0.1, 10.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            ),
+            make_skill(
+                "s5",
+                ScopeType::Project,
+                &["infra"],
+                vec![0.0, 10.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            ),
+            make_skill(
+                "s6",
+                ScopeType::Project,
+                &["infra"],
+                vec![0.2, 9.9, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            ),
         ];
 
-        let config = HdbscanConfig { min_cluster_size: 3 };
+        let config = HdbscanConfig {
+            min_cluster_size: 3,
+        };
         let assignments = assign_communities(&skills, &config)
             .expect("HDBSCAN must not error on valid embeddings");
 
@@ -668,9 +730,9 @@ mod tests {
         assert!(hdbscan_has_s1, "s1 must appear in an HDBSCAN community");
 
         // s1 must also appear in a tag community.
-        let tag_has_s1 = assignments.iter().any(|a| {
-            a.source == CommunitySource::Tag && a.skill_ids.contains(&"s1".to_string())
-        });
+        let tag_has_s1 = assignments
+            .iter()
+            .any(|a| a.source == CommunitySource::Tag && a.skill_ids.contains(&"s1".to_string()));
         assert!(tag_has_s1, "s1 must appear in a Tag community");
     }
 
@@ -678,14 +740,24 @@ mod tests {
     #[test]
     fn tag_community_name_matches_first_tag() {
         let skills = vec![
-            make_skill("t1", ScopeType::Global, &["infra", "cost"],
-                vec![1.0, 0.0, 0.0, 0.0]),
-            make_skill("t2", ScopeType::Global, &["infra", "latency"],
-                vec![0.0, 1.0, 0.0, 0.0]),
+            make_skill(
+                "t1",
+                ScopeType::Global,
+                &["infra", "cost"],
+                vec![1.0, 0.0, 0.0, 0.0],
+            ),
+            make_skill(
+                "t2",
+                ScopeType::Global,
+                &["infra", "latency"],
+                vec![0.0, 1.0, 0.0, 0.0],
+            ),
         ];
-        let config = HdbscanConfig { min_cluster_size: 3 };
-        let assignments = assign_communities(&skills, &config)
-            .expect("assign_communities must succeed");
+        let config = HdbscanConfig {
+            min_cluster_size: 3,
+        };
+        let assignments =
+            assign_communities(&skills, &config).expect("assign_communities must succeed");
 
         let tag_community = assignments
             .iter()
@@ -700,22 +772,41 @@ mod tests {
     fn small_scope_produces_only_unclustered_hdbscan_community() {
         // Only 2 skills, min_cluster_size=3 → no cluster possible.
         let skills = vec![
-            make_skill("small1", ScopeType::Project, &["x"], vec![1.0, 0.0, 0.0, 0.0]),
-            make_skill("small2", ScopeType::Project, &["y"], vec![0.0, 1.0, 0.0, 0.0]),
+            make_skill(
+                "small1",
+                ScopeType::Project,
+                &["x"],
+                vec![1.0, 0.0, 0.0, 0.0],
+            ),
+            make_skill(
+                "small2",
+                ScopeType::Project,
+                &["y"],
+                vec![0.0, 1.0, 0.0, 0.0],
+            ),
         ];
-        let config = HdbscanConfig { min_cluster_size: 3 };
+        let config = HdbscanConfig {
+            min_cluster_size: 3,
+        };
         let assignments = assign_communities(&skills, &config)
             .expect("assign_communities must not fail for small scope");
 
         let unclustered = assignments
             .iter()
             .filter(|a| {
-                a.source == CommunitySource::Hdbscan
-                    && a.community_name == "project-unclustered"
+                a.source == CommunitySource::Hdbscan && a.community_name == "project-unclustered"
             })
             .collect::<Vec<_>>();
-        assert_eq!(unclustered.len(), 1, "exactly one unclustered community expected");
-        assert_eq!(unclustered[0].skill_ids.len(), 2, "both skills must be in unclustered");
+        assert_eq!(
+            unclustered.len(),
+            1,
+            "exactly one unclustered community expected"
+        );
+        assert_eq!(
+            unclustered[0].skill_ids.len(),
+            2,
+            "both skills must be in unclustered"
+        );
     }
 
     /// Proves the output is deterministic: calling assign_communities twice on the
@@ -724,20 +815,46 @@ mod tests {
     #[test]
     fn assign_communities_is_deterministic() {
         let skills = vec![
-            make_skill("d1", ScopeType::Project, &["ci"],
-                vec![10.0, 0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
-            make_skill("d2", ScopeType::Project, &["ci"],
-                vec![10.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
-            make_skill("d3", ScopeType::Project, &["ci"],
-                vec![9.9, 0.2, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
-            make_skill("d4", ScopeType::Project, &["cd"],
-                vec![0.1, 10.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
-            make_skill("d5", ScopeType::Project, &["cd"],
-                vec![0.0, 10.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
-            make_skill("d6", ScopeType::Project, &["cd"],
-                vec![0.2, 9.9, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
+            make_skill(
+                "d1",
+                ScopeType::Project,
+                &["ci"],
+                vec![10.0, 0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            ),
+            make_skill(
+                "d2",
+                ScopeType::Project,
+                &["ci"],
+                vec![10.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            ),
+            make_skill(
+                "d3",
+                ScopeType::Project,
+                &["ci"],
+                vec![9.9, 0.2, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            ),
+            make_skill(
+                "d4",
+                ScopeType::Project,
+                &["cd"],
+                vec![0.1, 10.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            ),
+            make_skill(
+                "d5",
+                ScopeType::Project,
+                &["cd"],
+                vec![0.0, 10.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            ),
+            make_skill(
+                "d6",
+                ScopeType::Project,
+                &["cd"],
+                vec![0.2, 9.9, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            ),
         ];
-        let config = HdbscanConfig { min_cluster_size: 3 };
+        let config = HdbscanConfig {
+            min_cluster_size: 3,
+        };
 
         let first = assign_communities(&skills, &config).unwrap();
         let second = assign_communities(&skills, &config).unwrap();

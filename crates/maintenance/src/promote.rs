@@ -338,8 +338,7 @@ impl PromotionProposalWriter {
             .map_err(PromotionError::ScopeRootInvalid)?;
 
         let pending_path = canonical_proposal_dir.join(PENDING_SKILL_FILE_NAME);
-        let pending_body =
-            render_demotion_pending_markdown(skill, &offending_identifiers, now)?;
+        let pending_body = render_demotion_pending_markdown(skill, &offending_identifiers, now)?;
 
         // create_new(true): never silently overwrite a pre-existing proposal.
         let mut pending_file = fs::OpenOptions::new()
@@ -655,15 +654,16 @@ impl LivePromotionPassRunner {
         };
 
         // Fetch all project skills across ALL roots from PG.
-        let project_skills = recurrence_store
-            .fetch_all_project_skills()
-            .await
-            .map_err(|error| {
-                CronError::PromotionPass(format!(
-                    "recurrence pass: PG store query failed \
+        let project_skills =
+            recurrence_store
+                .fetch_all_project_skills()
+                .await
+                .map_err(|error| {
+                    CronError::PromotionPass(format!(
+                        "recurrence pass: PG store query failed \
                      [reason_code=promotion_recurrence_db_error]: {error}"
-                ))
-            })?;
+                    ))
+                })?;
 
         // Count distinct project-root keys to satisfy the mandatory log invariant
         // (design caveat #1): every run must log roots_seen vs threshold.
@@ -702,16 +702,13 @@ impl LivePromotionPassRunner {
 
         for row in project_skills {
             let text = row.semantic_text();
-            let embedding = embedding_service
-                .embed_text(&text)
-                .await
-                .map_err(|error| {
-                    CronError::PromotionPass(format!(
-                        "recurrence pass: embedding failed for skill `{}` \
+            let embedding = embedding_service.embed_text(&text).await.map_err(|error| {
+                CronError::PromotionPass(format!(
+                    "recurrence pass: embedding failed for skill `{}` \
                          [reason_code=promotion_recurrence_embedding_error]: {error}",
-                        row.id
-                    ))
-                })?;
+                    row.id
+                ))
+            })?;
             embedded_skills.push((row, embedding));
         }
 
@@ -807,10 +804,7 @@ impl LivePromotionPassRunner {
     /// Returns `CronError::PromotionPass` if the PG store query fails or if the
     /// proposal writer fails. Never swallows errors — every failure is surfaced
     /// with a `reason_code` in the message.
-    async fn scan_demotions(
-        &self,
-        now: DateTime<Utc>,
-    ) -> Result<Vec<DemotionProposal>, CronError> {
+    async fn scan_demotions(&self, now: DateTime<Utc>) -> Result<Vec<DemotionProposal>, CronError> {
         let demotion_store = match self.demotion_store.as_ref() {
             Some(store) => store,
             None => {
@@ -1121,10 +1115,7 @@ fn render_pending_markdown(
     if !snapshot.tags.is_empty() {
         let mut sorted_tags = snapshot.tags.clone();
         sorted_tags.sort_unstable();
-        body.push_str(&format!(
-            "tags: {}\n\n",
-            sorted_tags.join(", ")
-        ));
+        body.push_str(&format!("tags: {}\n\n", sorted_tags.join(", ")));
     }
 
     if !snapshot.subunits.is_empty() {
@@ -1287,20 +1278,13 @@ mod tests {
     }
 
     /// Builds a `ProjectSkillRow` with a source path under the given project root.
-    fn project_skill_row(
-        id: &str,
-        name: &str,
-        desc: &str,
-        project_root: &str,
-    ) -> ProjectSkillRow {
+    fn project_skill_row(id: &str, name: &str, desc: &str, project_root: &str) -> ProjectSkillRow {
         ProjectSkillRow {
             id: id.to_owned(),
             name: name.to_owned(),
             description: desc.to_owned(),
             tags: vec![],
-            source_paths: vec![
-                format!("{project_root}/skills/{id}/SKILL.md"),
-            ],
+            source_paths: vec![format!("{project_root}/skills/{id}/SKILL.md")],
         }
     }
 
@@ -1312,16 +1296,25 @@ mod tests {
 
     impl MockGeneralityVerifier {
         fn general() -> Arc<Self> {
-            Arc::new(Self { always_general: true, always_error: false })
+            Arc::new(Self {
+                always_general: true,
+                always_error: false,
+            })
         }
 
         #[allow(dead_code)]
         fn not_general() -> Arc<Self> {
-            Arc::new(Self { always_general: false, always_error: false })
+            Arc::new(Self {
+                always_general: false,
+                always_error: false,
+            })
         }
 
         fn error() -> Arc<Self> {
-            Arc::new(Self { always_general: false, always_error: true })
+            Arc::new(Self {
+                always_general: false,
+                always_error: true,
+            })
         }
     }
 
@@ -1361,7 +1354,10 @@ mod tests {
         }
 
         fn failing() -> Arc<Self> {
-            Arc::new(Self { rows: vec![], fail: true })
+            Arc::new(Self {
+                rows: vec![],
+                fail: true,
+            })
         }
     }
 
@@ -1371,12 +1367,9 @@ mod tests {
             &self,
         ) -> Result<Vec<ProjectSkillRow>, PromotionRecurrenceError> {
             if self.fail {
-                return Err(PromotionRecurrenceError::Database(
-                    sqlx::Error::Io(std::io::Error::new(
-                        std::io::ErrorKind::ConnectionRefused,
-                        "mock db failure",
-                    )),
-                ));
+                return Err(PromotionRecurrenceError::Database(sqlx::Error::Io(
+                    std::io::Error::new(std::io::ErrorKind::ConnectionRefused, "mock db failure"),
+                )));
             }
             Ok(self.rows.clone())
         }
@@ -1457,7 +1450,10 @@ mod tests {
         }
 
         fn failing() -> Arc<Self> {
-            Arc::new(Self { rows: vec![], fail: true })
+            Arc::new(Self {
+                rows: vec![],
+                fail: true,
+            })
         }
     }
 
@@ -1752,7 +1748,8 @@ mod tests {
     /// (AC #3a) An identifier-free skill text returns `false` from the veto check.
     #[test]
     fn identifier_check_passes_for_identifier_free_text() {
-        let skill_text = "Declare Cargo [[bin]] explicitly or the binary is named after the package";
+        let skill_text =
+            "Declare Cargo [[bin]] explicitly or the binary is named after the package";
         let tokens = &["my_project", "special_crate"];
         assert!(
             !skill_text_contains_project_local_identifier(skill_text, tokens),
@@ -1763,8 +1760,7 @@ mod tests {
     /// (AC #3b) A skill text containing a project-local token returns `true` (veto).
     #[test]
     fn identifier_check_vetoes_text_containing_project_local_token() {
-        let skill_text =
-            "In my_project, always declare the bin explicitly in Cargo.toml to avoid name confusion";
+        let skill_text = "In my_project, always declare the bin explicitly in Cargo.toml to avoid name confusion";
         let tokens = &["my_project", "special_crate"];
         assert!(
             skill_text_contains_project_local_identifier(skill_text, tokens),
@@ -1800,14 +1796,11 @@ mod tests {
     /// (AC #4) Writer successfully writes within the global scope root when it exists.
     #[test]
     fn writer_writes_within_global_scope_root() {
-        let global_root = std::env::temp_dir().join(format!(
-            "promotion_test_global_root_{}",
-            std::process::id()
-        ));
+        let global_root =
+            std::env::temp_dir().join(format!("promotion_test_global_root_{}", std::process::id()));
         std::fs::create_dir_all(&global_root).expect("mkdir must succeed");
 
-        let writer =
-            PromotionProposalWriter::new(global_root.clone(), ".skills".to_owned());
+        let writer = PromotionProposalWriter::new(global_root.clone(), ".skills".to_owned());
         let snapshot = project_snapshot("skill-musl", "musl cross-compile", "needs musl-tools");
         let result = writer.write_proposal(&snapshot, PromotionEvidence::Intrinsic, Utc::now());
 
@@ -1856,7 +1849,10 @@ mod tests {
             demotion_store: None,
         };
 
-        let proposals = runner.run_promotion_pass(Utc::now()).await.expect("pass must succeed");
+        let proposals = runner
+            .run_promotion_pass(Utc::now())
+            .await
+            .expect("pass must succeed");
 
         let _ = std::fs::remove_dir_all(&global_root);
 
@@ -1898,7 +1894,10 @@ mod tests {
             demotion_store: None,
         };
 
-        let proposals = runner.run_promotion_pass(Utc::now()).await.expect("pass must succeed");
+        let proposals = runner
+            .run_promotion_pass(Utc::now())
+            .await
+            .expect("pass must succeed");
 
         let _ = std::fs::remove_dir_all(&global_root);
 
@@ -1959,10 +1958,8 @@ mod tests {
     /// demotion proposal that CITES the offending identifier(s).
     #[tokio::test]
     async fn demotion_pass_misscoped_global_skill_produces_proposal_with_cited_identifiers() {
-        let global_root = std::env::temp_dir().join(format!(
-            "demotion_test_misscoped_{}",
-            std::process::id()
-        ));
+        let global_root =
+            std::env::temp_dir().join(format!("demotion_test_misscoped_{}", std::process::id()));
         std::fs::create_dir_all(&global_root).expect("mkdir");
 
         // A global skill that mentions "dynamic-agent-skill-layer" — a project-local name.
@@ -1994,12 +1991,26 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&global_root);
 
-        assert_eq!(proposals.len(), 1, "one demotion proposal expected for the mis-scoped skill");
+        assert_eq!(
+            proposals.len(),
+            1,
+            "one demotion proposal expected for the mis-scoped skill"
+        );
         let proposal = &proposals[0];
-        assert_eq!(proposal.from_scope, ScopeType::Global, "from_scope must be Global");
-        assert_eq!(proposal.to_scope, ScopeType::Project, "to_scope must be Project");
+        assert_eq!(
+            proposal.from_scope,
+            ScopeType::Global,
+            "from_scope must be Global"
+        );
+        assert_eq!(
+            proposal.to_scope,
+            ScopeType::Project,
+            "to_scope must be Project"
+        );
         assert!(
-            proposal.offending_identifiers.contains(&"dynamic-agent-skill-layer".to_owned()),
+            proposal
+                .offending_identifiers
+                .contains(&"dynamic-agent-skill-layer".to_owned()),
             "offending_identifiers must cite 'dynamic-agent-skill-layer'; got: {:?}",
             proposal.offending_identifiers
         );
@@ -2013,10 +2024,8 @@ mod tests {
     /// NO demotion proposal.
     #[tokio::test]
     async fn demotion_pass_genuinely_general_global_skill_produces_no_proposal() {
-        let global_root = std::env::temp_dir().join(format!(
-            "demotion_test_general_{}",
-            std::process::id()
-        ));
+        let global_root =
+            std::env::temp_dir().join(format!("demotion_test_general_{}", std::process::id()));
         std::fs::create_dir_all(&global_root).expect("mkdir");
 
         // A truly general global skill — no project-local token.
@@ -2057,10 +2066,8 @@ mod tests {
     /// (AC #2) Demotion proposal is a `.pending` file; the source skill is NOT mutated.
     #[tokio::test]
     async fn demotion_proposal_is_pending_file_not_source_mutation() {
-        let global_root = std::env::temp_dir().join(format!(
-            "demotion_test_pending_{}",
-            std::process::id()
-        ));
+        let global_root =
+            std::env::temp_dir().join(format!("demotion_test_pending_{}", std::process::id()));
         std::fs::create_dir_all(&global_root).expect("mkdir");
 
         let misscoped_skill = global_skill_row(
@@ -2103,7 +2110,10 @@ mod tests {
             "demotion proposal must be confined to the global scope root"
         );
         assert!(
-            proposal.pending_path.file_name().map_or(false, |n| n == PENDING_SKILL_FILE_NAME),
+            proposal
+                .pending_path
+                .file_name()
+                .map_or(false, |n| n == PENDING_SKILL_FILE_NAME),
             "demotion proposal must be named PENDING_SKILL_FILE_NAME"
         );
 
@@ -2114,10 +2124,8 @@ mod tests {
     /// it from promotion proposals (`promote--`).
     #[tokio::test]
     async fn demotion_proposal_directory_uses_demote_prefix() {
-        let global_root = std::env::temp_dir().join(format!(
-            "demotion_test_prefix_{}",
-            std::process::id()
-        ));
+        let global_root =
+            std::env::temp_dir().join(format!("demotion_test_prefix_{}", std::process::id()));
         std::fs::create_dir_all(&global_root).expect("mkdir");
 
         let misscoped_skill = global_skill_row(
@@ -2149,8 +2157,14 @@ mod tests {
         let _ = std::fs::remove_dir_all(&global_root);
 
         assert_eq!(proposals.len(), 1);
-        let proposal_dir = proposals[0].pending_path.parent().expect("must have parent");
-        let dir_name = proposal_dir.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        let proposal_dir = proposals[0]
+            .pending_path
+            .parent()
+            .expect("must have parent");
+        let dir_name = proposal_dir
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("");
         assert!(
             dir_name.starts_with("demote--"),
             "demotion proposal directory must start with 'demote--', got: {dir_name}"
@@ -2163,10 +2177,8 @@ mod tests {
         use crate::cron::DemotionPassRunner;
         use chrono::Utc;
 
-        let global_root = std::env::temp_dir().join(format!(
-            "demotion_test_outcome_{}",
-            std::process::id()
-        ));
+        let global_root =
+            std::env::temp_dir().join(format!("demotion_test_outcome_{}", std::process::id()));
         std::fs::create_dir_all(&global_root).expect("mkdir");
 
         let misscoped_skill = global_skill_row(
@@ -2218,10 +2230,8 @@ mod tests {
     /// (AC #1 error path) PG store failure during demotion surfaces as CronError, never swallowed.
     #[tokio::test]
     async fn demotion_pass_db_failure_surfaces_as_cron_error() {
-        let global_root = std::env::temp_dir().join(format!(
-            "demotion_test_db_fail_{}",
-            std::process::id()
-        ));
+        let global_root =
+            std::env::temp_dir().join(format!("demotion_test_db_fail_{}", std::process::id()));
         std::fs::create_dir_all(&global_root).expect("mkdir");
 
         let mut runner = LivePromotionPassRunner {
@@ -2256,7 +2266,8 @@ mod tests {
     /// `collect_project_local_identifiers` returns all matching tokens (not just bool).
     #[test]
     fn collect_identifiers_returns_all_matching_tokens() {
-        let skill_text = "In myproject, use the dynamic-agent-skill-layer workflow to promote skills";
+        let skill_text =
+            "In myproject, use the dynamic-agent-skill-layer workflow to promote skills";
         let tokens = &["myproject", "dynamic-agent-skill-layer", "unrelated-token"];
         let found = collect_project_local_identifiers(skill_text, tokens);
         assert!(

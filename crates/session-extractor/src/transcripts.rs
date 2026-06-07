@@ -294,13 +294,17 @@ pub fn parse_session_events(jsonl_payload: &str) -> ParsedEvents {
                                 content: trimmed_text,
                             });
                         } else {
-                            debug!(line = line_index + 1, "user line has empty string content; skipping");
+                            debug!(
+                                line = line_index + 1,
+                                "user line has empty string content; skipping"
+                            );
                         }
                     }
                     // Array content → tool_result blocks
                     Some(Value::Array(blocks)) => {
                         for block in blocks {
-                            let block_type = block.get("type").and_then(Value::as_str).unwrap_or("");
+                            let block_type =
+                                block.get("type").and_then(Value::as_str).unwrap_or("");
                             if block_type == "tool_result" {
                                 events.push(parse_tool_result_block(block, line_index));
                             } else {
@@ -350,21 +354,23 @@ pub fn parse_session_events(jsonl_payload: &str) -> ParsedEvents {
                         malformed_count += 1;
                         events.push(SessionEvent::UserMessage {
                             index: line_index,
-                            content: format!("[unexpected content shape on line {}]", line_index + 1),
+                            content: format!(
+                                "[unexpected content shape on line {}]",
+                                line_index + 1
+                            ),
                         });
                     }
                 }
             }
             "assistant" => {
                 // An assistant turn has an array of typed content blocks.
-                let content_blocks = value
-                    .pointer("/message/content")
-                    .and_then(Value::as_array);
+                let content_blocks = value.pointer("/message/content").and_then(Value::as_array);
 
                 match content_blocks {
                     Some(blocks) => {
                         for block in blocks {
-                            let block_type = block.get("type").and_then(Value::as_str).unwrap_or("");
+                            let block_type =
+                                block.get("type").and_then(Value::as_str).unwrap_or("");
                             match block_type {
                                 "text" => {
                                     let text = block
@@ -406,7 +412,10 @@ pub fn parse_session_events(jsonl_payload: &str) -> ParsedEvents {
                                 content,
                             });
                         } else {
-                            debug!(line = line_index + 1, "assistant line missing content blocks; skipping");
+                            debug!(
+                                line = line_index + 1,
+                                "assistant line missing content blocks; skipping"
+                            );
                         }
                     }
                 }
@@ -428,10 +437,16 @@ pub fn parse_session_events(jsonl_payload: &str) -> ParsedEvents {
                         };
                         events.push(event);
                     } else {
-                        debug!(line = line_index + 1, "message-type line missing content; skipping");
+                        debug!(
+                            line = line_index + 1,
+                            "message-type line missing content; skipping"
+                        );
                     }
                 } else {
-                    debug!(line = line_index + 1, "message-type line missing role/speaker; skipping");
+                    debug!(
+                        line = line_index + 1,
+                        "message-type line missing role/speaker; skipping"
+                    );
                 }
             }
             other => {
@@ -745,9 +760,8 @@ mod tests {
 
     fn read_fixture(name: &str) -> String {
         let path = fixture_path(name);
-        std::fs::read_to_string(&path).unwrap_or_else(|err| {
-            panic!("could not read fixture {}: {err}", path.display())
-        })
+        std::fs::read_to_string(&path)
+            .unwrap_or_else(|err| panic!("could not read fixture {}: {err}", path.display()))
     }
 
     /// AC1 — The real Claude Code JSONL fixture parses into typed SessionEvents with
@@ -755,38 +769,75 @@ mod tests {
     #[test]
     fn real_fixture_parses_tool_calls_results_and_file_edits() {
         let payload = read_fixture("claude-code-session-real.jsonl");
-        let ParsedEvents { events, malformed_count } = parse_session_events(&payload);
+        let ParsedEvents {
+            events,
+            malformed_count,
+        } = parse_session_events(&payload);
 
-        assert_eq!(malformed_count, 0, "real fixture should have no malformed lines");
+        assert_eq!(
+            malformed_count, 0,
+            "real fixture should have no malformed lines"
+        );
         assert!(!events.is_empty(), "events must not be empty");
 
         // Must contain at least one UserMessage (the human text turn)
-        let user_messages: Vec<_> = events.iter().filter(|e| matches!(e, SessionEvent::UserMessage { .. })).collect();
-        assert!(!user_messages.is_empty(), "must parse at least one UserMessage");
+        let user_messages: Vec<_> = events
+            .iter()
+            .filter(|e| matches!(e, SessionEvent::UserMessage { .. }))
+            .collect();
+        assert!(
+            !user_messages.is_empty(),
+            "must parse at least one UserMessage"
+        );
 
         // Must contain at least one ToolCall (Bash tool)
-        let tool_calls: Vec<_> = events.iter().filter(|e| matches!(e, SessionEvent::ToolCall { .. })).collect();
+        let tool_calls: Vec<_> = events
+            .iter()
+            .filter(|e| matches!(e, SessionEvent::ToolCall { .. }))
+            .collect();
         assert!(!tool_calls.is_empty(), "must parse at least one ToolCall");
 
         // The Bash tool call must be present
-        let bash_call = tool_calls.iter().find(|e| {
-            matches!(e, SessionEvent::ToolCall { name, .. } if name == "Bash")
-        });
+        let bash_call = tool_calls
+            .iter()
+            .find(|e| matches!(e, SessionEvent::ToolCall { name, .. } if name == "Bash"));
         assert!(bash_call.is_some(), "must parse a Bash ToolCall");
 
         // Must contain at least one ToolResult
-        let tool_results: Vec<_> = events.iter().filter(|e| matches!(e, SessionEvent::ToolResult { .. })).collect();
-        assert!(!tool_results.is_empty(), "must parse at least one ToolResult");
+        let tool_results: Vec<_> = events
+            .iter()
+            .filter(|e| matches!(e, SessionEvent::ToolResult { .. }))
+            .collect();
+        assert!(
+            !tool_results.is_empty(),
+            "must parse at least one ToolResult"
+        );
 
         // Must parse a ToolResult with is_error=false
         let ok_result = tool_results.iter().find(|e| {
-            matches!(e, SessionEvent::ToolResult { is_error: false, .. })
+            matches!(
+                e,
+                SessionEvent::ToolResult {
+                    is_error: false,
+                    ..
+                }
+            )
         });
-        assert!(ok_result.is_some(), "must parse at least one non-error ToolResult");
+        assert!(
+            ok_result.is_some(),
+            "must parse at least one non-error ToolResult"
+        );
 
         // Must parse a ToolResult with is_error=true and exit_code Some(2)
         let error_result = tool_results.iter().find(|e| {
-            matches!(e, SessionEvent::ToolResult { is_error: true, exit_code: Some(2), .. })
+            matches!(
+                e,
+                SessionEvent::ToolResult {
+                    is_error: true,
+                    exit_code: Some(2),
+                    ..
+                }
+            )
         });
         assert!(
             error_result.is_some(),
@@ -794,18 +845,24 @@ mod tests {
         );
 
         // Must contain at least one FileEdit (Write tool)
-        let file_edits: Vec<_> = events.iter().filter(|e| matches!(e, SessionEvent::FileEdit { .. })).collect();
+        let file_edits: Vec<_> = events
+            .iter()
+            .filter(|e| matches!(e, SessionEvent::FileEdit { .. }))
+            .collect();
         assert!(!file_edits.is_empty(), "must parse at least one FileEdit");
 
-        let write_edit = file_edits.iter().find(|e| {
-            matches!(e, SessionEvent::FileEdit { operation, .. } if operation == "Write")
-        });
+        let write_edit = file_edits.iter().find(
+            |e| matches!(e, SessionEvent::FileEdit { operation, .. } if operation == "Write"),
+        );
         assert!(write_edit.is_some(), "must parse a Write FileEdit");
 
         // FileEdit path must be non-empty and contain the sanitized repo marker
         if let Some(SessionEvent::FileEdit { path, .. }) = write_edit {
             assert!(!path.is_empty(), "FileEdit path must not be empty");
-            assert!(path.contains("<repo>"), "sanitized path must contain <repo> marker");
+            assert!(
+                path.contains("<repo>"),
+                "sanitized path must contain <repo> marker"
+            );
         }
 
         // Events must be in source-line order (non-decreasing index)
@@ -824,18 +881,23 @@ mod tests {
 {"type":"message","message":{"role":"assistant","content":"Capture a reusable skill covering safe read/write helpers and explicit Result handling."}}
 "#;
 
-        let ParsedEvents { events, malformed_count } = parse_session_events(payload);
+        let ParsedEvents {
+            events,
+            malformed_count,
+        } = parse_session_events(payload);
 
         assert_eq!(malformed_count, 0);
         assert_eq!(events.len(), 2);
 
         assert!(
             matches!(&events[0], SessionEvent::UserMessage { content, .. } if content.contains("Rust file I/O")),
-            "first event must be UserMessage with 'Rust file I/O'; got {:?}", events[0]
+            "first event must be UserMessage with 'Rust file I/O'; got {:?}",
+            events[0]
         );
         assert!(
             matches!(&events[1], SessionEvent::AssistantMessage { content, .. } if content.contains("reusable skill")),
-            "second event must be AssistantMessage with 'reusable skill'; got {:?}", events[1]
+            "second event must be AssistantMessage with 'reusable skill'; got {:?}",
+            events[1]
         );
 
         // Indices must be 0-based source-line order
@@ -852,8 +914,13 @@ mod tests {
 
         // There should be at least one UserMessage from the human text turn.
         // (Line 0 is the fixture metadata header → Metadata event; user text is line 1.)
-        let user_msg = events.iter().find(|e| matches!(e, SessionEvent::UserMessage { .. }));
-        assert!(user_msg.is_some(), "real fixture must produce at least one UserMessage");
+        let user_msg = events
+            .iter()
+            .find(|e| matches!(e, SessionEvent::UserMessage { .. }));
+        assert!(
+            user_msg.is_some(),
+            "real fixture must produce at least one UserMessage"
+        );
     }
 
     /// AC3 — flat_lines() derived from events is byte-compatible with the legacy parse path.
@@ -889,8 +956,7 @@ mod tests {
 
         // The two transcripts must produce identical flat entries (order + content).
         assert_eq!(
-            legacy_transcript.entries,
-            events_transcript.entries,
+            legacy_transcript.entries, events_transcript.entries,
             "events_to_transcript entries must be byte-identical to legacy parse entries"
         );
     }
@@ -899,7 +965,10 @@ mod tests {
     #[test]
     fn malformed_and_foreign_lines_are_counted_and_mapped_to_placeholder() {
         let payload = read_fixture("claude-code-session-edge-cases.jsonl");
-        let ParsedEvents { events, malformed_count } = parse_session_events(&payload);
+        let ParsedEvents {
+            events,
+            malformed_count,
+        } = parse_session_events(&payload);
 
         // The malformed JSON line must be counted
         assert_eq!(
@@ -933,9 +1002,9 @@ mod tests {
         );
 
         // The foreign/unknown tool_use must still produce a ToolCall (not be dropped)
-        let unknown_tool_call = events.iter().find(|e| {
-            matches!(e, SessionEvent::ToolCall { name, .. } if name == "UnknownFutureTool")
-        });
+        let unknown_tool_call = events.iter().find(
+            |e| matches!(e, SessionEvent::ToolCall { name, .. } if name == "UnknownFutureTool"),
+        );
         assert!(
             unknown_tool_call.is_some(),
             "unknown tool_use must produce a ToolCall (forward-compatibility)"
@@ -958,8 +1027,15 @@ mod tests {
             malformed_count,
         } = parse_session_events(payload);
 
-        assert_eq!(malformed_count, 0, "well-formed JSON lines must not be counted malformed");
-        assert_eq!(events.len(), 2, "both turns must produce events; got {events:#?}");
+        assert_eq!(
+            malformed_count, 0,
+            "well-formed JSON lines must not be counted malformed"
+        );
+        assert_eq!(
+            events.len(),
+            2,
+            "both turns must produce events; got {events:#?}"
+        );
         assert!(
             matches!(&events[0], SessionEvent::UserMessage { content, .. } if content.contains("WouldBlock")),
             "first bare line must be a UserMessage with its content, not Metadata; got {:#?}",
@@ -972,7 +1048,9 @@ mod tests {
         );
         // Critically: NONE of these conversational lines may be dropped to Metadata.
         assert!(
-            !events.iter().any(|e| matches!(e, SessionEvent::Metadata { .. })),
+            !events
+                .iter()
+                .any(|e| matches!(e, SessionEvent::Metadata { .. })),
             "bare speaker/content lines must never be classified as non-conversational Metadata"
         );
     }
@@ -992,10 +1070,7 @@ mod tests {
             super::extract_exit_code_from_output("normal output without exit code"),
             None
         );
-        assert_eq!(
-            super::extract_exit_code_from_output(""),
-            None
-        );
+        assert_eq!(super::extract_exit_code_from_output(""), None);
     }
 
     /// Verifies that tool_use_id correlates between FileEdit and ToolCall for the same edit.
@@ -1005,14 +1080,35 @@ mod tests {
         let ParsedEvents { events, .. } = parse_session_events(payload);
 
         // Should produce a FileEdit and a ToolCall, both with the same tool_use_id
-        let file_edit = events.iter().find(|e| matches!(e, SessionEvent::FileEdit { .. }));
-        let tool_call = events.iter().find(|e| matches!(e, SessionEvent::ToolCall { name, .. } if name == "Write"));
+        let file_edit = events
+            .iter()
+            .find(|e| matches!(e, SessionEvent::FileEdit { .. }));
+        let tool_call = events
+            .iter()
+            .find(|e| matches!(e, SessionEvent::ToolCall { name, .. } if name == "Write"));
 
-        assert!(file_edit.is_some(), "Write tool_use must produce a FileEdit");
-        assert!(tool_call.is_some(), "Write tool_use must also produce a ToolCall");
+        assert!(
+            file_edit.is_some(),
+            "Write tool_use must produce a FileEdit"
+        );
+        assert!(
+            tool_call.is_some(),
+            "Write tool_use must also produce a ToolCall"
+        );
 
-        if let (Some(SessionEvent::FileEdit { tool_use_id: fe_id, .. }), Some(SessionEvent::ToolCall { tool_use_id: tc_id, .. })) = (file_edit, tool_call) {
-            assert_eq!(fe_id, tc_id, "FileEdit and ToolCall must share the same tool_use_id");
+        if let (
+            Some(SessionEvent::FileEdit {
+                tool_use_id: fe_id, ..
+            }),
+            Some(SessionEvent::ToolCall {
+                tool_use_id: tc_id, ..
+            }),
+        ) = (file_edit, tool_call)
+        {
+            assert_eq!(
+                fe_id, tc_id,
+                "FileEdit and ToolCall must share the same tool_use_id"
+            );
         }
     }
 }

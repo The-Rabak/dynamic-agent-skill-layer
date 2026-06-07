@@ -124,9 +124,11 @@ pub async fn wait_for_health(timeout: Duration) -> Result<(), String> {
 
     loop {
         if let Ok((code, body)) = client.health().await
-            && code == 200 && body.get("healthy") == Some(&serde_json::Value::Bool(true)) {
-                return Ok(());
-            }
+            && code == 200
+            && body.get("healthy") == Some(&serde_json::Value::Bool(true))
+        {
+            return Ok(());
+        }
         if std::time::Instant::now() >= deadline {
             return Err(format!(
                 "mcp-server did not become healthy within {}s",

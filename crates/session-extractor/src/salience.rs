@@ -757,11 +757,15 @@ mod tests {
             .flat_map(|ep| ep.event_indices.iter().copied())
             .collect();
         assert!(
-            fix_ep_1_indices.iter().all(|idx| kept_indices.contains(idx)),
+            fix_ep_1_indices
+                .iter()
+                .all(|idx| kept_indices.contains(idx)),
             "all events of fix episode 1 must be in the kept set"
         );
         assert!(
-            fix_ep_2_indices.iter().all(|idx| kept_indices.contains(idx)),
+            fix_ep_2_indices
+                .iter()
+                .all(|idx| kept_indices.contains(idx)),
             "all events of fix episode 2 must be in the kept set"
         );
 
@@ -807,20 +811,14 @@ mod tests {
         let result = gate_episodes(&episodes, &all_events, &aggressive_config);
 
         // The preference episode (index 0) must be kept.
-        let pref_kept = result
-            .kept
-            .iter()
-            .any(|ep| ep.event_indices.contains(&0));
+        let pref_kept = result.kept.iter().any(|ep| ep.event_indices.contains(&0));
         assert!(
             pref_kept,
             "episode with stated preference must NEVER be gated, even at TopK(0)"
         );
 
         // The fix episode (index 1) must be kept.
-        let fix_kept = result
-            .kept
-            .iter()
-            .any(|ep| ep.event_indices.contains(&10));
+        let fix_kept = result.kept.iter().any(|ep| ep.event_indices.contains(&10));
         assert!(
             fix_kept,
             "episode with resolved error arc must NEVER be gated, even at TopK(0)"
@@ -834,8 +832,7 @@ mod tests {
             result.gated
         );
         assert_eq!(
-            result.gated[0].episode_index,
-            2,
+            result.gated[0].episode_index, 2,
             "the gated episode must be the read-only one (index 2)"
         );
     }
@@ -906,11 +903,7 @@ mod tests {
             total_episodes,
             "gate OFF must keep all episodes"
         );
-        assert_eq!(
-            result_off.gated.len(),
-            0,
-            "gate OFF must gate no episodes"
-        );
+        assert_eq!(result_off.gated.len(), 0, "gate OFF must gate no episodes");
 
         // Gate ON: threshold above 0.0 but below the file-edit score (0.30) so read-only
         // episodes (score=0.0) are gated while the file-edit episode (score=0.30) and

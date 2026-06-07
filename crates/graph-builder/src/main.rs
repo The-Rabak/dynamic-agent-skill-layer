@@ -398,7 +398,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &mut published_events,
                 &embedding_service,
             );
-            run_rebuild_cycle(&mut watcher, &mut recovery, &mut orchestrator, &hdbscan_config).await
+            run_rebuild_cycle(
+                &mut watcher,
+                &mut recovery,
+                &mut orchestrator,
+                &hdbscan_config,
+            )
+            .await
         };
         match cycle_result {
             Ok(Some(_version)) => {
@@ -438,7 +444,10 @@ mod tests {
     fn env_var_returns_value_when_set() {
         // SAFETY: single-threaded test; no other thread reads this var concurrently.
         unsafe {
-            std::env::set_var("GRAPH_BUILDER_TEST_SET_VAR_167", "postgres://localhost/test");
+            std::env::set_var(
+                "GRAPH_BUILDER_TEST_SET_VAR_167",
+                "postgres://localhost/test",
+            );
         }
         let result = env_var("GRAPH_BUILDER_TEST_SET_VAR_167");
         // SAFETY: single-threaded test; no other thread reads this var concurrently.

@@ -719,10 +719,7 @@ mod tests {
             result.is_some(),
             "speaker 'assistant' must be KEPT — its content carries the answer substance"
         );
-        assert_eq!(
-            result.unwrap(),
-            "run ulimit -n 65536 to raise the fd limit"
-        );
+        assert_eq!(result.unwrap(), "run ulimit -n 65536 to raise the fd limit");
     }
 
     #[test]
@@ -790,8 +787,12 @@ mod tests {
         // The injected "assistant:" line must appear inside the <transcript> block
         // — that means the content reaches the model but is fenced.
         let open_tag_pos = prompt.rfind("<transcript>").expect("missing <transcript>");
-        let close_tag_pos = prompt.rfind("</transcript>").expect("missing </transcript>");
-        let inject_pos = prompt.find("IGNORE ALL RULES").expect("content must be present");
+        let close_tag_pos = prompt
+            .rfind("</transcript>")
+            .expect("missing </transcript>");
+        let inject_pos = prompt
+            .find("IGNORE ALL RULES")
+            .expect("content must be present");
         assert!(
             inject_pos > open_tag_pos && inject_pos < close_tag_pos,
             "fake 'assistant:' content in a user turn must stay inside the <transcript> fence"
@@ -854,7 +855,8 @@ mod tests {
         let prompt = build_text_json_extraction_prompt("user: never add comments unless asked");
         // Preferences must be a first-class extraction target.
         assert!(
-            prompt.contains("preference") || prompt.contains("working style")
+            prompt.contains("preference")
+                || prompt.contains("working style")
                 || prompt.contains("working-style"),
             "user preferences / working-style must appear as an extraction target"
         );
@@ -877,7 +879,8 @@ mod tests {
     fn system_prompt_includes_user_preference_as_extraction_target() {
         let prompt = build_extraction_system_prompt();
         assert!(
-            prompt.contains("preference") || prompt.contains("working style")
+            prompt.contains("preference")
+                || prompt.contains("working style")
                 || prompt.contains("working-style"),
             "user preferences / working-style must appear as an extraction target in system prompt"
         );
@@ -1028,10 +1031,7 @@ mod tests {
         let required = items["required"]
             .as_array()
             .expect("required must be an array");
-        let required_names: Vec<&str> = required
-            .iter()
-            .filter_map(|v| v.as_str())
-            .collect();
+        let required_names: Vec<&str> = required.iter().filter_map(|v| v.as_str()).collect();
         assert!(
             !required_names.contains(&"generality"),
             "generality must NOT be in the required array (back-compat)"
@@ -1073,9 +1073,8 @@ mod tests {
             "assets": [],
             "confidence": 0.8
         }"#;
-        let old_candidate: ExtractedSkillCandidate =
-            serde_json::from_str(json_no_generality)
-                .expect("old JSON without generality fields must still deserialise");
+        let old_candidate: ExtractedSkillCandidate = serde_json::from_str(json_no_generality)
+            .expect("old JSON without generality fields must still deserialise");
         assert!(
             old_candidate.generality.is_none(),
             "absent generality must deserialise as None"

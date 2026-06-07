@@ -107,12 +107,22 @@ impl LabeledSkill {
     /// parse the ranked skill ids back out of `additional_context`. Procedures
     /// and conventions are emitted under the headings the extractor recognises.
     pub fn skill_md(&self, heading: &str) -> String {
-        let mut md = format!("# {heading}\ntags: {}\n\n{}\n", self.tags.join(", "), self.description);
+        let mut md = format!(
+            "# {heading}\ntags: {}\n\n{}\n",
+            self.tags.join(", "),
+            self.description
+        );
 
-        let procedures: Vec<&LabeledSubunit> =
-            self.subunits.iter().filter(|s| s.kind == "procedure").collect();
-        let conventions: Vec<&LabeledSubunit> =
-            self.subunits.iter().filter(|s| s.kind != "procedure").collect();
+        let procedures: Vec<&LabeledSubunit> = self
+            .subunits
+            .iter()
+            .filter(|s| s.kind == "procedure")
+            .collect();
+        let conventions: Vec<&LabeledSubunit> = self
+            .subunits
+            .iter()
+            .filter(|s| s.kind != "procedure")
+            .collect();
 
         if !procedures.is_empty() {
             md.push_str("\n## Procedures\n");
@@ -132,7 +142,11 @@ impl LabeledSkill {
     /// The full searchable text a keyword matcher would index for this skill:
     /// id words + description + tags + every subunit's title and content.
     fn searchable_text(&self) -> String {
-        let mut parts = vec![self.id.replace('-', " "), self.description.clone(), self.tags.join(" ")];
+        let mut parts = vec![
+            self.id.replace('-', " "),
+            self.description.clone(),
+            self.tags.join(" "),
+        ];
         for s in &self.subunits {
             parts.push(s.title.clone());
             parts.push(s.content.clone());
@@ -193,7 +207,12 @@ pub fn lexical_baseline_ranking(query_text: &str, skills: &[LabeledSkill]) -> Ve
     let query_tokens = content_tokens(query_text);
     let mut scored: Vec<(String, f64)> = skills
         .iter()
-        .map(|s| (s.id.clone(), token_overlap(&query_tokens, &content_tokens(&s.searchable_text()))))
+        .map(|s| {
+            (
+                s.id.clone(),
+                token_overlap(&query_tokens, &content_tokens(&s.searchable_text())),
+            )
+        })
         .collect();
 
     scored.sort_by(|a, b| b.1.total_cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
@@ -212,7 +231,11 @@ mod tests {
         // Every relevant id named by a query must correspond to a real skill.
         for q in &corpus.queries {
             for r in &q.relevant {
-                assert!(ids.contains(r), "query {} references unknown skill {r}", q.id);
+                assert!(
+                    ids.contains(r),
+                    "query {} references unknown skill {r}",
+                    q.id
+                );
             }
             assert!(
                 matches!(q.kind.as_str(), "lexical" | "disjoint" | "negative"),
@@ -221,9 +244,18 @@ mod tests {
                 q.kind
             );
             if q.kind == "negative" {
-                assert!(q.relevant.is_empty(), "negative query {} must have no relevant", q.id);
+                assert!(
+                    q.relevant.is_empty(),
+                    "negative query {} must have no relevant",
+                    q.id
+                );
             } else {
-                assert!(!q.relevant.is_empty(), "{} query {} needs a relevant skill", q.kind, q.id);
+                assert!(
+                    !q.relevant.is_empty(),
+                    "{} query {} needs a relevant skill",
+                    q.kind,
+                    q.id
+                );
             }
         }
 
@@ -246,10 +278,17 @@ mod tests {
     #[test]
     fn lexical_baseline_ranks_lexical_target_high() {
         let corpus = load();
-        let q = corpus.queries.iter().find(|q| q.id == "q-lex-file").unwrap();
+        let q = corpus
+            .queries
+            .iter()
+            .find(|q| q.id == "q-lex-file")
+            .unwrap();
         let ranking = lexical_baseline_ranking(&q.text, &corpus.skills);
         // A heavily-overlapping query should put its target at rank 1.
-        assert_eq!(ranking.first().map(String::as_str), Some("rust-async-file-io"));
+        assert_eq!(
+            ranking.first().map(String::as_str),
+            Some("rust-async-file-io")
+        );
     }
 
     /// Reciprocal rank of `target` in a ranking (0 if absent).

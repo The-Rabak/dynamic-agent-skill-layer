@@ -207,8 +207,7 @@ async fn drop_sandbox(res: SandboxResources) {
                 .await;
             let Ok((next, keys)) = scan else { break };
             if !keys.is_empty() {
-                let _: Result<i64, _> =
-                    redis::cmd("DEL").arg(&keys).query_async(&mut conn).await;
+                let _: Result<i64, _> = redis::cmd("DEL").arg(&keys).query_async(&mut conn).await;
             }
             cursor = next;
             if cursor == 0 {
@@ -298,7 +297,8 @@ pub(crate) async fn isolated_namespace() -> NamespaceGuard {
 /// `configure_scope_env_with_global_path`, e.g. a sandbox skills dir).
 #[allow(dead_code)]
 pub(crate) async fn isolated_namespace_with_global_path(global_scope: PathBuf) -> NamespaceGuard {
-    let base_db_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set for isolated tests");
+    let base_db_url =
+        env::var("DATABASE_URL").expect("DATABASE_URL must be set for isolated tests");
     let qdrant_url = env::var("QDRANT_URL").expect("QDRANT_URL must be set for isolated tests");
     let redis_url = env::var("REDIS_URL").expect("REDIS_URL must be set for isolated tests");
 
@@ -399,8 +399,9 @@ async fn sweep_stale_namespaces(
 ) {
     use std::time::Duration;
     const OP_TIMEOUT: Duration = Duration::from_secs(5);
-    let is_stale =
-        |name: &str| parse_runid(name).is_some_and(|id| now_nanos.saturating_sub(id) > STALE_SANDBOX_NANOS);
+    let is_stale = |name: &str| {
+        parse_runid(name).is_some_and(|id| now_nanos.saturating_sub(id) > STALE_SANDBOX_NANOS)
+    };
 
     // Postgres: drop stale `test_ns_*` schemas.
     if let Ok(Ok(admin)) =
@@ -436,7 +437,10 @@ async fn sweep_stale_namespaces(
                 .filter_map(|c| c.get("name").and_then(|n| n.as_str()))
                 .filter(|n| n.starts_with("skills_ns_") && is_stale(n))
             {
-                let _ = client.delete(format!("{base}/collections/{name}")).send().await;
+                let _ = client
+                    .delete(format!("{base}/collections/{name}"))
+                    .send()
+                    .await;
             }
         }
     }
@@ -510,8 +514,14 @@ fn scope_env_guard_restores_previous_values() {
 #[test]
 fn parse_runid_extracts_id_from_every_sandbox_object_shape() {
     // Each object name the namespace guard mints embeds the same `<runid>`.
-    assert_eq!(parse_runid("test_ns_1780641703958278014"), Some(1780641703958278014));
-    assert_eq!(parse_runid("skills_ns_1780641703958278014"), Some(1780641703958278014));
+    assert_eq!(
+        parse_runid("test_ns_1780641703958278014"),
+        Some(1780641703958278014)
+    );
+    assert_eq!(
+        parse_runid("skills_ns_1780641703958278014"),
+        Some(1780641703958278014)
+    );
     assert_eq!(
         parse_runid("skill-layer-events-ns-1780641703958278014"),
         Some(1780641703958278014)

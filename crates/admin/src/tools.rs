@@ -10,10 +10,7 @@ use async_trait::async_trait;
 use domain::{EmbeddingService, HdbscanConfig, ScopeType};
 use graph_builder::{
     ScopeRoot,
-    graph::{
-        build::build_skills_from_scope_roots,
-        communities::assign_communities,
-    },
+    graph::{build::build_skills_from_scope_roots, communities::assign_communities},
 };
 use infrastructure::{
     LiveGraphCommunityRecord, LiveGraphSkillRecord, LiveGraphSnapshotMutation,

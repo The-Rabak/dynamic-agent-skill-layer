@@ -326,12 +326,20 @@ mod tests {
         let left = snapshot(
             "oauth-auth",
             "Authenticate users via OAuth2 authorization code flow",
-            vec!["redirect to provider", "exchange code for token", "verify token claims"],
+            vec![
+                "redirect to provider",
+                "exchange code for token",
+                "verify token claims",
+            ],
         );
         let right = snapshot(
             "ssh-auth",
             "Authenticate SSH sessions using public-key cryptography",
-            vec!["load authorized_keys", "verify key signature", "start session"],
+            vec![
+                "load authorized_keys",
+                "verify key signature",
+                "start session",
+            ],
         );
 
         let result = verifier.are_equivalent(&left, &right).await.unwrap();

@@ -183,7 +183,8 @@ impl McpServerApp {
         let global_resolver: Arc<dyn ScopeResolver> = Arc::new(EnvPathGlobalResolver::default());
         let scope_resolver = DualScopeResolver::new(project_resolver, global_resolver);
 
-        let embedding_breaker = RetrievalOrchestrator::<E>::build_embedding_circuit_breaker_from_env();
+        let embedding_breaker =
+            RetrievalOrchestrator::<E>::build_embedding_circuit_breaker_from_env();
         let retriever = RetrievalOrchestrator::new_dual_scope(
             embedding_service,
             graph,
@@ -636,7 +637,10 @@ async fn build_qdrant_adapter()
             "Qdrant unreachable at boot — starting in write-side-degraded mode (read path \
              unaffected, Option A). Outbox draining resumes when Qdrant returns."
         );
-    } else if let Err(error) = qdrant_adapter.ensure_collection(&collection_name, 768).await {
+    } else if let Err(error) = qdrant_adapter
+        .ensure_collection(&collection_name, 768)
+        .await
+    {
         warn!(
             %error,
             collection = %collection_name,
@@ -656,9 +660,9 @@ fn build_embedding_service()
     // (DS-007). Default raised to 16 and made tunable via `EMBED_MAX_CONCURRENCY`;
     // pair with `OLLAMA_NUM_PARALLEL` on the Ollama server for real parallelism.
     let max_concurrency: usize = match std::env::var("EMBED_MAX_CONCURRENCY") {
-        Ok(raw) => raw.parse().map_err(|_| {
-            format!("EMBED_MAX_CONCURRENCY is set but not a valid usize: {raw:?}")
-        })?,
+        Ok(raw) => raw
+            .parse()
+            .map_err(|_| format!("EMBED_MAX_CONCURRENCY is set but not a valid usize: {raw:?}"))?,
         Err(_) => 16,
     };
     if max_concurrency == 0 {
