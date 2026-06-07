@@ -132,6 +132,16 @@ if [[ "${SKIP_INFRA}" -eq 0 ]]; then
       echo "==> [DIAGNOSTIC] Extraction-content-quality (real Ollama extraction → .pending must CAPTURE the taught procedure)"
       cargo test -p mcp-server --features test-utils --test test_extraction_quality -- --ignored \
         || echo "    [DIAGNOSTIC] extraction-quality reported failures — see tests/e2e/reports/ (non-gating)"
+
+      # GATING: 234-corpus retrieval quality sweep (#210).
+      # This test FAILS the suite if held-out MRR < 0.80, nDCG@3 < 0.80, or
+      # no_match precision < 0.90.  The committed target is FROZEN; do NOT lower
+      # it to force green.  If the target cannot be met, document the gap in
+      # docs/assessments/ and address the next architectural bet.
+      # Requires: live 234-corpus in skill_layer_test + Ollama + claude CLI.
+      echo "==> [GATING] Retrieval quality 234-corpus sweep (MRR/nDCG@3 >= 0.80, no_match precision >= 0.90)"
+      cargo test -p mcp-server --features test-utils \
+        --test test_retrieval_quality_234_sweep -- retrieval_quality_234_corpus_sweep --ignored
     fi
 
     echo "==> Tearing down service containers"
