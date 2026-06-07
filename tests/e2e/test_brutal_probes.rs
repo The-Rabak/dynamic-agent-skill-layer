@@ -48,8 +48,16 @@ fn slug(prefix: &str) -> String {
 /// A project-scoped SKILL.md whose H1 the compiler renders as `## Skill: <slug>`.
 fn project_skill_md(name: &str) -> String {
     format!(
-        "# {name}\n\
-         tags: project, scope, deployment\n\
+        "---\n\
+         name: {name}\n\
+         description: A project-scoped skill seeded into the container's project skills volume to prove that compile_context resolves project scope to ok in the deployed musl container (issue #154).\n\
+         tags:\n\
+         - project\n\
+         - scope\n\
+         - deployment\n\
+         ---\n\
+         \n\
+         # {name}\n\
          \n\
          A project-scoped skill seeded into the container's project skills volume \
          to prove that compile_context resolves project scope to ok in the deployed \

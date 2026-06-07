@@ -240,8 +240,8 @@ async fn extract_session_returns_processing_and_writes_pending_draft() {
     assert!(pending_path.exists(), "pending draft should be written");
     let pending_body = std::fs::read_to_string(&pending_path).expect("pending file should read");
     assert!(
-        pending_body.contains("suggested_tags: [\"rust\", \"io\"]")
-            || pending_body.contains("suggested_tags:\n- rust\n- io"),
+        pending_body.contains("tags: [\"rust\", \"io\"]")
+            || pending_body.contains("tags:\n- rust\n- io"),
         "pending frontmatter should retain extracted tags, got:\n{pending_body}"
     );
     assert!(pending_body.contains("origin: session_extraction"));

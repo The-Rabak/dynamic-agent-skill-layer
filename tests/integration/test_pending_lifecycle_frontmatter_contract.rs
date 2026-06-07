@@ -168,7 +168,7 @@ fn pending_frontmatter_serializes_multiline_and_special_characters_safely() {
     );
     assert_eq!(frontmatter["source_provider"], "claude");
     assert_eq!(
-        frontmatter["suggested_tags"],
+        frontmatter["tags"],
         Value::Sequence(vec![
             Value::String("security".to_owned()),
             Value::String("quoted \"tag\"".to_owned()),

@@ -102,7 +102,7 @@ async fn watcher_churn_and_reconciliation_preserve_contracts_under_heavy_file_ac
         fs::write(
             &pending_path,
             format!(
-                "# stress-skill-{i:02}\n\ntags: stress\n\npending phase for churn scenario {i:02}\n"
+                "---\nname: stress-skill-{i:02}\ndescription: pending phase for churn scenario {i:02}\ntags:\n- stress\n---\n\n# stress-skill-{i:02}\n\npending phase for churn scenario {i:02}\n"
             ),
         )
         .expect("pending skill should be writable");
@@ -126,7 +126,7 @@ async fn watcher_churn_and_reconciliation_preserve_contracts_under_heavy_file_ac
             fs::write(
                 &active_path,
                 format!(
-                    "# stress-skill-{i:02}\n\ntags: stress\n\nupdated content for churn scenario {i:02}\n"
+                    "---\nname: stress-skill-{i:02}\ndescription: updated content for churn scenario {i:02}\ntags:\n- stress\n---\n\n# stress-skill-{i:02}\n\nupdated content for churn scenario {i:02}\n"
                 ),
             )
             .expect("active skill should be writable");
@@ -221,7 +221,7 @@ async fn watcher_churn_graph_rebuild_correctness_with_live_ollama() {
         fs::write(
             &pending_path,
             format!(
-                "# stress-skill-{i:02}\n\ntags: stress\n\npending phase for churn scenario {i:02}\n"
+                "---\nname: stress-skill-{i:02}\ndescription: pending phase for churn scenario {i:02}\ntags:\n- stress\n---\n\n# stress-skill-{i:02}\n\npending phase for churn scenario {i:02}\n"
             ),
         )
         .expect("pending skill should be writable");
@@ -245,7 +245,7 @@ async fn watcher_churn_graph_rebuild_correctness_with_live_ollama() {
             fs::write(
                 &active_path,
                 format!(
-                    "# stress-skill-{i:02}\n\ntags: stress\n\nupdated content for churn scenario {i:02}\n"
+                    "---\nname: stress-skill-{i:02}\ndescription: updated content for churn scenario {i:02}\ntags:\n- stress\n---\n\n# stress-skill-{i:02}\n\nupdated content for churn scenario {i:02}\n"
                 ),
             )
             .expect("active skill should be writable");
@@ -403,7 +403,7 @@ async fn watcher_churn_and_reconciliation_converges_to_correct_graph_state_under
         fs::write(
             &pending_path,
             format!(
-                "# stress-skill-{i:02}\n\ntags: stress\n\npending phase for churn scenario {i:02}\n"
+                "---\nname: stress-skill-{i:02}\ndescription: pending phase for churn scenario {i:02}\ntags:\n- stress\n---\n\n# stress-skill-{i:02}\n\npending phase for churn scenario {i:02}\n"
             ),
         )
         .expect("pending skill should be writable");
@@ -427,7 +427,7 @@ async fn watcher_churn_and_reconciliation_converges_to_correct_graph_state_under
             fs::write(
                 &active_path,
                 format!(
-                    "# stress-skill-{i:02}\n\ntags: stress\n\nupdated content for churn scenario {i:02}\n"
+                    "---\nname: stress-skill-{i:02}\ndescription: updated content for churn scenario {i:02}\ntags:\n- stress\n---\n\n# stress-skill-{i:02}\n\nupdated content for churn scenario {i:02}\n"
                 ),
             )
             .expect("active skill should be writable");

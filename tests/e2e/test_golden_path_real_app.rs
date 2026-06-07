@@ -57,8 +57,16 @@ fn unique_slug() -> String {
 /// Builds the SKILL.md content for the golden-path skill.
 fn golden_skill_md(skill_name: &str) -> String {
     format!(
-        "# {skill_name}\n\
-         tags: golden-path, harness, e2e\n\
+        "---\n\
+         name: {skill_name}\n\
+         description: A harness-seeded skill for the golden-path E2E test. This skill demonstrates correct sidecar ingestion, graph rebuild, and retrieval for the harness tracer bullet.\n\
+         tags:\n\
+         - golden-path\n\
+         - harness\n\
+         - e2e\n\
+         ---\n\
+         \n\
+         # {skill_name}\n\
          \n\
          A harness-seeded skill for the golden-path E2E test. \
          This skill demonstrates correct sidecar ingestion, \

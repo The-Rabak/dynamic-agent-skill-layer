@@ -47,6 +47,11 @@ name = "test_maintenance_e2e"
 path = "../../tests/e2e/test_maintenance_e2e.rs"
 required-features = ["test-utils"]
 
+[[test]]
+name = "test_skill_md_roundtrip"
+path = "../../tests/integration/test_skill_md_roundtrip.rs"
+required-features = ["test-utils"]
+
 [features]
 test-utils = ["graph-builder/test-utils", "session-extractor/test-utils"]
 

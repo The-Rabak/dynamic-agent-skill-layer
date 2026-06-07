@@ -107,10 +107,19 @@ impl LabeledSkill {
     /// parse the ranked skill ids back out of `additional_context`. Procedures
     /// and conventions are emitted under the headings the extractor recognises.
     pub fn skill_md(&self, heading: &str) -> String {
+        // Unified SKILL.md format: YAML frontmatter (authoritative name /
+        // description / tags) followed by the markdown body. The frontmatter is
+        // what the graph-builder reader treats as the source of truth — emitting
+        // it here (rather than a body-only file) means the quality harness
+        // exercises the real on-disk format the extraction writer produces.
+        let tags_yaml = self
+            .tags
+            .iter()
+            .map(|tag| format!("- {tag}\n"))
+            .collect::<String>();
         let mut md = format!(
-            "# {heading}\ntags: {}\n\n{}\n",
-            self.tags.join(", "),
-            self.description
+            "---\nname: {heading}\ndescription: {}\ntags:\n{tags_yaml}---\n\n# {heading}\n\n{}\n",
+            self.description, self.description
         );
 
         let procedures: Vec<&LabeledSubunit> = self

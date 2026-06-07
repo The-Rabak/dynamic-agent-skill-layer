@@ -1060,6 +1060,9 @@ impl PromotionError {
 struct PromotionProposalFrontmatter<'a> {
     name: &'a str,
     description: &'a str,
+    /// Canonical tag list (single source of truth). The markdown body no longer
+    /// carries a `tags:` line — the graph-builder reader reads tags here.
+    tags: Vec<String>,
     origin: &'a str,
     to_scope: &'a str,
     from_scope: &'a str,
@@ -1080,9 +1083,12 @@ fn render_pending_markdown(
         PromotionEvidence::Recurrence { .. } => "recurrence",
     };
 
+    let mut sorted_tags = snapshot.tags.clone();
+    sorted_tags.sort_unstable();
     let frontmatter = PromotionProposalFrontmatter {
         name: &snapshot.name,
         description: &snapshot.description,
+        tags: sorted_tags,
         origin: "promotion_proposal",
         to_scope: "global",
         from_scope: snapshot.scope.as_str(),
@@ -1112,12 +1118,8 @@ fn render_pending_markdown(
     body.push_str(&snapshot.description);
     body.push_str("\n\n");
 
-    if !snapshot.tags.is_empty() {
-        let mut sorted_tags = snapshot.tags.clone();
-        sorted_tags.sort_unstable();
-        body.push_str(&format!("tags: {}\n\n", sorted_tags.join(", ")));
-    }
-
+    // Tags live in the frontmatter (single source of truth); the body carries
+    // only the title, description, and subunit sections.
     if !snapshot.subunits.is_empty() {
         body.push_str("## Procedures\n");
         for subunit in &snapshot.subunits {

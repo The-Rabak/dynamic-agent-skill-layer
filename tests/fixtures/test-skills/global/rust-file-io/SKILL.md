@@ -1,5 +1,16 @@
+---
+name: rust-file-io
+description: Asynchronous and synchronous file I/O patterns for Rust applications, covering buffered reads, streaming writes, atomic file replacement, temporary file management, and cross-platform path handling.
+tags:
+- rust
+- file
+- io
+- tokio
+- error-handling
+- performance
+---
+
 # rust-file-io
-tags: rust, file, io, tokio, error-handling, performance
 
 Asynchronous and synchronous file I/O patterns for Rust applications, covering buffered reads, streaming writes, atomic file replacement, temporary file management, and cross-platform path handling.
 

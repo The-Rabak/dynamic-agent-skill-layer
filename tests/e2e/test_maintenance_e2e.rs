@@ -38,9 +38,19 @@ fn write_skill(
 ) {
     let skill_dir = root.join(dir);
     fs::create_dir_all(&skill_dir).expect("skill dir should exist");
+    // Unified SKILL.md format: YAML frontmatter (authoritative metadata) + body.
+    let tags_yaml: String = tags
+        .split(',')
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+        .map(|t| format!("- {t}\n"))
+        .collect();
     fs::write(
         skill_dir.join("SKILL.md"),
-        format!("# {name}\n\ntags: {tags}\n\n{desc}\n\n## Procedures\n{procedures}\n"),
+        format!(
+            "---\nname: {name}\ndescription: {desc}\ntags:\n{tags_yaml}---\n\n\
+             # {name}\n\n{desc}\n\n## Procedures\n{procedures}\n"
+        ),
     )
     .expect("skill file should be writable");
 }

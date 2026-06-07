@@ -426,7 +426,7 @@ fn render_pending_markdown(
     let frontmatter = PendingDraftFrontmatter {
         name: candidate.name.as_str(),
         description: candidate.description.as_str(),
-        suggested_tags: &candidate.tags,
+        tags: &candidate.tags,
         origin: "session_extraction",
         source_session_id,
         source_provider: provider_name,
@@ -437,12 +437,11 @@ fn render_pending_markdown(
         generality_rationale,
     };
     let frontmatter_yaml = serialize_frontmatter(&frontmatter)?;
-    let tags_line = if candidate.tags.is_empty() {
-        String::new()
-    } else {
-        format!("tags: {}\n", candidate.tags.join(", "))
-    };
 
+    // Unified SKILL.md format: the YAML frontmatter is the single source of
+    // truth for name/description/tags. The body carries the `# title`, the
+    // human-readable description prose, and the `##` subunit sections — it does
+    // NOT repeat a `tags:` line (that duplication is what drifted before #224).
     let mut markdown = String::new();
     markdown.push_str("---\n");
     markdown.push_str(&frontmatter_yaml);
@@ -450,9 +449,7 @@ fn render_pending_markdown(
         markdown.push('\n');
     }
     markdown.push_str("---\n\n");
-    markdown.push_str(&format!("# {}\n", candidate.name));
-    markdown.push_str(&tags_line);
-    markdown.push('\n');
+    markdown.push_str(&format!("# {}\n\n", candidate.name));
     markdown.push_str(&candidate.description);
     markdown.push_str("\n\n");
 
@@ -473,7 +470,10 @@ fn render_pending_markdown(
 struct PendingDraftFrontmatter<'a> {
     name: &'a str,
     description: &'a str,
-    suggested_tags: &'a [String],
+    /// Canonical tag list. This is the single source of truth for tags in the
+    /// unified SKILL.md format — the markdown body no longer carries a `tags:`
+    /// line. Read back by the graph-builder reader's frontmatter parse.
+    tags: &'a [String],
     origin: &'a str,
     source_session_id: &'a str,
     source_provider: &'a str,

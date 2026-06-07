@@ -90,7 +90,7 @@ async fn watcher_detects_pending_approval_and_rebuild_respects_invalidation_orde
     .expect("approved skill directory should be creatable");
     fs::write(
         &pending_path,
-        "# approved-skill\n\ntags: approved\n\nCreated via pending approval.\n",
+        "---\nname: approved-skill\ndescription: Created via pending approval.\ntags:\n- approved\n---\n\n# approved-skill\n\nCreated via pending approval.\n",
     )
     .expect("pending skill should be writable");
     let _ = watcher

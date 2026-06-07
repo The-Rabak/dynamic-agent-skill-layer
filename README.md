@@ -89,8 +89,18 @@ Two loops run continuously around your skill files: a **read loop** that injects
 Skills are plain Markdown — portable across projects and harnesses with zero conversion:
 
 ```markdown
+---
+name: git-conventional-commit-workflow
+description: Conventional commit format and trunk-based git workflow for incremental feature work.
+tags:
+- git
+- commit
+- workflow
+- branching
+- conventional
+---
+
 # git-conventional-commit-workflow
-tags: git, commit, workflow, branching, conventional
 
 Conventional commit format and trunk-based git workflow for incremental feature work.
 
@@ -100,7 +110,7 @@ Conventional commit format and trunk-based git workflow for incremental feature 
 - [convention] Create feature branches from main: prefix feat/ fix/ docs/; rebase before merge.
 ```
 
-The H1 is the skill name, `tags:` drives lexical recall, the prose line is the summary that gets embedded (ℓ₁), and each `## Procedures` bullet is a retrievable subunit (ℓ₀) carrying its own evidence signal.
+The YAML frontmatter is the **single source of truth** for metadata: `name` is the skill name, `description` is the summary that gets embedded (ℓ₁), and `tags` drive lexical recall and community assignment. The markdown body carries the human-readable title, the description prose, and the `## Procedures` / `## Conventions` bullets — each bullet is a retrievable subunit (ℓ₀) carrying its own evidence signal. (Body-only files without frontmatter are still read for backward compatibility, with the H1 as name and the first prose line as description.)
 
 ---
 

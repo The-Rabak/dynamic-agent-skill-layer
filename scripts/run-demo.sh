@@ -206,7 +206,8 @@ with tempfile.TemporaryDirectory() as staging:
     for fx in fixtures:
         name = fx["name"]
         description = fx.get("description", "")
-        tags = ", ".join(fx.get("tags", []))
+        tag_list = fx.get("tags", [])
+        tags_yaml = "".join(f"- {t}\n" for t in tag_list)
         subunits = fx.get("subunits", [])
 
         procedures = "\n".join(
@@ -216,9 +217,15 @@ with tempfile.TemporaryDirectory() as staging:
 
         skill_dir = os.path.join(staging, name)
         os.makedirs(skill_dir, exist_ok=True)
+        # Unified SKILL.md format: YAML frontmatter (authoritative metadata) + body.
         with open(os.path.join(skill_dir, "SKILL.md"), "w") as f:
-            f.write(f"# {name}\n")
-            f.write(f"tags: {tags}\n\n")
+            f.write("---\n")
+            f.write(f"name: {name}\n")
+            f.write(f"description: {description}\n")
+            f.write("tags:\n")
+            f.write(tags_yaml)
+            f.write("---\n\n")
+            f.write(f"# {name}\n\n")
             f.write(f"{description}\n\n")
             f.write("## Procedures\n")
             f.write(procedures + "\n")
@@ -360,7 +367,8 @@ with tempfile.TemporaryDirectory() as staging:
     for fx in fixtures:
         name = fx["name"]
         description = fx.get("description", "")
-        tags = ", ".join(fx.get("tags", []))
+        tag_list = fx.get("tags", [])
+        tags_yaml = "".join(f"- {t}\n" for t in tag_list)
         subunits = fx.get("subunits", [])
         procedures = "\n".join(
             f"- [{s.get('kind', 'procedure')}] {s.get('title', '')}: {s.get('content', '')}"
@@ -368,9 +376,15 @@ with tempfile.TemporaryDirectory() as staging:
         )
         skill_dir = os.path.join(staging, name)
         os.makedirs(skill_dir, exist_ok=True)
+        # Unified SKILL.md format: YAML frontmatter (authoritative metadata) + body.
         with open(os.path.join(skill_dir, "SKILL.md"), "w") as f:
-            f.write(f"# {name}\n")
-            f.write(f"tags: {tags}\n\n")
+            f.write("---\n")
+            f.write(f"name: {name}\n")
+            f.write(f"description: {description}\n")
+            f.write("tags:\n")
+            f.write(tags_yaml)
+            f.write("---\n\n")
+            f.write(f"# {name}\n\n")
             f.write(f"{description}\n\n")
             f.write("## Procedures\n")
             f.write(procedures + "\n")

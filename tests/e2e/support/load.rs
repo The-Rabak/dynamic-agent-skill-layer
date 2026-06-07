@@ -60,17 +60,25 @@ pub fn write_skill_files_to_sandbox(
         std::fs::create_dir_all(&skill_dir)?;
 
         let skill_path = skill_dir.join("SKILL.md");
+        // Unified SKILL.md format: YAML frontmatter (authoritative metadata) +
+        // markdown body. Mirrors what the extraction writer emits on disk.
         let content = format!(
-            "# Harness Skill {i}\n\
+            "---\n\
+             name: Harness Skill {i}\n\
+             description: Load-test fixture written by the fault-injection harness (Slice 1.3).\n\
+             tags:\n\
+             - harness\n\
+             - load-test\n\
+             ---\n\
              \n\
-             tags: harness, load-test, SKILL.md\n\
+             # Harness Skill {i}\n\
              \n\
              Load-test fixture written by the fault-injection harness (Slice 1.3).\n\
              \n\
              ## Procedures\n\
              \n\
-             1. Step one for skill {i}.\n\
-             2. Step two for skill {i}.\n"
+             - Step one for skill {i}.\n\
+             - Step two for skill {i}.\n"
         );
         std::fs::write(&skill_path, content)?;
         written.push(skill_path);

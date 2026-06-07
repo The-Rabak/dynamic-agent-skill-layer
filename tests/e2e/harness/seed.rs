@@ -5,10 +5,19 @@
 /// directly.  Instead it runs a transient `alpine:3.23.4` sidecar that mounts
 /// the same volume read-write and performs the write/rename via `docker run --rm`.
 ///
-/// # SKILL.md format
+/// # SKILL.md format (unified)
+/// YAML frontmatter is the authoritative source for name / description / tags;
+/// the markdown body carries the title, description prose, and subunit sections.
 /// ```text
+/// ---
+/// name: <name>
+/// description: <description>
+/// tags:
+/// - a
+/// - b
+/// ---
+///
 /// # <name>
-/// tags: a, b, c
 ///
 /// <description>
 ///

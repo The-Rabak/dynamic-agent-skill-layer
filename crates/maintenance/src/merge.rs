@@ -574,6 +574,7 @@ fn render_pending_markdown(
     for tag in left.tags.iter().chain(right.tags.iter()) {
         merged_tags.insert(tag.clone());
     }
+    let merged_tags: Vec<String> = merged_tags.into_iter().collect();
     let merged_subunits = left
         .subunits
         .iter()
@@ -587,6 +588,7 @@ fn render_pending_markdown(
     let frontmatter = MergeProposalFrontmatter {
         name: &merged_name,
         description: &merged_description,
+        tags: merged_tags.clone(),
         origin: "merge_proposal",
         canonical_scope: scope_to_string(&canonical_scope),
         merged_from_scopes: merged_scope_names,
@@ -611,12 +613,8 @@ fn render_pending_markdown(
     body.push_str(&format!("# {merged_name}\n\n"));
     body.push_str(&merged_description);
     body.push_str("\n\n");
-    if !merged_tags.is_empty() {
-        body.push_str(&format!(
-            "tags: {}\n\n",
-            merged_tags.into_iter().collect::<Vec<_>>().join(", ")
-        ));
-    }
+    // Tags live in the frontmatter (single source of truth); the body carries
+    // only the title, description, and subunit sections.
     body.push_str("## Procedures\n");
     for subunit in merged_subunits {
         body.push_str(&format!("- {subunit}\n"));
@@ -629,6 +627,9 @@ fn render_pending_markdown(
 struct MergeProposalFrontmatter<'a> {
     name: &'a str,
     description: &'a str,
+    /// Canonical merged tag list (single source of truth). The markdown body no
+    /// longer carries a `tags:` line — the graph-builder reader reads tags here.
+    tags: Vec<String>,
     origin: &'a str,
     canonical_scope: &'a str,
     merged_from_scopes: Vec<&'a str>,
