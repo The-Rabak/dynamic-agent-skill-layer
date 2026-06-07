@@ -173,6 +173,20 @@ impl TranscriptError {
     }
 }
 
+/// Parses a Claude Code JSONL payload into the flat [`SessionTranscript`] format.
+///
+/// Extracts only `speaker: content` pairs. Non-conversational meta lines emitted by
+/// Claude Code sessions (`{"type":"mode",...}`, `{"type":"summary",...}`,
+/// `{"type":"file-history-snapshot",...}`, tool-use/tool-result blocks, etc.) are
+/// skipped — they carry no role and no conversational content.
+///
+/// Prefer [`parse_session_events`] for the orchestrated path, which preserves rich event
+/// types (tool calls, file edits, tool results) rather than only flat speaker/content pairs.
+///
+/// The zero-conversational-entries guard is absolute: a transcript that contains NO
+/// speaker/content entries after skipping all meta lines fails loud with
+/// `"transcript contains no conversational entries"`. A genuinely empty transcript must
+/// not silently succeed.
 fn parse_claude_jsonl(
     session_id: &str,
     jsonl_payload: &str,
@@ -193,16 +207,48 @@ fn parse_claude_jsonl(
                 index + 1
             ))
         })?;
-        let speaker = extract_speaker(&value).ok_or_else(|| {
-            TranscriptError::InvalidPayload(format!("line {} is missing speaker/role", index + 1))
-        })?;
-        let content = extract_content(&value).ok_or_else(|| {
-            TranscriptError::InvalidPayload(format!("line {} is missing content text", index + 1))
-        })?;
+
+        // Skip non-conversational Claude Code session events (mode, summary,
+        // file-history-snapshot, system, tool_use/tool_result blocks, etc.).
+        // These lines have a "type" field but no speaker/role — they are valid
+        // wire format but carry no conversational content.
+        if extract_speaker(&value).is_none() {
+            let event_type = value
+                .get("type")
+                .and_then(Value::as_str)
+                .unwrap_or("<no type>");
+            debug!(
+                line = index + 1,
+                event_type,
+                "parse_claude_jsonl: skipping non-conversational meta line"
+            );
+            continue;
+        }
+
+        // extract_speaker returned Some above; re-extracting is cheap and avoids
+        // carrying a side-effecting binding across the skip guard.
+        let speaker = extract_speaker(&value)
+            .expect("speaker checked Some before this branch; extracting again cannot be None");
+
+        // Skip turns that have a speaker/role but no extractable text content.
+        // This covers tool-use-only assistant turns (e.g. a Bash call with no text block)
+        // which carry a role but no conversational prose — they add nothing to the flat
+        // transcript. The zero-entries guard below still catches empty transcripts.
+        let Some(content) = extract_content(&value) else {
+            debug!(
+                line = index + 1,
+                speaker,
+                "parse_claude_jsonl: skipping speaker turn with no extractable text content"
+            );
+            continue;
+        };
 
         entries.push(TranscriptEntry { speaker, content });
     }
 
+    // Fail loud when the transcript has no conversational content at all.
+    // This catches genuinely empty transcripts and session files that contain
+    // only metadata (e.g. a session that captured no human/assistant turns).
     if entries.is_empty() {
         return Err(TranscriptError::InvalidPayload(
             "transcript contains no conversational entries".to_owned(),
@@ -659,7 +705,7 @@ mod tests {
 
     use domain::{DomainId, SessionEvent, events_to_transcript};
 
-    use super::{ParsedEvents, TranscriptError, TranscriptLoader, parse_session_events};
+    use super::{ParsedEvents, TranscriptError, TranscriptLoader, parse_claude_jsonl, parse_session_events};
 
     static ENV_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
@@ -1109,6 +1155,94 @@ mod tests {
                 fe_id, tc_id,
                 "FileEdit and ToolCall must share the same tool_use_id"
             );
+        }
+    }
+
+    // ── parse_claude_jsonl real wire shape tests (todo #221) ──────────────────
+
+    /// Real Claude Code wire shape: `{"type":"mode",...}` meta first line, then
+    /// user + assistant conversational turns, a tool_use block, and a `{"type":"summary",...}`
+    /// trailing line. The single-shot parser must tolerate all non-conversational meta lines
+    /// and still extract the conversational entries.
+    ///
+    /// This is the exact format that broke the live drain before #221: line 1 was a
+    /// `{"type":"mode",...}` line with no speaker/role, causing `parse_claude_jsonl` to
+    /// reject the transcript with `invalid_transcript_payload: line 1 is missing speaker/role`.
+    #[test]
+    fn parse_claude_jsonl_tolerates_meta_lines_and_extracts_conversational_entries() {
+        // Reproduces the real wire shape from ~/.claude/projects/*.jsonl:
+        //   line 1: mode meta event  (no speaker/role)
+        //   line 2: user turn        (conversational)
+        //   line 3: assistant turn   (conversational)
+        //   line 4: tool_use block   (no speaker/role at top level)
+        //   line 5: summary meta     (no speaker/role)
+        let payload = concat!(
+            r#"{"type":"mode","mode":"normal","sessionId":"00000000-0000-0000-0000-000000000221"}"#,
+            "\n",
+            r#"{"type":"user","message":{"role":"user","content":"How do I make a Rust struct derive Debug?"}}"#,
+            "\n",
+            r#"{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Add #[derive(Debug)] above the struct definition."}]}}"#,
+            "\n",
+            r#"{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_01","name":"Bash","input":{"command":"echo done"}}]}}"#,
+            "\n",
+            r#"{"type":"summary","summary":"User asked about Rust derive macro","leafUuid":"abc123"}"#,
+        );
+
+        let transcript = parse_claude_jsonl("00000000-0000-0000-0000-000000000221", payload)
+            .expect("real wire shape with meta lines must parse without error");
+
+        // Must have extracted exactly the two conversational turns; tool_use/mode/summary skipped.
+        assert_eq!(
+            transcript.entries.len(),
+            2,
+            "expected 2 conversational entries (user + assistant text); got {:?}",
+            transcript.entries
+        );
+
+        assert_eq!(
+            transcript.entries[0].speaker, "user",
+            "first entry must be the user turn"
+        );
+        assert!(
+            transcript.entries[0].content.contains("derive Debug"),
+            "user entry must contain the question content"
+        );
+        assert_eq!(
+            transcript.entries[1].speaker, "assistant",
+            "second entry must be the assistant turn"
+        );
+        assert!(
+            transcript.entries[1].content.contains("#[derive(Debug)]"),
+            "assistant entry must contain the answer content"
+        );
+    }
+
+    /// A transcript that contains ONLY meta lines (no user/assistant conversational turns)
+    /// must still fail loud with `"transcript contains no conversational entries"`.
+    ///
+    /// This proves the zero-conversational-entries guard survives the tolerance fix:
+    /// skipping meta lines is not the same as accepting an empty transcript.
+    #[test]
+    fn parse_claude_jsonl_rejects_transcript_with_only_meta_lines() {
+        let payload = concat!(
+            r#"{"type":"mode","mode":"normal","sessionId":"00000000-0000-0000-0000-000000000221"}"#,
+            "\n",
+            r#"{"type":"summary","summary":"Nothing happened","leafUuid":"abc123"}"#,
+            "\n",
+            r#"{"type":"file-history-snapshot","files":[]}"#,
+        );
+
+        let error = parse_claude_jsonl("00000000-0000-0000-0000-000000000221", payload)
+            .expect_err("all-meta transcript must be rejected with a loud error");
+
+        match error {
+            TranscriptError::InvalidPayload(msg) => {
+                assert!(
+                    msg.contains("no conversational entries"),
+                    "error must name the zero-entries condition; got: {msg}"
+                );
+            }
+            other => panic!("expected InvalidPayload, got {other:?}"),
         }
     }
 }

@@ -1,0 +1,58 @@
+{
+  "mcpServers": {
+    "skill-layer": {
+      "type": "http",
+      "url": "http://127.0.0.1:3001/mcp"
+    }
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "type": "mcp_tool",
+        "server": "skill-layer",
+        "tool_name": "compile_context",
+        "arguments": {
+          "prompt": "{{initial_prompt}}",
+          "session_id": "{{session_id}}",
+          "repo_path": "{{repo_path}}"
+        },
+        "result_policy": {
+          "inject_additional_context_on": ["ok", "degraded"],
+          "suppress_duplicate_on_healthy": ["ok", "no_match"],
+          "retry_on": [],
+          "ignore_on": ["duplicate_suppressed", "degraded"]
+        }
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "type": "mcp_tool",
+        "server": "skill-layer",
+        "tool_name": "compile_context",
+        "arguments": {
+          "prompt": "{{prompt}}",
+          "session_id": "{{session_id}}",
+          "repo_path": "{{repo_path}}"
+        },
+        "result_policy": {
+          "inject_additional_context_on": ["ok"],
+          "suppress_duplicate_on_healthy": ["ok", "no_match"],
+          "retry_on": ["degraded"],
+          "ignore_on": ["duplicate_suppressed"]
+        }
+      }
+    ],
+    "SessionEnd": [
+      {
+        "type": "command",
+        "command": "config/claude-code/capture-transcript.sh",
+        "args": ["session_end"],
+        "description": "Capture the SWE-bench session transcript into the skill-layer ingest queue. The repo_path in the hook payload (cwd of the session) is forwarded to /ingest/transcript, which scopes .pending drafts to the swebench-lite project root. Fire-and-forget: always exits 0.",
+        "env": {
+          "SKILL_LAYER_INGEST_URL": "http://127.0.0.1:3001/ingest/transcript",
+          "SKILL_LAYER_INGEST_SECRET": "${TRANSCRIPT_INGEST_SECRET}"
+        }
+      }
+    ]
+  }
+}
