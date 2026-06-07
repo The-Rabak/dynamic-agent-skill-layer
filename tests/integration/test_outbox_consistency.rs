@@ -839,3 +839,131 @@ async fn graph_rebuilt_fails_when_outbox_drain_reports_pending_items() {
 
     fs::remove_dir_all(&sandbox).expect("sandbox should clean up");
 }
+
+/// Proves the root cause of the 234-skill corpus failure: `drain_correlation_outbox`
+/// with `max_polls=5` and `claim_limit=10` errors before draining 60 events.
+///
+/// 60 events / 10 per cycle = 6 required cycles. With the old cap of 5, the drain
+/// stops at 50 events and returns an error, leaving 10 events stuck `pending`.
+/// This test documents the failure mode — it must always pass (the error is expected).
+#[tokio::test]
+async fn drain_correlation_outbox_errors_when_poll_cap_exhausted_before_empty() {
+    let target_correlation_id = Uuid::now_v7();
+    let seed_events: Vec<InMemoryOutboxEvent> = (0..60)
+        .map(|i| {
+            seed_pending_vector_event(target_correlation_id, &format!("cap-exceeded-hash-{i}"))
+        })
+        .collect();
+    let coordinator = InMemoryOutboxCoordinator::new(seed_events);
+    let vector_store = InMemoryVectorStore::default();
+    let relay = OutboxRelay::new(&coordinator, &vector_store, 10, 0)
+        .expect("relay should initialize for valid contract");
+
+    let result = relay
+        .drain_correlation_outbox(&coordinator, target_correlation_id, 5)
+        .await;
+
+    assert!(
+        result.is_err(),
+        "drain must error when max_polls=5 is exhausted before 60 events drain (needs 6 cycles)"
+    );
+    let error_text = result.unwrap_err().to_string();
+    assert!(
+        error_text.contains("did not drain after 5 poll cycles"),
+        "error must name the exhausted poll cap: {error_text}"
+    );
+    // Confirm 10 events are still stuck pending — exactly the last batch.
+    assert_eq!(
+        coordinator.pending_count_for_correlation(target_correlation_id),
+        10,
+        "with max_polls=5 at batch=10, the last 10 of 60 events remain stuck pending"
+    );
+}
+
+/// Proves that `drain_correlation_outbox` completes fully when the event count exceeds
+/// one batch, requiring more than the old hardcoded cap of 5 poll cycles.
+///
+/// This is a direct regression guard for the 234-skill corpus failure where
+/// `max_polls=5` at batch=10 only reached 50 events and errored the rebuild.
+/// Here we seed 60 events for one correlation at batch=10 → 6 required cycles.
+/// Passing `max_polls=1_000` must drain all 60 and succeed.
+#[tokio::test]
+async fn drain_correlation_outbox_completes_fully_across_more_than_five_poll_cycles() {
+    let target_correlation_id = Uuid::now_v7();
+    // 60 events at claim_limit=10 requires exactly 6 poll cycles to drain —
+    // the old cap of 5 would have errored at event 50, leaving 10 stuck.
+    let seed_events: Vec<InMemoryOutboxEvent> = (0..60)
+        .map(|i| seed_pending_vector_event(target_correlation_id, &format!("multi-batch-hash-{i}")))
+        .collect();
+    let event_ids: Vec<Uuid> = seed_events
+        .iter()
+        .map(|event| event.event.event_id)
+        .collect();
+    let coordinator = InMemoryOutboxCoordinator::new(seed_events);
+    let vector_store = InMemoryVectorStore::default();
+    // claim_limit=10 means each relay_once_for_correlation call processes at most 10 events.
+    let relay = OutboxRelay::new(&coordinator, &vector_store, 10, 0)
+        .expect("relay should initialize for valid contract");
+
+    relay
+        .drain_correlation_outbox(&coordinator, target_correlation_id, 1_000)
+        .await
+        .expect("drain must complete for 60 events across 6 poll cycles");
+
+    for (i, event_id) in event_ids.iter().enumerate() {
+        let event = coordinator.event_by_id(*event_id);
+        assert_eq!(
+            event.status, "published",
+            "event {i} (id={event_id}) must be published after full drain"
+        );
+    }
+    assert_eq!(
+        coordinator.pending_count_for_correlation(target_correlation_id),
+        0,
+        "all 60 pending events must be drained — none should remain pending"
+    );
+}
+
+/// Proves that `relay_all_pending_to_completion` drains orphaned pending events
+/// from multiple correlations, regardless of which correlation produced them.
+///
+/// This guards the startup self-heal path: a previously-failed rebuild leaves
+/// `pending` events behind whose correlation_id matches the dead rebuild.
+/// `relay_all_pending_to_completion` must relay them all to Qdrant.
+#[tokio::test]
+async fn relay_all_pending_to_completion_drains_orphaned_events_from_multiple_correlations() {
+    let correlation_a = Uuid::now_v7();
+    let correlation_b = Uuid::now_v7();
+    // Simulate two failed rebuilds leaving orphaned pending events.
+    let orphaned_events: Vec<InMemoryOutboxEvent> = (0..15)
+        .map(|i| {
+            let correlation_id = if i < 8 { correlation_a } else { correlation_b };
+            seed_pending_vector_event(correlation_id, &format!("orphan-hash-{i}"))
+        })
+        .collect();
+    let event_ids: Vec<Uuid> = orphaned_events
+        .iter()
+        .map(|event| event.event.event_id)
+        .collect();
+    let coordinator = InMemoryOutboxCoordinator::new(orphaned_events);
+    let vector_store = InMemoryVectorStore::default();
+    let relay = OutboxRelay::new(&coordinator, &vector_store, 10, 0)
+        .expect("relay should initialize for valid contract");
+
+    let total_published = relay
+        .relay_all_pending_to_completion(1_000)
+        .await
+        .expect("relay must drain all orphaned pending events");
+
+    assert_eq!(
+        total_published, 15,
+        "all 15 orphaned events across two correlations must be published"
+    );
+    for (i, event_id) in event_ids.iter().enumerate() {
+        let event = coordinator.event_by_id(*event_id);
+        assert_eq!(
+            event.status, "published",
+            "orphaned event {i} (id={event_id}) must reach published state"
+        );
+    }
+}

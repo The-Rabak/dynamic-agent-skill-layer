@@ -10,7 +10,7 @@ use graph_builder::{
     graph::build::build_skills_from_scope_roots, watcher::FileChangeSource,
 };
 use infrastructure::{
-    EventEnvelope, OllamaEmbeddingConfig, OllamaEmbeddingService, OutboxVectorStore,
+    EventEnvelope, OllamaEmbeddingConfig, OllamaEmbeddingService, OutboxRelay, OutboxVectorStore,
     PostgresAdapter, PostgresConfig, PostgresGraphWriteCoordinator, PostgresRebuildCoordinator,
     QdrantAdapter, QdrantConfig, RebuildCoordinator,
 };
@@ -345,4 +345,72 @@ async fn rebuild_persists_dual_membership_with_both_community_sources() {
     );
 
     fs::remove_dir_all(&sandbox).expect("sandbox cleanup should succeed");
+}
+
+/// Drains any orphaned `pending` outbox events to Qdrant and asserts that
+/// Qdrant point count matches PG skill count after the drain completes.
+///
+/// This test serves as the live acceptance gate for the `relay_all_pending_to_completion`
+/// self-heal path added to fix the 234-skill corpus vectorization failure (#223).
+/// It does NOT rebuild the corpus — it only relays pending events that were left
+/// stuck by a previous failed rebuild.
+///
+/// Run with:
+/// `cargo test --test test_real_infrastructure_e2e -- drain_orphaned_outbox_pending_reaches_qdrant_point_parity --ignored --nocapture`
+#[tokio::test]
+#[ignore = "requires live containers"]
+async fn drain_orphaned_outbox_pending_reaches_qdrant_point_parity() {
+    let pg = setup_pg().await;
+    let qdrant = setup_qdrant().await;
+
+    let outbox_coordinator = PostgresGraphWriteCoordinator::new(pg.pool().clone());
+    let relay = OutboxRelay::new(&outbox_coordinator, &qdrant, 10, 0)
+        .expect("outbox relay should initialize for valid contract");
+
+    let before_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM outbox_events WHERE status = 'pending'")
+            .fetch_one(pg.pool())
+            .await
+            .expect("should count pending events before drain");
+    println!("pending outbox events before drain: {before_count}");
+
+    let published = relay
+        .relay_all_pending_to_completion(1_000)
+        .await
+        .expect("orphaned pending drain must succeed with 1_000 poll cap");
+    println!("drained {published} events to Qdrant");
+
+    let after_pending: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM outbox_events WHERE status = 'pending'")
+            .fetch_one(pg.pool())
+            .await
+            .expect("should count pending events after drain");
+    assert_eq!(
+        after_pending, 0,
+        "all pending outbox events must be drained after relay_all_pending_to_completion"
+    );
+
+    let pg_skill_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM skills")
+        .fetch_one(pg.pool())
+        .await
+        .expect("should count PG skills");
+
+    let qdrant_points = qdrant
+        .list_point_ids()
+        .await
+        .expect("should list Qdrant points");
+    let qdrant_count = qdrant_points.point_ids.len() as i64;
+
+    println!("PG skills: {pg_skill_count}, Qdrant points: {qdrant_count}");
+    // Qdrant may hold more points than `pg_skill_count` when other rebuilds (from a
+    // different DB, e.g. the live graph-builder using `skill_layer`) also write to
+    // the shared Qdrant collection. The invariant we prove here is that Qdrant
+    // holds AT LEAST as many points as the skills in this DB, confirming the drain
+    // pushed all corpus vectors through. A strict equality check would be fragile
+    // in multi-DB environments.
+    assert!(
+        qdrant_count >= pg_skill_count,
+        "Qdrant must hold at least as many points as PG skills after full drain: \
+         Qdrant={qdrant_count}, PG={pg_skill_count}"
+    );
 }

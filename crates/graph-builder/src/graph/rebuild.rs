@@ -313,7 +313,16 @@ where
         let relay = OutboxRelay::new(self.outbox_coordinator, self.vector_store, 10, 0)
             .map_err(|error| GraphRebuildError::DurableWrite(error.to_string()))?;
         relay
-            .drain_correlation_outbox(self.outbox_coordinator, self.rebuild_correlation_id, 5)
+            .drain_correlation_outbox(
+                self.outbox_coordinator,
+                self.rebuild_correlation_id,
+                // Upper bound: 1 000 poll cycles × 10 events/cycle = 10 000 events max.
+                // A corpus of 234 skills at batch 10 needs ~24 cycles; 1 000 is a safe
+                // ceiling that fails loud if something is genuinely stuck rather than
+                // silently hanging forever. The previous value of 5 (~55 events) was too
+                // small for any corpus larger than a handful of skills.
+                1_000,
+            )
             .await
             .map_err(|error| GraphRebuildError::DurableWrite(error.to_string()))
     }

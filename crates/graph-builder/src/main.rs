@@ -7,7 +7,7 @@ use graph_builder::{
 };
 use infrastructure::{
     CircuitState, DependencyFactory, EventEnvelope, HealthReport, InfrastructureHealthChecker,
-    OllamaEmbeddingConfig, OllamaEmbeddingService, PostgresAdapter, PostgresConfig,
+    OllamaEmbeddingConfig, OllamaEmbeddingService, OutboxRelay, PostgresAdapter, PostgresConfig,
     PostgresGraphWriteCoordinator, PostgresRebuildCoordinator, QdrantAdapter, QdrantConfig,
     RebuildCoordinator, RedisStreamError, RedisStreamsAdapter, RedisStreamsConfig,
     logging::init_logging,
@@ -362,6 +362,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let redis_streams = build_redis_streams_adapter()?;
     redis_streams.ensure_consumer_group().await?;
+
+    // Self-heal orphaned pending outbox events from any previously-failed rebuild.
+    //
+    // A rebuild that exceeded the old drain cap left up to N events in `pending`
+    // status, scoped to the failed rebuild's correlation_id. Subsequent rebuilds
+    // assign a fresh correlation_id and never pick up those orphaned rows, so
+    // they stay stuck in PG and never reach Qdrant. Draining all pending events
+    // here (before the first rebuild cycle runs) ensures Qdrant converges on any
+    // partially-vectorized corpus left by a prior crashed or capped rebuild.
+    //
+    // Safety bound: 1 000 cycles × 10 claims/cycle = 10 000 events. Fails loud
+    // if anything remains after the bound — a genuinely stuck event must surface.
+    {
+        let startup_relay = OutboxRelay::new(&outbox_coordinator, &qdrant_adapter, 10, 0)
+            .map_err(|error| format!("startup outbox relay: {error}"))?;
+        match startup_relay.relay_all_pending_to_completion(1_000).await {
+            Ok(published) if published > 0 => {
+                tracing::info!(
+                    published,
+                    "startup drain: relayed orphaned pending outbox events to Qdrant"
+                );
+            }
+            Ok(_) => {}
+            Err(error) => {
+                tracing::error!(%error, "startup drain: orphaned pending events did not fully drain");
+            }
+        }
+    }
 
     let runtime_health_state = Arc::new(RwLock::new(GraphBuilderHealthState::default()));
     let health_server_state = Arc::clone(&runtime_health_state);
