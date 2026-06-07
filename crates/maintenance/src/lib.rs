@@ -27,6 +27,7 @@ pub use merge::{
     MergeCandidate, MergeConfig, MergeError, MergeProposal, MergeProposalWriter,
     MergeSemanticVerifier, ScopeSelectionPolicy, SeededSkillProjection, SkillSnapshot,
 };
+pub use merge_verifier::LlmMergeSemanticVerifier;
 pub use promote::{
     DemotionProposal, LivePromotionPassRunner, PromotionError, PromotionEvidence,
     PromotionProposal, PromotionProposalWriter, PromotionScopePolicy, PromotionWriterConfig,
