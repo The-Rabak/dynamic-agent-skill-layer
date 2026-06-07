@@ -41,7 +41,7 @@ The skill layer answers each one with an explicit engineering stance: **explicit
 | **Live graph refresh** | An approved skill becomes retrievable by the *running* server after an incremental rebuild and snapshot swap — no restart, no redeploy. |
 | **Provider-selectable extraction** | Local Ollama is the default (zero credentials, zero cloud). The Anthropic API and the host-only Claude Code CLI are first-class opt-ins for higher-quality extraction. **Embeddings are always local.** |
 | **Filesystem-observable state** | Active skills are `SKILL.md`. Proposals are `.pending`. Retirements are `.retired`. The filesystem *is* the approval UI — no dashboard required. |
-| **Proven, not asserted** | The E2E suite drives the real MCP server, graph-builder, Postgres, Redis, Qdrant, and Ollama containers over HTTP — including saturation, convergence, and self-growth "dream-state" contracts. |
+| **Tested against the real stack** | The E2E suite drives the real MCP server, graph-builder, Postgres, Redis, Qdrant, and Ollama containers over HTTP. DS-003 through DS-007 run as live asserting probes today; the remaining "dream-state" contracts (counterfactual explainability, shadow deployment, time-travel memory, SLO-aware brain, policy-native governance, and others) are aspirational placeholders marked `#[ignore]` — not yet implemented. |
 
 ---
 
@@ -111,7 +111,7 @@ The H1 is the skill name, `tags:` drives lexical recall, the prose line is the s
 - **It fails loud, never fake.** A missing provider credential, an unwired seam, or an unreachable model is a loud error at construction — not a stub that quietly returns plausible garbage.
 - **It's observable.** Every skill state is a file you can `ls`. Every graph mutation is recorded in Postgres with before/after snapshots. There is no hidden state to trust.
 - **It's honest about retrieval.** A genuinely off-topic prompt returns `no_match` instead of a confident wrong skill — the relevance floor is calibrated against measured negative-query scores, not guessed.
-- **It's proven against the real thing.** The E2E harness ingests transcripts over the real HTTP endpoint, drains the real queue, runs real extraction, approves a real draft, and asserts the running server serves the newly-learned skill under concurrent load. Warm single-call `compile_context` retrieval runs ~100ms (release, measured) against a sub-500ms warm-path SLO.
+- **It runs against the real thing.** The E2E harness ingests transcripts over the real HTTP endpoint, drains the real queue, runs real extraction, approves a real draft, and asserts the running server serves the newly-learned skill under concurrent load. Warm single-call `compile_context` retrieval runs ~100ms (release, measured) against a sub-500ms warm-path SLO. Aspirational "dream-state" contracts are `#[ignore]`'d placeholders — 18 of 25 are not yet implemented.
 
 ---
 

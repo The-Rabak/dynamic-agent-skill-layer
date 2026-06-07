@@ -116,9 +116,13 @@ pub fn attach_rescue_cues(
 
 /// Score bucket labels for the deterministic match-reason section.
 ///
-/// Boundaries are aligned with the default `relevance_threshold` (0.20) so the
-/// bucket label honestly reflects whether a skill cleared the bar by a lot or a
-/// little. No LLM involvement — purely arithmetic on the fused RRF score.
+/// Boundaries are aligned with the default `relevance_threshold` (0.450,
+/// `retrieval/orchestrator.rs`) so the bucket label honestly reflects whether
+/// a skill cleared the relevance floor by a lot (`high`, ≥ 0.40 RRF), a little
+/// (`medium`, ≥ 0.20 RRF), or fell below it (`low`). Note that these bucket
+/// boundaries are coarser than the 0.450 floor — a "medium" skill may still be
+/// admitted by the rescue pool logic; the bucket is a label, not a gate.
+/// No LLM involvement — purely arithmetic on the fused RRF score.
 fn score_bucket(score: f32) -> &'static str {
     if score >= 0.40 {
         "high"
