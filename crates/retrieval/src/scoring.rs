@@ -131,4 +131,69 @@ mod tests {
         // Sanity check: result is positive and below clamp.
         assert!(actual > 0.0 && actual < 0.15, "got {actual}");
     }
+
+    /// Cold-start guarantee: a freshly-approved, never-used skill that is semantically
+    /// relevant to the query ranks ABOVE a clearly-irrelevant skill that has high usage.
+    ///
+    /// This locks the contract that the usage prior (capped at ≤0.03 of the final
+    /// eq.3 score after γ=0.20) can never suppress relevant new knowledge in
+    /// query-driven retrieval. The α (cosine, 0.45) and β (subunit evidence, 0.35)
+    /// terms together dominate and are not overridable by the ≤0.03 prior ceiling.
+    ///
+    /// Setup:
+    /// - "new-skill": usage_count=0 → prior=0.0; high cosine (0.95) + strong subunit
+    ///   evidence (0.90) → genuinely relevant to the query.
+    /// - "stale-skill": usage_count=1000, age_days=0 → prior clamped at 0.15 (maximum
+    ///   possible prior); near-zero cosine (0.02) + no subunit evidence → irrelevant.
+    ///
+    /// Expected: score(new-skill) > score(stale-skill).
+    #[test]
+    fn relevant_zero_usage_skill_outranks_irrelevant_high_usage_skill() {
+        let weights = ScoringWeights::default();
+
+        // New skill: never used but highly relevant to the query.
+        let new_skill_prior = usage_prior(0, 0);
+        assert_eq!(
+            new_skill_prior, 0.0,
+            "usage_count=0 must produce prior=0.0 (cold-start)"
+        );
+        let new_skill_score = score_eq3(
+            ScoreComponents {
+                l1_semantic: 0.95,      // strong cosine alignment
+                subunit_evidence: 0.90, // strong subunit alignment
+                prior: new_skill_prior,
+                community_boost: 0.0,
+            },
+            weights,
+        );
+
+        // Stale skill: maximum possible usage prior but clearly off-topic.
+        let stale_skill_prior = usage_prior(1000, 0); // clamped at 0.15
+        assert!(
+            (stale_skill_prior - 0.15).abs() < 1e-6,
+            "usage_count=1000, age_days=0 must produce prior=0.15 (clamped maximum)"
+        );
+        let stale_skill_score = score_eq3(
+            ScoreComponents {
+                l1_semantic: 0.02,      // near-zero cosine: irrelevant to the query
+                subunit_evidence: 0.0,  // no subunit evidence
+                prior: stale_skill_prior,
+                community_boost: 0.0,
+            },
+            weights,
+        );
+
+        assert!(
+            new_skill_score > stale_skill_score,
+            "relevant new skill (usage=0, cosine=0.95) must outrank irrelevant stale skill \
+             (usage=1000, cosine=0.02): new={new_skill_score:.4}, stale={stale_skill_score:.4}"
+        );
+
+        // Quantify the margin to make the test readable in CI output.
+        let margin = new_skill_score - stale_skill_score;
+        assert!(
+            margin > 0.5,
+            "the margin should be large (relevance dominates): margin={margin:.4}"
+        );
+    }
 }
