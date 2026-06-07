@@ -175,145 +175,209 @@ impl TranscriptSkillExtractionService for ClaudeCodeExtractor {
 }
 
 impl ClaudeCodeExtractor {
-    /// Spawns the `claude` CLI as a subprocess, writes the prompt to stdin, and
-    /// parses the JSON envelope from stdout.
+    /// Spawns the `claude` CLI as a subprocess and parses the candidate list from
+    /// the JSON envelope on stdout.
     ///
-    /// The working directory is set to `std::env::temp_dir()` so the subprocess
-    /// does NOT load this repository's `CLAUDE.md` / `.mcp.json` project context,
-    /// keeping the extraction call completely context-free.
+    /// Thin wrapper over the shared [`spawn_claude_stdout`] transport: it spawns
+    /// the subprocess, then runs the candidate-specific parser. The text-LLM seam
+    /// transport ([`claude_code_generate_text`]) reuses the SAME spawn function but
+    /// applies a different (raw-JSON-string) parser, so there is one subprocess
+    /// path and two parsers, not two subprocess paths.
     async fn invoke_cli(
         &self,
         prompt: &str,
     ) -> Result<Vec<domain::ExtractedSkillCandidate>, ExtractionError> {
-        // Collect CLAUDE_* vars from the parent env before clearing so they can
-        // be forwarded to the child. These are the only application-specific vars
-        // the CLI may need (e.g. CLAUDE_CODE_SIMPLE set by --bare in a parent session).
-        let claude_env_vars: Vec<(String, String)> = std::env::vars()
-            .filter(|(key, _)| key.starts_with("CLAUDE_"))
-            .collect();
-
-        let mut child = Command::new(&self.config.cli_path)
-            .args([
-                "--print",
-                "--output-format",
-                "json",
-                "--model",
-                &self.config.model,
-                "--system-prompt",
-                JSON_ENFORCER_SYSTEM_PROMPT,
-                "--exclude-dynamic-system-prompt-sections",
-                "--disallowed-tools",
-                DISALLOWED_TOOLS,
-                // Suppress MCP server loading from ~/.claude and .mcp.json.
-                // Without a companion --mcp-config argument the CLI loads no MCP
-                // servers, which is stronger than enumerating mcp__* tool names.
-                "--strict-mcp-config",
-            ])
-            // Route stdin so we can write the prompt directly.
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            // Neutral working directory: do not load project CLAUDE.md / .mcp.json.
-            .current_dir(std::env::temp_dir())
-            // --- Env minimization (defense-in-depth) ---
-            //
-            // Clear the full parent env so the subprocess cannot observe infra
-            // credentials (DATABASE_URL, POSTGRES_PASSWORD, REDIS_URL, QDRANT_URL,
-            // ANTHROPIC_API_KEY, etc.) that are present in the service environment.
-            //
-            // Restore only the vars the CLI actually needs:
-            //   HOME  — required to locate ~/.claude (session / auth state)
-            //   PATH  — required to resolve helper binaries the CLI may invoke
-            //   CLAUDE_* — forward any CLAUDE_* vars the parent set (e.g.
-            //              CLAUDE_CODE_SIMPLE); collect above before clear.
-            .env_clear()
-            .envs(claude_env_vars)
-            .envs([("HOME", std::env::var("HOME").unwrap_or_default())])
-            .envs([("PATH", std::env::var("PATH").unwrap_or_default())])
-            .spawn()
-            .map_err(|error| {
-                ExtractionError::ProviderUnavailable(format!(
-                    "failed to spawn claude CLI ({cli_path:?}): {error}",
-                    cli_path = self.config.cli_path
-                ))
-            })?;
-
-        // Feed the extraction prompt through stdin concurrently with the stdout
-        // drain performed by `wait_with_output` below.
-        //
-        // Sequential write-then-wait creates a classic pipe deadlock for payloads
-        // larger than the OS pipe buffer (~64 KB): the write blocks waiting for the
-        // child to drain stdin, but the child blocks writing stdout (which is not
-        // read until `wait_with_output` returns). Spawning the write as a separate
-        // task interleaves it with the drain, eliminating the deadlock regardless
-        // of child behaviour or prompt size.
-        //
-        // A write failure (e.g. child closed stdin early) is intentionally ignored:
-        // `wait_with_output` will surface any real process failure through the exit
-        // status check that follows.
-        if let Some(mut stdin) = child.stdin.take() {
-            let prompt_bytes = prompt.as_bytes().to_owned();
-            tokio::spawn(async move {
-                let _ = stdin.write_all(&prompt_bytes).await;
-                // `stdin` is dropped here, sending EOF to the child process.
-            });
-        }
-
-        let output = child.wait_with_output().await.map_err(|error| {
-            ExtractionError::ProviderUnavailable(format!(
-                "error waiting for claude CLI process: {error}"
-            ))
-        })?;
-
-        if !output.status.success() {
-            let full_stderr = String::from_utf8_lossy(&output.stderr);
-            // Log the full stderr at debug so it is recoverable without
-            // embedding potentially sensitive token/path fragments in the
-            // published `extraction.failed` event payload.
-            tracing::debug!(
-                status = %output.status,
-                stderr = %full_stderr,
-                "claude CLI exited with non-zero status (full stderr)"
-            );
-            // Truncate to 200 chars for the error message that may be
-            // serialized into events or logs at higher severity levels.
-            const STDERR_SNIPPET_LIMIT: usize = 200;
-            let stderr_snippet: String = full_stderr.chars().take(STDERR_SNIPPET_LIMIT).collect();
-            return Err(ExtractionError::ProviderUnavailable(format!(
-                "claude CLI exited with status {} (stderr truncated): {stderr_snippet}",
-                output.status
-            )));
-        }
-
-        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stdout = spawn_claude_stdout(&self.config, prompt).await?;
         parse_cli_output(&stdout)
     }
 }
 
-/// Parses the JSON envelope emitted by `claude --output-format json`.
+/// Spawns the `claude` CLI as a subprocess, writes `prompt` to stdin, and returns
+/// the raw stdout as a `String`.
 ///
-/// On success (`subtype == "success"` and `is_error == false`), the `result`
-/// string is unwrapped: markdown code fences (` ```json … ``` ` or ` ``` … ``` `)
-/// are stripped, then the first balanced top-level `{ … }` object is extracted
-/// and parsed as `{ "candidates": [...] }`.
+/// This is the single subprocess transport shared by the extraction provider
+/// ([`ClaudeCodeExtractor::invoke_cli`]) and the orchestration-seam text-LLM
+/// ([`claude_code_generate_text`]). Callers choose how to parse the returned
+/// stdout (candidate list vs. raw JSON result string).
 ///
-/// On a non-success envelope, returns `ExtractionError::ProviderUnavailable` or
-/// `ExtractionError::Unexpected` with the envelope detail so the failure is loud
-/// and actionable.
-pub(crate) fn parse_cli_output(
-    raw_stdout: &str,
-) -> Result<Vec<domain::ExtractedSkillCandidate>, ExtractionError> {
-    // The CLI may emit multiple newline-delimited JSON objects (stream-json mode,
-    // progress events, etc.). With `--output-format json` we scan for the FIRST
-    // line whose `type` field equals `"result"` rather than blindly taking the last
-    // non-empty line. This prevents a future trailing info/progress line from being
-    // silently mis-parsed as the result envelope.
+/// The working directory is set to `std::env::temp_dir()` so the subprocess does
+/// NOT load this repository's `CLAUDE.md` / `.mcp.json` project context, keeping
+/// the call completely context-free. The parent env is cleared (defense in depth)
+/// and only `HOME`, `PATH`, and `CLAUDE_*` are forwarded.
+pub(crate) async fn spawn_claude_stdout(
+    config: &ClaudeCodeExtractionConfig,
+    prompt: &str,
+) -> Result<String, ExtractionError> {
+    // Collect CLAUDE_* vars from the parent env before clearing so they can
+    // be forwarded to the child. These are the only application-specific vars
+    // the CLI may need (e.g. CLAUDE_CODE_SIMPLE set by --bare in a parent session).
+    let claude_env_vars: Vec<(String, String)> = std::env::vars()
+        .filter(|(key, _)| key.starts_with("CLAUDE_"))
+        .collect();
+
+    let mut child = Command::new(&config.cli_path)
+        .args([
+            "--print",
+            "--output-format",
+            "json",
+            "--model",
+            &config.model,
+            "--system-prompt",
+            JSON_ENFORCER_SYSTEM_PROMPT,
+            "--exclude-dynamic-system-prompt-sections",
+            "--disallowed-tools",
+            DISALLOWED_TOOLS,
+            // Suppress MCP server loading from ~/.claude and .mcp.json.
+            // Without a companion --mcp-config argument the CLI loads no MCP
+            // servers, which is stronger than enumerating mcp__* tool names.
+            "--strict-mcp-config",
+        ])
+        // Route stdin so we can write the prompt directly.
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        // Neutral working directory: do not load project CLAUDE.md / .mcp.json.
+        .current_dir(std::env::temp_dir())
+        // --- Env minimization (defense-in-depth) ---
+        //
+        // Clear the full parent env so the subprocess cannot observe infra
+        // credentials (DATABASE_URL, POSTGRES_PASSWORD, REDIS_URL, QDRANT_URL,
+        // ANTHROPIC_API_KEY, etc.) that are present in the service environment.
+        //
+        // Restore only the vars the CLI actually needs:
+        //   HOME  — required to locate ~/.claude (session / auth state)
+        //   PATH  — required to resolve helper binaries the CLI may invoke
+        //   CLAUDE_* — forward any CLAUDE_* vars the parent set (e.g.
+        //              CLAUDE_CODE_SIMPLE); collect above before clear.
+        .env_clear()
+        .envs(claude_env_vars)
+        .envs([("HOME", std::env::var("HOME").unwrap_or_default())])
+        .envs([("PATH", std::env::var("PATH").unwrap_or_default())])
+        .spawn()
+        .map_err(|error| {
+            ExtractionError::ProviderUnavailable(format!(
+                "failed to spawn claude CLI ({cli_path:?}): {error}",
+                cli_path = config.cli_path
+            ))
+        })?;
+
+    // Feed the extraction prompt through stdin concurrently with the stdout
+    // drain performed by `wait_with_output` below.
+    //
+    // Sequential write-then-wait creates a classic pipe deadlock for payloads
+    // larger than the OS pipe buffer (~64 KB): the write blocks waiting for the
+    // child to drain stdin, but the child blocks writing stdout (which is not
+    // read until `wait_with_output` returns). Spawning the write as a separate
+    // task interleaves it with the drain, eliminating the deadlock regardless
+    // of child behaviour or prompt size.
+    //
+    // A write failure (e.g. child closed stdin early) is intentionally ignored:
+    // `wait_with_output` will surface any real process failure through the exit
+    // status check that follows.
+    if let Some(mut stdin) = child.stdin.take() {
+        let prompt_bytes = prompt.as_bytes().to_owned();
+        tokio::spawn(async move {
+            let _ = stdin.write_all(&prompt_bytes).await;
+            // `stdin` is dropped here, sending EOF to the child process.
+        });
+    }
+
+    let output = child.wait_with_output().await.map_err(|error| {
+        ExtractionError::ProviderUnavailable(format!(
+            "error waiting for claude CLI process: {error}"
+        ))
+    })?;
+
+    if !output.status.success() {
+        let full_stderr = String::from_utf8_lossy(&output.stderr);
+        // Log the full stderr at debug so it is recoverable without
+        // embedding potentially sensitive token/path fragments in the
+        // published `extraction.failed` event payload.
+        tracing::debug!(
+            status = %output.status,
+            stderr = %full_stderr,
+            "claude CLI exited with non-zero status (full stderr)"
+        );
+        // Truncate to 200 chars for the error message that may be
+        // serialized into events or logs at higher severity levels.
+        const STDERR_SNIPPET_LIMIT: usize = 200;
+        let stderr_snippet: String = full_stderr.chars().take(STDERR_SNIPPET_LIMIT).collect();
+        return Err(ExtractionError::ProviderUnavailable(format!(
+            "claude CLI exited with status {} (stderr truncated): {stderr_snippet}",
+            output.status
+        )));
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
+/// Sends one `prompt` to the `claude` CLI and returns the model's response as a
+/// single JSON-object string, ready for a strict `serde_json::from_str`.
+///
+/// This is the claude-code analogue of [`crate::ollama_generate_text`] — the
+/// provider-agnostic text transport used by the orchestration seams
+/// (skeleton labeler, synthesis pass, preamble normalizer) and the merge
+/// equivalence verifier when `EXTRACT_SESSION_PROVIDER=claude-code`.
+///
+/// It reuses the SAME subprocess machinery as the extraction provider
+/// ([`spawn_claude_stdout`]) plus the SAME success-envelope unwrap and fence
+/// stripping as [`parse_cli_output`], then coerces the result to a canonical JSON
+/// object string so downstream strict parsers (which call `serde_json::from_str`
+/// without a prose-tolerant fallback) succeed. The whole call is bounded by
+/// `config.timeout_ms`.
+///
+/// ## Fail behaviour (loud, no stubs)
+/// - CLI absent / non-zero exit → `ExtractionError::ProviderUnavailable`.
+/// - Non-success envelope → `ExtractionError::ProviderUnavailable`.
+/// - Exceeds `timeout_ms` → `ExtractionError::Timeout`.
+pub async fn claude_code_generate_text(
+    config: &ClaudeCodeExtractionConfig,
+    prompt: &str,
+) -> Result<String, ExtractionError> {
+    let stdout = timeout(
+        Duration::from_millis(config.timeout_ms),
+        spawn_claude_stdout(config, prompt),
+    )
+    .await
+    .map_err(|_| ExtractionError::Timeout {
+        timeout_ms: config.timeout_ms,
+    })??;
+
+    let stripped = extract_result_text(&stdout)?;
+    Ok(coerce_to_json_object_string(&stripped))
+}
+
+/// Coerces a (possibly prose-wrapped) model reply to a single canonical JSON
+/// object string. If `s` already parses as a JSON value it is returned verbatim;
+/// otherwise the first balanced top-level object is extracted and re-serialised.
+/// If no JSON object is present the input is returned unchanged so the caller's
+/// strict parser fails loudly with the real content in the error.
+fn coerce_to_json_object_string(s: &str) -> String {
+    if serde_json::from_str::<serde_json::Value>(s).is_ok() {
+        return s.to_owned();
+    }
+    if let Some(offset) = s.find('{')
+        && let Some(Ok(value)) = serde_json::Deserializer::from_str(&s[offset..])
+            .into_iter::<serde_json::Value>()
+            .next()
+    {
+        return value.to_string();
+    }
+    s.to_owned()
+}
+
+/// Extracts the success-envelope `result` field from raw `claude --output-format
+/// json` stdout, with markdown code fences stripped.
+///
+/// Shared by [`parse_cli_output`] (which then parses a candidate list) and
+/// [`claude_code_generate_text`] (which returns the JSON string for the seams).
+/// Returns `ExtractionError::ProviderUnavailable` on a missing/non-success
+/// envelope and `ExtractionError::Unexpected` on an unparseable envelope.
+pub(crate) fn extract_result_text(raw_stdout: &str) -> Result<String, ExtractionError> {
     let envelope_json = raw_stdout
         .lines()
         .filter(|line| !line.trim().is_empty())
         .find(|line| {
-            // Quick structural check: deserialize only to check the `type` field,
-            // then let the full parse below validate the rest.
             serde_json::from_str::<serde_json::Value>(line)
                 .ok()
                 .and_then(|v| v.get("type").and_then(|t| t.as_str()).map(|t| t.to_owned()))
@@ -347,11 +411,31 @@ pub(crate) fn parse_cli_output(
         )));
     }
 
-    let stripped = strip_markdown_fences(&envelope.result);
+    Ok(strip_markdown_fences(&envelope.result).to_owned())
+}
+
+/// Parses the JSON envelope emitted by `claude --output-format json`.
+///
+/// On success (`subtype == "success"` and `is_error == false`), the `result`
+/// string is unwrapped: markdown code fences (` ```json … ``` ` or ` ``` … ``` `)
+/// are stripped, then the first balanced top-level `{ … }` object is extracted
+/// and parsed as `{ "candidates": [...] }`.
+///
+/// On a non-success envelope, returns `ExtractionError::ProviderUnavailable` or
+/// `ExtractionError::Unexpected` with the envelope detail so the failure is loud
+/// and actionable.
+pub(crate) fn parse_cli_output(
+    raw_stdout: &str,
+) -> Result<Vec<domain::ExtractedSkillCandidate>, ExtractionError> {
+    // Unwrap the success envelope and strip fences via the shared helper, then
+    // parse the candidate list from the inner JSON string. The envelope-finding
+    // logic lives in `extract_result_text` so the seam text transport
+    // (`claude_code_generate_text`) shares it instead of duplicating it.
+    let stripped = extract_result_text(raw_stdout)?;
 
     // Fast path: `--output-format json` and the JSON-enforcer system prompt should
     // produce a bare JSON object with no surrounding prose. Try the direct parse first.
-    if let Ok(body) = serde_json::from_str::<CandidatesBody>(stripped) {
+    if let Ok(body) = serde_json::from_str::<CandidatesBody>(&stripped) {
         return Ok(body.candidates);
     }
 
@@ -369,15 +453,13 @@ pub(crate) fn parse_cli_output(
 
     let value = first_value.ok_or_else(|| {
         ExtractionError::Unexpected(format!(
-            "no JSON value found in claude CLI result: {}",
-            envelope.result
+            "no JSON value found in claude CLI result: {stripped}"
         ))
     })?;
 
     let body: CandidatesBody = serde_json::from_value(value).map_err(|error| {
         ExtractionError::Unexpected(format!(
-            "failed to parse candidates body from claude CLI result: {error}; raw={}",
-            envelope.result
+            "failed to parse candidates body from claude CLI result: {error}; raw={stripped}"
         ))
     })?;
 

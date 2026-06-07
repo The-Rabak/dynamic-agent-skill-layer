@@ -755,7 +755,14 @@ async fn extract_session_parallel_burst_all_jobs_complete_and_drafts_persist() {
     // SAFETY: tests set process env only while holding ENV_LOCK via namespace.
     unsafe {
         std::env::set_var("CLAUDE_TRANSCRIPT_ROOT", &sandbox);
-        std::env::set_var("EXTRACT_SESSION_PROVIDER", "ollama");
+        // Honor a pre-set EXTRACT_SESSION_PROVIDER (e.g. claude-code); default to
+        // the local ollama provider only when unset/blank.
+        if std::env::var("EXTRACT_SESSION_PROVIDER")
+            .map(|v| v.trim().is_empty())
+            .unwrap_or(true)
+        {
+            std::env::set_var("EXTRACT_SESSION_PROVIDER", "ollama");
+        }
         std::env::set_var("OLLAMA_EXTRACTION_MODEL", "granite4:3b");
     }
 

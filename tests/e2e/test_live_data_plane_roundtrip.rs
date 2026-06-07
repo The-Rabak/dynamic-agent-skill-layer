@@ -651,7 +651,14 @@ async fn extract_session_live_inline_payload_writes_pending_and_emits_completion
     // SAFETY: tests set process env only while holding ENV_LOCK via namespace.
     unsafe {
         std::env::set_var("CLAUDE_TRANSCRIPT_ROOT", &sandbox);
-        std::env::set_var("EXTRACT_SESSION_PROVIDER", "ollama");
+        // Honor a pre-set EXTRACT_SESSION_PROVIDER (e.g. claude-code); default to
+        // the local ollama provider only when unset/blank.
+        if std::env::var("EXTRACT_SESSION_PROVIDER")
+            .map(|v| v.trim().is_empty())
+            .unwrap_or(true)
+        {
+            std::env::set_var("EXTRACT_SESSION_PROVIDER", "ollama");
+        }
         // gemma4:12b is the project-default extraction model. It reliably extracts
         // candidates from a substantive transcript unlike granite4:3b (2.1GB) which
         // nondeterministically returns zero candidates even from concrete content.
@@ -861,7 +868,14 @@ async fn extract_session_live_ref_payload_loads_from_transcript_volume() {
     // SAFETY: tests set process env only while holding ENV_LOCK via namespace.
     unsafe {
         std::env::set_var("CLAUDE_TRANSCRIPT_ROOT", &fixtures_dir);
-        std::env::set_var("EXTRACT_SESSION_PROVIDER", "ollama");
+        // Honor a pre-set EXTRACT_SESSION_PROVIDER (e.g. claude-code); default to
+        // the local ollama provider only when unset/blank.
+        if std::env::var("EXTRACT_SESSION_PROVIDER")
+            .map(|v| v.trim().is_empty())
+            .unwrap_or(true)
+        {
+            std::env::set_var("EXTRACT_SESSION_PROVIDER", "ollama");
+        }
         std::env::set_var("OLLAMA_EXTRACTION_MODEL", "granite4:3b");
     }
 

@@ -26,12 +26,12 @@ use domain::{
 };
 use infrastructure::{
     EventEnvelope, LlmEquivalenceVerifier, OllamaEmbeddingConfig, OllamaEmbeddingService,
-    OllamaMergeVerifier, OllamaMergeVerifierConfig, RedisStreamError, RedisStreamsAdapter,
-    RedisStreamsConfig, RetryPolicy, retry_with_backoff,
+    RedisStreamError, RedisStreamsAdapter, RedisStreamsConfig, RetryPolicy, StructuredTextLlm,
+    TextLlmEquivalenceVerifier, retry_with_backoff,
 };
 use orchestrator::{OrchestrationConfig, OrchestrationError, run_orchestration};
 use routing::{RoutingConfigError, RoutingDecision, compute_routing_decision};
-use seams::{OllamaPreambleNormalizer, OllamaSkeletonLabeler, OllamaSynthesisPass};
+use seams::{LlmPreambleNormalizer, LlmSkeletonLabeler, LlmSynthesisPass};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use skeleton::SkeletonLabeler;
@@ -309,7 +309,7 @@ pub struct SessionExtractor {
     /// Synthesis pass for the orchestrated final step. None when run_path=SingleShot.
     pub(crate) synthesis: Option<Arc<dyn orchestrator::SynthesisPass>>,
     /// Optional preamble normalizer (None skips LLM normalization — valid and grounded).
-    pub(crate) preamble_normalizer: Option<Arc<OllamaPreambleNormalizer>>,
+    pub(crate) preamble_normalizer: Option<Arc<LlmPreambleNormalizer>>,
 }
 
 /// Typed result of one extraction job, produced by [`SessionExtractor::execute_job`].
@@ -393,12 +393,42 @@ impl SessionExtractor {
         // A missing OLLAMA_URL fails loudly here at construction — not at job time.
         let (skeleton_labeler, embedder, equivalence_verifier, synthesis, preamble_normalizer) =
             if run_path == ExtractionRunPath::Orchestrated {
+                // Embeddings are ALWAYS local (nomic-embed-text via Ollama) — the one
+                // documented exception to provider selection. OLLAMA_URL is therefore
+                // required even when the seams run on claude-code.
                 let ollama_url = seams::require_ollama_base_url()?;
-                let model = std::env::var("ORCHESTRATION_SEAM_MODEL")
-                    .unwrap_or_else(|_| "gemma4:12b".to_owned());
 
-                // Skeleton labeler: OllamaSkeletonLabeler from OLLAMA_URL.
-                let labeler = OllamaSkeletonLabeler::from_environment()?;
+                // Build ONE provider-agnostic text-LLM transport for ALL four LLM
+                // seams (skeleton / synthesis / preamble / equivalence), selected by
+                // `EXTRACT_SESSION_PROVIDER`. This is the seam analogue of the map-step
+                // provider selection above: with `claude-code`, the whole reduce-step
+                // LLM workload runs on Sonnet, not just the map step. With `ollama` (or
+                // the `claude` API provider, whose seam transport stays local) the
+                // behaviour is unchanged from before.
+                let seam_llm: Arc<dyn StructuredTextLlm> = match provider {
+                    ExtractionProvider::ClaudeCode => providers::claude_code::build_text_llm()
+                        .map_err(|e| SessionExtractorInitError::SeamInit(e.to_string()))?,
+                    ExtractionProvider::Ollama | ExtractionProvider::Claude => {
+                        seams::ollama_seam_llm()
+                            .map_err(|e| SessionExtractorInitError::SeamInit(e.to_string()))?
+                    }
+                };
+
+                tracing::info!(
+                    seam_provider = seam_llm.provider_label(),
+                    seam_model = seam_llm.model(),
+                    embedding = "ollama:nomic-embed-text (always local)",
+                    "orchestration seams built from environment"
+                );
+
+                // Skeleton labeler, synthesis pass, preamble normalizer, and the
+                // equivalence verifier all share the one transport.
+                let labeler = LlmSkeletonLabeler::new(seam_llm.clone());
+                let synthesis: Arc<dyn orchestrator::SynthesisPass> =
+                    LlmSynthesisPass::new(seam_llm.clone());
+                let preamble_normalizer = Some(LlmPreambleNormalizer::new(seam_llm.clone()));
+                let equivalence_verifier: Arc<dyn LlmEquivalenceVerifier> =
+                    Arc::new(TextLlmEquivalenceVerifier::new(seam_llm.clone()));
 
                 // Embedder: OllamaEmbeddingService (nomic-embed-text) from OLLAMA_URL.
                 let embed_config = OllamaEmbeddingConfig {
@@ -409,31 +439,6 @@ impl SessionExtractor {
                 let embedder: Arc<dyn EmbeddingService> = Arc::new(
                     OllamaEmbeddingService::from_config(embed_config)
                         .map_err(|e| SessionExtractorInitError::SeamInit(e.to_string()))?,
-                );
-
-                // LLM equivalence verifier: OllamaMergeVerifier from OLLAMA_URL.
-                let verifier_endpoint =
-                    format!("{}/api/generate", ollama_url.trim_end_matches('/'));
-                let verifier_config = OllamaMergeVerifierConfig {
-                    endpoint: verifier_endpoint,
-                    model: model.clone(),
-                };
-                let equivalence_verifier: Arc<dyn LlmEquivalenceVerifier> = Arc::new(
-                    OllamaMergeVerifier::from_config(verifier_config)
-                        .map_err(|e| SessionExtractorInitError::SeamInit(e.to_string()))?,
-                );
-
-                // Synthesis pass: OllamaSynthesisPass from OLLAMA_URL.
-                let synthesis: Arc<dyn orchestrator::SynthesisPass> =
-                    OllamaSynthesisPass::from_environment()?;
-
-                // Preamble normalizer: optional (mine_preamble works without it).
-                let preamble_normalizer = Some(OllamaPreambleNormalizer::from_environment()?);
-
-                tracing::info!(
-                    ollama_url = %ollama_url,
-                    seam_model = %model,
-                    "orchestration seams built from environment"
                 );
 
                 (

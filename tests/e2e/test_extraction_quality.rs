@@ -219,7 +219,15 @@ async fn extracted_pending_draft_captures_the_taught_procedure() {
     // SAFETY: env mutated only while holding ENV_LOCK via the namespace guard.
     unsafe {
         std::env::set_var("CLAUDE_TRANSCRIPT_ROOT", repo_root.join("tests/fixtures"));
-        std::env::set_var("EXTRACT_SESSION_PROVIDER", "ollama");
+        // Honor a pre-set EXTRACT_SESSION_PROVIDER (e.g. claude-code for a
+        // cross-provider e2e run); default to the local ollama provider only when
+        // it is unset/blank so the shipped default is still what runs by default.
+        if std::env::var("EXTRACT_SESSION_PROVIDER")
+            .map(|v| v.trim().is_empty())
+            .unwrap_or(true)
+        {
+            std::env::set_var("EXTRACT_SESSION_PROVIDER", "ollama");
+        }
         // Production default model unless the caller overrides (granite4:3b is a
         // faster CPU option). Measuring the SHIPPED default is the honest choice.
         if std::env::var("OLLAMA_EXTRACTION_MODEL").is_err() {

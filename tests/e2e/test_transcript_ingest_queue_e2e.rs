@@ -131,7 +131,14 @@ async fn shipped_command_hook_payload_round_trips_through_queue_to_pending() {
     // SAFETY: process env is mutated only while holding ENV_LOCK via namespace.
     unsafe {
         std::env::set_var("CLAUDE_TRANSCRIPT_ROOT", repo_root.join("tests/fixtures"));
-        std::env::set_var("EXTRACT_SESSION_PROVIDER", "ollama");
+        // Honor a pre-set EXTRACT_SESSION_PROVIDER (e.g. claude-code); default to
+        // the local ollama provider only when unset/blank.
+        if std::env::var("EXTRACT_SESSION_PROVIDER")
+            .map(|v| v.trim().is_empty())
+            .unwrap_or(true)
+        {
+            std::env::set_var("EXTRACT_SESSION_PROVIDER", "ollama");
+        }
         std::env::set_var("OLLAMA_EXTRACTION_MODEL", "granite4:3b");
         // The extraction provider reads OLLAMA_EXTRACTION_ENDPOINT (NOT OLLAMA_URL,
         // which only drives embeddings) and expects the FULL /api/generate path.

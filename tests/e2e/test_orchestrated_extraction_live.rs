@@ -36,7 +36,7 @@ use session_extractor::{
     ExtractSessionRequest,
     orchestrator::{OrchestrationConfig, SynthesisPass, run_orchestration},
     routing::LOCAL_TIER_TOKEN_BUDGET,
-    seams::{OllamaSkeletonLabeler, OllamaSynthesisPass},
+    seams::{LlmSkeletonLabeler, LlmSynthesisPass},
     segmentation::SegmentationConfig,
     skeleton::SkeletonLabeler,
     transcripts::parse_session_events,
@@ -113,8 +113,8 @@ async fn orchestrated_extraction_live_produces_grounded_pending_drafts() {
         unsafe {
             std::env::set_var("ORCHESTRATION_SEAM_MODEL", &seam_model);
         }
-        OllamaSkeletonLabeler::from_environment()
-            .expect("live: OllamaSkeletonLabeler must init from OLLAMA_URL")
+        LlmSkeletonLabeler::from_environment()
+            .expect("live: LlmSkeletonLabeler must init from OLLAMA_URL")
     };
 
     let embedder: Arc<dyn EmbeddingService> = {
@@ -140,8 +140,8 @@ async fn orchestrated_extraction_live_produces_grounded_pending_drafts() {
     };
 
     let synthesis: Arc<dyn SynthesisPass> = {
-        OllamaSynthesisPass::from_environment()
-            .expect("live: OllamaSynthesisPass must init from OLLAMA_URL")
+        LlmSynthesisPass::from_environment()
+            .expect("live: LlmSynthesisPass must init from OLLAMA_URL")
     };
 
     // Prose extractor (OllamaExtractor) — for prose-fallback map episodes.

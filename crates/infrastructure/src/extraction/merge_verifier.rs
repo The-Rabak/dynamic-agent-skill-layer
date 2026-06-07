@@ -395,6 +395,56 @@ impl LlmEquivalenceVerifier for ClaudeMergeVerifier {
     }
 }
 
+// ─── Provider-agnostic transport adapter ─────────────────────────────────────
+
+/// [`LlmEquivalenceVerifier`] backed by any [`StructuredTextLlm`] transport.
+///
+/// This is the equivalence verifier used by the session-extractor orchestration
+/// reduce step. It reuses the SAME `{equivalent, rationale}` prompt as the
+/// dedicated Ollama/Claude verifiers but routes the call through whichever
+/// transport the active `EXTRACT_SESSION_PROVIDER` selected — so the reduce-step
+/// dedup runs on the same provider as the map step (ollama or claude-code),
+/// instead of being hard-pinned to Ollama.
+///
+/// Fails loud: a transport error or a non-`{equivalent, rationale}` body surfaces
+/// as an `ExtractionError`, never a silent `equivalent=false`.
+#[derive(Debug, Clone)]
+pub struct TextLlmEquivalenceVerifier {
+    llm: std::sync::Arc<dyn crate::extraction::text_llm::StructuredTextLlm>,
+}
+
+impl TextLlmEquivalenceVerifier {
+    /// Wraps a [`StructuredTextLlm`] transport as an equivalence verifier.
+    pub fn new(llm: std::sync::Arc<dyn crate::extraction::text_llm::StructuredTextLlm>) -> Self {
+        Self { llm }
+    }
+}
+
+#[async_trait]
+impl LlmEquivalenceVerifier for TextLlmEquivalenceVerifier {
+    async fn decide_equivalence(
+        &self,
+        left_text: &str,
+        right_text: &str,
+    ) -> Result<EquivalenceDecision, ExtractionError> {
+        let prompt = build_equivalence_prompt(left_text, right_text);
+        let raw = self.llm.generate_json(prompt).await?;
+
+        let payload: OllamaEquivalencePayload = serde_json::from_str(&raw).map_err(|error| {
+            ExtractionError::Unexpected(format!(
+                "{} merge-verifier response was not valid JSON {{equivalent, rationale}}: \
+                     {error}; raw={raw}",
+                self.llm.provider_label()
+            ))
+        })?;
+
+        Ok(EquivalenceDecision {
+            equivalent: payload.equivalent,
+            rationale: payload.rationale,
+        })
+    }
+}
+
 // ─── Shared prompt builder ────────────────────────────────────────────────────
 
 /// Builds the user-facing equivalence prompt sent to both Ollama and Claude.

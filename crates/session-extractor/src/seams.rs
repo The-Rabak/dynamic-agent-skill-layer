@@ -12,8 +12,11 @@
 //!
 //! ## Transport
 //!
-//! All three impls share one transport: [`infrastructure::ollama_generate_text`].
-//! No reqwest plumbing is duplicated across seams.
+//! All impls share one provider-agnostic transport: [`infrastructure::StructuredTextLlm`]
+//! (Ollama or claude-code, selected by `EXTRACT_SESSION_PROVIDER`). No reqwest /
+//! subprocess plumbing is duplicated across seams. The default `from_environment`
+//! constructors build the Ollama transport; `SessionExtractor::from_environment`
+//! injects a claude-code transport via each seam's `new` when that provider is set.
 //!
 //! ## Fail discipline
 //!
@@ -34,13 +37,13 @@
 //!
 //! Each impl is built from environment variables at [`SessionExtractor`] construction
 //! time, not per-job, so a missing-env failure surfaces at startup (fail loud early).
-//! See [`OllamaPreambleNormalizer::from_environment`] and siblings.
+//! See [`LlmPreambleNormalizer::from_environment`] and siblings.
 
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use domain::{ExtractedSkillCandidate, ExtractionError};
-use infrastructure::{OllamaGenerateTextOptions, OllamaGenerateTextRequest, ollama_generate_text};
+use infrastructure::{OllamaTextLlm, StructuredTextLlm};
 use serde::Deserialize;
 use tracing::debug;
 
@@ -80,39 +83,50 @@ fn seam_model() -> String {
     std::env::var("ORCHESTRATION_SEAM_MODEL").unwrap_or_else(|_| DEFAULT_SEAM_MODEL.to_owned())
 }
 
-// ─── PreambleNormalizer impl ──────────────────────────────────────────────────
-
-/// Real Ollama-backed [`PreambleNormalizer`].
+/// Builds the default Ollama-backed seam transport from environment variables.
 ///
-/// Sends the raw preamble draft preferences to the configured LLM and asks it to
-/// deduplicate and rephrase them. The response is parsed into a new preference list
-/// that replaces the original. Project facts pass through unchanged (the LLM only
-/// normalises the natural-language preferences).
-#[derive(Debug, Clone)]
-pub struct OllamaPreambleNormalizer {
-    client: reqwest::Client,
-    endpoint: String,
-    model: String,
+/// Reads `OLLAMA_URL` (required) and `ORCHESTRATION_SEAM_MODEL` (optional). This is
+/// the back-compat default used by every seam's `from_environment` constructor and
+/// by `SessionExtractor::from_environment` for the local/Ollama provider. The
+/// claude-code provider builds a [`infrastructure::ClaudeCodeTextLlm`] instead and
+/// injects it via each seam's `new` constructor.
+pub fn ollama_seam_llm() -> Result<Arc<dyn StructuredTextLlm>, ExtractionError> {
+    let base_url = require_ollama_base_url()?;
+    let endpoint = format!("{}/api/generate", base_url.trim_end_matches('/'));
+    Ok(Arc::new(OllamaTextLlm::new(endpoint, seam_model())?))
 }
 
-impl OllamaPreambleNormalizer {
-    /// Constructs the normalizer from environment variables.
+// ─── PreambleNormalizer impl ──────────────────────────────────────────────────
+
+/// LLM-backed [`PreambleNormalizer`] over a provider-agnostic [`StructuredTextLlm`].
+///
+/// Sends the raw preamble draft preferences to the configured LLM (Ollama or
+/// claude-code, per `EXTRACT_SESSION_PROVIDER`) and asks it to deduplicate and
+/// rephrase them. The response is parsed into a new preference list that replaces
+/// the original. Project facts pass through unchanged (the LLM only normalises the
+/// natural-language preferences).
+#[derive(Debug, Clone)]
+pub struct LlmPreambleNormalizer {
+    llm: Arc<dyn StructuredTextLlm>,
+}
+
+impl LlmPreambleNormalizer {
+    /// Wraps a [`StructuredTextLlm`] transport as a preamble normalizer.
+    pub fn new(llm: Arc<dyn StructuredTextLlm>) -> Arc<Self> {
+        Arc::new(Self { llm })
+    }
+
+    /// Constructs the normalizer with the default Ollama-backed transport from env.
     ///
-    /// Reads `OLLAMA_URL` (required) and `ORCHESTRATION_SEAM_MODEL` (optional, default
-    /// `gemma4:12b`).
+    /// Reads `OLLAMA_URL` (required) and `ORCHESTRATION_SEAM_MODEL` (optional,
+    /// default `gemma4:12b`). The claude-code provider injects a different transport
+    /// via [`Self::new`].
     ///
     /// # Errors
     ///
     /// Returns `ExtractionError::ProviderUnavailable` when `OLLAMA_URL` is absent.
     pub fn from_environment() -> Result<Arc<Self>, ExtractionError> {
-        let base_url = require_ollama_base_url()?;
-        let endpoint = format!("{}/api/generate", base_url.trim_end_matches('/'));
-        let model = seam_model();
-        Ok(Arc::new(Self {
-            client: reqwest::Client::new(),
-            endpoint,
-            model,
-        }))
+        Ok(Self::new(ollama_seam_llm()?))
     }
 }
 
@@ -202,36 +216,29 @@ pub fn parse_normalization_response(
 }
 
 #[async_trait]
-impl PreambleNormalizer for OllamaPreambleNormalizer {
+impl PreambleNormalizer for LlmPreambleNormalizer {
     async fn normalize(&self, draft: PreambleDraft) -> Result<PreambleDraft, NormalizationError> {
         let prompt = build_normalization_prompt(&draft);
 
-        let request = OllamaGenerateTextRequest {
-            model: self.model.clone(),
-            stream: false,
-            format: "json".to_owned(),
-            prompt,
-            // #176: never let the thinking model leak reasoning into the JSON keys.
-            think: false,
-            options: Some(OllamaGenerateTextOptions { temperature: 0.0 }),
-        };
+        debug!(
+            provider = self.llm.provider_label(),
+            model = self.llm.model(),
+            "LlmPreambleNormalizer: sending normalisation request"
+        );
 
-        debug!(model = %self.model, "OllamaPreambleNormalizer: sending normalisation request");
-
-        let raw_json = ollama_generate_text(&self.client, &self.endpoint, &request)
-            .await
-            .map_err(|error| {
-                NormalizationError::ProviderFailure(format!(
-                    "Ollama normalizer call failed: {error}"
-                ))
-            })?;
+        let raw_json = self.llm.generate_json(prompt).await.map_err(|error| {
+            NormalizationError::ProviderFailure(format!(
+                "{} normalizer call failed: {error}",
+                self.llm.provider_label()
+            ))
+        })?;
 
         let normalised_preferences = parse_normalization_response(&raw_json, &draft)?;
 
         debug!(
             original_count = draft.preferences.len(),
             normalised_count = normalised_preferences.len(),
-            "OllamaPreambleNormalizer: normalisation complete"
+            "LlmPreambleNormalizer: normalisation complete"
         );
 
         Ok(PreambleDraft {
@@ -243,35 +250,32 @@ impl PreambleNormalizer for OllamaPreambleNormalizer {
 
 // ─── SkeletonLabeler impl ─────────────────────────────────────────────────────
 
-/// Real Ollama-backed [`SkeletonLabeler`].
+/// LLM-backed [`SkeletonLabeler`] over a provider-agnostic [`StructuredTextLlm`].
 ///
 /// Sends the mined skeleton (grounded procedure steps + trigger failure) to the
-/// configured LLM and asks for a bounded label: kebab `name`, one-sentence
-/// `description`, `generality` advisory, and keep/drop decision.
+/// configured LLM (Ollama or claude-code) and asks for a bounded label: kebab
+/// `name`, one-sentence `description`, `generality` advisory, and keep/drop decision.
 #[derive(Debug, Clone)]
-pub struct OllamaSkeletonLabeler {
-    client: reqwest::Client,
-    endpoint: String,
-    model: String,
+pub struct LlmSkeletonLabeler {
+    llm: Arc<dyn StructuredTextLlm>,
 }
 
-impl OllamaSkeletonLabeler {
-    /// Constructs the labeler from environment variables.
+impl LlmSkeletonLabeler {
+    /// Wraps a [`StructuredTextLlm`] transport as a skeleton labeler.
+    pub fn new(llm: Arc<dyn StructuredTextLlm>) -> Arc<Self> {
+        Arc::new(Self { llm })
+    }
+
+    /// Constructs the labeler with the default Ollama-backed transport from env.
     ///
-    /// Reads `OLLAMA_URL` (required) and `ORCHESTRATION_SEAM_MODEL` (optional).
+    /// Reads `OLLAMA_URL` (required) and `ORCHESTRATION_SEAM_MODEL` (optional). The
+    /// claude-code provider injects a different transport via [`Self::new`].
     ///
     /// # Errors
     ///
     /// Returns `ExtractionError::ProviderUnavailable` when `OLLAMA_URL` is absent.
     pub fn from_environment() -> Result<Arc<Self>, ExtractionError> {
-        let base_url = require_ollama_base_url()?;
-        let endpoint = format!("{}/api/generate", base_url.trim_end_matches('/'));
-        let model = seam_model();
-        Ok(Arc::new(Self {
-            client: reqwest::Client::new(),
-            endpoint,
-            model,
-        }))
+        Ok(Self::new(ollama_seam_llm()?))
     }
 }
 
@@ -371,27 +375,23 @@ pub fn parse_skeleton_label_response(raw_json: &str) -> Result<SkeletonLabel, Sk
 }
 
 #[async_trait]
-impl SkeletonLabeler for OllamaSkeletonLabeler {
+impl SkeletonLabeler for LlmSkeletonLabeler {
     async fn label(&self, skeleton: &ProcedureSkeleton) -> Result<SkeletonLabel, SkeletonError> {
         let prompt = build_skeleton_labeling_prompt(skeleton);
 
-        let request = OllamaGenerateTextRequest {
-            model: self.model.clone(),
-            stream: false,
-            format: "json".to_owned(),
-            prompt,
-            // #176: never let the thinking model leak reasoning into the JSON keys.
-            think: false,
-            options: Some(OllamaGenerateTextOptions { temperature: 0.0 }),
-        };
+        debug!(
+            provider = self.llm.provider_label(),
+            model = self.llm.model(),
+            "LlmSkeletonLabeler: sending labeling request"
+        );
 
-        debug!(model = %self.model, "OllamaSkeletonLabeler: sending labeling request");
-
-        let raw_json = ollama_generate_text(&self.client, &self.endpoint, &request)
-            .await
-            .map_err(|error| SkeletonError::LabelerFailed {
-                message: format!("Ollama labeler call failed: {error}"),
-            })?;
+        let raw_json =
+            self.llm
+                .generate_json(prompt)
+                .await
+                .map_err(|error| SkeletonError::LabelerFailed {
+                    message: format!("{} labeler call failed: {error}", self.llm.provider_label()),
+                })?;
 
         let label = parse_skeleton_label_response(&raw_json)?;
 
@@ -399,7 +399,7 @@ impl SkeletonLabeler for OllamaSkeletonLabeler {
             name = %label.name,
             keep = label.keep,
             confidence = label.confidence,
-            "OllamaSkeletonLabeler: labeling complete"
+            "LlmSkeletonLabeler: labeling complete"
         );
 
         Ok(label)
@@ -408,35 +408,32 @@ impl SkeletonLabeler for OllamaSkeletonLabeler {
 
 // ─── SynthesisPass impl ───────────────────────────────────────────────────────
 
-/// Real Ollama-backed [`SynthesisPass`].
+/// LLM-backed [`SynthesisPass`] over a provider-agnostic [`StructuredTextLlm`].
 ///
 /// Reviews the deduped candidate list and the session preamble for session-spanning
 /// patterns that no single episode reveals. Returns additional candidates when found,
 /// or an empty list when none are detected.
 #[derive(Debug, Clone)]
-pub struct OllamaSynthesisPass {
-    client: reqwest::Client,
-    endpoint: String,
-    model: String,
+pub struct LlmSynthesisPass {
+    llm: Arc<dyn StructuredTextLlm>,
 }
 
-impl OllamaSynthesisPass {
-    /// Constructs the synthesis pass from environment variables.
+impl LlmSynthesisPass {
+    /// Wraps a [`StructuredTextLlm`] transport as a synthesis pass.
+    pub fn new(llm: Arc<dyn StructuredTextLlm>) -> Arc<Self> {
+        Arc::new(Self { llm })
+    }
+
+    /// Constructs the synthesis pass with the default Ollama-backed transport from env.
     ///
-    /// Reads `OLLAMA_URL` (required) and `ORCHESTRATION_SEAM_MODEL` (optional).
+    /// Reads `OLLAMA_URL` (required) and `ORCHESTRATION_SEAM_MODEL` (optional). The
+    /// claude-code provider injects a different transport via [`Self::new`].
     ///
     /// # Errors
     ///
     /// Returns `ExtractionError::ProviderUnavailable` when `OLLAMA_URL` is absent.
     pub fn from_environment() -> Result<Arc<Self>, ExtractionError> {
-        let base_url = require_ollama_base_url()?;
-        let endpoint = format!("{}/api/generate", base_url.trim_end_matches('/'));
-        let model = seam_model();
-        Ok(Arc::new(Self {
-            client: reqwest::Client::new(),
-            endpoint,
-            model,
-        }))
+        Ok(Self::new(ollama_seam_llm()?))
     }
 }
 
@@ -553,7 +550,7 @@ pub fn parse_synthesis_response(
 }
 
 #[async_trait]
-impl SynthesisPass for OllamaSynthesisPass {
+impl SynthesisPass for LlmSynthesisPass {
     async fn synthesize(
         &self,
         deduped_candidates: &[ExtractedSkillCandidate],
@@ -561,33 +558,25 @@ impl SynthesisPass for OllamaSynthesisPass {
     ) -> Result<Vec<ExtractedSkillCandidate>, SynthesisError> {
         let prompt = build_synthesis_prompt(deduped_candidates, preamble_text);
 
-        let request = OllamaGenerateTextRequest {
-            model: self.model.clone(),
-            stream: false,
-            format: "json".to_owned(),
-            prompt,
-            // #176: never let the thinking model leak reasoning into the JSON keys.
-            think: false,
-            options: Some(OllamaGenerateTextOptions { temperature: 0.0 }),
-        };
-
         debug!(
-            model = %self.model,
+            provider = self.llm.provider_label(),
+            model = self.llm.model(),
             candidate_count = deduped_candidates.len(),
-            "OllamaSynthesisPass: sending synthesis request"
+            "LlmSynthesisPass: sending synthesis request"
         );
 
-        let raw_json = ollama_generate_text(&self.client, &self.endpoint, &request)
-            .await
-            .map_err(|error| {
-                SynthesisError::ProviderFailure(format!("Ollama synthesis call failed: {error}"))
-            })?;
+        let raw_json = self.llm.generate_json(prompt).await.map_err(|error| {
+            SynthesisError::ProviderFailure(format!(
+                "{} synthesis call failed: {error}",
+                self.llm.provider_label()
+            ))
+        })?;
 
         let additional = parse_synthesis_response(&raw_json)?;
 
         debug!(
             additional_count = additional.len(),
-            "OllamaSynthesisPass: synthesis complete"
+            "LlmSynthesisPass: synthesis complete"
         );
 
         Ok(additional)

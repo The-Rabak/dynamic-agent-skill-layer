@@ -28,7 +28,9 @@ pub mod vector {
 
 pub use embeddings::ollama::{OllamaEmbeddingConfig, OllamaEmbeddingService};
 pub use extraction::claude::{ClaudeExtractionConfig, ClaudeExtractor};
-pub use extraction::claude_code::{ClaudeCodeExtractionConfig, ClaudeCodeExtractor};
+pub use extraction::claude_code::{
+    ClaudeCodeExtractionConfig, ClaudeCodeExtractor, claude_code_generate_text,
+};
 pub use extraction::generality_verifier::{
     ClaudeGeneralityVerifier, ClaudeGeneralityVerifierConfig, GeneralityDecision,
     OllamaGeneralityVerifier, OllamaGeneralityVerifierConfig, SkillGeneralityVerifier,
@@ -38,9 +40,10 @@ pub use extraction::http::{
 };
 pub use extraction::merge_verifier::{
     ClaudeMergeVerifier, ClaudeMergeVerifierConfig, EquivalenceDecision, LlmEquivalenceVerifier,
-    OllamaMergeVerifier, OllamaMergeVerifierConfig,
+    OllamaMergeVerifier, OllamaMergeVerifierConfig, TextLlmEquivalenceVerifier,
 };
 pub use extraction::ollama::{OllamaExtractionConfig, OllamaExtractor};
+pub use extraction::text_llm::{ClaudeCodeTextLlm, OllamaTextLlm, StructuredTextLlm};
 pub use health::{DependencyFactory, HealthComponent, HealthReport, InfrastructureHealthChecker};
 pub use persistence::outbox::{
     GraphWriteCoordinator, OutboxEvent, OutboxInspection, OutboxRecord, OutboxRelay,

@@ -1,7 +1,54 @@
 use std::sync::Arc;
 
 use domain::{ExtractionError, TranscriptSkillExtractionService};
-use infrastructure::{ClaudeCodeExtractionConfig, ClaudeCodeExtractor};
+use infrastructure::{
+    ClaudeCodeExtractionConfig, ClaudeCodeExtractor, ClaudeCodeTextLlm, StructuredTextLlm,
+};
+
+/// Reads the claude-code provider configuration from the environment.
+///
+/// Shared by [`build_extractor`] (map step) and [`build_text_llm`] (orchestration
+/// seams) so both honour the same env vars:
+/// - `CLAUDE_CLI_PATH` (default `claude` — resolved via `$PATH`; validated when set)
+/// - `EXTRACT_SESSION_MODEL` (default `claude-sonnet-4-6`)
+/// - `CLAUDE_CODE_EXTRACTION_TIMEOUT_MS` (optional inner timeout override; default 120 000 ms)
+fn config_from_environment() -> Result<ClaudeCodeExtractionConfig, ExtractionError> {
+    let mut config = ClaudeCodeExtractionConfig::default();
+
+    if let Ok(cli_path) = std::env::var("CLAUDE_CLI_PATH")
+        && !cli_path.trim().is_empty()
+    {
+        validate_cli_path(&cli_path)?;
+        config.cli_path = cli_path;
+    }
+    if let Ok(model) = std::env::var("EXTRACT_SESSION_MODEL")
+        && !model.trim().is_empty()
+    {
+        config.model = model;
+    }
+    if let Ok(timeout_str) = std::env::var("CLAUDE_CODE_EXTRACTION_TIMEOUT_MS") {
+        config.timeout_ms = timeout_str.parse().map_err(|error| {
+            ExtractionError::InvalidTranscript(format!(
+                "invalid CLAUDE_CODE_EXTRACTION_TIMEOUT_MS value: {error}"
+            ))
+        })?;
+    }
+
+    Ok(config)
+}
+
+/// Builds the claude-code-backed orchestration-seam text transport.
+///
+/// Returns a [`StructuredTextLlm`] (the seam transport) configured from the same
+/// environment as [`build_extractor`]. Used by `SessionExtractor::from_environment`
+/// to drive the skeleton/synthesis/preamble/equivalence seams on Sonnet when
+/// `EXTRACT_SESSION_PROVIDER=claude-code`, so the whole reduce-step LLM workload
+/// runs on the same provider as the map step. Host-only (the `claude` CLI must be
+/// present and authenticated where this runs).
+pub fn build_text_llm() -> Result<Arc<dyn StructuredTextLlm>, ExtractionError> {
+    let config = config_from_environment()?;
+    Ok(Arc::new(ClaudeCodeTextLlm::new(config)?))
+}
 
 /// Builds the Claude Code CLI-backed extraction adapter (subscription-based, no API key).
 ///
@@ -28,27 +75,7 @@ use infrastructure::{ClaudeCodeExtractionConfig, ClaudeCodeExtractor};
 /// the default `claude` name is used (resolved via `$PATH`), the check is skipped because
 /// PATH resolution is intentional and probing every candidate would be fragile.
 pub fn build_extractor() -> Result<Arc<dyn TranscriptSkillExtractionService>, ExtractionError> {
-    let mut config = ClaudeCodeExtractionConfig::default();
-
-    if let Ok(cli_path) = std::env::var("CLAUDE_CLI_PATH")
-        && !cli_path.trim().is_empty()
-    {
-        validate_cli_path(&cli_path)?;
-        config.cli_path = cli_path;
-    }
-    if let Ok(model) = std::env::var("EXTRACT_SESSION_MODEL")
-        && !model.trim().is_empty()
-    {
-        config.model = model;
-    }
-    if let Ok(timeout_str) = std::env::var("CLAUDE_CODE_EXTRACTION_TIMEOUT_MS") {
-        config.timeout_ms = timeout_str.parse().map_err(|error| {
-            ExtractionError::InvalidTranscript(format!(
-                "invalid CLAUDE_CODE_EXTRACTION_TIMEOUT_MS value: {error}"
-            ))
-        })?;
-    }
-
+    let config = config_from_environment()?;
     ClaudeCodeExtractor::new(config)
         .map(|extractor| Arc::new(extractor) as Arc<dyn TranscriptSkillExtractionService>)
 }

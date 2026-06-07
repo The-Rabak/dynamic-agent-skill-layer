@@ -1773,7 +1773,15 @@ async fn sustained_watcher_and_extraction_saturation_keeps_eventual_consistency(
     let prior_allowed_roots = save_env!("SKILL_GLOBAL_ALLOWED_ROOTS");
     let prior_transcript_root = save_env!("CLAUDE_TRANSCRIPT_ROOT");
 
-    set_env!("EXTRACT_SESSION_PROVIDER", "ollama");
+    // Honor a pre-set EXTRACT_SESSION_PROVIDER (e.g. claude-code for a
+    // cross-provider e2e run); default to the local ollama provider only when
+    // unset/blank. The prior value was saved above and is restored at teardown.
+    if std::env::var("EXTRACT_SESSION_PROVIDER")
+        .map(|v| v.trim().is_empty())
+        .unwrap_or(true)
+    {
+        set_env!("EXTRACT_SESSION_PROVIDER", "ollama");
+    }
     // Use gemma4:12b (the production default confirmed working) unless an override
     // is provided.  The ticket specifies gemma4:12b for this test.
     if std::env::var("OLLAMA_EXTRACTION_MODEL")

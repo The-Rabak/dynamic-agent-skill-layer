@@ -6,6 +6,7 @@ pub(crate) mod limits;
 pub mod merge_verifier;
 pub mod ollama;
 pub mod prompt_contract;
+pub mod text_llm;
 
 // # Extraction Prompt Strategy (V1.5 — 2026-05-31; supersedes T14 Path A)
 //
