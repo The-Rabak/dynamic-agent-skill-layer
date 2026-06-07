@@ -268,14 +268,54 @@ impl std::str::FromStr for ExtractionRunPath {
     }
 }
 
+/// All four seams required by the orchestrated map→reduce pipeline, bundled so
+/// "Orchestrated run path without a seam" is unrepresentable at the type level.
+///
+/// Constructed exactly once inside [`SessionExtractor::from_environment`] when
+/// `EXTRACT_EXTRACTION_PATH=orchestrated` is selected. The four non-optional fields
+/// replace the prior `Option<Arc<…>>` fields that were unwrapped with `.expect()`
+/// inside `execute_job_orchestrated`. `preamble_normalizer` remains `Option` because
+/// skipping LLM preamble normalization is a valid and documented configuration.
+#[derive(Clone)]
+pub struct OrchestrationSeams {
+    /// Skeleton labeler for the map step (labels procedure skeletons before extraction).
+    pub skeleton_labeler: Arc<dyn SkeletonLabeler>,
+    /// Embedding service for the reduce step (nomic-embed-text via Ollama, always local).
+    pub embedder: Arc<dyn EmbeddingService>,
+    /// LLM equivalence verifier for the reduce step (deduplication).
+    pub equivalence_verifier: Arc<dyn LlmEquivalenceVerifier>,
+    /// Synthesis pass for the final step (cross-episode skill merging).
+    pub synthesis: Arc<dyn orchestrator::SynthesisPass>,
+    /// Optional preamble normalizer. `None` skips LLM normalization — valid and grounded.
+    pub preamble_normalizer: Option<Arc<LlmPreambleNormalizer>>,
+}
+
+/// Active run-path state for a [`SessionExtractor`], encoding the run-path selection
+/// together with its required dependencies so the invariant is compile-time.
+///
+/// `Orchestrated` carries all four non-optional seams in [`OrchestrationSeams`];
+/// `SingleShot` carries no seams. "Orchestrated without seams" is unrepresentable.
+#[derive(Clone)]
+pub enum ActiveRunPath {
+    /// Map→reduce orchestration pipeline — the default since v1.5.1.
+    /// Carries [`OrchestrationSeams`]; all four required seams are guaranteed present.
+    Orchestrated(OrchestrationSeams),
+    /// Legacy single-shot extraction (one-release fallback). No seams required.
+    SingleShot,
+}
+
 /// Coordinates transcript loading, provider extraction, draft writing, and lifecycle events.
 #[derive(Clone)]
 pub struct SessionExtractor {
     pub(crate) provider: ExtractionProvider,
-    /// Which extraction pipeline is executed per job — orchestrated (default) or single-shot
-    /// (legacy fallback). Sourced from `EXTRACT_EXTRACTION_PATH` at construction time and
-    /// logged at INFO. Immutable for the lifetime of this extractor.
-    pub run_path: ExtractionRunPath,
+    /// Active run-path selection, carrying the seams that path requires.
+    ///
+    /// `Orchestrated(OrchestrationSeams)` guarantees all four seams are present;
+    /// `SingleShot` carries none. The invariant "Orchestrated ⇒ all seams wired"
+    /// is encoded in the type — no `Option`-unwrap panics at job time.
+    ///
+    /// Use [`Self::run_path()`] to read the discriminant as [`ExtractionRunPath`].
+    pub(crate) active_run_path: ActiveRunPath,
     /// Routing decision resolved at construction time from `EXTRACT_SESSION_ROUTING`.
     ///
     /// Logged at INFO level during construction so every extraction session is
@@ -299,17 +339,6 @@ pub struct SessionExtractor {
     /// apply the same arm. `None` = no fixed ceiling (the churning orchestrated
     /// path); `Some(d)` = bounded single-shot path.
     pub(crate) job_timeout: Option<std::time::Duration>,
-    // ── Orchestration seams (built once at construction; None only when run_path=SingleShot) ──
-    /// Skeleton labeler for the orchestrated map step. Built from env; None when run_path=SingleShot.
-    pub(crate) skeleton_labeler: Option<Arc<dyn SkeletonLabeler>>,
-    /// Embedder for the orchestrated reduce step. Built from env; None when run_path=SingleShot.
-    pub(crate) embedder: Option<Arc<dyn EmbeddingService>>,
-    /// LLM equivalence verifier for the orchestrated reduce step. None when run_path=SingleShot.
-    pub(crate) equivalence_verifier: Option<Arc<dyn LlmEquivalenceVerifier>>,
-    /// Synthesis pass for the orchestrated final step. None when run_path=SingleShot.
-    pub(crate) synthesis: Option<Arc<dyn orchestrator::SynthesisPass>>,
-    /// Optional preamble normalizer (None skips LLM normalization — valid and grounded).
-    pub(crate) preamble_normalizer: Option<Arc<LlmPreambleNormalizer>>,
 }
 
 /// Typed result of one extraction job, produced by [`SessionExtractor::execute_job`].
@@ -391,8 +420,9 @@ impl SessionExtractor {
 
         // Build orchestration seams when the orchestrated path is selected.
         // A missing OLLAMA_URL fails loudly here at construction — not at job time.
-        let (skeleton_labeler, embedder, equivalence_verifier, synthesis, preamble_normalizer) =
-            if run_path == ExtractionRunPath::Orchestrated {
+        // `active_run_path` bundles the run-path discriminant with its required seams so
+        // "Orchestrated without seams" cannot be represented (no Option-unwrap panics at job time).
+        let active_run_path: ActiveRunPath = if run_path == ExtractionRunPath::Orchestrated {
                 // Embeddings are ALWAYS local (nomic-embed-text via Ollama) — the one
                 // documented exception to provider selection. OLLAMA_URL is therefore
                 // required even when the seams run on claude-code.
@@ -441,15 +471,15 @@ impl SessionExtractor {
                         .map_err(|e| SessionExtractorInitError::SeamInit(e.to_string()))?,
                 );
 
-                (
-                    Some(labeler as Arc<dyn SkeletonLabeler>),
-                    Some(embedder),
-                    Some(equivalence_verifier),
-                    Some(synthesis),
+                ActiveRunPath::Orchestrated(OrchestrationSeams {
+                    skeleton_labeler: labeler as Arc<dyn SkeletonLabeler>,
+                    embedder,
+                    equivalence_verifier,
+                    synthesis,
                     preamble_normalizer,
-                )
+                })
             } else {
-                (None, None, None, None, None)
+                ActiveRunPath::SingleShot
             };
 
         // OUTER per-job ceiling policy. The orchestrated path is a background worker
@@ -479,7 +509,7 @@ impl SessionExtractor {
             };
         let job_ceiling: Option<std::time::Duration> = match timeout_override {
             Some(explicit) => explicit,
-            None if run_path == ExtractionRunPath::Orchestrated => None,
+            None if matches!(active_run_path, ActiveRunPath::Orchestrated(_)) => None,
             None => ExtractionWorkerPoolConfig::default().timeout,
         };
         let pool_config = ExtractionWorkerPoolConfig::default().with_optional_timeout(job_ceiling);
@@ -487,7 +517,7 @@ impl SessionExtractor {
         let job_timeout = pool_config.timeout;
         Ok(Self {
             provider,
-            run_path,
+            active_run_path,
             routing_decision,
             extractor,
             transcript_loader: TranscriptLoader::from_environment()?,
@@ -497,11 +527,6 @@ impl SessionExtractor {
             worker_pool: Some(ExtractionWorkerPool::new(pool_config)),
             retry_policy,
             job_timeout,
-            skeleton_labeler,
-            embedder,
-            equivalence_verifier,
-            synthesis,
-            preamble_normalizer,
         })
     }
 
@@ -528,7 +553,7 @@ impl SessionExtractor {
 
     /// Constructs a fully-injected extractor and lifecycle publisher for tests.
     ///
-    /// Always uses `ExtractionRunPath::SingleShot` — seam fields are `None`.
+    /// Always uses [`ActiveRunPath::SingleShot`] — no orchestration seams are required.
     #[cfg(any(test, feature = "test-utils"))]
     pub fn new_for_tests_with_publisher(
         provider: ExtractionProvider,
@@ -550,7 +575,7 @@ impl SessionExtractor {
         };
         Self {
             provider,
-            run_path: ExtractionRunPath::SingleShot,
+            active_run_path: ActiveRunPath::SingleShot,
             routing_decision,
             extractor,
             transcript_loader,
@@ -560,11 +585,55 @@ impl SessionExtractor {
             worker_pool: Some(ExtractionWorkerPool::new(pool_config)),
             retry_policy,
             job_timeout,
-            skeleton_labeler: None,
-            embedder: None,
-            equivalence_verifier: None,
-            synthesis: None,
-            preamble_normalizer: None,
+        }
+    }
+
+    /// Constructs a fully-injected orchestrated extractor with caller-supplied seams, for tests.
+    ///
+    /// Use this constructor to test the orchestrated path with injected seam fakes. Proving
+    /// that this constructor compiles and constructs successfully demonstrates that the
+    /// orchestrated path cannot be selected without all four required seams being wired.
+    #[cfg(any(test, feature = "test-utils"))]
+    pub fn new_for_tests_orchestrated(
+        provider: ExtractionProvider,
+        extractor: Arc<dyn TranscriptSkillExtractionService>,
+        transcript_loader: TranscriptLoader,
+        draft_writer: PendingDraftWriter,
+        seams: OrchestrationSeams,
+    ) -> Self {
+        use routing::{ExtractionRoutingTier, LOCAL_TIER_TOKEN_BUDGET};
+        let pool_config = ExtractionWorkerPoolConfig::default();
+        let retry_policy = pool_config.retry_policy.clone();
+        let job_timeout = pool_config.timeout;
+        let routing_decision = RoutingDecision {
+            tier: ExtractionRoutingTier::Local,
+            provider,
+            segmentation_token_budget: LOCAL_TIER_TOKEN_BUDGET,
+            dual_pass_enabled: false,
+        };
+        Self {
+            provider,
+            active_run_path: ActiveRunPath::Orchestrated(seams),
+            routing_decision,
+            extractor,
+            transcript_loader,
+            draft_writer,
+            lifecycle_events: ExtractionLifecycleEvents::default(),
+            event_publisher: Arc::new(NoopExtractionEventPublisher),
+            worker_pool: None,
+            retry_policy,
+            job_timeout,
+        }
+    }
+
+    /// Returns the active run-path discriminant as [`ExtractionRunPath`].
+    ///
+    /// Useful for assertions and logging when the full [`ActiveRunPath`] variant
+    /// is not needed. The underlying seams are accessible via `active_run_path`.
+    pub fn run_path(&self) -> ExtractionRunPath {
+        match &self.active_run_path {
+            ActiveRunPath::Orchestrated(_) => ExtractionRunPath::Orchestrated,
+            ActiveRunPath::SingleShot => ExtractionRunPath::SingleShot,
         }
     }
 
@@ -670,9 +739,11 @@ impl SessionExtractor {
         job_id: &str,
         request: &ExtractSessionRequest,
     ) -> ExtractionOutcome {
-        match self.run_path {
-            ExtractionRunPath::Orchestrated => self.execute_job_orchestrated(job_id, request).await,
-            ExtractionRunPath::SingleShot => self.execute_job_single_shot(job_id, request).await,
+        match &self.active_run_path {
+            ActiveRunPath::Orchestrated(seams) => {
+                self.execute_job_orchestrated(job_id, request, seams).await
+            }
+            ActiveRunPath::SingleShot => self.execute_job_single_shot(job_id, request).await,
         }
     }
 
@@ -684,14 +755,14 @@ impl SessionExtractor {
     /// writes `.pending` drafts. The routing budget from [`Self::routing_decision`]
     /// drives episode granularity.
     ///
-    /// The seams (`skeleton_labeler`, `embedder`, `equivalence_verifier`, `synthesis`)
-    /// are required when `run_path = Orchestrated`. A missing seam panics at this point
-    /// because it indicates a construction invariant violation (the seams are always
-    /// `Some` when `Orchestrated`).
+    /// The seams are passed in via [`OrchestrationSeams`], guaranteed present by the
+    /// type — the caller holds an `ActiveRunPath::Orchestrated(seams)` arm. No
+    /// `Option`-unwrap panics are possible here.
     async fn execute_job_orchestrated(
         &self,
         _job_id: &str,
         request: &ExtractSessionRequest,
+        seams: &OrchestrationSeams,
     ) -> ExtractionOutcome {
         // Load the raw transcript bytes (inline or file-rooted).
         let raw_payload = match self.transcript_loader.load_raw(
@@ -744,30 +815,16 @@ impl SessionExtractor {
             ..OrchestrationConfig::default()
         };
 
-        // Seam references — unwrap is safe: invariant guarantees Some when Orchestrated.
-        let labeler = self
-            .skeleton_labeler
-            .as_ref()
-            .expect("skeleton_labeler must be Some when run_path=Orchestrated")
-            .clone();
-        let embedder = self
-            .embedder
-            .as_ref()
-            .expect("embedder must be Some when run_path=Orchestrated")
-            .clone();
-        let equivalence_verifier = self
-            .equivalence_verifier
-            .as_ref()
-            .expect("equivalence_verifier must be Some when run_path=Orchestrated")
-            .clone();
-        let synthesis = self
-            .synthesis
-            .as_ref()
-            .expect("synthesis must be Some when run_path=Orchestrated")
-            .clone();
+        // Direct field access on the guaranteed-present `OrchestrationSeams` — no Option,
+        // no expect(), no panic. The type invariant (ActiveRunPath::Orchestrated carries seams)
+        // is enforced at construction time.
+        let labeler = seams.skeleton_labeler.clone();
+        let embedder = seams.embedder.clone();
+        let equivalence_verifier = seams.equivalence_verifier.clone();
+        let synthesis = seams.synthesis.clone();
 
         // Optional preamble normalizer: None skips LLM normalization (grounded and valid).
-        let preamble_normalizer_ref: Option<&dyn preamble::PreambleNormalizer> = self
+        let preamble_normalizer_ref: Option<&dyn preamble::PreambleNormalizer> = seams
             .preamble_normalizer
             .as_ref()
             .map(|n| n.as_ref() as &dyn preamble::PreambleNormalizer);
@@ -1431,7 +1488,7 @@ mod tests {
         };
         SessionExtractor {
             provider,
-            run_path: ExtractionRunPath::SingleShot,
+            active_run_path: ActiveRunPath::SingleShot,
             routing_decision,
             extractor: extractor_impl,
             transcript_loader: TranscriptLoader::new(transcript_root.to_path_buf())
@@ -1442,11 +1499,6 @@ mod tests {
             worker_pool,
             retry_policy,
             job_timeout,
-            skeleton_labeler: None,
-            embedder: None,
-            equivalence_verifier: None,
-            synthesis: None,
-            preamble_normalizer: None,
         }
     }
 
@@ -1698,9 +1750,9 @@ mod tests {
             ExtractionWorkerPoolConfig::default(),
             None,
         );
-        // run_path is SingleShot in build_no_pool_extractor — verify.
+        // run_path() reports SingleShot in build_no_pool_extractor — verify.
         assert_eq!(
-            extractor.run_path,
+            extractor.run_path(),
             ExtractionRunPath::SingleShot,
             "test extractor must use SingleShot run path"
         );
@@ -1722,10 +1774,10 @@ mod tests {
     /// inside `execute_job_orchestrated` without requiring a live model.
     #[tokio::test]
     async fn orchestrated_path_fails_loudly_on_invalid_session_id() {
-        use crate::routing::{ExtractionRoutingTier, LOCAL_TIER_TOKEN_BUDGET};
-
-        // Build a minimal orchestrated extractor with fake seams.
-        // We need Some seams to avoid the unwrap panics.
+        // Build a minimal orchestrated extractor using `new_for_tests_orchestrated` with
+        // noop seam fakes. This also proves that the orchestrated path cannot be constructed
+        // without supplying all four required seams — see
+        // `orchestrated_path_requires_all_seams_at_construction`.
         use crate::{
             orchestrator::SynthesisPass,
             skeleton::{ProcedureSkeleton, SkeletonError, SkeletonLabel, SkeletonLabeler},
@@ -1788,43 +1840,27 @@ mod tests {
 
         let sandbox = sandbox_dir("orch-invalid-session-id");
         let transcript_root = sandbox_dir("orch-invalid-session-id-tx");
-        let pool_config = ExtractionWorkerPoolConfig::default();
-        let retry_policy = pool_config.retry_policy.clone();
-        let job_timeout = pool_config.timeout;
-        let provider = ExtractionProvider::Ollama;
-        let routing_decision = RoutingDecision {
-            tier: ExtractionRoutingTier::Local,
-            provider,
-            segmentation_token_budget: LOCAL_TIER_TOKEN_BUDGET,
-            dual_pass_enabled: false,
-        };
-
-        let extractor = SessionExtractor {
-            provider,
-            run_path: ExtractionRunPath::Orchestrated,
-            routing_decision,
-            extractor: Arc::new(StaticExtractor::ok(Duration::ZERO)),
-            transcript_loader: TranscriptLoader::new(transcript_root.to_path_buf())
-                .expect("loader"),
-            draft_writer: PendingDraftWriter::new_unbounded_for_tests(vec![sandbox.to_path_buf()]),
-            lifecycle_events: ExtractionLifecycleEvents::default(),
-            event_publisher: Arc::new(NoopExtractionEventPublisher),
-            worker_pool: None,
-            retry_policy,
-            job_timeout,
-            skeleton_labeler: Some(Arc::new(NoopLabeler) as Arc<dyn SkeletonLabeler>),
-            embedder: Some(Arc::new(NoopEmbedder) as Arc<dyn EmbeddingService>),
-            equivalence_verifier: Some(Arc::new(NoopVerifier) as Arc<dyn LlmEquivalenceVerifier>),
-            synthesis: Some(Arc::new(NoopSynthesis) as Arc<dyn crate::orchestrator::SynthesisPass>),
+        let seams = OrchestrationSeams {
+            skeleton_labeler: Arc::new(NoopLabeler) as Arc<dyn SkeletonLabeler>,
+            embedder: Arc::new(NoopEmbedder) as Arc<dyn EmbeddingService>,
+            equivalence_verifier: Arc::new(NoopVerifier) as Arc<dyn LlmEquivalenceVerifier>,
+            synthesis: Arc::new(NoopSynthesis) as Arc<dyn crate::orchestrator::SynthesisPass>,
             preamble_normalizer: None,
         };
+        let extractor = SessionExtractor::new_for_tests_orchestrated(
+            ExtractionProvider::Ollama,
+            Arc::new(StaticExtractor::ok(Duration::ZERO)),
+            TranscriptLoader::new(transcript_root.to_path_buf()).expect("loader"),
+            PendingDraftWriter::new_unbounded_for_tests(vec![sandbox.to_path_buf()]),
+            seams,
+        );
 
         // Use a blank session_id — DomainId::parse rejects blank identifiers.
         let mut bad_request = request_for("placeholder");
         bad_request.session_id = "   ".to_owned(); // whitespace-only → DomainId::parse fails
 
         let outcome = extractor
-            .execute_job_orchestrated("test-job", &bad_request)
+            .execute_job("test-job", &bad_request)
             .await;
 
         assert!(
@@ -1887,6 +1923,111 @@ mod tests {
         assert_eq!(
             reason_code, "provider_unavailable",
             "reason_code in extraction.failed event must be 'provider_unavailable' for ProviderUnavailable errors"
+        );
+    }
+
+    /// Proves that the orchestrated run path cannot be constructed without all four required
+    /// seams. [`OrchestrationSeams`] enforces the invariant at the type level: the struct
+    /// has no `Option` fields for the four required seams, so omitting any one of them is
+    /// a compile error. This test constructs [`OrchestrationSeams`] with all four seams
+    /// wired and confirms the resulting extractor reports `Orchestrated` — demonstrating
+    /// that the construction path is valid when seams are present, and that the prior
+    /// `.expect("… must be Some when run_path=Orchestrated")` panics have been eliminated.
+    #[test]
+    fn orchestrated_path_requires_all_seams_at_construction() {
+        use crate::{
+            orchestrator::SynthesisPass,
+            skeleton::{ProcedureSkeleton, SkeletonError, SkeletonLabel, SkeletonLabeler},
+        };
+        use domain::{EmbeddingError, EmbeddingService};
+        use infrastructure::{EquivalenceDecision, LlmEquivalenceVerifier};
+
+        // Four minimal noop implementations — one per required seam.
+        struct NoopLabeler;
+        #[async_trait]
+        impl SkeletonLabeler for NoopLabeler {
+            async fn label(&self, _s: &ProcedureSkeleton) -> Result<SkeletonLabel, SkeletonError> {
+                Ok(SkeletonLabel {
+                    name: "noop".to_owned(),
+                    description: "noop".to_owned(),
+                    generality: None,
+                    keep: false,
+                    confidence: 0.0,
+                })
+            }
+        }
+
+        struct NoopEmbedder;
+        #[async_trait]
+        impl EmbeddingService for NoopEmbedder {
+            async fn embed_text(&self, _text: &str) -> Result<Vec<f32>, EmbeddingError> {
+                Ok(vec![1.0])
+            }
+            async fn embed_batch(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>, EmbeddingError> {
+                Ok(texts.iter().map(|_| vec![1.0]).collect())
+            }
+        }
+
+        struct NoopVerifier;
+        #[async_trait]
+        impl LlmEquivalenceVerifier for NoopVerifier {
+            async fn decide_equivalence(
+                &self,
+                _l: &str,
+                _r: &str,
+            ) -> Result<EquivalenceDecision, ExtractionError> {
+                Ok(EquivalenceDecision {
+                    equivalent: false,
+                    rationale: "noop".to_owned(),
+                })
+            }
+        }
+
+        struct NoopSynthesis;
+        #[async_trait]
+        impl SynthesisPass for NoopSynthesis {
+            async fn synthesize(
+                &self,
+                _c: &[ExtractedSkillCandidate],
+                _p: &str,
+            ) -> Result<Vec<ExtractedSkillCandidate>, crate::orchestrator::SynthesisError>
+            {
+                Ok(vec![])
+            }
+        }
+
+        let sandbox = sandbox_dir("seam-construction");
+        let transcript_root = sandbox_dir("seam-construction-tx");
+
+        // All four required seams must be supplied — the compiler rejects partial construction.
+        // preamble_normalizer is optional even on the orchestrated path.
+        let seams = OrchestrationSeams {
+            skeleton_labeler: Arc::new(NoopLabeler) as Arc<dyn SkeletonLabeler>,
+            embedder: Arc::new(NoopEmbedder) as Arc<dyn EmbeddingService>,
+            equivalence_verifier: Arc::new(NoopVerifier) as Arc<dyn LlmEquivalenceVerifier>,
+            synthesis: Arc::new(NoopSynthesis) as Arc<dyn SynthesisPass>,
+            preamble_normalizer: None,
+        };
+
+        let extractor = SessionExtractor::new_for_tests_orchestrated(
+            ExtractionProvider::Ollama,
+            Arc::new(StaticExtractor::ok(Duration::ZERO)),
+            TranscriptLoader::new(transcript_root.to_path_buf()).expect("loader"),
+            PendingDraftWriter::new_unbounded_for_tests(vec![sandbox.to_path_buf()]),
+            seams,
+        );
+
+        // The extractor reports Orchestrated: the run path is encoded in the type.
+        assert_eq!(
+            extractor.run_path(),
+            ExtractionRunPath::Orchestrated,
+            "extractor built with OrchestrationSeams must report Orchestrated run path"
+        );
+
+        // The active_run_path variant holds the seams directly — no Option to unwrap.
+        assert!(
+            matches!(extractor.active_run_path, ActiveRunPath::Orchestrated(_)),
+            "active_run_path must be the Orchestrated variant when seams are supplied"
         );
     }
 }
