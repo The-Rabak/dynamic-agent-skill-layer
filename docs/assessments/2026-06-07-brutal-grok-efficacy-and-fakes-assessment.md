@@ -8,7 +8,7 @@ related_assessments:
   - docs/assessments/2026-06-02-skill-layer-v1-5-current-state-assessment.md
 related_memory:
   - brutal-eval-2026-06-07-efficacy-and-fakes
-tickets_filed: ["205","206","207","208","209","210","211","212","213","214","215","216","217","218"]
+tickets_filed: ["205","206","207","208","209","210","211","212","213","214","215","216","217","218","219","220"]
 scope:
   branch: feat/v-1-5-1
   method: full crate trace (10 crates, ~44k LoC), live e2e log review, doc/code reconciliation
@@ -65,10 +65,15 @@ chapter must shift to measurement.
 | 214 | P1 | **Default local extraction is the weakest path.** Good extraction needs cloud; the private default's quality is unproven (#176). Unstated tension. | #176 lineage |
 | 215 | P2 | **Doc overclaim / drift.** README implies dream-state contracts are "proven" (18/25 ignored); stale `rescue.rs` 0.20-vs-0.450 comment; todo filenames lie vs frontmatter. | README, `compiler/src/rescue.rs` |
 
-### The retrieval architecture finding (filed as 217)
+### The retrieval architecture finding (filed as 217, architecture split to 220)
+
+> **Correction (2026-06-07):** the "self-growth-killing cold-start bug" framing below is overstated. The
+> usage prior is ≤0.03 of the score, so a *relevant* new skill surfaces on cosine — it's a tiebreaker, not
+> an exclusion. Cold-start only bites acutely under a *priming* ranker (which doesn't exist yet). See the
+> EXECUTION STATUS banner in the battle plan. The intent-split architecture is now #220 (corpus-measured).
 
 A trace of the real entry points shows the system **conflates two distinct retrieval intents into one
-similarity-to-prompt cosine path**, and carries a self-growth-killing cold-start bug:
+similarity-to-prompt cosine path**, and carries a (mild — see correction above) cold-start effect:
 
 - **Every lifecycle event is identical and query-driven.** SessionStart sends `{{initial_prompt}}` and runs
   the same cosine ranking as everything else (`hooks.example.json`, `tools/compile_context.rs`). There is
@@ -105,6 +110,21 @@ perfectly and doesn't matter. Until a closed-loop efficacy measurement exists, "
 
 # FIX BATTLE PLAN
 
+> **EXECUTION STATUS — updated 2026-06-07 (post Phase 0 + Phase 1).**
+> Phases 0 and 1 are DONE and committed (`c7547cd`, `62dfe66`, `c8d3b15`, `97f3f43`, `dd0e245`, `62bb01f`,
+> `0e9b4c9`). Two corrections emerged during execution and are reflected below:
+> - **Cold-start was overstated.** The usage prior is ≤0.03 of the score (α=0.45 cosine dominates), so a
+>   *relevant* new (usage_count=0) skill surfaces fine on cosine — a tiebreaker, not a hard exclusion. The
+>   "self-growth-killing bug" framing in the assessment narrative above is too strong. Cold-start only bites
+>   acutely under a usage/centrality *priming* ranker, which does not exist yet.
+> - **#217 was sliced.** Phase 1 shipped only the corpus-independent part of #217 (honest retrieval
+>   contract doc + a cold-start regression test). The real architectural work (priming mode, recurrence-based
+>   global, trigger rework) is split into **#220** — corpus-dependent, deferred to Phase 3 so it can be
+>   *measured before shipping*.
+> - Consequently **#218 is no longer blocked by cold-start** (its dependency on #217 was removed).
+> - Two new tickets filed: **#219** (drain the integration no-fakes allowlist to empty — strict-policy
+>   completion of #206) and **#220** (the retrieval intent-split, corpus-measured).
+
 Ordered by dependency, not by ticket number. Each batch has a **goal**, an **inspection** (how to verify
 it landed), an **expectation** (what good looks like), and a **fallback** (what to do if reality disagrees).
 
@@ -117,7 +137,10 @@ green is a violation.
 ### Phase 0 — Green the tree & close the fail-loud holes  *(no corpus dependency; do first, in parallel)*
 
 **Tickets:** 207 (real-embedder merge test), 211 (serde fail-loud), 212 (writer fail-loud), 213 (type-encode
-seams), 215 (doc accuracy), 206 (audit + CI guard portion).
+seams), 215 (doc accuracy), 206 (audit + CI guard portion). **[DONE — all committed.]**
+**Follow-up filed:** #219 drains the tests/integration no-fakes allowlist to empty (the frozen debt #206
+created); enforce strict zero-fakes-in-integration once empty. Sequence after the corpus if live-stack time
+is contended (several of those tests become live).
 
 **Why first:** zero external dependencies, restores a green tree, and erects the no-fakes guard *before* the
 big measurement work can smuggle a fake in.
@@ -141,28 +164,28 @@ recalibrated fake. The audit surfaces a handful of additional soft fallbacks, no
 
 ---
 
-### Phase 1 — Cold-start fix + intent split  *(architecture; prerequisite for 218's measured runs)*
+### Phase 1 — Honest retrieval contract + cold-start regression  *(corpus-independent slice of #217)*  **[DONE]**
 
-**Ticket:** 217 (build + unit-prove the cold-start freshness boost and the priming/task-retrieval split;
-defer *quality validation* of the new signals to Phase 3).
+**Ticket:** 217 (SLICE). Delivered the two corpus-independent pieces: (1) `docs/reference/retrieval-contract.md`
+documenting current behavior with file:line citations; (2) a regression test proving a relevant new
+(usage_count=0) skill outranks an irrelevant high-usage one. The architectural intent-split moved to **#220**.
 
-**Why here:** on 218's layer-on run, freshly-created skills have `usage_count=0 → prior=0` and are
-suppressed. Running the efficacy experiment before this fix would falsely show "no improvement."
+**Why a slice, not the whole thing:** grounding showed cold-start is a ≤0.03 tiebreaker (cosine carries a
+relevant new skill), not a hard exclusion — so it is NOT a prerequisite for #218. And the real intent-split
+(priming ranker, recurrence-global, trigger rework) is quality-affecting and must be *measured on the corpus*
+before shipping (#217's own invariant) — so it cannot be honestly finished before Phase 2. It is now **#220**,
+dependent on #216 + #210.
 
-**Inspect after the batch:**
-- Unit test: a brand-new approved skill (usage_count 0) is retrieved for a clearly-relevant query, ranked
-  above irrelevant skills. **This is the gate for Phase 4.**
-- Unit test: a thin/empty SessionStart prompt surfaces project-baseline skills via the priming ranker.
-- The retrieval contract doc is committed and matches the code.
+**Inspected (landed):**
+- Regression test `relevant_zero_usage_skill_outranks_irrelevant_high_usage_skill` passes via the real
+  `score_eq3`/`usage_prior` path (33 retrieval tests green).
+- The contract doc's citations resolve to the claimed code (weights 0.45/0.35/0.20/0.25, prior cap 0.15,
+  floor 0.450, scope weights 1.0/0.7, `find_skill`), with an honest "Known limitations" section → #220/#209.
 
-**Expect:** the cold-start test flips from fail→pass once the freshness boost lands. Intent split is wired
-but its *tuning* is intentionally not finalized yet (waits for the corpus).
-
-**If expectations aren't met:**
-- If the freshness boost over-surfaces noise (new bad skills crowd out good ones) → bound N harder and make
-  the boost decay faster; re-validate in Phase 3 against the corpus, do not ship an unbounded boost.
-- If priming can't be made cheap → fall back to "inject top-N most-central project skills, prompt-agnostic"
-  as a v1 and revisit; do not let priming become a per-prompt full scan.
+**Deferred to Phase 3 (now #220):** the priming ranker (centrality + recent usage + freshness slot), the
+recurrence-based global signal, and trigger-aware routing — each gated on a measured MRR/nDCG impact on the
+#216 corpus. If priming can't be made cheap → fall back to "inject top-N most-central project skills,
+prompt-agnostic." #218's source-attribution will say whether priming is even worth building.
 
 ---
 
@@ -196,7 +219,8 @@ of low-value drafts rejected at the human gate. That rejection rate is itself a 
 ### Phase 3 — Calibrate, tune, and measure on the corpus  *(the "brain" work)*
 
 **Tickets:** 209 (floor recalibration + labeled queries), 208 (graph-boost keep/cut decision), 210 (quality
-target + tuning sweep), 214 (local-vs-cloud extraction gap), 217-validation (new-signal quality impact).
+target + tuning sweep), 214 (local-vs-cloud extraction gap), **220 (the retrieval intent-split: priming
+ranker + recurrence-global + freshness slot — each measured here before shipping)**.
 
 **Why here:** these all need the corpus and a held-out query set; they share the #210 measurement rig.
 
@@ -256,11 +280,11 @@ genuine win and the strongest possible evidence.
 ## Dependency graph (quick reference)
 
 ```
-Phase 0:  207, 211, 212, 213, 215, 206         (independent — start now)
-Phase 1:  217  (cold-start fix + intent split) ── prerequisite for 218 measured runs
+Phase 0:  207, 211, 212, 213, 215, 206         [DONE]  (+ follow-up #219: drain integration allowlist)
+Phase 1:  217-slice (contract doc + cold-start regression test)  [DONE]
 Phase 2:  216 ← 218 run 1                       (builds the corpus)
-Phase 3:  209, 208, 210, 214, 217-validation    (need corpus + held-out queries)
-Phase 4:  205 (cheap, anytime) → 218 phases 1–2 (held-out transfer = headline proof)
+Phase 3:  209, 208, 210, 214, 220               (need corpus + held-out queries; 220 = intent-split, measured)
+Phase 4:  205 (cheap, anytime) → 218 phases 1–2 (held-out transfer = headline proof; 218 no longer blocked by 217)
 ```
 
 ## The single most important sentence
