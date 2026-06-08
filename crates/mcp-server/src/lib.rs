@@ -37,7 +37,7 @@ use domain::{EmbeddingService, ScopeResolver};
 #[cfg(any(test, feature = "test-utils"))]
 use infrastructure::OutboxVectorStore;
 use infrastructure::{
-    CircuitBreaker, EnvPathGlobalResolver, FsMarkerProjectResolver, OllamaEmbeddingConfig,
+    EnvPathGlobalResolver, FsMarkerProjectResolver, OllamaEmbeddingConfig,
     OllamaEmbeddingService, PostgresAdapter, PostgresConfig, PostgresGraphSnapshotStore,
     PostgresGraphWriteCoordinator, PostgresPool, PostgresRebuildCoordinator,
     PostgresUsageSampleStore, PostgresUsageWriter, QdrantAdapter, QdrantConfig, RedisClient,
@@ -46,7 +46,8 @@ use infrastructure::{
 };
 use maintenance::RetirementConfig;
 use retrieval::{
-    DualScopeResolver, RetrievalConfig, RetrievalOrchestrator, RetrievalSnapshot, SkillRetriever,
+    CircuitBreaker, DualScopeResolver, RetrievalConfig, RetrievalOrchestrator, RetrievalSnapshot,
+    SkillRetriever,
 };
 use tokio::sync::mpsc;
 use tools::{

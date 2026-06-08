@@ -9,10 +9,5 @@ description = "Dual-scope retrieval pipeline for dynamic agent skill layer"
 arc-swap = "1.7.1"
 async-trait = "0.1.89"
 domain = { path = "../domain" }
-# ADR-0001 invariant relaxed (2026-06-05, issue #171, user decision): retrieval
-# gains a direct infrastructure dependency to host the embedding circuit breaker
-# at the request-time embed seam.  No cycle: infrastructure does NOT depend on
-# retrieval; both depend on domain.
-infrastructure = { path = "../infrastructure" }
 serde = { version = "1.0.228", features = ["derive"] }
 tokio = { version = "1.48.0", features = ["macros", "rt-multi-thread", "time"] }

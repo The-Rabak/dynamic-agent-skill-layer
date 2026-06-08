@@ -1,3 +1,4 @@
+pub mod circuit_breaker;
 pub mod cosine_rank;
 pub mod dual_scope;
 pub mod fusion;
@@ -6,6 +7,7 @@ pub mod orchestrator;
 pub mod scope_resolution;
 pub mod scoring;
 
+pub use circuit_breaker::{CircuitBreaker, CircuitState};
 pub use cosine_rank::{CosineHit, rank_by_cosine};
 pub use dual_scope::{
     ScopedSearchFailure, ScopedSearchResult, run_project_and_global_concurrently,

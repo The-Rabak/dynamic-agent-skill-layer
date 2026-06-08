@@ -2006,7 +2006,6 @@ dependencies = [
  "arc-swap",
  "async-trait",
  "domain",
- "infrastructure",
  "serde",
  "tokio",
 ]

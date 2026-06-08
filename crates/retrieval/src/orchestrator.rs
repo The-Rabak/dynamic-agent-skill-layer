@@ -11,9 +11,9 @@ use domain::{
     EmbeddingError, EmbeddingService, ScopeDescriptor, ScopeType, ScoredSkill, Skill, Subunit,
     SubunitType,
 };
-use infrastructure::CircuitBreaker;
 
 use crate::{
+    CircuitBreaker,
     dual_scope::search_scopes_concurrently,
     fusion::{ScopeRanking, weighted_reciprocal_rank_fusion},
     scope_resolution::DualScopeResolver,
@@ -362,10 +362,8 @@ pub trait SkillRetriever: Send + Sync {
 /// `reason: embedding_circuit_open`, so callers observe a loud, observable
 /// degradation instead of eating the full provider timeout on every request.
 ///
-/// ADR-0001 invariant note (issue #171): this struct now holds an
-/// `infrastructure::CircuitBreaker`, which relaxes the original "retrieval has
-/// zero inward infra deps" rule.  The user explicitly chose this layering over
-/// moving the breaker to domain.
+/// Keep the breaker local to `retrieval`: CI enforces that this crate does not
+/// depend on infrastructure adapters such as sqlx, redis, or qdrant.
 pub struct RetrievalOrchestrator<E>
 where
     E: EmbeddingService + Send + Sync + 'static,
@@ -1166,7 +1164,6 @@ mod tests {
     ///    empty success.
     #[tokio::test]
     async fn embedding_circuit_breaker_trips_after_threshold_and_skips_embedder_while_open() {
-        use infrastructure::CircuitBreaker;
         use std::time::Duration;
 
         const THRESHOLD: u32 = 3;
@@ -1243,7 +1240,7 @@ mod tests {
     /// Uses a minimal `open_for` duration so the test is fast.
     #[tokio::test]
     async fn embedding_circuit_breaker_recovers_half_open_to_closed_after_open_for_elapses() {
-        use infrastructure::{CircuitBreaker, CircuitState};
+        use crate::{CircuitBreaker, CircuitState};
         use std::time::Duration;
 
         let breaker = CircuitBreaker::new(1, Duration::from_millis(5));
