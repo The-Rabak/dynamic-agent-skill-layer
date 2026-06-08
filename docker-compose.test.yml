@@ -163,6 +163,7 @@ services:
       RETRIEVAL_PROJECT_SCOPE_WEIGHT: ${RETRIEVAL_PROJECT_SCOPE_WEIGHT:-}
       RETRIEVAL_GLOBAL_SCOPE_WEIGHT: ${RETRIEVAL_GLOBAL_SCOPE_WEIGHT:-}
       RETRIEVAL_RRF_K: ${RETRIEVAL_RRF_K:-}
+      RETRIEVAL_COMMUNITY_BOOST_MODE: ${RETRIEVAL_COMMUNITY_BOOST_MODE:-}
     volumes:
       - test-global-skills:/skills/global:ro
       # mcp-server must see the project skills root so SKILL_PROJECT_ROOT resolves

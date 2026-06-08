@@ -4,10 +4,10 @@ use domain::ScopeDescriptor;
 use tokio::time::timeout;
 
 use crate::{
-    cosine_rank::rank_by_cosine,
+    cosine_rank::{cosine_similarity, rank_by_cosine},
     fusion::{FusedCandidate, mmr_select},
     graph_search::{GraphHit, search_graph},
-    orchestrator::{RetrievalConfig, RetrievalSnapshot},
+    orchestrator::{CommunityBoostMode, RetrievalConfig, RetrievalSnapshot},
     scoring::{ScoreComponents, score_eq3},
 };
 
@@ -280,12 +280,27 @@ fn perform_scope_search(
             // lexical overlap. The skill-level lexical_score is retained only for
             // rationale/observability below.
             let subunit_evidence = graph_hit.map_or(0.0, |hit| hit.subunit_evidence);
+            // Community boost (eq.3 λ term), per the configured mode (#208).
+            // CentroidAffinity is query-dependent: cosine(query, the skill's
+            // community centroid), clamped to [0,1] — it boosts skills whose
+            // community is on-topic for THIS query, unlike the uniform binary boost.
+            let community_boost = match config.community_boost_mode {
+                CommunityBoostMode::Binary => seeded_skill.community_boost,
+                CommunityBoostMode::Off => 0.0,
+                CommunityBoostMode::CentroidAffinity => seeded_skill
+                    .skill
+                    .community_id
+                    .as_ref()
+                    .and_then(|cid| graph.community_centroids.get(cid.as_str()))
+                    .map(|centroid| cosine_similarity(prompt_embedding, centroid).clamp(0.0, 1.0))
+                    .unwrap_or(0.0),
+            };
             let score = score_eq3(
                 ScoreComponents {
                     l1_semantic: cosine_hit.semantic_score,
                     subunit_evidence,
                     prior: seeded_skill.prior,
-                    community_boost: seeded_skill.community_boost,
+                    community_boost,
                 },
                 config.scoring_weights,
             );

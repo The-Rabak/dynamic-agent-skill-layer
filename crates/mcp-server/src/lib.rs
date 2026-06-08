@@ -1120,7 +1120,38 @@ async fn build_graph_from_pg(
         })
         .collect();
 
-    Ok(RetrievalSnapshot::new(seeded_skills, graph_version))
+    // #208: per-community centroids for CommunityBoostMode::CentroidAffinity.
+    // Centroid of community c = mean of the ℓ₁ embeddings of skills whose PRIMARY
+    // community is c (matches the query-time lookup by skill.community_id).
+    // cosine_similarity normalizes at use, so the raw mean is sufficient. Empty for
+    // the binary/off modes' purposes is harmless (the modes never read it).
+    let mut community_sums: std::collections::HashMap<String, (Vec<f32>, usize)> =
+        std::collections::HashMap::new();
+    for s in &seeded_skills {
+        let Some(cid) = s.skill.community_id.as_ref() else {
+            continue;
+        };
+        if s.embedding.is_empty() {
+            continue;
+        }
+        let entry = community_sums
+            .entry(cid.as_str().to_owned())
+            .or_insert_with(|| (vec![0.0_f32; s.embedding.len()], 0));
+        if entry.0.len() == s.embedding.len() {
+            for (acc, v) in entry.0.iter_mut().zip(s.embedding.iter()) {
+                *acc += v;
+            }
+            entry.1 += 1;
+        }
+    }
+    let community_centroids: std::collections::HashMap<String, Vec<f32>> = community_sums
+        .into_iter()
+        .filter(|(_, (_, n))| *n > 0)
+        .map(|(cid, (sum, n))| (cid, sum.iter().map(|x| x / n as f32).collect::<Vec<f32>>()))
+        .collect();
+
+    Ok(RetrievalSnapshot::new(seeded_skills, graph_version)
+        .with_community_centroids(community_centroids))
 }
 
 /// Computes the BLAKE3 hash of a raw prompt string for safe storage.

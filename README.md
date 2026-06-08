@@ -201,7 +201,7 @@ crates/
 
 **Data plane (all local):** PostgreSQL (relational state, durable transcript queue, before/after audit snapshots), Qdrant (vector search), Redis (event streams + graph-refresh signalling), Ollama (`nomic-embed-text` embeddings, and optional local extraction LLM).
 
-**Multi-level skill graph.** Skills (ℓ₁) and their procedure subunits (ℓ₀) are grouped into **communities** on every rebuild — semantically via **HDBSCAN** over the embeddings *and* lexically by tag, with dual membership — and persisted to Postgres. This is the SkillRAE graph structure that retrieval and future cross-skill reasoning ride on, not a flat list.
+**Multi-level skill graph.** Skills (ℓ₁) and their procedure subunits (ℓ₀) are grouped into **communities** on every rebuild — semantically via **HDBSCAN** over the embeddings *and* lexically by tag, with dual membership — and persisted to Postgres. The two retrieval levels (ℓ₁ skill embeddings + ℓ₀ subunit evidence) are what ranking rides on. The **community layer is an organizational/diagnostic artifact, not a ranking signal**: a measured keep-or-cut evaluation on the real corpus (#208) found the community boost did not improve retrieval — the differentiating variant traded a within-noise MRR gain for a large drop in off-topic rejection — so it is **off by default** (`RETRIEVAL_COMMUNITY_BOOST_MODE`, retained for future re-evaluation). See `docs/assessments/2026-06-07-retrieval-quality-234-corpus-measured.md`.
 
 ### Retrieval model
 

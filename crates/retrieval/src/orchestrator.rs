@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     path::PathBuf,
     sync::Arc,
     time::{Duration, Instant},
@@ -44,10 +44,48 @@ pub struct SeededSkill {
 ///
 /// T02 wraps this type as `GraphSnapshot { graph, version }` under `ArcSwap` to
 /// support refresh-without-restart; keep it free of swap/refresh concerns here.
+/// How the eq.3 `community_boost` (the λ term) is computed at query time (#208).
+///
+/// `Binary` is the historical behaviour (a uniform 0.2 for any community member,
+/// which the #210 sweep proved is ranking-inert and mildly harmful). The other
+/// two arms exist to settle the keep-or-cut decision on measured numbers, not
+/// intuition. Selectable on the real server via `RETRIEVAL_COMMUNITY_BOOST_MODE`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CommunityBoostMode {
+    /// `0.2` for any skill in ≥1 community, else `0.0` (uniform → cancels out).
+    #[default]
+    Binary,
+    /// Query-dependent: cosine(query, the skill's community centroid), clamped to
+    /// `[0, 1]`. Boosts skills whose community is on-topic for THIS query.
+    CentroidAffinity,
+    /// No community boost (`0.0`), equivalent to λ=0. The graph does not touch ranking.
+    Off,
+}
+
+impl std::str::FromStr for CommunityBoostMode {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "binary" => Ok(Self::Binary),
+            "centroid_affinity" | "centroid" | "affinity" => Ok(Self::CentroidAffinity),
+            "off" | "none" | "disabled" => Ok(Self::Off),
+            other => Err(format!(
+                "invalid CommunityBoostMode {other:?} (expected binary|centroid_affinity|off)"
+            )),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct RetrievalSnapshot {
     pub graph_version: i64,
     pub skills: Vec<SeededSkill>,
+    /// Per-community normalized centroid (mean of member ℓ₁ embeddings), keyed by
+    /// community id. Populated by the real read-path loader (`build_graph_from_pg`)
+    /// and consumed only by `CommunityBoostMode::CentroidAffinity`. Empty for the
+    /// binary/off modes and for test snapshots, which is harmless (lookup misses
+    /// → boost 0.0).
+    pub community_centroids: HashMap<String, Vec<f32>>,
 }
 
 impl RetrievalSnapshot {
@@ -55,7 +93,15 @@ impl RetrievalSnapshot {
         Self {
             graph_version,
             skills,
+            community_centroids: HashMap::new(),
         }
+    }
+
+    /// Attaches per-community centroids (builder style) for the centroid-affinity
+    /// community-boost arm (#208).
+    pub fn with_community_centroids(mut self, centroids: HashMap<String, Vec<f32>>) -> Self {
+        self.community_centroids = centroids;
+        self
     }
 }
 
@@ -143,6 +189,10 @@ pub struct RetrievalConfig {
     pub global_scope_weight: f32,
     pub rrf_k: f32,
     pub scope_timeout_ms: u64,
+    /// How the eq.3 community boost is computed (#208). Default `Binary` (the
+    /// historical, ranking-inert behaviour); `CentroidAffinity` / `Off` exist for
+    /// the keep-or-cut measurement.
+    pub community_boost_mode: CommunityBoostMode,
 }
 
 impl Default for RetrievalConfig {
@@ -200,6 +250,21 @@ impl Default for RetrievalConfig {
             global_scope_weight: 0.7,
             rrf_k: 60.0,
             scope_timeout_ms: 400,
+            // #208 keep-or-cut DECISION (measured on the real 234-corpus, 2026-06-08):
+            // the community graph is DEMOTED from ranking. Measured held-out
+            // judge-augmented quality (find_skill, real claude judge):
+            //   (a) binary 0.2:        MRR 0.594, nDCG@3 0.484, no_match prec 0.800
+            //   (b) centroid_affinity: MRR 0.667, nDCG@3 0.530, no_match prec 0.600
+            //   (c) off (this default):MRR 0.644, nDCG@3 0.556, no_match prec 1.000
+            // (b)'s +0.022 MRR over (c) is within noise (1 query ≈ 0.033) and is
+            // bought with a catastrophic no_match regression (1.000 → 0.600) and a
+            // LOWER nDCG. (c) Off is robust-best on nDCG@3, hit@3, and no_match. The
+            // HDBSCAN communities remain a build-time organizational/diagnostic
+            // artifact but no longer touch retrieval ranking. CentroidAffinity is
+            // retained behind RETRIEVAL_COMMUNITY_BOOST_MODE for future re-evaluation
+            // (e.g. under a stronger embedding model). See
+            // docs/assessments/2026-06-07-retrieval-quality-234-corpus-measured.md.
+            community_boost_mode: CommunityBoostMode::Off,
         }
     }
 }
@@ -240,7 +305,8 @@ impl RetrievalConfig {
     /// `RETRIEVAL_CANDIDATE_LIMIT`, `RETRIEVAL_MAX_RESULTS`,
     /// `RETRIEVAL_MAX_SUBUNITS_PER_SKILL`, `RETRIEVAL_RESCUE_THRESHOLD`,
     /// `RETRIEVAL_RELEVANCE_THRESHOLD`, `RETRIEVAL_PROJECT_SCOPE_WEIGHT`,
-    /// `RETRIEVAL_GLOBAL_SCOPE_WEIGHT`, `RETRIEVAL_RRF_K`.
+    /// `RETRIEVAL_GLOBAL_SCOPE_WEIGHT`, `RETRIEVAL_RRF_K`,
+    /// `RETRIEVAL_COMMUNITY_BOOST_MODE` (`binary`|`centroid_affinity`|`off`).
     pub fn from_env() -> Self {
         let d = RetrievalConfig::default();
         Self {
@@ -262,6 +328,7 @@ impl RetrievalConfig {
             project_scope_weight: env_or("RETRIEVAL_PROJECT_SCOPE_WEIGHT", d.project_scope_weight),
             global_scope_weight: env_or("RETRIEVAL_GLOBAL_SCOPE_WEIGHT", d.global_scope_weight),
             rrf_k: env_or("RETRIEVAL_RRF_K", d.rrf_k),
+            community_boost_mode: env_or("RETRIEVAL_COMMUNITY_BOOST_MODE", d.community_boost_mode),
             ..d
         }
     }
@@ -793,6 +860,37 @@ mod tests {
     use domain::{EmbeddingError, EmbeddingService};
 
     use super::*;
+
+    /// #208 decision guard: the community graph is DEMOTED from ranking. The
+    /// default must be `Off` so no near-constant community boost silently enters
+    /// the default ranking path (binary 0.2 was inert and mildly harmful; the
+    /// measured (a)/(b)/(c) comparison is in the default() comment + assessment).
+    #[test]
+    fn default_community_boost_mode_is_off_graph_demoted_from_ranking() {
+        assert_eq!(
+            RetrievalConfig::default().community_boost_mode,
+            CommunityBoostMode::Off,
+            "the #208 measurement demoted the community graph from ranking; default must be Off"
+        );
+    }
+
+    #[test]
+    fn community_boost_mode_parses_from_env_strings() {
+        use std::str::FromStr;
+        assert_eq!(
+            CommunityBoostMode::from_str("binary").unwrap(),
+            CommunityBoostMode::Binary
+        );
+        assert_eq!(
+            CommunityBoostMode::from_str("centroid_affinity").unwrap(),
+            CommunityBoostMode::CentroidAffinity
+        );
+        assert_eq!(
+            CommunityBoostMode::from_str("OFF").unwrap(),
+            CommunityBoostMode::Off
+        );
+        assert!(CommunityBoostMode::from_str("nonsense").is_err());
+    }
 
     /// Minimal test-only embedding stub. Used only to satisfy the generic bound on
     /// `RetrievalOrchestrator<E>` so we can call its pure associated functions without

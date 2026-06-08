@@ -121,6 +121,32 @@ before shipping):
    `## Procedures` body may sharpen discrimination among sibling process skills.
 4. **#220 priming/recurrence** (deferred to Phase 4) for the session-start thin-prompt case.
 
+## #208 — community graph keep-or-cut decision (measured, then CUT from ranking)
+
+The three eq.3 community-boost arms, measured on the real server (held-out, judge-augmented), via
+`scripts/measure_208_community_boost.py` (reboots the real server per arm with
+`RETRIEVAL_COMMUNITY_BOOST_MODE`):
+
+| arm | MRR | nDCG@3 | P@1 | hit@3 | no_match precision |
+|---|---|---|---|---|---|
+| (a) binary (0.2 for any community member) | 0.594 | 0.484 | 0.533 | 0.667 | 0.800 |
+| (b) centroid_affinity (cosine(query, community centroid)) | 0.667 | 0.530 | **0.633** | 0.700 | 0.600 |
+| (c) **off** (no community boost) | 0.644 | **0.556** | 0.567 | **0.733** | **1.000** |
+
+**Decision: CUT — the community graph is demoted from ranking; default `community_boost_mode = Off`.**
+Rationale: (a) binary is inert and mildly harmful (confirmed in the #210 sweep). (b) centroid_affinity
+is a genuinely differentiating signal (it moved MRR off binary), but its only edge over (c) is +0.022
+MRR / +0.066 P@1 — **within noise** on a 30-query held-out set (one query ≈ 0.033 RR) — and it is bought
+with a **catastrophic no_match regression (1.000 → 0.600)**: the boost inflates off-topic skills over the
+relevance floor, fabricating context for 40% of negative queries. (b) is also *lower* on nDCG@3. (c) Off
+is robust-best on nDCG@3, hit@3, and no_match precision. The community boost does not earn its place in
+ranking under the current embedding model. HDBSCAN communities remain a build-time
+organizational/diagnostic artifact; `CentroidAffinity` is retained behind the env flag for re-evaluation
+under a stronger embedder. The README "retrieval rides on the graph" claim is corrected accordingly.
+
+Side effect: flipping the default from binary (MRR 0.594, fails the 0.60 regression floor) to off
+(MRR 0.644, no_match 1.000) brings the default config above the #210 regression floor.
+
 ## Release gate (regression floor + documented aspiration)
 
 `scripts/retrieval_quality_live.py --split held_out --gate --regression-floor 0.60` runs against the
