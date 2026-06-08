@@ -125,6 +125,59 @@ perfectly and doesn't matter. Until a closed-loop efficacy measurement exists, "
 > - Two new tickets filed: **#219** (drain the integration no-fakes allowlist to empty — strict-policy
 >   completion of #206) and **#220** (the retrieval intent-split, corpus-measured).
 
+> **EXECUTION STATUS — updated 2026-06-08 (post Phase 3, minus #220).**
+> **Phase 3's measurement work is substantively DONE and committed** (the brain work, measured on the real
+> running server / real worker — no reconstruction). The Phase 3 ticket *files* still read `pending`; that
+> is stale bookkeeping, not open work (flip 208/209/210/214 → resolved). Results:
+> - **#210 (`53aac86`,`69c3b48`):** real-server-over-HTTP retrieval-quality rig + judge-augmented ground
+>   truth + tuning sweep + committed target. Held-out judge-augmented MRR **0.594 → 0.767** after #208+#209.
+>   The frozen 0.80 target is **documented-unmet** (gate = regression floor 0.60; 0.80 = tracked aspiration).
+>   Next bets recorded (not yet built): **cross-encoder/LLM reranker over top-N** and a **stronger/more
+>   isotropic embedder** (`nomic-embed-text`'s inflated cosine is the likely ceiling).
+> - **#209 (`2746c7e`):** no_match floor recalibrated on the real corpus **0.45 → 0.48** (the dominant
+>   lever; lifts both negative rejection → 1.000 and positive ranking). 
+> - **#208 (`9805666`):** community graph **CUT** from ranking (default `community_boost_mode=Off`). A
+>   2026-06-08 deep-dive (`2026-06-08-community-graph-why-harmful-and-grounded-path-208.md`, external
+>   research) proves the cut is correct *on theory*: a uniform multiplier is rank-inert; centroid-affinity
+>   amplifies anisotropy+hubness → fabricates no_match positives. **Grounded redemption path** (only if we
+>   revisit graph in ranking): top-N reranker (#1) or HippoRAG-style **PPR seeded by dense hits** as the
+>   *scorer* (not a multiplier), gated on a more isotropic embedder. This feeds #220's design.
+> - **#214 (`2405b54` → corrected `168c494`):** local-vs-cloud extraction gap measured on the real worker.
+>
+> **NEW cross-cutting discovery this session — #176 silent `num_ctx` truncation (fixed, `91fe25b`).** This
+> is the most important plan-altering finding since Phase 1: Ollama served gemma at a **4096-token context
+> with `num_ctx` never sent**, while the window budget is 8192 — so substantive (procedure-rich) windows
+> were **silently truncated** to malformed JSON. Proven live (`truncated=1`→`0`). Fix: always send
+> `num_ctx=16384` on all four Ollama builders (uniform, NOT tiered — Ollama bakes ctx at load + 24h
+> keep-alive, so mixing values forces mid-run reloads). Doc: `2026-06-08-ollama-num-ctx-truncation-176.md`.
+> **Implications for the plan:**
+> 1. **It overturned the original #214 verdict.** "Local = 0.00 procedural / preference-only" was a
+>    truncation *artifact*. Re-measured on the fixed worker, local gemma is **0.256** non-empty-procedure
+>    (20 real multi-step skills) vs frontier **0.68** — a density gap (~2.6×), **not** a capability wall.
+> 2. **Phase 2 must build the corpus on the FIXED extraction.** Any local-extracted corpus built before
+>    `91fe25b` is degraded. (The existing 234-skill retrieval corpus was `claude-code`-extracted —
+>    frontier, num_ctx-independent — so #210/#209/#208 measurements on it stand.)
+> 3. **Local throughput is VRAM-bound** (~13 min/call: gemma-12B + 16k KV doesn't fit GPU alongside nomic →
+>    61% CPU). A provisioning matter for any at-scale local corpus run; frontier is the practical corpus path.
+> 4. Suspect silent context truncation FIRST whenever a local model malforms on large inputs only.
+>
+> **What remains OPEN (the real backlog):**
+> - **#220** (P1) — retrieval intent-split: priming ranker + recurrence-global + freshness slot. Deferred
+>   through Phase 3; now informed by the #208 grounded-path research. Still genuinely open.
+> - **Phase 2 / #216 + #218-run-1** (P0) — the **≥200-skill SWE-bench-Lite corpus + layer-OFF baseline**,
+>   built through the **fixed** pipeline. NOT done (only a #218 spike + a self-extracted 234-corpus exist).
+> - **Phase 4 / #205 + #218 phases 1–2** (P0) — the **efficacy headline** (ON-vs-OFF held-out transfer).
+>   Not started. This is the point of the whole project and the next real chapter.
+> - **#210 follow-on** — build + measure the cross-encoder reranker / stronger-embedder bets to close
+>   0.767 → 0.80 (could be its own ticket).
+> - **#219** (P1) — drain the integration no-fakes allowlist to empty.
+>
+> **NEXT PHASE: Phase 4 (prove efficacy) is the goal — but it is gated on Phase 2 (a real corpus built on
+> the fixed extraction).** Recommended order: (a) flip the stale Phase 3 ticket statuses; (b) Phase 2 —
+> run #218-run-1 on `claude-code` to build the ≥200 corpus + OFF baseline; (c) Phase 4 — #205 cheap A/B
+> smoke, then #218 held-out ON-vs-OFF transfer. #220 and the #210 reranker bet can run in parallel once the
+> corpus exists (both want corpus-measured validation).
+
 Ordered by dependency, not by ticket number. Each batch has a **goal**, an **inspection** (how to verify
 it landed), an **expectation** (what good looks like), and a **fallback** (what to do if reality disagrees).
 
