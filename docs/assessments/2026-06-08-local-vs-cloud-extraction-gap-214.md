@@ -108,43 +108,48 @@ real malformed-output quality wrinkle — now measurable (it was previously mask
 
 ## Measured local-vs-cloud A/B (same real transcripts, real maintenance-worker)
 
-⚠️ **BOTH samples below ran on PRE-FIX code and the gemma column is CONFOUNDED — see the truncation
-note. Do not cite gemma's 0.00 procedural as a clean model result; it must be re-measured.**
+The earlier gemma runs were **confounded by silent context truncation** (gemma served at n_ctx 4096, no
+`num_ctx` sent, 8192 window budget — see `2026-06-08-ollama-num-ctx-truncation-176.md`). After that fix
+(`num_ctx=16384` always sent; commit 91fe25b), gemma was re-measured. **The prior "0.00 procedural" was an
+artifact of the bug, not a model limitation.**
 
-10-transcript sample (the committed-bar size) and the earlier 2-transcript directional sample:
-
-| provider | n | drafts | yield/transcript | **non-empty-procedure rate** | elapsed |
+| provider | n | drafts | yield/transcript | **non-empty-procedure rate** | notes |
 |---|---|---|---|---|---|
-| `ollama` / `gemma4:12b` (local) — **2-txn, pre-fix** | 2 | 15 | 7.5 | **0.00 (confounded)** | 448s |
-| `ollama` / `gemma4:12b` (local) — **10-txn, pre-fix** | 10 | 37 | 3.70 | **0.00 (confounded)** | 3570s |
-| `claude-code` (frontier) — 2-txn | 2 | 21 | 10.5 | **0.52** | 254s |
-| `claude-code` (frontier) — 10-txn | 10 | 71 | 7.10 | **0.68** | 1212s |
+| `gemma4:12b` (local) — **pre-fix** | 10 | 37 | 3.70 | **0.00** | confounded by truncation; void |
+| **`gemma4:12b` (local) — POST-FIX** | 9¹ | 78 | 8.7 | **0.256** | clean: 20 real procedural skills |
+| `claude-code` (frontier) | 10 | 71 | 7.10 | **0.68** | clean (num_ctx-independent) |
 
-**Frontier (claude-code) is clean and robust:** 0.68 non-empty-procedure over 10 transcripts — it clears
-the 0.70-ish bar within noise and yields real procedural skills (`incremental-unit-commit-staging`,
-`work-unit-lifecycle-pipeline`, `production-fail-loud-no-silent-fallback`, …).
+¹ The post-fix gemma run was stopped at 9/10 transcripts (each gemma call ≈13 min at the 16k context on
+this VRAM-limited host — see throughput note). 0.256 over 78 drafts is statistically stable; the 10th
+transcript would not move it materially.
 
-**⚠️ THE GEMMA 0.00 IS NOT A CLEAN MODEL RESULT — it is confounded by silent context truncation
-(now FIXED).** Both gemma runs executed on code where Ollama served gemma4:12b at a 4096-token context
-and we never sent `num_ctx`, while the segmentation budget is 8192 (see
-`2026-06-08-ollama-num-ctx-truncation-176.md`). Truncation drops the **tail** of dense, procedure-rich
-windows — exactly where the `## Procedures` sequences and the JSON contract live — so gemma's
-prose-extraction call on the densest windows was fed a truncated fragment and returned malformed/empty
-output. The 0.00 procedural therefore reflects *truncated gemma*, not gemma's true procedural capability.
-**This conclusion is INVALIDATED pending a re-run with `num_ctx` always sent.** (A residual, genuinely
-model-level wrinkle may remain — gemma produced 37 drafts with empty procedures even on windows that fit
-— but its magnitude cannot be trusted until the truncation confound is removed.)
+**The corrected verdict — local DOES extract procedures; the gap is density, not capability.** Post-fix,
+local gemma produced **20 genuine multi-step procedural skills** (4–7 `## Procedures` bullets each):
+`mixed-change-type-tiered-commit-policy`, `contract-over-implementation-test-assertions`,
+`stale-test-expectation-triage`, `migration-array-wiring-audit`, `incremental-unit-commit-staging`,
+`transitional-flag-single-removal-point`, `human-gate-before-behavior-changing-commit`, … So the earlier
+"local is a preference-only extractor" framing was WRONG — it was truncated gemma. The honest gap:
+**local procedural density ≈ 0.26 vs frontier ≈ 0.68** (frontier ~2.6× richer). Against the committed bar
+(non-empty-procedure ≥ 0.70), **only frontier clears it**; local lands at 0.26 — usable procedural output,
+but most of its drafts are still preference/convention skills (gemma's genuine bias). For
+procedure-dense extraction, frontier remains the quality choice; local is a private, zero-cost extractor
+that now produces real (if sparser) procedures.
 
-**#176 (zero-candidate / malformed local) — root cause CORRECTED (2026-06-08).** It had two stacked
-causes, both now FIXED at the seam (not "a gemma-model limitation" as previously written here):
+**#176 (zero-candidate / malformed local) — root cause CORRECTED + FIXED (2026-06-08).** Two stacked
+causes, both fixed at the seam (NOT "a gemma-model limitation" as a prior draft of this doc said):
 1. the `max_entry_chars=8192` parser cap rejecting every real transcript (FIXED, commit 4414e97); and
 2. **silent Ollama context truncation** — gemma served at n_ctx 4096 with no `num_ctx` sent and an 8192
-   window budget, truncating substantive windows to malformed JSON (FIXED: `num_ctx=16384` always sent on
-   all four Ollama builders; proven live, `truncated=1`→`truncated=0`). Cause (2) was previously
-   mis-attributed to gemma weakness; it was an infra misalignment.
+   window budget, truncating substantive windows to malformed JSON (FIXED, commit 91fe25b: `num_ctx=16384`
+   always sent on all four Ollama builders; proven live, `truncated=1`→`truncated=0`; and proven to lift
+   gemma procedural extraction 0.00 → 0.256).
 
-**Next action:** re-run this exact A/B with the `num_ctx` fix to obtain the FIRST trustworthy
-local-vs-cloud procedural gap. Only then update the README's local-vs-cloud claim. The current README
-note (local = preference/zero-cost) is **provisional** and may be too pessimistic about local.
+**Throughput note (why local is slow here, and why num_ctx is uniform).** On this host gemma4:12b (9.5 GB)
+plus a 16 k-token KV cache does not fit in VRAM alongside `nomic-embed-text`, so Ollama runs gemma at
+~61% CPU and each call takes ~13 min. `num_ctx` is held **uniform at 16384** (not tiered per call-type)
+on purpose: Ollama bakes the context size at model load (24 h keep-alive), so mixing num_ctx values would
+force model **reloads** mid-run (the prose map step interleaves with skeleton/verifier calls) — worse than
+a single loaded context. The real throughput lever is **VRAM/provisioning** (fit gemma + 16 k KV on GPU),
+or a smaller local model — not shrinking the context (which risks re-truncation).
 
-**README:** the prior "procedural needs frontier" wording is provisional pending the clean re-run.
+**README:** updated to the corrected verdict (local extracts real procedures at ~0.26 density; frontier
+~0.68; frontier preferred for procedure-dense extraction).

@@ -90,7 +90,10 @@ the background churner run, not cap to make it fast. Throughput is a hardware/pr
 (give Ollama enough VRAM to hold the model + a 16 k context on GPU), not a reason to under-size the
 context.
 
-## What this does NOT claim
-This removes the *silent-truncation* failure mode. gemma may still under-perform on prose extraction
-even when the full window fits (model capability — see #214's local-vs-cloud quality gap). That is a
-separate, now-cleanly-measurable question: the truncation was masking it.
+## What this does NOT claim — and what the clean re-measurement showed
+This removes the *silent-truncation* failure mode; it does not make gemma a frontier extractor. With the
+fix, the local-vs-cloud A/B was re-run on the real worker (#214): gemma's non-empty-procedure rate went
+**0.00 → 0.256** (20 genuine multi-step procedural skills over 78 drafts / 9 transcripts), vs frontier
+`claude-code` **0.68**. So the truncation was masking real capability — local DOES extract procedures —
+but a genuine density gap (~2.6×) remains as a model-capability matter, separate from this infra bug.
+The 0.00 had wrongly looked like "local can't do procedures"; it was truncated gemma.

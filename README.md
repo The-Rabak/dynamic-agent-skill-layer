@@ -221,17 +221,18 @@ The default path is a map→reduce orchestrator: **segment** the transcript into
 
 Embeddings remain local Ollama (`nomic-embed-text`) in **every** mode — only the extraction LLM is selectable. Selecting a cloud provider without its credential fails loudly at construction.
 
-> **Local-vs-cloud quality gap (#214, 2026-06-08) — frontier proven, local re-measurement pending.**
-> Embeddings are always local; only the extraction LLM is selectable. On real transcripts via the real
-> `maintenance-worker`, the **frontier** provider is proven strong: `claude-code` non-empty-procedure
-> rate **~0.68** over 10 transcripts (yields real procedural skills). The **local** `gemma4:12b` number
-> measured **0.00 procedural**, BUT that run predates the #176 `num_ctx` fix and is **confounded by
-> silent context truncation** (Ollama served gemma at a 4096-token context with no `num_ctx` sent, while
-> the window budget is 8192 — truncating the procedure-rich tail of substantive windows). That fix is
-> now in (`num_ctx=16384` always sent); the local procedural quality is being **re-measured** and the
-> earlier "preference-only" characterization is **provisional** — it may be too pessimistic. For
-> high-quality procedural extraction today, a frontier provider (`claude` / `claude-code`) is the safe
-> choice. See `docs/assessments/2026-06-08-local-vs-cloud-extraction-gap-214.md` and
+> **Local-vs-cloud quality gap (#214, 2026-06-08) — measured on real transcripts, both extract real
+> procedures.** Embeddings are always local; only the extraction LLM is selectable. On the real
+> `maintenance-worker`: **frontier** `claude-code` non-empty-procedure rate **~0.68**; **local**
+> `gemma4:12b` **~0.26** (20 genuine multi-step procedural skills). An earlier "local = 0.00 procedural /
+> preference-only" reading was an **artifact of a now-fixed truncation bug** (#176: Ollama served gemma
+> at a 4096-token context with no `num_ctx` sent, truncating the procedure-rich tail of substantive
+> windows; fixed by always sending `num_ctx=16384`, which lifted local 0.00 → 0.26). So local **does**
+> extract procedures — the gap is **density** (~2.6× richer on frontier), not capability. For
+> procedure-dense extraction, frontier is the quality choice; local is a private, zero-cost extractor
+> that yields real (if sparser) procedures. Local extraction is also **slow on VRAM-limited hosts** (the
+> 16 k context pushes gemma to CPU); throughput is a provisioning matter, not a context-size one. See
+> `docs/assessments/2026-06-08-local-vs-cloud-extraction-gap-214.md` and
 > `docs/assessments/2026-06-08-ollama-num-ctx-truncation-176.md`.
 
 ---
