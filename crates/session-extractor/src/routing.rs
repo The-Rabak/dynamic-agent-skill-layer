@@ -10,11 +10,10 @@
 //! - **Provider** — which [`crate::ExtractionProvider`] handles sessions on
 //!   this tier (frontier = claude-code or claude; local = ollama).
 //! - **Segmentation granularity** — the `token_budget` passed to
-//!   [`crate::segmentation::segment_session`]. Frontier models have a 200 k+
-//!   context window; setting `token_budget` to that value means the whole
-//!   session becomes ONE episode (holistic reasoning, no fragmentation). Local
-//!   models have an ~8 k context window; the small budget produces many
-//!   episodes. The SAME `segment_session` code path handles both.
+//!   [`crate::segmentation::segment_session`]. Frontier models have much larger
+//!   context windows, but the current default uses focused 40 960-token windows
+//!   for recall; local models use 8 192-token windows. The SAME
+//!   `segment_session` code path handles both.
 //! - **Dual-pass enabled** — whether to run a holistic whole-session pass
 //!   alongside the structured per-episode pass (opt-in; currently not wired
 //!   into the dispatch path, but the flag is recorded for observability and
@@ -40,7 +39,7 @@
 //!   - `"frontier"` → frontier tier (ClaudeCode, large budget, dual-pass)
 //!
 //! - `EXTRACT_SESSION_FRONTIER_TOKEN_BUDGET` — frontier-tier segmentation budget
-//!   override (default 200 000, the real frontier context).
+//!   override (default 40 960, focused frontier windows).
 //! - `EXTRACT_SESSION_LOCAL_TOKEN_BUDGET` — local-tier segmentation budget
 //!   override (default 8 192, the real local-model context).
 //!
@@ -54,9 +53,8 @@ use crate::ExtractionProvider;
 /// The provider tier selected by the routing policy.
 ///
 /// The tier determines the default `token_budget` (and hence segmentation
-/// granularity): frontier uses the model's full context window so the whole
-/// session becomes ONE episode; local uses a conservative budget so large
-/// sessions are segmented into many episodes.
+/// granularity): frontier uses focused 40 960-token windows; local uses a
+/// smaller 8 192-token budget so large sessions are segmented more finely.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExtractionRoutingTier {
     /// Local (Ollama) extraction — default floor, offline-capable.
@@ -67,11 +65,11 @@ pub enum ExtractionRoutingTier {
     Local,
     /// Frontier (Claude Code or Claude API) extraction — opt-in upgrade.
     ///
-    /// `token_budget` = [`FRONTIER_TIER_TOKEN_BUDGET`] (200 000 tokens, sized to
-    /// the model's real context). Most sessions fit in a single frontier window and
-    /// use the model's actual capacity; genuinely larger sessions are still split
-    /// into multiple overlapping windows (extracted + deduped, recall-first) so the
-    /// long tail is never dropped. Tunable via `EXTRACT_SESSION_FRONTIER_TOKEN_BUDGET`.
+    /// `token_budget` = [`FRONTIER_TIER_TOKEN_BUDGET`] (40 960 tokens). This is a
+    /// focused 5x-local window, not the model's maximum context. Larger sessions
+    /// split into multiple overlapping windows (extracted + deduped, recall-first)
+    /// so the long tail is never dropped. Tunable via
+    /// `EXTRACT_SESSION_FRONTIER_TOKEN_BUDGET`.
     Frontier,
 }
 
@@ -305,8 +303,8 @@ mod tests {
     }
 
     /// Builds a session large enough that a local-tier budget (8 192 tokens)
-    /// produces many episodes but a frontier-tier budget (200 000 tokens)
-    /// produces exactly one.
+    /// produces many episodes but a frontier-tier budget (40 960 tokens)
+    /// produces fewer, coarser windows.
     ///
     /// Budget math:
     /// - user_msg content: 100 chars → 25 tokens
@@ -318,7 +316,7 @@ mod tests {
         let long_input = "b".repeat(200);
         let long_output = "c".repeat(100);
         // 2 400 iterations (~7 200 events, ~240k token estimate) — deliberately LARGER
-        // than FRONTIER_TIER_TOKEN_BUDGET (200 000) so the frontier tier must ALSO
+        // than FRONTIER_TIER_TOKEN_BUDGET (40 960) so the frontier tier must ALSO
         // chunk it into multiple overlapping windows (never one giant single chunk),
         // while local chunks it far more finely. Proves both tiers use the same
         // segmentation pipeline, frontier coarser than local.
@@ -448,7 +446,7 @@ mod tests {
     // ── granularity parity tests ──────────────────────────────────────────────
 
     /// Proves that:
-    /// - A frontier-tier token budget (200 000) → MULTIPLE windows for a session
+    /// - A frontier-tier token budget (40 960) → MULTIPLE windows for a session
     ///   larger than the budget: frontier never one-shots an over-budget transcript.
     /// - A local-tier token budget (8 192) → even FINER granularity for the SAME
     ///   session. Same `segment_session` code path, only the budget differs.

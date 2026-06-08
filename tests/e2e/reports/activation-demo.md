@@ -1,7 +1,7 @@
 # Activation Demo Report
 
-_Generated: 2026-06-04T06:10:59.345493Z_
-_Elapsed: 2m47s (target: <10 min excluding model download)_
+_Generated: 2026-06-07T07:08:37.169079Z_
+_Elapsed: 0m50s (target: <10 min excluding model download)_
 
 ## Stack Health
 
@@ -28,7 +28,7 @@ Embedding model: `nomic-embed-text` (local Ollama)
 | Field | Value |
 |-------|-------|
 | Prompt | `how to read files in rust with tokio async` |
-| Status | `degraded` |
+| Status | `ok` |
 | graph_version | `2` |
 | cloud_calls | `none` |
 
@@ -40,9 +40,7 @@ confirms a real graph rebuild completed before this call.
 
 ```
 ### Why These Skills
-- rust-tokio-async-file-io: scope=global | bucket=low | semantic=0.807 | lexical=0.444
-- git-conventional-commit-workflow: scope=global | bucket=low | semantic=0.363 | lexical=0.111
-- rust-unit-testing-patterns: scope=global | bucket=low | semantic=0.506 | lexical=0.111
+- rust-tokio-async-file-io: scope=global | bucket=low | semantic=0.806 | lexical=0.444
 ```
 
 ## Transcript Ingest (Shipped Hook Path)
@@ -69,19 +67,19 @@ Discovery scoped to `target/demo-sandbox-*` only (not the full `target/`).
 | Draft count | `2` |
 | Extraction model | `granite4:3b` (local Ollama) |
 
-- `target/demo-sandbox-1780553292/.skills/handle-file-write-failure/SKILL.md.pending`
-- `target/demo-sandbox-1780553292/.skills/mkdir-parents-if-not-exists/SKILL.md.pending`
+- `target/demo-sandbox-1780816067/.skills/handle-file-write-failure/SKILL.md.pending`
+- `target/demo-sandbox-1780816067/.skills/mkdir-parent-directory/SKILL.md.pending`
 
 **Human gate:** `.pending` files require manual rename to `.md` before they
 take effect. No auto-approval occurs. This is the constitution-required human gate.
 
 ## Warnings
 
-- compile_context returned `degraded` (reason: project_scope_resolution_failed). This is expected when calling the containerized mcp-server: the musl static binary has no git binary, so project scope resolution always fails for any repo_path. The global-scope retrieval DID succeed — `### Why These Skills` section is LIVE (graph_version=2). To get `ok`, run compile_context in-process (as the live e2e roundtrip test does) where git is available on the host.
+None
 
 ## Time-to-Wow
 
-Elapsed from script start to completion: **2m47s**
+Elapsed from script start to completion: **0m50s**
 Target: under 10 minutes excluding model download.
 
 The live E2E suite (18/18 green, 147s) demonstrates the full path under load.

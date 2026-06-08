@@ -189,9 +189,9 @@ pub struct RetrievalConfig {
     pub global_scope_weight: f32,
     pub rrf_k: f32,
     pub scope_timeout_ms: u64,
-    /// How the eq.3 community boost is computed (#208). Default `Binary` (the
-    /// historical, ranking-inert behaviour); `CentroidAffinity` / `Off` exist for
-    /// the keep-or-cut measurement.
+    /// How the eq.3 community boost is computed (#208). Default `Off` after the
+    /// measured keep-or-cut decision; `Binary` preserves the historical,
+    /// ranking-inert behaviour and `CentroidAffinity` remains for re-evaluation.
     pub community_boost_mode: CommunityBoostMode,
 }
 
@@ -262,12 +262,12 @@ impl Default for RetrievalConfig {
 
 impl RetrievalConfig {
     /// Reads `RETRIEVAL_RELEVANCE_THRESHOLD` from the environment and returns the
-    /// parsed value, or the calibrated default (0.450) if the variable is absent.
+    /// parsed value, or the calibrated default (0.48) if the variable is absent.
     ///
     /// Panics with a clear message when the variable is present but cannot be
     /// parsed as `f32` — per the project fail-loud mandate (no silent fallbacks).
     ///
-    /// The default is calibrated from live per-query-tagged measurements on 2026-06-07;
+    /// The default was recalibrated on the live 234-corpus on 2026-06-08;
     /// see the `RetrievalConfig::default()` comment for the full evidence table.
     pub fn relevance_threshold_from_env() -> f32 {
         match std::env::var("RETRIEVAL_RELEVANCE_THRESHOLD") {
@@ -1284,7 +1284,7 @@ mod tests {
 
     /// Proves `relevance_threshold_from_env` returns the calibrated default when
     /// `RETRIEVAL_RELEVANCE_THRESHOLD` is absent, and that the default is the
-    /// calibrated 0.450 floor from #192.
+    /// calibrated 0.48 floor from #209.
     ///
     /// Recalibrated to 0.48 on the real 234-corpus (#209, 2026-06-08): the old 0.450
     /// (8-skill calibration) was too low — it leaked off-topic fabrications (no_match

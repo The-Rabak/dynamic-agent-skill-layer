@@ -928,13 +928,10 @@ mod tests {
     /// Proves the relevance floor rejects a candidate whose eq3 score is below
     /// `relevance_threshold`, even when the skill embedding partially aligns.
     ///
-    /// Background (#192): the old default floor (0.20) was too low for
-    /// `nomic-embed-text` — its cosine similarities are inflated for all text
-    /// pairs, including off-topic ones. Live calibration with per-query-tagged
-    /// scoring on the isolated 8-skill quality corpus (2026-06-07, 772 events)
-    /// established a threshold of 0.450 sitting in the 0.0179-wide gap between
-    /// the worst negative's eq3 (0.4386, kubernetes TLS) and the lowest
-    /// true-positive disjoint hit's eq3 (0.4565, git-rebase-conflict-resolution).
+    /// Background (#209): the 0.450 floor from the isolated 8-skill corpus was too
+    /// low for the real 234-skill corpus. Live-server calibration raised the
+    /// default to 0.48, which blocked off-topic fabrications and improved positive
+    /// ranking by removing low-score noise.
     ///
     /// This test locks the floor contract so a future config change cannot silently
     /// lower it below the level that blocks fabricated matches for off-topic prompts.
@@ -942,20 +939,20 @@ mod tests {
     /// The prompt embedding `[1.0, 0.0]` and the skill embedding `[0.0, 1.0]` are
     /// orthogonal, giving cosine similarity = 0.0 (α term = 0). With the default
     /// weights (α=0.45, β=0.35, γ=0.20, λ=0.25) and no subunit evidence (β=0) and
-    /// no prior (γ=0), the eq3 score is 0.0 — clearly below 0.450.
+    /// no prior (γ=0), the eq3 score is 0.0 — clearly below 0.48.
     /// The floor must exclude this candidate, leaving an empty candidates list.
     #[tokio::test]
     async fn relevance_floor_excludes_candidate_below_threshold() {
         use std::collections::BTreeMap;
 
-        // Use the calibrated default threshold (0.450) as configured in RetrievalConfig.
+        // Use the calibrated default threshold (0.48) as configured in RetrievalConfig.
         // A skill with zero cosine alignment gets eq3 = 0 — well below the floor.
         let floor_config = RetrievalConfig {
             candidate_limit: 10,
             max_results: 3,
             max_subunits_per_skill: 3,
             rescue_threshold: 0.15,
-            relevance_threshold: 0.450, // calibrated floor from #192
+            relevance_threshold: RetrievalConfig::default().relevance_threshold,
             mmr_lambda: 0.65,
             ..RetrievalConfig::default()
         };
@@ -1009,7 +1006,7 @@ mod tests {
         assert_eq!(results.len(), 1, "should have one scope result");
         assert!(
             results[0].candidates.is_empty(),
-            "candidate whose eq3 = 0 must be excluded by the 0.450 relevance floor; \
+            "candidate whose eq3 = 0 must be excluded by the 0.48 relevance floor; \
              got {} candidates (expected 0 — floor must block fabricated matches)",
             results[0].candidates.len()
         );
@@ -1018,12 +1015,12 @@ mod tests {
     /// Proves that a candidate with strong subunit evidence that pushes eq3 above
     /// the relevance floor IS admitted, while the floor still blocks weaker candidates.
     ///
-    /// This test demonstrates that a threshold of 0.450 does not over-reject:
+    /// This test demonstrates that the calibrated 0.48 threshold does not over-reject:
     /// a skill with real subunit evidence (β > 0) clears the floor when its
-    /// combined score α×0.45 + β×0.35 ≥ 0.450.
+    /// combined score α×0.45 + β×0.35 ≥ 0.48.
     ///
     /// With default weights and cosine=1.0 for both skill and subunit:
-    ///   eq3 = 0.45 × 1.0 + 0.35 × 1.0 = 0.80 → well above 0.450.
+    ///   eq3 = 0.45 × 1.0 + 0.35 × 1.0 = 0.80 → well above 0.48.
     #[tokio::test]
     async fn relevance_floor_admits_candidate_with_sufficient_combined_score() {
         use std::collections::BTreeMap;
@@ -1033,7 +1030,7 @@ mod tests {
             max_results: 3,
             max_subunits_per_skill: 3,
             rescue_threshold: 0.15,
-            relevance_threshold: 0.450, // calibrated floor from #192
+            relevance_threshold: RetrievalConfig::default().relevance_threshold,
             mmr_lambda: 0.65,
             ..RetrievalConfig::default()
         };
@@ -1051,7 +1048,7 @@ mod tests {
         };
 
         // With α=0.45, β=0.35, and cosine(query, skill)=1.0, cosine(query, subunit)=1.0:
-        // eq3 = 0.45 × 1.0 + 0.35 × 1.0 + 0.20 × 0.0 = 0.80 → above the 0.450 floor.
+        // eq3 = 0.45 × 1.0 + 0.35 × 1.0 + 0.20 × 0.0 = 0.80 → above the 0.48 floor.
         let snapshot = RetrievalSnapshot::new(
             vec![crate::orchestrator::SeededSkill {
                 skill,
@@ -1094,14 +1091,14 @@ mod tests {
         assert_eq!(
             results[0].candidates.len(),
             1,
-            "candidate with eq3 ≈ 0.80 must be admitted above the 0.450 relevance floor; \
+            "candidate with eq3 ≈ 0.80 must be admitted above the 0.48 relevance floor; \
              got {} candidates (expected 1)",
             results[0].candidates.len()
         );
         let admitted = &results[0].candidates[0];
         assert!(
-            admitted.score >= 0.450,
-            "admitted candidate must have score >= floor (0.450); got {:.4}",
+            admitted.score >= RetrievalConfig::default().relevance_threshold,
+            "admitted candidate must have score >= floor (0.48); got {:.4}",
             admitted.score
         );
     }
