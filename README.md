@@ -221,6 +221,16 @@ The default path is a map→reduce orchestrator: **segment** the transcript into
 
 Embeddings remain local Ollama (`nomic-embed-text`) in **every** mode — only the extraction LLM is selectable. Selecting a cloud provider without its credential fails loudly at construction.
 
+> **Measured local-vs-cloud quality gap (#214, 2026-06-08).** The local default is private and
+> zero-cost, but on real transcripts it currently extracts **preference/convention skills only and
+> near-zero *procedural* skills** — `gemma4:12b`'s structured-prose extraction returns malformed JSON
+> on substantive windows (#176 class) and degrades to empty. Measured on the real `maintenance-worker`
+> over identical real transcripts: local `gemma4:12b` non-empty-procedure rate **0.00** vs `claude-code`
+> **~0.52** (claude-code also yields more drafts). **For high-quality *procedural* skill extraction —
+> the layer's core purpose — use a frontier provider (`claude` / `claude-code`); the local default is
+> best understood as a private, zero-cost preference/convention extractor today.** See
+> `docs/assessments/2026-06-08-local-vs-cloud-extraction-gap-214.md`.
+
 ---
 
 ## Key contracts

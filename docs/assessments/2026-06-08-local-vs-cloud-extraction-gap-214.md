@@ -104,5 +104,29 @@ skill drafts** from the first real transcript (e.g. `staged-background-test-exec
 **malformed JSON** across all 3 retries (the #176 / thinking-token-leak class), and the orchestration
 **degraded gracefully** ("accepting empty" for that window) while the deterministic skeleton/preference
 paths still produced drafts. So local extraction now *works* but the gemma prose-extraction path has a
-real malformed-output quality wrinkle — now measurable (it was previously masked by the hard block). The
-full local-vs-cloud yield/quality A/B runs on top of this fix.
+real malformed-output quality wrinkle — now measurable (it was previously masked by the hard block).
+
+## Measured local-vs-cloud A/B (same real transcripts, real maintenance-worker)
+
+Directional 2-transcript sample (a ≥10 sample is running to formally satisfy the committed bar; gemma's
+0% procedural is systematic, not sample variance — the prose path fails on every substantive window):
+
+| provider | drafts | yield/transcript | **non-empty-procedure rate** | elapsed |
+|---|---|---|---|---|
+| `ollama` / `gemma4:12b` (local default) | 15 | 7.5 | **0.00** | 448s |
+| `claude-code` (frontier) | 21 | 10.5 | **0.52** | 254s |
+
+**The gap, measured:** local gemma yields *only* preference/convention skills and **zero procedural**
+skills; claude-code yields real procedural skills (`incremental-unit-commit-staging`,
+`work-unit-lifecycle-pipeline`, `production-fail-loud-no-silent-fallback`, …). Local **fails the
+committed bar** (non-empty-procedure 0.00 ≪ 0.70). The procedural extraction the layer exists for needs a
+frontier provider; the local default is a private, zero-cost *preference/convention* extractor today.
+
+**#176 (zero-candidate local) — RESOLVED/characterized with evidence:** it had two stacked causes —
+(1) the `max_entry_chars=8192` parser cap rejecting every real transcript (now FIXED, commit 4414e97),
+and (2) gemma's structured-prose path returning malformed JSON on substantive windows (degrades to empty
+procedural). With (1) fixed, local yields drafts but 0% procedural (cause 2 remains, a gemma-model
+limitation, now openly documented in the README). The fix unblocked extraction for the **frontier**
+provider too (the cap was shared) — which matters most since frontier is the quality path.
+
+**README:** corrected to state the measured tradeoff (local = preference/zero-cost; procedural needs frontier).
