@@ -105,10 +105,12 @@ at boot (deterministic `nomic-embed-text`, so configs are comparable).
 
 ## Gap vs target, and the next architectural bets (target NOT lowered)
 
-Best measured held-out: **MRR 0.644 (gap −0.156), nDCG@3 0.556 (gap −0.244)**; no_match precision
-1.000 (meets ≥0.90). The frozen 0.80 MRR/nDCG target is **not met with the current architecture.**
-Ranked next bets to close it (each must be measured on this corpus via the same real-server rig
-before shipping):
+**UPDATE after #208 (boost off) + #209 (floor 0.48):** the combined committed default now measures
+**held-out judge-augmented MRR 0.767, nDCG@3 0.749, hit@3 0.867, no_match precision 1.000** — within
+**0.033 of the 0.80 MRR aspiration and 0.051 of nDCG@3**, up from the 0.644 baseline. The floor (#209)
+was the dominant lever; the #210 weight-sweep had not varied it. The frozen 0.80 target is **not yet
+met but is now close**, and no_match precision is solved. Ranked next bets to close the last ~0.03–0.05
+(each measured on this corpus via the same real-server rig before shipping):
 
 1. **Stronger retrieval embedding model.** `nomic-embed-text`'s inflated, low-separation cosine is
    the most likely dominant bottleneck (it also forces the razor-thin #209 floor). Swapping to a
@@ -120,6 +122,27 @@ before shipping):
 3. **Richer ℓ₁ embedding text.** The skill vector is `name + description + tags`; including the
    `## Procedures` body may sharpen discrimination among sibling process skills.
 4. **#220 priming/recurrence** (deferred to Phase 4) for the session-start thin-prompt case.
+
+## #209 — no_match floor recalibration (the biggest single lever)
+
+The floor was the lever the #210 weight-sweep didn't touch — and it turned out to be the largest.
+Recalibrated by sweeping `RETRIEVAL_RELEVANCE_THRESHOLD` on the real server (40 tuning positives +
+20 off-topic negatives), calibrate-on-tuning → validate-on-held-out:
+
+| floor | no_match precision | pos hit@3 | pos MRR (tuning, judge-aug) |
+|---|---|---|---|
+| 0.45 (old) | 0.600 | 0.725 | 0.533 |
+| 0.46 | 0.800 | 0.675 | 0.596 |
+| **0.48 (chosen)** | **1.000** | **0.800** | 0.662 |
+| 0.50 | 1.000 | 0.750 | 0.683 |
+| 0.52 | 1.000 | 0.725 | 0.725 |
+
+**The old 0.450 was miscalibrated too low** (calibrated on 8 skills). On the real corpus it leaked
+off-topic fabrications (no_match precision 0.600) and admitted mediocre-eq3 skills that displaced
+better ones in the returned top-k. Raising the floor to **0.48** improves *both* negative rejection
+(→1.000) and positive ranking — it is not the usual precision/recall tradeoff; removing low-score
+noise cleans the top-k. **Held-out validation at 0.48 (disjoint): no_match precision 1.000, MRR
+0.767, nDCG@3 0.749, hit@3 0.867, recall@3 0.808.** Floor baked to 0.48 in `RetrievalConfig::default()`.
 
 ## #208 — community graph keep-or-cut decision (measured, then CUT from ranking)
 

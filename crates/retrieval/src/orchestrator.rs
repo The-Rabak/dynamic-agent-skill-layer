@@ -204,46 +204,37 @@ impl Default for RetrievalConfig {
             max_results: 3,
             max_subunits_per_skill: 3,
             rescue_threshold: 0.15,
-            // Calibrated negative-relevance floor (#192).
+            // No-match relevance floor — RECALIBRATED on the real 234-corpus (#209,
+            // 2026-06-08), superseding the original 8-skill toy calibration (#192).
             //
-            // nomic-embed-text cosine similarities are inflated for all text pairs,
-            // including off-topic ones. Live calibration on the isolated 8-skill quality
-            // corpus (2026-06-07, per-query-tagged eq3 scores, 772 events, 20 queries)
-            // produced the following score landscape for this embedding model + corpus:
+            // The original 0.450 was calibrated on an isolated 8-skill corpus with a
+            // razor-thin 0.0179 bimodal gap. Re-measured on the real 234-skill corpus by
+            // sweeping the floor on the LIVE mcp-server (find_skill over HTTP + real
+            // claude judge; 40 tuning positives + 20 off-topic negatives), calibrating on
+            // tuning and validating on the disjoint held-out split:
             //
-            //   Negative user queries — max eq3 across all corpus skills:
-            //     kubernetes TLS termination:  0.4386  (highest negative)
-            //     react useEffect / useMemo:   0.4289
-            //     sourdough bread ferment:     0.3557
-            //     self-employment tax:         0.3437  (lowest negative)
+            //   floor   no_match precision   pos hit@3   pos MRR   (tuning, judge-aug)
+            //   0.45        0.600              0.725       0.533    (the old floor: leaks)
+            //   0.46        0.800              0.675       0.596
+            //   0.48        1.000              0.800       0.662   <-- chosen
+            //   0.50        1.000              0.750       0.683
+            //   0.52        1.000              0.725       0.725
             //
-            //   Disjoint positive queries — score of the TARGET skill for its own query:
-            //     vector-cosine-similarity:    0.4889  (highest disjoint target)
-            //     docker-compose-healthchecks: 0.4798
-            //     retry-backoff-resilience:    0.4798
-            //     postgres-connection-pooling: 0.4785
-            //     git-rebase-conflict:         0.4565  (lowest disjoint target hit)
-            //   (3 of 8 disjoint queries are permanent misses at any threshold — the
-            //    embedding model does not bridge those metaphors regardless of floor.)
+            // Finding: the old 0.450 was MISCALIBRATED TOO LOW. On a heterogeneous corpus
+            // it admits mediocre-eq3 skills that (via RRF) both displace better skills in
+            // the returned top-k AND let off-topic queries fabricate matches (no_match
+            // precision only 0.600 on the 20-negative set). Raising the floor to 0.48
+            // improves BOTH negative rejection (→1.000) AND positive ranking — it is not
+            // the usual precision/recall tradeoff because removing low-score noise cleans
+            // the top-k. Held-out validation at 0.48: no_match precision 1.000, MRR 0.767,
+            // hit@3 0.867, recall@3 0.808 (vs 0.644 MRR at the old 0.450). 0.48 is the
+            // lowest floor reaching perfect no_match precision, preserving the most recall
+            // headroom for unseen queries. See
+            // docs/assessments/2026-06-07-retrieval-quality-234-corpus-measured.md.
             //
-            //   Lexical positive queries: 0.6168 – 0.6705 (well above any threshold)
-            //
-            //   Score gap: max_negative(0.4386) < 0.450 < min_positive_disjoint(0.4565)
-            //
-            // Gap width: 0.0179 — a clean, stable bimodal separation between off-topic
-            // fabrications and semantically-relevant target skills. Floor 0.450 sits
-            // 0.0064 above the max negative and 0.0115 below the min positive target.
-            //
-            // NOTE: An earlier calibration from run 1 showed inflated negative scores
-            // (max 0.4794 for "sourdough bread") due to stale un-isolated skill data
-            // in the graph. With proper corpus isolation ([rq-isolation] verified 8
-            // skills) the negative max drops to 0.4386, widening the gap from 0.0009
-            // to 0.0179 and making 0.450 a stable and conservative choice.
-            //
-            // This value can be env-overridden via `RETRIEVAL_RELEVANCE_THRESHOLD` (see
-            // `RetrievalConfig::relevance_threshold_from_env`) for operational retuning
-            // without a redeploy.
-            relevance_threshold: 0.450,
+            // Env-overridable via `RETRIEVAL_RELEVANCE_THRESHOLD` for retuning without a
+            // redeploy (and the #209 sweep itself).
+            relevance_threshold: 0.48,
             mmr_lambda: 0.65,
             scoring_weights: ScoringWeights::default(),
             project_scope_weight: 1.0,
@@ -1295,9 +1286,10 @@ mod tests {
     /// `RETRIEVAL_RELEVANCE_THRESHOLD` is absent, and that the default is the
     /// calibrated 0.450 floor from #192.
     ///
-    /// The 0.450 value sits in the 0.0179-wide gap measured with per-query-tagged
-    /// scoring on 2026-06-07 (isolated 8-skill corpus, 772 events):
-    ///   max_negative(0.4386, kubernetes TLS) < 0.450 < min_positive_disjoint(0.4565, rebase).
+    /// Recalibrated to 0.48 on the real 234-corpus (#209, 2026-06-08): the old 0.450
+    /// (8-skill calibration) was too low — it leaked off-topic fabrications (no_match
+    /// precision 0.600) and admitted ranking noise. 0.48 reaches perfect no_match
+    /// precision AND higher positive quality on the live-server floor sweep.
     #[test]
     fn relevance_threshold_defaults_to_calibrated_floor() {
         // Temporarily remove the env var if it happens to be set in the test process.
@@ -1305,8 +1297,8 @@ mod tests {
 
         let threshold = RetrievalConfig::relevance_threshold_from_env();
         assert!(
-            (threshold - 0.450).abs() < 1e-6,
-            "calibrated default relevance_threshold must be 0.450 (#192); got {threshold:.6}"
+            (threshold - 0.48).abs() < 1e-6,
+            "calibrated default relevance_threshold must be 0.48 (#209 real-corpus recalibration); got {threshold:.6}"
         );
     }
 

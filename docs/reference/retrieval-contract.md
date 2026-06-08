@@ -110,22 +110,34 @@ This is the design intent of the cap. The regression test
 
 ## 4. No-match relevance floor
 
-Defined in `crates/retrieval/src/orchestrator.rs` (lines 196–197):
-
 ```rust
-relevance_threshold: 0.450,
+relevance_threshold: 0.48,
 ```
 
-Candidates whose eq.3 score falls below 0.450 are excluded before fusion and never returned.
+Candidates whose eq.3 score falls below 0.48 are excluded before fusion and never returned.
 
-### Calibration evidence
+### Calibration evidence (recalibrated on the real 234-corpus, #209)
 
-The 0.450 floor was calibrated from live per-query-tagged measurements on the isolated 8-skill
-quality corpus (2026-06-07, 772 events). The gap between the worst negative score (0.4386 for
-"kubernetes TLS termination") and the lowest true-positive disjoint hit (0.4565 for
-"git-rebase-conflict-resolution") is 0.0179 wide. The floor sits 0.0064 above the max negative
-and 0.0115 below the min positive. See the full evidence table in the `RetrievalConfig::default()`
-comment in `crates/retrieval/src/orchestrator.rs` (lines 158–196).
+The floor was **recalibrated from 0.450 to 0.48** on the real 234-skill corpus (#209, 2026-06-08),
+superseding the original 8-skill toy calibration. It was re-measured by sweeping the floor on the
+**live mcp-server** (`find_skill` over HTTP + a real claude judge; 40 tuning positives + 20 off-topic
+negatives), calibrating on the tuning split and validating on the disjoint held-out split:
+
+| floor | no_match precision | pos hit@3 | pos MRR (tuning, judge-aug) |
+|---|---|---|---|
+| 0.45 (old) | 0.600 | 0.725 | 0.533 |
+| 0.46 | 0.800 | 0.675 | 0.596 |
+| **0.48 (chosen)** | **1.000** | **0.800** | 0.662 |
+| 0.50 | 1.000 | 0.750 | 0.683 |
+
+The old 0.450 was miscalibrated **too low**: on a heterogeneous corpus it admitted mediocre-eq3
+skills that displaced better ones in the top-k *and* let off-topic queries fabricate matches
+(no_match precision only 0.600). Raising the floor to 0.48 improves **both** negative rejection
+(→1.000) and positive ranking — removing low-score noise cleans the returned top-k rather than
+trading recall for precision. Held-out validation at 0.48: no_match precision 1.000, MRR 0.767,
+hit@3 0.867, recall@3 0.808. 0.48 is the lowest floor reaching perfect no_match precision (most
+recall headroom for unseen queries). Full evidence: the `RetrievalConfig::default()` comment and
+`docs/assessments/2026-06-07-retrieval-quality-234-corpus-measured.md`.
 
 The floor can be overridden at runtime without redeployment via `RETRIEVAL_RELEVANCE_THRESHOLD`.
 See `RetrievalConfig::relevance_threshold_from_env` at `crates/retrieval/src/orchestrator.rs`
@@ -220,10 +232,12 @@ a task.
   skill recurs across multiple distinct projects — the data #180 already computes) would better
   capture "globally appropriate" intent. Not yet implemented. Tracked in **#220**.
 
-### #209 — floor calibrated on a small corpus
+### #209 — floor recalibrated on the real corpus (RESOLVED)
 
-The no-match relevance floor of 0.450 was calibrated on an 8-skill isolated corpus. The
-calibration may shift on a larger or more diverse corpus. Tracked in **#209**.
+The no-match relevance floor was recalibrated from 0.450 to **0.48** on the real 234-skill corpus
+(2026-06-08), measured by sweeping the floor on the live server (see §4). The old 0.450 (8-skill
+calibration) was too low — it leaked off-topic fabrications (no_match precision 0.600) and admitted
+ranking noise. 0.48 achieves perfect no_match precision and higher positive quality. Resolved.
 
 ### Capped prior means cold-start is mild, not fatal
 

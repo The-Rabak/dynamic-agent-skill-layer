@@ -120,7 +120,7 @@ The YAML frontmatter is the **single source of truth** for metadata: `name` is t
 - **It's local-first and private.** The default `docker compose up` reaches no cloud. Embeddings (Ollama), vectors (Qdrant), and state (Postgres) are all on your machine. Cloud extraction is an explicit, credential-gated opt-in — never a silent fallback.
 - **It fails loud, never fake.** A missing provider credential, an unwired seam, or an unreachable model is a loud error at construction — not a stub that quietly returns plausible garbage.
 - **It's observable.** Every skill state is a file you can `ls`. Every graph mutation is recorded in Postgres with before/after snapshots. There is no hidden state to trust.
-- **It's honest about retrieval.** A genuinely off-topic prompt returns `no_match` instead of a confident wrong skill — the relevance floor is calibrated against measured negative-query scores, not guessed.
+- **It's honest about retrieval.** A genuinely off-topic prompt returns `no_match` instead of a confident wrong skill — the relevance floor is calibrated against measured negative-query scores on the real corpus (234 skills, 20 off-topic probes; #209), not guessed.
 - **It runs against the real thing.** The E2E harness ingests transcripts over the real HTTP endpoint, drains the real queue, runs real extraction, approves a real draft, and asserts the running server serves the newly-learned skill under concurrent load. Warm single-call `compile_context` retrieval runs ~100ms (release, measured) against a sub-500ms warm-path SLO. Aspirational "dream-state" contracts are `#[ignore]`'d placeholders — 18 of 25 are not yet implemented.
 
 ---
