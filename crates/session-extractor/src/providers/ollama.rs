@@ -28,7 +28,40 @@ pub fn build_extractor(
         })?;
         config.temperature = Some(temperature);
     }
+    apply_transcript_limit_overrides(
+        &mut config.max_entries,
+        &mut config.max_entry_chars,
+        &mut config.max_total_chars,
+    )?;
 
     OllamaExtractor::new(client, config)
         .map(|extractor| Arc::new(extractor) as Arc<dyn TranscriptSkillExtractionService>)
+}
+
+/// Applies the provider-agnostic transcript-parser limit overrides from the
+/// environment onto an extraction config, in place. Shared by every provider so
+/// the reality-sized ceilings (see the config defaults) stay tunable rather than
+/// hardcoded. Recognized (all optional, fail-loud on a non-integer value):
+/// - `EXTRACT_MAX_ENTRIES`
+/// - `EXTRACT_MAX_ENTRY_CHARS`
+/// - `EXTRACT_MAX_TOTAL_CHARS`
+pub(crate) fn apply_transcript_limit_overrides(
+    max_entries: &mut usize,
+    max_entry_chars: &mut usize,
+    max_total_chars: &mut usize,
+) -> Result<(), ExtractionError> {
+    for (var, slot) in [
+        ("EXTRACT_MAX_ENTRIES", max_entries),
+        ("EXTRACT_MAX_ENTRY_CHARS", max_entry_chars),
+        ("EXTRACT_MAX_TOTAL_CHARS", max_total_chars),
+    ] {
+        if let Ok(raw) = std::env::var(var)
+            && !raw.trim().is_empty()
+        {
+            *slot = raw.trim().parse().map_err(|error| {
+                ExtractionError::InvalidTranscript(format!("invalid {var} value: {error}"))
+            })?;
+        }
+    }
+    Ok(())
 }

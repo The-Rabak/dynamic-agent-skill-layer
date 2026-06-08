@@ -59,9 +59,13 @@ impl Default for ClaudeExtractionConfig {
             // No timeout by default: a background extraction churner must run to
             // completion. Set a positive value only to deliberately impose a bound.
             timeout_ms: 0,
-            max_entries: 2_000,
-            max_entry_chars: 8_192,
-            max_total_chars: 1_000_000,
+            // Transcript-parser ceilings ALIGNED to the orchestration window (#214):
+            // they validate ONE segmentation window and must exceed the largest window
+            // (frontier 40 960 tok ≈ 163 840 chars) so chunk-fitting content is never
+            // rejected. Env-overridable via EXTRACT_MAX_*.
+            max_entries: 100_000,
+            max_entry_chars: 524_288,
+            max_total_chars: 1_048_576,
         }
     }
 }

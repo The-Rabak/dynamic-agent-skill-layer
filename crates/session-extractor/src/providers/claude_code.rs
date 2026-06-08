@@ -33,6 +33,11 @@ fn config_from_environment() -> Result<ClaudeCodeExtractionConfig, ExtractionErr
             ))
         })?;
     }
+    super::ollama::apply_transcript_limit_overrides(
+        &mut config.max_entries,
+        &mut config.max_entry_chars,
+        &mut config.max_total_chars,
+    )?;
 
     Ok(config)
 }

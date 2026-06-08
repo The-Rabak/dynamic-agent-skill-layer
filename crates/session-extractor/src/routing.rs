@@ -87,23 +87,24 @@ impl ExtractionRoutingTier {
 
 /// Default segmentation `token_budget` for the local tier.
 ///
-/// 8 192 tokens — this is the **real context window of the local models**
-/// (nomic/gemma-class) the local tier targets, NOT an arbitrary cap. It is
-/// principled: feeding a local model more than its window is wasted. Override
-/// with `EXTRACT_SESSION_LOCAL_TOKEN_BUDGET` if you run a larger local model.
+/// 8 192 tokens — the orchestration deliberately windows the session into chunks
+/// this size for the local model; this is legitimate chunking, NOT a footgun (the
+/// #214 footgun was the per-entry CHAR cap being *smaller* than this window — see
+/// the extraction config defaults, now aligned). One window = `8192 × 4 ≈ 32 768`
+/// chars (the `chars/4` token estimate). Override with
+/// `EXTRACT_SESSION_LOCAL_TOKEN_BUDGET` for a larger local model.
 pub const LOCAL_TIER_TOKEN_BUDGET: usize = 8_192;
 
 /// Default segmentation `token_budget` for the frontier tier.
 ///
-/// 200 000 tokens — sized to the **real frontier model context** (Claude is a
-/// 200k–1M context model). A frontier provider must NEVER be silently squeezed
-/// into a tiny window: most sessions fit in a single frontier window and use the
-/// model's actual capacity. Genuinely larger sessions are still split into
-/// multiple overlapping windows (extracted + deduped, recall-first), so we never
-/// lose the long tail. Tune with `EXTRACT_SESSION_FRONTIER_TOKEN_BUDGET` — set it
-/// smaller only if a measured satisficing/long-tail-drop effect warrants finer
-/// granularity (a Phase-3 quality knob), never as a default foot-gun.
-pub const FRONTIER_TIER_TOKEN_BUDGET: usize = 200_000;
+/// 40 960 tokens — 5× the local-tier chunk (8 192). The frontier model can hold far
+/// more, but smaller, overlapping windows give the extractor a more focused view
+/// per chunk (better recall on dense sessions) while the dedup/synthesis reduce
+/// step recombines across windows; one window = `40 960 × 4 ≈ 163 840` chars.
+/// Larger sessions split into multiple overlapping windows (extracted + deduped,
+/// recall-first), so the long tail is never lost. Tune with
+/// `EXTRACT_SESSION_FRONTIER_TOKEN_BUDGET`.
+pub const FRONTIER_TIER_TOKEN_BUDGET: usize = 40_960;
 
 /// Reads a tier token-budget override from `env_var`, falling back to `default`.
 /// A non-integer or absent value uses the default. This keeps the budget a

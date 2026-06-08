@@ -163,8 +163,11 @@ pub struct OrchestrationConfig {
 }
 
 impl Default for OrchestrationConfig {
-    /// Conservative defaults: 8 k-token budget, 3-event overlap, 4 concurrent
-    /// map workers, 0.82 reduce threshold.
+    /// Defaults: 8 192-token chunk budget (the local-tier window; production routing
+    /// overrides it per tier via lib.rs), 3-event overlap, 4 concurrent map workers,
+    /// 0.82 reduce threshold. The chunk budget is legitimate windowing; the #214
+    /// footgun was the per-entry char cap being smaller than the window, now aligned
+    /// in the extraction config defaults.
     fn default() -> Self {
         Self {
             segmentation: SegmentationConfig::new(8_192, 3),

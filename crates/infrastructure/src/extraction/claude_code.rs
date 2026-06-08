@@ -88,9 +88,14 @@ impl Default for ClaudeCodeExtractionConfig {
             cli_path: "claude".to_owned(),
             model: DEFAULT_CLAUDE_MODEL.to_owned(),
             timeout_ms: DEFAULT_TIMEOUT_MS,
-            max_entries: 2_000,
-            max_entry_chars: 8_192,
-            max_total_chars: 1_000_000,
+            // Transcript-parser ceilings ALIGNED to the orchestration window (#214):
+            // they validate ONE segmentation window and must exceed the largest window
+            // (frontier 40 960 tok ≈ 163 840 chars) so chunk-fitting content is never
+            // rejected — the bug was the old 8192-char cap being smaller than the
+            // window. Env-overridable via EXTRACT_MAX_*.
+            max_entries: 100_000,
+            max_entry_chars: 524_288,
+            max_total_chars: 1_048_576,
         }
     }
 }

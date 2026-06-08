@@ -40,9 +40,19 @@ impl Default for OllamaExtractionConfig {
             // gemma4:12b is the default local extraction model (Gemma 4, 12B
             // variant). Override via OLLAMA_EXTRACTION_MODEL.
             model: "gemma4:12b".to_owned(),
-            max_entries: 2_000,
-            max_entry_chars: 8_192,
-            max_total_chars: 1_000_000,
+            // Transcript-parser ceilings ALIGNED to the orchestration window, NOT
+            // arbitrary footguns (#214). The orchestrated map→reduce segments the
+            // session into token-budget windows (`chars/4` estimate); these caps
+            // validate ONE window's transcript. They MUST exceed the largest window
+            // so content that fits a chunk is never rejected by the char gate — the
+            // #214 bug was the old 8192-char cap being SMALLER than the 8192-token
+            // window (≈32 768 chars). Largest window = frontier 40 960 tok ≈ 163 840
+            // chars; these sit comfortably above it, with headroom for an oversized
+            // single entry that the segmenter places in its own window. Env-overridable
+            // via EXTRACT_MAX_* in the provider builder.
+            max_entries: 100_000,
+            max_entry_chars: 524_288,
+            max_total_chars: 1_048_576,
             // None = use the model's default temperature (stochastic sampling).
             // Override via OLLAMA_EXTRACTION_TEMPERATURE.
             temperature: None,
