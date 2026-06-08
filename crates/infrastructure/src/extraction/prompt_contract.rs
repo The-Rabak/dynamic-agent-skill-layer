@@ -281,7 +281,7 @@ pub(crate) fn sanitize_transcript_entry(entry: &TranscriptEntry) -> Option<Strin
 ///
 /// This is the single canonical renderer shared by all three extraction
 /// providers. Do not add provider-local renderers — call this instead.
-pub(crate) fn render_sanitized_transcript_lines(transcript: &SessionTranscript) -> String {
+pub fn render_sanitized_transcript_lines(transcript: &SessionTranscript) -> String {
     let mut lines = String::new();
     for entry in &transcript.entries {
         if let Some(sanitized_content) = sanitize_transcript_entry(entry) {

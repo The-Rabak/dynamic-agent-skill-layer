@@ -6,7 +6,10 @@ use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use tokio::time::timeout;
 
-use crate::extraction::{http::post_json, prompt_contract::DEFAULT_CLAUDE_MODEL};
+use crate::extraction::{
+    http::{extraction_ollama_num_ctx, post_json},
+    prompt_contract::DEFAULT_CLAUDE_MODEL,
+};
 
 /// Default Anthropic API base URL for the merge verifier Claude path.
 const DEFAULT_ANTHROPIC_BASE_URL: &str = "https://api.anthropic.com";
@@ -108,6 +111,8 @@ impl OllamaMergeVerifier {
 
 #[derive(Debug, Serialize)]
 struct OllamaGenerateOptions {
+    /// Context window in tokens — ALWAYS set (the #176/#214 truncation guard).
+    num_ctx: u32,
     temperature: f32,
 }
 
@@ -149,7 +154,10 @@ impl LlmEquivalenceVerifier for OllamaMergeVerifier {
             format: "json".to_owned(),
             prompt,
             think: false,
-            options: OllamaGenerateOptions { temperature: 0.0 },
+            options: OllamaGenerateOptions {
+                num_ctx: extraction_ollama_num_ctx(),
+                temperature: 0.0,
+            },
         };
 
         let raw: OllamaGenerateResponse = post_json(

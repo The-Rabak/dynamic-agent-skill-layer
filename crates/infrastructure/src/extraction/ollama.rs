@@ -5,7 +5,7 @@ use domain::{
 use serde::{Deserialize, Serialize};
 
 use crate::extraction::{
-    http::post_json,
+    http::{extraction_ollama_num_ctx, post_json},
     limits::{validate_extraction_config, validate_transcript_limits},
     prompt_contract::{build_text_json_extraction_prompt, render_sanitized_transcript_lines},
 };
@@ -93,6 +93,10 @@ impl OllamaExtractor {
 /// omitted so Ollama uses its model-default for the unset parameters.
 #[derive(Debug, Serialize)]
 struct OllamaGenerateOptions {
+    /// Context window in tokens — ALWAYS set so Ollama never silently truncates a
+    /// substantive window at its ~4096 default (the #176/#214 malformed-JSON root
+    /// cause). See [`extraction_ollama_num_ctx`] / `EXTRACTION_OLLAMA_NUM_CTX`.
+    num_ctx: u32,
     /// Sampling temperature. Set to `0.0` for deterministic (greedy) output.
     #[serde(skip_serializing_if = "Option::is_none")]
     temperature: Option<f32>,
@@ -113,11 +117,9 @@ struct OllamaExtractionRequest {
     /// `think:false` does. Verified: with this set, temp=0 yields the correct shape
     /// deterministically.
     think: bool,
-    /// Forwarded to Ollama's `options` field. Omitted entirely when all fields
-    /// are `None` so existing behavior is unchanged for callers that do not
-    /// override inference options.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    options: Option<OllamaGenerateOptions>,
+    /// Forwarded to Ollama's `options` field. ALWAYS present now: `num_ctx` must be
+    /// sent on every request to prevent silent input truncation (#176/#214).
+    options: OllamaGenerateOptions,
 }
 
 #[derive(Debug, Deserialize)]
@@ -154,12 +156,12 @@ impl TranscriptSkillExtractionService for OllamaExtractor {
         let transcript_lines = render_sanitized_transcript_lines(transcript);
         let prompt = build_text_json_extraction_prompt(&transcript_lines);
 
-        let options = self
-            .config
-            .temperature
-            .map(|temperature| OllamaGenerateOptions {
-                temperature: Some(temperature),
-            });
+        // num_ctx is ALWAYS sent (#176/#214); temperature stays optional (model
+        // default unless explicitly overridden).
+        let options = OllamaGenerateOptions {
+            num_ctx: extraction_ollama_num_ctx(),
+            temperature: self.config.temperature,
+        };
         let request = OllamaExtractionRequest {
             model: self.config.model.clone(),
             stream: false,
@@ -250,7 +252,10 @@ mod tests {
             format: "json".to_owned(),
             prompt: "test prompt".to_owned(),
             think: false,
-            options: None,
+            options: OllamaGenerateOptions {
+                num_ctx: extraction_ollama_num_ctx(),
+                temperature: None,
+            },
         };
         assert_eq!(
             request.format, "json",
@@ -281,6 +286,16 @@ mod tests {
             serialized.get("format").and_then(|v| v.as_str()),
             Some("json"),
             "serialized request JSON must contain format:\"json\" field"
+        );
+        // #176/#214: num_ctx must always be on the wire so Ollama never silently
+        // truncates a substantive window at its ~4096 default.
+        assert_eq!(
+            serialized
+                .get("options")
+                .and_then(|o| o.get("num_ctx"))
+                .and_then(|v| v.as_u64()),
+            Some(u64::from(extraction_ollama_num_ctx())),
+            "serialized request must carry options.num_ctx (#176/#214 truncation guard)"
         );
     }
 

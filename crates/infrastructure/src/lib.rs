@@ -36,11 +36,15 @@ pub use extraction::generality_verifier::{
     OllamaGeneralityVerifier, OllamaGeneralityVerifierConfig, SkillGeneralityVerifier,
 };
 pub use extraction::http::{
-    OllamaGenerateTextOptions, OllamaGenerateTextRequest, ollama_generate_text,
+    EXTRACTION_OLLAMA_NUM_CTX, OllamaGenerateTextOptions, OllamaGenerateTextRequest,
+    extraction_ollama_num_ctx, ollama_generate_text,
 };
 pub use extraction::merge_verifier::{
     ClaudeMergeVerifier, ClaudeMergeVerifierConfig, EquivalenceDecision, LlmEquivalenceVerifier,
     OllamaMergeVerifier, OllamaMergeVerifierConfig, TextLlmEquivalenceVerifier,
+};
+pub use extraction::prompt_contract::{
+    build_text_json_extraction_prompt, render_sanitized_transcript_lines,
 };
 pub use extraction::ollama::{OllamaExtractionConfig, OllamaExtractor};
 pub use extraction::text_llm::{ClaudeCodeTextLlm, OllamaTextLlm, StructuredTextLlm};

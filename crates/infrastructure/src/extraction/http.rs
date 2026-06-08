@@ -57,6 +57,43 @@ pub(crate) async fn acquire_claude_rate_limit() -> Result<(), ExtractionError> {
     EXTRACTION_CLAUDE_RATE_LIMITER.acquire().await
 }
 
+/// The Ollama context window (`num_ctx`, in tokens) sent on EVERY `/api/generate`
+/// request across the whole orchestrated extraction path.
+///
+/// **Why this exists (the #176/#214 root cause):** Ollama's built-in default
+/// context is only ~4096 tokens. We never used to send `num_ctx`, so when an
+/// orchestration window's prompt exceeded 4096 tokens Ollama SILENTLY truncated the
+/// input (`n_keep` drops all but the first few tokens — including the JSON-contract
+/// instructions). The model then emitted malformed / keyless JSON, which parsed to
+/// zero candidates after retries. This bit precisely the *substantive* windows
+/// (dense with kept prose) — the skill-rich ones — while sparse/tool-heavy windows
+/// shrank under sanitization and slipped in. Confirmed from the model server's own
+/// logs (`n_ctx_slot = 4096, n_keep = 4, truncated = 1`).
+///
+/// **The alignment invariant (do not break):** every size lever on the local/Ollama
+/// path must fit inside this context so content that fits a chunk is never silently
+/// truncated:
+///   `LOCAL_TIER_TOKEN_BUDGET (8 192, window content)` + mined preamble + prompt
+///   scaffold  ≤  `EXTRACTION_OLLAMA_NUM_CTX (16 384)`,  with the remainder left for
+///   the model's JSON output. 16 384 gives ~2× headroom over the 8 192-token window.
+/// Frontier windows (40 960) only ever route to claude/claude-code, which do not use
+/// `num_ctx`, so they never reach an Ollama context.
+///
+/// Override via `OLLAMA_NUM_CTX` (fail-loud on a non-integer value).
+pub const EXTRACTION_OLLAMA_NUM_CTX: u32 = 16_384;
+
+/// Resolves the Ollama `num_ctx` to send: `OLLAMA_NUM_CTX` if set (fail-loud on a
+/// non-integer or empty-after-trim value), otherwise [`EXTRACTION_OLLAMA_NUM_CTX`].
+/// Read per request — cheap, and lets an operator retune without a rebuild.
+pub fn extraction_ollama_num_ctx() -> u32 {
+    match std::env::var("OLLAMA_NUM_CTX") {
+        Ok(raw) if !raw.trim().is_empty() => raw.trim().parse().unwrap_or_else(|error| {
+            panic!("invalid OLLAMA_NUM_CTX value {raw:?}: {error} (must be a positive integer)")
+        }),
+        _ => EXTRACTION_OLLAMA_NUM_CTX,
+    }
+}
+
 /// Wire shape for Ollama's `/api/generate` endpoint (non-streaming).
 ///
 /// Used by [`ollama_generate_text`] and the internal extraction/merge paths.
@@ -81,6 +118,9 @@ pub struct OllamaGenerateTextRequest {
 /// Inference options for [`OllamaGenerateTextRequest`].
 #[derive(Debug, Serialize)]
 pub struct OllamaGenerateTextOptions {
+    /// Context window in tokens — ALWAYS set to prevent silent input truncation
+    /// (see [`EXTRACTION_OLLAMA_NUM_CTX`] / #176 / #214).
+    pub num_ctx: u32,
     pub temperature: f32,
 }
 

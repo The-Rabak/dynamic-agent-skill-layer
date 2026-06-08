@@ -93,6 +93,13 @@ impl ExtractionRoutingTier {
 /// the extraction config defaults, now aligned). One window = `8192 × 4 ≈ 32 768`
 /// chars (the `chars/4` token estimate). Override with
 /// `EXTRACT_SESSION_LOCAL_TOKEN_BUDGET` for a larger local model.
+///
+/// **Alignment invariant (#176/#214):** this window content budget MUST fit inside
+/// the Ollama context sent on every request — `infrastructure`'s
+/// `EXTRACTION_OLLAMA_NUM_CTX` (16 384 tokens). 8 192 (window) + mined preamble +
+/// prompt scaffold leaves ~2× headroom for the model's JSON output, so no window is
+/// ever silently truncated. If you raise this budget, raise `OLLAMA_NUM_CTX` to
+/// match (window + preamble + scaffold + output ≤ num_ctx).
 pub const LOCAL_TIER_TOKEN_BUDGET: usize = 8_192;
 
 /// Default segmentation `token_budget` for the frontier tier.

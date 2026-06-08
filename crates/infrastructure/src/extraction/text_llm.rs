@@ -26,7 +26,8 @@ use domain::ExtractionError;
 use crate::ClaudeCodeExtractionConfig;
 use crate::extraction::claude_code::claude_code_generate_text;
 use crate::extraction::http::{
-    OllamaGenerateTextOptions, OllamaGenerateTextRequest, ollama_generate_text,
+    OllamaGenerateTextOptions, OllamaGenerateTextRequest, extraction_ollama_num_ctx,
+    ollama_generate_text,
 };
 
 /// A provider-agnostic "prompt → JSON text" transport.
@@ -95,7 +96,13 @@ impl StructuredTextLlm for OllamaTextLlm {
             prompt,
             // #176: never let a thinking model leak reasoning into the JSON keys.
             think: false,
-            options: Some(OllamaGenerateTextOptions { temperature: 0.0 }),
+            // #176/#214: num_ctx must always be sent or Ollama silently truncates
+            // substantive windows at its ~4096 default and the model returns
+            // malformed JSON. See EXTRACTION_OLLAMA_NUM_CTX.
+            options: Some(OllamaGenerateTextOptions {
+                num_ctx: extraction_ollama_num_ctx(),
+                temperature: 0.0,
+            }),
         };
         ollama_generate_text(&self.client, &self.endpoint, &request).await
     }

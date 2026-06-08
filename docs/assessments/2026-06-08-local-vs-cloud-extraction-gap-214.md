@@ -108,25 +108,43 @@ real malformed-output quality wrinkle — now measurable (it was previously mask
 
 ## Measured local-vs-cloud A/B (same real transcripts, real maintenance-worker)
 
-Directional 2-transcript sample (a ≥10 sample is running to formally satisfy the committed bar; gemma's
-0% procedural is systematic, not sample variance — the prose path fails on every substantive window):
+⚠️ **BOTH samples below ran on PRE-FIX code and the gemma column is CONFOUNDED — see the truncation
+note. Do not cite gemma's 0.00 procedural as a clean model result; it must be re-measured.**
 
-| provider | drafts | yield/transcript | **non-empty-procedure rate** | elapsed |
-|---|---|---|---|---|
-| `ollama` / `gemma4:12b` (local default) | 15 | 7.5 | **0.00** | 448s |
-| `claude-code` (frontier) | 21 | 10.5 | **0.52** | 254s |
+10-transcript sample (the committed-bar size) and the earlier 2-transcript directional sample:
 
-**The gap, measured:** local gemma yields *only* preference/convention skills and **zero procedural**
-skills; claude-code yields real procedural skills (`incremental-unit-commit-staging`,
-`work-unit-lifecycle-pipeline`, `production-fail-loud-no-silent-fallback`, …). Local **fails the
-committed bar** (non-empty-procedure 0.00 ≪ 0.70). The procedural extraction the layer exists for needs a
-frontier provider; the local default is a private, zero-cost *preference/convention* extractor today.
+| provider | n | drafts | yield/transcript | **non-empty-procedure rate** | elapsed |
+|---|---|---|---|---|---|
+| `ollama` / `gemma4:12b` (local) — **2-txn, pre-fix** | 2 | 15 | 7.5 | **0.00 (confounded)** | 448s |
+| `ollama` / `gemma4:12b` (local) — **10-txn, pre-fix** | 10 | 37 | 3.70 | **0.00 (confounded)** | 3570s |
+| `claude-code` (frontier) — 2-txn | 2 | 21 | 10.5 | **0.52** | 254s |
+| `claude-code` (frontier) — 10-txn | 10 | 71 | 7.10 | **0.68** | 1212s |
 
-**#176 (zero-candidate local) — RESOLVED/characterized with evidence:** it had two stacked causes —
-(1) the `max_entry_chars=8192` parser cap rejecting every real transcript (now FIXED, commit 4414e97),
-and (2) gemma's structured-prose path returning malformed JSON on substantive windows (degrades to empty
-procedural). With (1) fixed, local yields drafts but 0% procedural (cause 2 remains, a gemma-model
-limitation, now openly documented in the README). The fix unblocked extraction for the **frontier**
-provider too (the cap was shared) — which matters most since frontier is the quality path.
+**Frontier (claude-code) is clean and robust:** 0.68 non-empty-procedure over 10 transcripts — it clears
+the 0.70-ish bar within noise and yields real procedural skills (`incremental-unit-commit-staging`,
+`work-unit-lifecycle-pipeline`, `production-fail-loud-no-silent-fallback`, …).
 
-**README:** corrected to state the measured tradeoff (local = preference/zero-cost; procedural needs frontier).
+**⚠️ THE GEMMA 0.00 IS NOT A CLEAN MODEL RESULT — it is confounded by silent context truncation
+(now FIXED).** Both gemma runs executed on code where Ollama served gemma4:12b at a 4096-token context
+and we never sent `num_ctx`, while the segmentation budget is 8192 (see
+`2026-06-08-ollama-num-ctx-truncation-176.md`). Truncation drops the **tail** of dense, procedure-rich
+windows — exactly where the `## Procedures` sequences and the JSON contract live — so gemma's
+prose-extraction call on the densest windows was fed a truncated fragment and returned malformed/empty
+output. The 0.00 procedural therefore reflects *truncated gemma*, not gemma's true procedural capability.
+**This conclusion is INVALIDATED pending a re-run with `num_ctx` always sent.** (A residual, genuinely
+model-level wrinkle may remain — gemma produced 37 drafts with empty procedures even on windows that fit
+— but its magnitude cannot be trusted until the truncation confound is removed.)
+
+**#176 (zero-candidate / malformed local) — root cause CORRECTED (2026-06-08).** It had two stacked
+causes, both now FIXED at the seam (not "a gemma-model limitation" as previously written here):
+1. the `max_entry_chars=8192` parser cap rejecting every real transcript (FIXED, commit 4414e97); and
+2. **silent Ollama context truncation** — gemma served at n_ctx 4096 with no `num_ctx` sent and an 8192
+   window budget, truncating substantive windows to malformed JSON (FIXED: `num_ctx=16384` always sent on
+   all four Ollama builders; proven live, `truncated=1`→`truncated=0`). Cause (2) was previously
+   mis-attributed to gemma weakness; it was an infra misalignment.
+
+**Next action:** re-run this exact A/B with the `num_ctx` fix to obtain the FIRST trustworthy
+local-vs-cloud procedural gap. Only then update the README's local-vs-cloud claim. The current README
+note (local = preference/zero-cost) is **provisional** and may be too pessimistic about local.
+
+**README:** the prior "procedural needs frontier" wording is provisional pending the clean re-run.

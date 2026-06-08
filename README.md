@@ -221,15 +221,18 @@ The default path is a map→reduce orchestrator: **segment** the transcript into
 
 Embeddings remain local Ollama (`nomic-embed-text`) in **every** mode — only the extraction LLM is selectable. Selecting a cloud provider without its credential fails loudly at construction.
 
-> **Measured local-vs-cloud quality gap (#214, 2026-06-08).** The local default is private and
-> zero-cost, but on real transcripts it currently extracts **preference/convention skills only and
-> near-zero *procedural* skills** — `gemma4:12b`'s structured-prose extraction returns malformed JSON
-> on substantive windows (#176 class) and degrades to empty. Measured on the real `maintenance-worker`
-> over identical real transcripts: local `gemma4:12b` non-empty-procedure rate **0.00** vs `claude-code`
-> **~0.52** (claude-code also yields more drafts). **For high-quality *procedural* skill extraction —
-> the layer's core purpose — use a frontier provider (`claude` / `claude-code`); the local default is
-> best understood as a private, zero-cost preference/convention extractor today.** See
-> `docs/assessments/2026-06-08-local-vs-cloud-extraction-gap-214.md`.
+> **Local-vs-cloud quality gap (#214, 2026-06-08) — frontier proven, local re-measurement pending.**
+> Embeddings are always local; only the extraction LLM is selectable. On real transcripts via the real
+> `maintenance-worker`, the **frontier** provider is proven strong: `claude-code` non-empty-procedure
+> rate **~0.68** over 10 transcripts (yields real procedural skills). The **local** `gemma4:12b` number
+> measured **0.00 procedural**, BUT that run predates the #176 `num_ctx` fix and is **confounded by
+> silent context truncation** (Ollama served gemma at a 4096-token context with no `num_ctx` sent, while
+> the window budget is 8192 — truncating the procedure-rich tail of substantive windows). That fix is
+> now in (`num_ctx=16384` always sent); the local procedural quality is being **re-measured** and the
+> earlier "preference-only" characterization is **provisional** — it may be too pessimistic. For
+> high-quality procedural extraction today, a frontier provider (`claude` / `claude-code`) is the safe
+> choice. See `docs/assessments/2026-06-08-local-vs-cloud-extraction-gap-214.md` and
+> `docs/assessments/2026-06-08-ollama-num-ctx-truncation-176.md`.
 
 ---
 
