@@ -61,6 +61,14 @@ Extend portable `SKILL.md` data so retrieval can match tasks, exact artifacts, p
 - Existing contract: YAML frontmatter is authoritative for `name`, `description`, and `tags`; body bullets become subunits.
 - Important unknown: extraction prompt wording should stay provider-agnostic and should not make local extraction brittle.
 
+## Inherited Changes — V1.7 batch 1-2 triage (todos 228-244)
+
+These landed on `feat/v-1-7` during the 228-243 triage swarm (2026-06-09) and bind this ticket:
+
+- **Migration floor is now 008.** Any new migration this ticket adds is `009_*` and MUST bump BOTH the ordering test `migration_set_is_ordered_001_through_008` AND the live-count test `live_run_migrations_applies_then_skips_on_second_boot` (now asserts all 8 IDs — a hardcoded count gate, #238). Add any new persisted table to the `TRUNCATE_ALL_TABLES_SQL` const (one source of truth for runtime truncate + its test, #228/#238) or e2e isolation breaks.
+- **Migration 007 (`generality`, `generality_rationale` on `skills`) is now ACTIVE but WRITE-AHEAD** (ratified #233): populated today via `.pending` SKILL.md frontmatter (`session-extractor/src/writer.rs`) + the LLM verifier, NOT the `skills` row; no production reader. If this ticket makes any multi-view field canonical in the `skills` row, it OWNS wiring the reader/writer and updating the rebuild INSERT — see the WRITE-AHEAD comment in `007_skill_generality.sql`.
+- **`embedding_model_metadata` is now written** (UPSERT `key='active'` per rebuild, #228) — available if this ticket's reports/roundtrip tests want honest model attribution.
+
 ## Parent Refs
 
 - Plan: `docs/plans/2026-06-08-feat-v1-7-local-hybrid-skilldag-retrieval-plan.md`

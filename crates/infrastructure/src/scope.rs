@@ -320,19 +320,21 @@ mod tests {
 
     /// Serializes tests that mutate process-global scope env vars
     /// (`SKILL_PROJECT_ROOT`, `SKILL_PROJECT_MARKER`) so parallel test threads in
-    /// this binary never observe each other's env mutations. Recovers from a
-    /// poisoned lock (a panic in one test must not cascade-fail the rest).
-    static SCOPE_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    /// this binary never observe each other's env mutations.
+    ///
+    /// Uses `tokio::sync::Mutex` (async-aware) so the guard can be held across
+    /// `.await` points without triggering `clippy::await_holding_lock`.
+    static SCOPE_ENV_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
-    fn lock_scope_env() -> std::sync::MutexGuard<'static, ()> {
-        SCOPE_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+    async fn lock_scope_env() -> tokio::sync::MutexGuard<'static, ()> {
+        SCOPE_ENV_LOCK.lock().await
     }
 
     // --- FsMarkerProjectResolver tests (Red phase: struct does not exist yet) ---
 
     #[tokio::test]
     async fn fs_marker_resolver_finds_git_dir_walking_up_from_nested_child() {
-        let _env = lock_scope_env();
+        let _env = lock_scope_env().await;
         // The repo has a .git at its root. Start from a deeply nested dir and
         // expect the resolver to walk up and return the repo root.
         let nested = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src");
@@ -364,7 +366,7 @@ mod tests {
 
     #[tokio::test]
     async fn fs_marker_resolver_returns_unavailable_when_no_git_or_marker_exists() {
-        let _env = lock_scope_env();
+        let _env = lock_scope_env().await;
         // A temp dir with no .git anywhere up the tree should yield ResolverUnavailable.
         // We create a directory whose parents are all within /tmp, which has no .git.
         let sandbox = std::env::temp_dir().join(format!(
@@ -393,7 +395,7 @@ mod tests {
 
     #[tokio::test]
     async fn fs_marker_resolver_honors_skill_project_marker_env_when_git_absent() {
-        let _env = lock_scope_env();
+        let _env = lock_scope_env().await;
         // A sandbox dir with no .git but with a custom marker file named by SKILL_PROJECT_MARKER
         // should resolve to the directory that contains the marker.
         let sandbox = std::env::temp_dir().join(format!(
@@ -441,7 +443,7 @@ mod tests {
     /// `compile_context` return `ok` for project scope inside the stock container.
     #[tokio::test]
     async fn fs_marker_resolver_returns_configured_project_root_directly() {
-        let _env = lock_scope_env();
+        let _env = lock_scope_env().await;
 
         // A sandbox project root with NO .git and NO marker file.
         let sandbox = std::env::temp_dir().join(format!(
@@ -486,7 +488,7 @@ mod tests {
     /// through to a `/`-walk that always degrades — per the fail-loud mandate.
     #[tokio::test]
     async fn fs_marker_resolver_fails_loud_when_configured_root_missing() {
-        let _env = lock_scope_env();
+        let _env = lock_scope_env().await;
 
         let missing = std::env::temp_dir().join(format!(
             "fs-marker-missing-root-{}",
@@ -530,7 +532,7 @@ mod tests {
     /// always sends a host path still gets project scope in the container.
     #[tokio::test]
     async fn fs_marker_resolver_falls_back_to_configured_root_when_repo_path_unresolvable() {
-        let _env = lock_scope_env();
+        let _env = lock_scope_env().await;
 
         let configured = std::env::temp_dir().join(format!("fs-marker-fallback-{}", {
             std::time::SystemTime::now()

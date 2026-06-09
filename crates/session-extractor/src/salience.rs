@@ -252,8 +252,8 @@ fn detect_resolved_error_arc(events: &[&SessionEvent]) -> bool {
                 .copied()
                 .unwrap_or("unknown");
 
-            let is_failing = *is_error || exit_code.map_or(false, |code| code != 0);
-            let is_passing = !is_error && exit_code.map_or(true, |code| code == 0);
+            let is_failing = *is_error || exit_code.is_some_and(|code| code != 0);
+            let is_passing = !is_error && exit_code.is_none_or(|code| code == 0);
 
             if is_failing {
                 tools_with_open_error.insert(tool_name);
@@ -298,10 +298,9 @@ fn detect_named_failure(events: &[&SessionEvent]) -> bool {
             exit_code,
             ..
         } = event
+            && (*is_error || exit_code.is_some_and(|code| code != 0))
         {
-            if *is_error || exit_code.map_or(false, |code| code != 0) {
-                return true;
-            }
+            return true;
         }
     }
     false
@@ -323,10 +322,10 @@ fn detect_file_edit(events: &[&SessionEvent]) -> bool {
 /// but still distinguishes active work from pure navigation/read-only exploration.
 fn detect_bash_command(events: &[&SessionEvent]) -> bool {
     for event in events {
-        if let SessionEvent::ToolCall { name, .. } = event {
-            if name == "Bash" {
-                return true;
-            }
+        if let SessionEvent::ToolCall { name, .. } = event
+            && name == "Bash"
+        {
+            return true;
         }
     }
     false
@@ -499,16 +498,18 @@ pub fn gate_episodes(
     GateResult { kept, gated }
 }
 
+/// A scored episode tuple: `(episode_index, episode_ref, score)`.
+///
+/// Used internally by [`apply_gate_mode`] to carry scored episodes through the gate split.
+type ScoredEpisodeEntry<'a> = (usize, &'a Episode, EpisodeScore);
+
 /// Applies the configured [`GateMode`] to the gate-eligible (non-hard-keep) episodes.
 ///
 /// Returns `(passed, gated_out)` — both in the original episode index ordering.
 fn apply_gate_mode<'a>(
-    eligible: Vec<(usize, &'a Episode, EpisodeScore)>,
+    eligible: Vec<ScoredEpisodeEntry<'a>>,
     config: &SalienceConfig,
-) -> (
-    Vec<(usize, &'a Episode, EpisodeScore)>,
-    Vec<(usize, &'a Episode, EpisodeScore)>,
-) {
+) -> (Vec<ScoredEpisodeEntry<'a>>, Vec<ScoredEpisodeEntry<'a>>) {
     match &config.mode {
         GateMode::Threshold(min_score) => {
             let mut passed = Vec::new();
@@ -1014,7 +1015,7 @@ mod tests {
     /// A stated preference sets hard_keep and contributes WEIGHT_STATED_PREFERENCE to the score.
     #[test]
     fn stated_preference_sets_hard_keep_and_score() {
-        let events = vec![
+        let events = [
             user_msg(0, "Always use tracing::debug instead of println."),
             assistant_msg(1, "Understood."),
         ];
@@ -1037,7 +1038,7 @@ mod tests {
     /// WEIGHT_RESOLVED_ARC, and does NOT set hard_keep.
     #[test]
     fn unresolved_error_scores_named_failure_not_hard_keep() {
-        let events = vec![
+        let events = [
             tool_call(0, "t1", "Bash", r#"{"command":"cargo test"}"#),
             tool_result_err(1, "t1", "Exit code 1\nfailed"),
             // No subsequent success — arc remains open.
@@ -1182,7 +1183,7 @@ mod tests {
     /// `detect_resolved_error_arc` returns false when the arc is not resolved in the episode.
     #[test]
     fn detect_resolved_arc_false_when_error_not_resolved() {
-        let events = vec![
+        let events = [
             tool_call(0, "t1", "Bash", r#"{}"#),
             tool_result_err(1, "t1", "fail"),
         ];

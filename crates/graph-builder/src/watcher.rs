@@ -111,7 +111,7 @@ impl SkillWatcher {
                     continue;
                 }
                 debouncer
-                    .watch(&entry.path(), RecursiveMode::Recursive)
+                    .watch(entry.path(), RecursiveMode::Recursive)
                     .map_err(|error| WatcherError::WatchSetup(error.to_string()))?;
             }
         }

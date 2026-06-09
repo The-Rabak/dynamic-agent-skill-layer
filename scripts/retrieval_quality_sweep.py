@@ -18,6 +18,7 @@ Method (binding decisions):
 """
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -28,6 +29,11 @@ COMPOSE = ["docker", "compose", "-f", "docker-compose.test.yml"]
 MCP_URL = "http://127.0.0.1:3001/mcp"
 REPORT_DIR = Path("tests/e2e/reports/sweep")
 WARMUP_PROMPT = "conventional commits with co-authored-by trailer"  # a known corpus topic
+
+# Qdrant REST base URL — read from the same env var the e2e harness exports so
+# local and CI environments agree without hardcoding.
+_QDRANT_HTTP_PORT = int(os.environ.get("QDRANT_HTTP_PORT", "16333"))
+QDRANT_REST_URL = f"http://127.0.0.1:{_QDRANT_HTTP_PORT}"
 
 # Ranking levers already recognised by RetrievalConfig::from_env.
 _RETRIEVAL_ENV_KEYS = [
@@ -78,12 +84,37 @@ CONFIGS = [
     # use.  backend=snapshot_dense, embedder=nomic-embed-text, sparse=off, rerank=off.
     # (Arm metadata is automatically read from env / ARM_METADATA_DEFAULTS in the
     # live script, so this row produces a fully-labelled arm block in its report.)
+    # NOTE(#237): "default" and "v1.7-baseline" both carry no overrides and are
+    # therefore identical in state.  This is a DELIBERATE consistency check: "default"
+    # is the historical parameter-tuning reference; "v1.7-baseline" is the labelled
+    # V1.7 arm baseline.  Running both confirms they reproduce the same numbers and
+    # gives downstream T02/T04/T07 reports a stable arm label to compare against.
+    # Do NOT delete either row without noting this intent; do NOT merge them into one
+    # until arm-labelled reports replace the raw tuning table entirely.
     ("v1.7-baseline",      {}),
-    # Placeholder rows for arms that arrive in later tickets — uncomment + wire
-    # the env values once the server supports the corresponding env vars:
-    # ("v1.7-qwen4b",   {"OLLAMA_EMBED_MODEL": "qwen3-embedding:4b"}),            # T02
-    # ("v1.7-hybrid",   {"RETRIEVAL_BACKEND": "qdrant_hybrid", "RETRIEVAL_SPARSE": "true"}),  # T04
-    # ("v1.7-rerank",   {"RETRIEVAL_BACKEND": "qdrant_hybrid", "RETRIEVAL_SPARSE": "true", "RETRIEVAL_RERANK": "true"}),  # T07
+    # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    # WARNING — DO NOT UNCOMMENT THESE ROWS until T04/T07 are complete:
+    #
+    # Switching OLLAMA_EMBED_MODEL (qwen arm) or enabling a new backend means
+    # graph-builder must rebuild the WRITE SIDE into that arm's collection
+    # (skills__<model-slug>) BEFORE mcp-server is rebooted and BEFORE measure()
+    # is called.  reboot_mcp() restarts mcp-server ONLY — graph-builder is never
+    # restarted here, so the arm's collection is empty or holds vectors from a
+    # prior manual run.  Measuring against an empty/stale collection yields
+    # phantom numbers that are unattributable and silently violate the
+    # "honest arm comparison" purpose of this sweep.
+    #
+    # The full fix (reboot_arm: restart graph-builder + poll for rebuild + then
+    # reboot mcp-server) is a hard prerequisite INSIDE the T04 ticket (#243).
+    # Do not bypass it by manually pre-populating the collection: the arm must
+    # be self-contained and reproducible from a clean state.
+    # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    # ("v1.7-qwen4b",   {"OLLAMA_EMBED_MODEL": "qwen3-embedding:4b"}),            # T02 — needs reboot_arm (T04/#243)
+    # ("v1.7-hybrid",   {"RETRIEVAL_BACKEND": "qdrant_hybrid", "RETRIEVAL_SPARSE": "true"}),  # T04 — needs reboot_arm (T04/#243)
+    # ("v1.7-rerank",   {"RETRIEVAL_BACKEND": "qdrant_hybrid", "RETRIEVAL_SPARSE": "true", "RETRIEVAL_RERANK": "true"}),  # T07 — needs reboot_arm (T04/#243)
+    # TODO(T04): convert results tuple to a dataclass when arm grows beyond 8 fields;
+    # currently destructured positionally in 3 places (results.append, tuning_results
+    # filter, and the print/summary loops) — see #242 item 5.
 ]
 LIMIT = 5  # find_skill depth for MRR (top-k injection is K=3)
 
@@ -95,7 +126,96 @@ def set_env(overrides: dict):
         os.environ[k] = v
 
 
+def _model_keyed_collection_name(model: str) -> str:
+    """Derive the Qdrant collection name for an embedding model.
+
+    Mirrors the Rust ``model_keyed_collection_name`` in
+    ``crates/infrastructure/src/vector/qdrant.rs``:
+      - lowercased
+      - every non-alphanumeric / non-hyphen char → hyphen
+      - consecutive hyphens collapsed
+      - prefixed with ``skills__``
+
+    Examples:
+      "nomic-embed-text"   → "skills__nomic-embed-text"
+      "qwen3-embedding:4b" → "skills__qwen3-embedding-4b"
+    """
+    slug = re.sub(r"[^a-z0-9-]", "-", model.lower())
+    slug = re.sub(r"-+", "-", slug).strip("-")
+    return f"skills__{slug}"
+
+
+def assert_collection_nonempty(overrides: dict) -> None:
+    """Fail loud if the target Qdrant collection for this arm contains 0 points.
+
+    A zero-point collection means graph-builder has never (or not yet) written
+    vectors into this arm's collection.  Measuring retrieval quality against an
+    empty collection produces phantom numbers that are entirely unattributable —
+    they silently violate the "honest arm comparison" contract of this sweep.
+
+    The target collection is derived from OLLAMA_EMBED_MODEL (or its override)
+    using the same slug logic as the Rust ``model_keyed_collection_name``
+    function.  QDRANT_COLLECTION env var overrides take precedence, mirroring
+    mcp-server runtime behaviour.
+
+    Raises SystemExit(1) if the collection is absent or empty, or if Qdrant
+    cannot be reached (unreachable Qdrant is itself a fatal sweep precondition
+    failure).
+    """
+    embed_model = overrides.get(
+        "OLLAMA_EMBED_MODEL",
+        os.environ.get("OLLAMA_EMBED_MODEL", "nomic-embed-text"),
+    )
+    # QDRANT_COLLECTION env override mirrors mcp-server runtime behaviour.
+    collection = os.environ.get("QDRANT_COLLECTION") or _model_keyed_collection_name(embed_model)
+    url = f"{QDRANT_REST_URL}/collections/{collection}"
+    try:
+        with urllib.request.urlopen(url, timeout=10) as resp:
+            info = json.loads(resp.read())
+    except Exception as exc:
+        print(
+            f"\nFATAL: cannot reach Qdrant at {url} — is the stack running?\n"
+            f"  error: {exc}\n"
+            f"  Fix: docker compose -f docker-compose.test.yml up -d qdrant",
+            flush=True,
+        )
+        sys.exit(1)
+
+    vectors_count = info.get("result", {}).get("vectors_count", 0) or 0
+    points_count = info.get("result", {}).get("points_count", 0) or 0
+    # Qdrant ≥1.7 uses ``points_count``; older versions used ``vectors_count``.
+    total = max(vectors_count, points_count)
+    if total == 0:
+        print(
+            f"\nFATAL: Qdrant collection '{collection}' has 0 points for arm "
+            f"embedder='{embed_model}'.\n"
+            f"  Measuring retrieval against an empty collection produces phantom\n"
+            f"  numbers — this is NOT a valid arm comparison.\n"
+            f"\n"
+            f"  Root cause: graph-builder has not yet written vectors into this\n"
+            f"  collection.  reboot_mcp() restarts mcp-server ONLY; graph-builder\n"
+            f"  must also be rebooted and allowed to complete a rebuild cycle into\n"
+            f"  '{collection}' before measurement.\n"
+            f"\n"
+            f"  Fix (T04/#243): implement reboot_arm() that restarts graph-builder\n"
+            f"  + polls for rebuild completion before rebooting mcp-server.\n"
+            f"  Do NOT manually pre-populate and re-run — arms must be reproducible\n"
+            f"  from a clean state.",
+            flush=True,
+        )
+        sys.exit(1)
+
+
 def reboot_mcp():
+    # WARNING (#237): this restarts mcp-server ONLY.  graph-builder is NOT
+    # restarted here.  This is safe for arms that share the same embedder model
+    # (nomic-embed-text, the current default) because graph-builder has already
+    # populated skills__nomic-embed-text.  It is NOT safe for arms that change
+    # OLLAMA_EMBED_MODEL (e.g. qwen3-embedding:4b) or that require a different
+    # Qdrant collection — those arms need reboot_arm() (T04/#243) which restarts
+    # graph-builder, polls for rebuild completion, and THEN reboots mcp-server.
+    # The pre-measure assert_collection_nonempty() guard will catch any arm that
+    # reaches measure() against an empty collection and fail loud before reporting.
     subprocess.run(COMPOSE + ["up", "-d", "--no-deps", "--force-recreate", "mcp-server"],
                    check=True, capture_output=True, text=True)
 
@@ -147,6 +267,7 @@ def main():
         set_env(overrides)
         reboot_mcp()
         wait_ready()
+        assert_collection_nonempty(overrides)
         rep = measure(label, "tuning")
         ja = rep["judge_augmented"]
         arm = rep.get("arm", {})
@@ -179,6 +300,7 @@ def main():
     set_env(w_overrides)
     reboot_mcp()
     wait_ready()
+    assert_collection_nonempty(w_overrides)
     held = measure(f"{w_label}-WINNER", "held_out", gate=True)
     hja = held["judge_augmented"]
     held_arm = held.get("arm", {})

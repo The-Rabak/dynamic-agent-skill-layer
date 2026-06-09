@@ -393,9 +393,8 @@ mod tests {
 
         let result = verifier.are_equivalent(&left, &right).await;
         // Pre-filter must return Ok(false) without calling the LLM (which would Err).
-        assert_eq!(
-            result.unwrap(),
-            false,
+        assert!(
+            !result.unwrap(),
             "completely disjoint pair must be rejected by pre-filter, not forwarded to LLM"
         );
     }

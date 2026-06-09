@@ -293,6 +293,12 @@ pub enum OrchestrationError {
 /// The map step runs episodes concurrently behind a [`Semaphore`] bounded to
 /// `config.map_concurrency`. A slow episode holds a permit and backpressures
 /// the queue; no episode is ever discarded on a timeout.
+// Each argument is a distinct injected seam (labeler, prose_extractor, embedder,
+// equivalence_verifier, synthesis) or a required data/config input with no natural grouping
+// that would not cross the public API boundary shared with the tests/e2e caller.
+// Grouping into a seams-struct would require updating the e2e test outside this crate's
+// scope fence; the 12-argument form is the stable published signature until that refactor lands.
+#[allow(clippy::too_many_arguments)]
 pub async fn run_orchestration(
     session_id: DomainId,
     events: &[SessionEvent],

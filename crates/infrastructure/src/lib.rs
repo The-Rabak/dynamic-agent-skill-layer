@@ -26,7 +26,10 @@ pub mod vector {
     pub mod qdrant;
 }
 
-pub use embeddings::ollama::{EmbeddingModelInfo, OllamaEmbeddingConfig, OllamaEmbeddingService};
+pub use embeddings::ollama::{
+    EmbeddingModelInfo, OllamaEmbeddingConfig, OllamaEmbeddingService, embedding_model_from_env,
+    resolve_embedding_model,
+};
 pub use extraction::claude::{ClaudeExtractionConfig, ClaudeExtractor};
 pub use extraction::claude_code::{
     ClaudeCodeExtractionConfig, ClaudeCodeExtractor, claude_code_generate_text,

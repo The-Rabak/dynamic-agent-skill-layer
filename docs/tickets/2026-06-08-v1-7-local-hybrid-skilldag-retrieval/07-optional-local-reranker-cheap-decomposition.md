@@ -58,6 +58,14 @@ This ticket is optional by design. It should be skipped or kept experimental if 
 - User explicitly wants retrieval to stay quick; query decomposition is allowed only when runtime cost is low.
 - Important unknown: suitable local reranker availability and hardware cost must be measured, not assumed.
 
+## Inherited Changes — V1.7 batch 1-2 triage (todos 228-244)
+
+These landed on `feat/v-1-7` during the 228-243 triage swarm (2026-06-09) and bind this ticket:
+
+- **If this ticket introduces a rerank/decomposition Qdrant collection or reads the embedder model**, the same API rules as T04 apply: `model_keyed_collection_name` now returns `Result<String, QdrantError>` (#234); `QdrantAdapter::new` charset-validates collection names `^[A-Za-z0-9_-]+$` fail-loud (#241); never rely on `QdrantConfig::default().collection_name` (now the `UNCONFIGURED__…` sentinel, #236) — set it explicitly; resolve the embedder via `infrastructure::embedding_model_from_env()` / `resolve_embedding_model(Option<&str>)` (#232).
+- **Harness honesty gates apply to the on/off sweep** (#229/#230): `--require-dimension` / `--gate` fail loud on a null dimension; the `dimension` field + per-arm latency are now in the T01 report shape, so the on/off latency-delta evidence inherits them.
+- **`reboot_arm` (from T04, routed via #237/#243)** is the prerequisite for any reranker arm that changes the embedder/collection — reuse it, don't reboot mcp-server alone.
+
 ## Parent Refs
 
 - Plan: `docs/plans/2026-06-08-feat-v1-7-local-hybrid-skilldag-retrieval-plan.md`

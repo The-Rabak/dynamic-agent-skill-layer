@@ -534,7 +534,7 @@ impl LivePromotionPassRunner {
     ///
     /// Evaluates filesystem-loaded skill snapshots: deterministic identifier veto
     /// + LLM generality vote. Emits `PromotionEvidence::Intrinsic` proposals for
-    /// skills that reference no project-local identifiers and are confirmed general.
+    ///   skills that reference no project-local identifiers and are confirmed general.
     async fn run_intrinsic_pass(
         &self,
         now: DateTime<Utc>,
@@ -966,12 +966,9 @@ async fn build_recurrence_clusters(
 
     // Collect members by cluster representative.
     let mut cluster_map: HashMap<usize, Vec<&ProjectSkillRow>> = HashMap::new();
-    for i in 0..n {
+    for (i, skill) in embedded_skills.iter().enumerate().take(n) {
         let root = find(&mut parent, i);
-        cluster_map
-            .entry(root)
-            .or_default()
-            .push(&embedded_skills[i].0);
+        cluster_map.entry(root).or_default().push(&skill.0);
     }
 
     Ok(cluster_map
@@ -1012,7 +1009,7 @@ fn project_skill_row_to_snapshot(row: &ProjectSkillRow) -> SkillSnapshot {
     let source_path = row
         .source_paths
         .first()
-        .map(|p| PathBuf::from(p))
+        .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("SKILL.md"));
     SkillSnapshot {
         id: row.id.clone(),
@@ -2115,7 +2112,7 @@ mod tests {
             proposal
                 .pending_path
                 .file_name()
-                .map_or(false, |n| n == PENDING_SKILL_FILE_NAME),
+                .is_some_and(|n| n == PENDING_SKILL_FILE_NAME),
             "demotion proposal must be named PENDING_SKILL_FILE_NAME"
         );
 

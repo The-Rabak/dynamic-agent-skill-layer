@@ -202,12 +202,11 @@ fn split_into_overlap_windows(
         for &(pos, source_idx) in &indexed[window_start..] {
             let event_tokens = estimate_tokens(&events[pos]);
 
-            // Always include at least one event per window to guarantee progress
+            // Always include at least one event per window to guarantee forward progress
             // even when a single event exceeds the budget.
-            if window_source_indices.is_empty() {
-                window_source_indices.push(source_idx);
-                window_tokens += event_tokens;
-            } else if window_tokens + event_tokens <= config.token_budget {
+            if window_source_indices.is_empty()
+                || window_tokens + event_tokens <= config.token_budget
+            {
                 window_source_indices.push(source_idx);
                 window_tokens += event_tokens;
             } else {

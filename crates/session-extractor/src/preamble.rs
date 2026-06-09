@@ -8,7 +8,7 @@
 //! 1. **Deterministic draft** — a single linear pass over all events:
 //!    - User turns are scanned for standing preference/directive signals via keyword matching.
 //!    - `ToolCall` and `FileEdit` events yield project facts (paths, build commands, language hints).
-//!    This phase is synchronous, pure, and testable without any LLM.
+//!      This phase is synchronous, pure, and testable without any LLM.
 //!
 //! 2. **Optional LLM normalisation** — a bounded pass through a [`PreambleNormalizer`] that
 //!    deduplicates and phrases preferences consistently. **This pass is optional.** When no
@@ -55,7 +55,7 @@ pub const PREAMBLE_HARD_TOKEN_CAP: usize = 512;
 /// This is not exact but is deterministic and cheap, which is all we need for budget enforcement
 /// before a real tokenizer is wired in.
 fn approximate_token_count(text: &str) -> usize {
-    (text.len() + 3) / 4 // ceiling division
+    text.len().div_ceil(4)
 }
 
 // ---------------------------------------------------------------------------
@@ -155,7 +155,7 @@ impl Preamble {
     pub fn preference_skill_candidates(&self) -> Vec<ExtractedSkillCandidate> {
         self.preferences
             .iter()
-            .map(|preference| preference_to_skill_candidate(preference))
+            .map(preference_to_skill_candidate)
             .collect()
     }
 }
@@ -269,12 +269,11 @@ pub fn mine_draft_deterministic(events: &[SessionEvent]) -> PreambleDraft {
             SessionEvent::ToolCall {
                 name, input_json, ..
             } => {
-                if name == "Bash" {
-                    if let Some(cmd) = extract_bash_command(input_json) {
-                        if let Some(lang) = detect_language_from_command(&cmd) {
-                            language_votes.push(lang);
-                        }
-                    }
+                if name == "Bash"
+                    && let Some(cmd) = extract_bash_command(input_json)
+                    && let Some(lang) = detect_language_from_command(&cmd)
+                {
+                    language_votes.push(lang);
                 }
             }
             SessionEvent::FileEdit { path, .. } => {

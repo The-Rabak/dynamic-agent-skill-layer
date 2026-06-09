@@ -65,6 +65,16 @@ Documentation is the contract for future execution. If code and docs diverge, la
 - Current docs explicitly say Qdrant is not read at query time; only change that after the architecture really changes.
 - Important unknown: T07 may remain experimental or skipped; document reality, not plan intent.
 
+## Inherited Changes — V1.7 batch 1-2 triage (todos 228-244)
+
+These landed on `feat/v-1-7` during the 228-243 triage swarm (2026-06-09) and are part of the contract this ticket must document honestly:
+
+- **Model/arm attribution surfaces now exist and must be documented:** `embedding_model_metadata` table (`key='active'`, written per rebuild, #228); `/health` `embedding_arm` component = `model=…/dim=…/collection=…` (#239); the `dimension` field + per-arm latency in T01 report arms (#229/#230). The #205/#218 instrumentation handoff can attribute runs to the persisted active-model row.
+- **Document the harness honesty contract** (#229): `--require-dimension` / `--gate` fail loud on a null dimension for a live arm; `OLLAMA_HOST` is SSRF-validated; `QDRANT_COLLECTION` is charset-guarded (#241). Measurement never silently ships an unattributable arm.
+- **Correct the "always fatal" DimensionMismatch claim** in any doc: the guard is **fatal only when Qdrant is reachable at boot** (#235); the offline window is observable but not fully closed (relay re-`ensure_collection` on reconnect is documented remaining work) — record this caveat honestly rather than overstating.
+- **Collections are model-keyed (`skills__<slug>`), not `"skills"`** (#234/#236); if hybrid Qdrant becomes the default read path, the CQRS/read-path docs must reflect the model-keyed, charset-guarded naming and the `Result`-returning derivation.
+- **`find_skill`/`search_skill_graph` will carry `retrieval_context` provenance** (T06, routed via #243) — reconcile the retrieval-contract doc with that field once T06 lands.
+
 ## Parent Refs
 
 - Plan: `docs/plans/2026-06-08-feat-v1-7-local-hybrid-skilldag-retrieval-plan.md`

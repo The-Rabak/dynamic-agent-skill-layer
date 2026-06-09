@@ -10,7 +10,8 @@ use infrastructure::{
     InfrastructureHealthChecker, OllamaEmbeddingConfig, OllamaEmbeddingService, OutboxRelay,
     PostgresAdapter, PostgresConfig, PostgresGraphWriteCoordinator, PostgresRebuildCoordinator,
     QdrantAdapter, QdrantConfig, QdrantError, RebuildCoordinator, RedisStreamError,
-    RedisStreamsAdapter, RedisStreamsConfig, logging::init_logging, model_keyed_collection_name,
+    RedisStreamsAdapter, RedisStreamsConfig, embedding_model_from_env, logging::init_logging,
+    model_keyed_collection_name,
 };
 use serde::Serialize;
 use tokio::{
@@ -200,22 +201,15 @@ async fn maybe_replay_graph_rebuilt(
 
 /// Builds a real Ollama embedding service from the environment.
 ///
-/// Reads `OLLAMA_URL` (required) and `OLLAMA_EMBED_MODEL` (optional, defaults
-/// to `nomic-embed-text`). Fails loud when `OLLAMA_URL` is unset — there is no
-/// fallback embedder in production.
+/// Reads `OLLAMA_URL` (required, fails loud when unset) and delegates model
+/// selection to [`infrastructure::embedding_model_from_env`] (unset or blank
+/// defaults to `nomic-embed-text`). There is no fallback embedder in production.
 fn build_embedding_service() -> Result<OllamaEmbeddingService, Box<dyn std::error::Error>> {
     let base_url = std::env::var("OLLAMA_URL")
         .map_err(|_| "OLLAMA_URL must be set to connect to the embedding service")?;
-    // OLLAMA_EMBED_MODEL selects the dense-retrieval arm; unset OR blank defaults
-    // to nomic-embed-text so existing deployments are unaffected. Blank is treated
-    // as absent — docker-compose interpolation emits "" when the host env is unset.
-    let model = match std::env::var("OLLAMA_EMBED_MODEL") {
-        Ok(v) if !v.trim().is_empty() => v,
-        _ => "nomic-embed-text".to_owned(),
-    };
     let config = OllamaEmbeddingConfig {
         base_url,
-        model,
+        model: embedding_model_from_env(),
         max_concurrency: 4,
     };
     OllamaEmbeddingService::from_config(config).map_err(|e| e.to_string().into())
@@ -361,7 +355,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // collections coexist without clobbering each other. The QdrantAdapter is
     // constructed WITH the model-keyed collection so upsert_vector targets the
     // correct collection at write time.
-    let collection_name = model_keyed_collection_name(&model_info.model_name);
+    let collection_name = model_keyed_collection_name(&model_info.model_name)
+        .map_err(|e| format!("invalid embedding model name: {e}"))?;
     let vector_size = model_info.dimension as u64;
 
     let qdrant_adapter = QdrantAdapter::new(
@@ -478,6 +473,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         match cycle_result {
             Ok(Some(_version)) => {
                 tracing::info!("rebuild cycle completed successfully");
+                // Persist the active embedding model identity so reports and
+                // operators can attribute MRR/nDCG numbers to the exact model
+                // that produced the current Qdrant vectors (migration 008,
+                // todo #228).  Logged but non-fatal: a metadata write failure
+                // must not block the rebuild that just succeeded.
+                if let Err(error) = pg_adapter
+                    .persist_embedding_model_metadata(
+                        &model_info.model_name,
+                        model_info.dimension as i32,
+                        &collection_name,
+                        None, // model_digest: Ollama embed response does not expose a digest
+                    )
+                    .await
+                {
+                    tracing::error!(
+                        %error,
+                        model_name = %model_info.model_name,
+                        collection = %collection_name,
+                        "failed to persist embedding model metadata; rebuild succeeded but metadata is stale"
+                    );
+                } else {
+                    tracing::info!(
+                        model_name = %model_info.model_name,
+                        dimension = model_info.dimension,
+                        collection = %collection_name,
+                        "persisted active embedding model metadata"
+                    );
+                }
             }
             Ok(None) => {}
             Err(error) => {
@@ -496,7 +519,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Mutex;
+
     use super::*;
+
+    /// Shared lock that serializes all tests which mutate the process environment.
+    ///
+    /// Cargo runs test binaries multi-threaded by default; concurrent `set_var` /
+    /// `remove_var` calls on the same key produce a data race on the env block.
+    /// Acquiring this lock before any env mutation ensures the operations are
+    /// atomic from the perspective of every other test in this binary.
+    static ENV_MUTEX: Mutex<()> = Mutex::new(());
 
     #[test]
     fn env_var_returns_err_with_must_be_set_message_when_unset() {
@@ -511,7 +544,14 @@ mod tests {
 
     #[test]
     fn env_var_returns_value_when_set() {
-        // SAFETY: single-threaded test; no other thread reads this var concurrently.
+        // Acquire the shared lock before touching the process environment.
+        // The lock serializes this test against any other test in this binary
+        // that also mutates env vars, preventing concurrent env access.
+        let _guard = ENV_MUTEX.lock().expect("ENV_MUTEX must not be poisoned");
+
+        // SAFETY: exclusive env access is guaranteed by ENV_MUTEX held above;
+        // no other test in this binary may concurrently set or remove env vars
+        // while this guard is live.
         unsafe {
             std::env::set_var(
                 "GRAPH_BUILDER_TEST_SET_VAR_167",
@@ -519,7 +559,7 @@ mod tests {
             );
         }
         let result = env_var("GRAPH_BUILDER_TEST_SET_VAR_167");
-        // SAFETY: single-threaded test; no other thread reads this var concurrently.
+        // SAFETY: same guard; env mutation is still serialized.
         unsafe {
             std::env::remove_var("GRAPH_BUILDER_TEST_SET_VAR_167");
         }

@@ -52,9 +52,24 @@ const MIGRATIONS: &[(&str, &str)] = &[
     ("004_session_logs_status_check", MIGRATION_004),
     ("005_skill_source_paths", MIGRATION_005),
     ("006_community_skills_source", MIGRATION_006),
-    ("007_skill_generality", MIGRATION_007),
+    ("007_skill_generality", MIGRATION_007), // ratified alongside 008 on 2026-06-09 (owner triage #233): dormant write-ahead schema, no live reader
     ("008_embedding_model_metadata", MIGRATION_008),
 ];
+
+/// SQL executed by `truncate_all_tables`.
+///
+/// Defined as a named constant so the `truncate_all_tables_sql_includes_usage_tables`
+/// unit test can assert against the exact string the runtime sends to Postgres,
+/// turning the test into a real guard against table-omission drift rather than a
+/// check against a separate hardcoded copy.
+///
+/// Must be kept in sync with every table created by the migration set.  Any table
+/// omitted here causes cross-suite contamination when the table has live data.
+#[cfg(any(test, feature = "test-utils"))]
+const TRUNCATE_ALL_TABLES_SQL: &str =
+    "TRUNCATE TABLE community_skills, skill_subunits, communities, subunits, skills, \
+     outbox_events, rebuild_locks, transcript_ingest_queue, \
+     session_logs, skill_usage, embedding_model_metadata CASCADE";
 
 #[derive(Debug, Clone)]
 pub struct PostgresConfig {
@@ -367,19 +382,62 @@ impl PostgresAdapter {
         Ok(())
     }
 
+    /// Persists the active embedding model identity after a successful graph rebuild.
+    ///
+    /// Writes exactly one row to `embedding_model_metadata` with `key = 'active'`,
+    /// replacing any previous value via `ON CONFLICT DO UPDATE`.  The table's
+    /// `CHECK (key = 'active')` constraint enforces the single-row invariant at the
+    /// database level; the UPSERT satisfies it on every rebuild without a PK
+    /// violation.
+    ///
+    /// `model_digest` is optional — `None` when Ollama does not expose a digest via
+    /// the embed response (the column is `TEXT` nullable in migration 008).
+    ///
+    /// Fails loud (`PostgresError::Connection`) on any database error; callers must
+    /// decide whether to abort or log-and-continue.
+    pub async fn persist_embedding_model_metadata(
+        &self,
+        model_name: &str,
+        dimension: i32,
+        collection: &str,
+        model_digest: Option<&str>,
+    ) -> Result<(), PostgresError> {
+        sqlx::query(
+            "INSERT INTO embedding_model_metadata \
+             (key, model_name, dimension, collection, model_digest, updated_at) \
+             VALUES ('active', $1, $2, $3, $4, NOW()) \
+             ON CONFLICT (key) DO UPDATE SET \
+               model_name = EXCLUDED.model_name, \
+               dimension = EXCLUDED.dimension, \
+               collection = EXCLUDED.collection, \
+               model_digest = EXCLUDED.model_digest, \
+               updated_at = EXCLUDED.updated_at",
+        )
+        .bind(model_name)
+        .bind(dimension)
+        .bind(collection)
+        .bind(model_digest)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
     /// Truncates all application tables. Intended for test teardown only.
     ///
     /// Includes `session_logs` and `skill_usage` so E2E tests run with a clean
     /// usage slate and do not leak usage rows across runs (T06).
+    ///
+    /// Includes `embedding_model_metadata` so E2E suites started after a graph
+    /// rebuild do not see a stale active-model row from a previous run.
+    ///
+    /// The SQL is stored in `TRUNCATE_ALL_TABLES_SQL` so the companion unit test
+    /// asserts against the same string that actually executes, preventing silent
+    /// table-omission drift.
     #[cfg(any(test, feature = "test-utils"))]
     pub async fn truncate_all_tables(&self) -> Result<(), PostgresError> {
-        sqlx::query(
-            "TRUNCATE TABLE community_skills, skill_subunits, communities, subunits, skills, \
-             outbox_events, rebuild_locks, transcript_ingest_queue, \
-             session_logs, skill_usage CASCADE",
-        )
-        .execute(&self.pool)
-        .await?;
+        sqlx::query(TRUNCATE_ALL_TABLES_SQL)
+            .execute(&self.pool)
+            .await?;
         Ok(())
     }
 }
@@ -505,9 +563,9 @@ mod tests {
         );
     }
 
-    /// Live Postgres: proves that `run_migrations` applies all six migrations on
+    /// Live Postgres: proves that `run_migrations` applies all eight migrations on
     /// a fresh schema and records them in `schema_migrations`, then proves that a
-    /// second call skips all six by asserting `applied_at` timestamps are UNCHANGED.
+    /// second call skips all eight by asserting `applied_at` timestamps are UNCHANGED.
     ///
     /// A re-applied migration would re-INSERT or UPDATE the row (changing the
     /// timestamp). A truly skipped migration leaves the row exactly as it was.
@@ -553,7 +611,7 @@ mod tests {
             .await
             .expect("scratch adapter connect");
 
-        // ---- First boot: all six migrations must be applied ----
+        // ---- First boot: all eight migrations must be applied ----
         adapter
             .run_migrations()
             .await
@@ -575,14 +633,16 @@ mod tests {
                 "004_session_logs_status_check",
                 "005_skill_source_paths",
                 "006_community_skills_source",
+                "007_skill_generality",
+                "008_embedding_model_metadata",
             ],
-            "first boot must record all six migration ids"
+            "first boot must record all eight migration ids"
         );
 
         let first_applied_ats: Vec<chrono::DateTime<chrono::Utc>> =
             first_run_rows.iter().map(|(_, ts)| *ts).collect();
 
-        // ---- Second boot: all six must be SKIPPED (applied_at unchanged) ----
+        // ---- Second boot: all eight must be SKIPPED (applied_at unchanged) ----
         adapter
             .run_migrations()
             .await
@@ -634,13 +694,22 @@ mod tests {
 
     #[test]
     fn truncate_all_tables_sql_includes_usage_tables() {
-        // Compile-time check: the truncate statement must list both usage tables
-        // so E2E teardown does not leak usage rows across runs.
-        let sql = "TRUNCATE TABLE community_skills, skill_subunits, communities, subunits, skills, \
-             outbox_events, rebuild_locks, transcript_ingest_queue, \
-             session_logs, skill_usage CASCADE";
-        assert!(sql.contains("session_logs"));
-        assert!(sql.contains("skill_usage"));
+        // Guard: asserts against `TRUNCATE_ALL_TABLES_SQL` — the same string that
+        // `truncate_all_tables` actually sends to Postgres — so any table omitted
+        // from the runtime function causes this test to fail rather than passing
+        // silently against a stale hardcoded copy.
+        assert!(
+            TRUNCATE_ALL_TABLES_SQL.contains("session_logs"),
+            "truncate SQL must include session_logs to prevent usage-row leakage"
+        );
+        assert!(
+            TRUNCATE_ALL_TABLES_SQL.contains("skill_usage"),
+            "truncate SQL must include skill_usage to prevent usage-row leakage"
+        );
+        assert!(
+            TRUNCATE_ALL_TABLES_SQL.contains("embedding_model_metadata"),
+            "truncate SQL must include embedding_model_metadata to prevent stale active-model row leakage"
+        );
     }
 
     #[test]
@@ -798,6 +867,138 @@ mod tests {
         assert!(
             !table_exists,
             "atomic_probe_table must NOT exist after a rolled-back migration"
+        );
+
+        // Cleanup.
+        sqlx::query(&format!("DROP SCHEMA {scratch_schema} CASCADE"))
+            .execute(&admin_pool)
+            .await
+            .expect("drop scratch schema");
+        admin_pool.close().await;
+    }
+
+    /// Live Postgres: proves that `persist_embedding_model_metadata` inserts on
+    /// first call and UPSERTs (no PK violation, `updated_at` changes) on second
+    /// call.
+    ///
+    /// Two writes with the same sentinel `key = 'active'` must not produce a
+    /// duplicate-key error. The second write must overwrite all fields, including
+    /// `updated_at`, which is forced to advance via `pg_sleep(0.01)`.
+    ///
+    /// Isolation: uses a scratch schema that is dropped on completion.
+    #[tokio::test]
+    #[ignore = "requires live postgres"]
+    async fn live_persist_embedding_model_metadata_inserts_then_upserts() {
+        let db_url = std::env::var("DATABASE_URL")
+            .expect("DATABASE_URL must be set for live postgres tests");
+
+        let admin_pool = sqlx::PgPool::connect(&db_url)
+            .await
+            .expect("admin pool connect");
+
+        let scratch_schema = format!(
+            "test_embedding_metadata_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        );
+
+        sqlx::query(&format!("CREATE SCHEMA {scratch_schema}"))
+            .execute(&admin_pool)
+            .await
+            .expect("create scratch schema");
+
+        let scratch_url = format!("{db_url}?options=-csearch_path%3D{scratch_schema}");
+        let config = PostgresConfig {
+            database_url: scratch_url,
+            max_connections: 2,
+            min_connections: 1,
+            connect_timeout_secs: 5,
+            acquire_timeout_secs: 5,
+        };
+        let adapter = PostgresAdapter::connect(&config)
+            .await
+            .expect("scratch adapter connect");
+
+        // Apply migrations so `embedding_model_metadata` table exists.
+        adapter
+            .run_migrations()
+            .await
+            .expect("run_migrations must succeed");
+
+        // ---- First write: must insert one row with key='active' ----
+        adapter
+            .persist_embedding_model_metadata(
+                "nomic-embed-text",
+                768,
+                "skills__nomic_embed_text",
+                None,
+            )
+            .await
+            .expect("first persist must succeed");
+
+        let row: (String, String, i32, String, Option<String>, chrono::DateTime<chrono::Utc>) =
+            sqlx::query_as(
+                "SELECT key, model_name, dimension, collection, model_digest, updated_at \
+                 FROM embedding_model_metadata WHERE key = 'active'",
+            )
+            .fetch_one(adapter.pool())
+            .await
+            .expect("row must exist after first write");
+
+        assert_eq!(row.0, "active", "key must be 'active'");
+        assert_eq!(row.1, "nomic-embed-text");
+        assert_eq!(row.2, 768);
+        assert_eq!(row.3, "skills__nomic_embed_text");
+        assert!(row.4.is_none(), "model_digest must be NULL when None passed");
+        let first_updated_at = row.5;
+
+        // Advance wall clock enough that NOW() differs from first write.
+        sqlx::query("SELECT pg_sleep(0.02)")
+            .execute(adapter.pool())
+            .await
+            .expect("pg_sleep");
+
+        // ---- Second write: must UPSERT (no PK violation), update all fields ----
+        adapter
+            .persist_embedding_model_metadata(
+                "qwen3-embedding:4b",
+                2560,
+                "skills__qwen3_embedding_4b",
+                Some("sha256:abc123"),
+            )
+            .await
+            .expect("second persist must succeed without PK violation");
+
+        let row2: (String, String, i32, String, Option<String>, chrono::DateTime<chrono::Utc>) =
+            sqlx::query_as(
+                "SELECT key, model_name, dimension, collection, model_digest, updated_at \
+                 FROM embedding_model_metadata WHERE key = 'active'",
+            )
+            .fetch_one(adapter.pool())
+            .await
+            .expect("row must still exist after second write");
+
+        let row_count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM embedding_model_metadata")
+                .fetch_one(adapter.pool())
+                .await
+                .expect("count rows");
+
+        assert_eq!(row_count, 1, "UPSERT must keep exactly one row in the table");
+        assert_eq!(row2.1, "qwen3-embedding:4b", "model_name must be updated");
+        assert_eq!(row2.2, 2560, "dimension must be updated");
+        assert_eq!(row2.3, "skills__qwen3_embedding_4b", "collection must be updated");
+        assert_eq!(
+            row2.4.as_deref(),
+            Some("sha256:abc123"),
+            "model_digest must be updated"
+        );
+        assert!(
+            row2.5 > first_updated_at,
+            "updated_at must advance on second write (was {first_updated_at}, now {})",
+            row2.5
         );
 
         // Cleanup.

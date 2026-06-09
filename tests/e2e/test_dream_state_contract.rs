@@ -7,7 +7,7 @@ use domain::SubunitType;
 use infrastructure::{
     DependencyFactory, EventEnvelope, GraphWriteCoordinator, LiveGraphSkillRecord,
     LiveGraphSnapshotMutation, LiveGraphSubunitRecord, OutboxEvent, OutboxReconciler, OutboxRelay,
-    OutboxVectorStore, RebuildCoordinator, VECTOR_UPSERT_EVENT_TYPE,
+    OutboxVectorStore, RebuildCoordinator, VECTOR_UPSERT_EVENT_TYPE, model_keyed_collection_name,
 };
 use mcp_server::McpServerApp;
 use mcp_server::tools::compile_context::{CompileContextRequest, CompileContextStatus};
@@ -1369,8 +1369,12 @@ async fn qdrant_pg_drift_detection_and_reconciliation_closes_all_gaps() {
     // Raw-HTTP drift injection must target the SAME namespaced collection the
     // reconciler (built by `from_environment`) uses — otherwise it pollutes the
     // shared canonical `skills` collection and the reconciler never sees it.
-    let collection_name =
-        std::env::var("QDRANT_COLLECTION").unwrap_or_else(|_| "skills".to_owned());
+    // Fall back to the model-keyed default for nomic-embed-text rather than the
+    // legacy un-keyed "skills" name, which is no longer the production default.
+    let collection_name = std::env::var("QDRANT_COLLECTION").unwrap_or_else(|_| {
+        model_keyed_collection_name("nomic-embed-text")
+            .expect("nomic-embed-text is a valid model name and must produce a slug")
+    });
     let mut builder = report::ReportBuilder::new("DS-005_qdrant_pg_drift");
 
     let components = McpServerApp::from_environment(dream_retrieval_config())

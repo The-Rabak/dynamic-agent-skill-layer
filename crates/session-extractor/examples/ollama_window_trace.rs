@@ -38,8 +38,7 @@ use session_extractor::transcripts::parse_session_events;
 async fn main() {
     let transcript_path = env::var("TRACE_TRANSCRIPT")
         .expect("set TRACE_TRANSCRIPT to a real .jsonl session transcript path");
-    let ollama_url =
-        env::var("OLLAMA_URL").unwrap_or_else(|_| "http://127.0.0.1:11434".to_owned());
+    let ollama_url = env::var("OLLAMA_URL").unwrap_or_else(|_| "http://127.0.0.1:11434".to_owned());
     let endpoint = format!("{}/api/generate", ollama_url.trim_end_matches('/'));
     let model = env::var("TRACE_MODEL").unwrap_or_else(|_| "gemma4:12b".to_owned());
     let token_budget: usize = env::var("TRACE_TOKEN_BUDGET")
@@ -63,7 +62,11 @@ async fn main() {
 
     println!("== ollama_window_trace ==");
     println!("transcript: {transcript_path}");
-    println!("events: {}  windows: {}  token_budget: {token_budget}  model: {model}", events.len(), windows.len());
+    println!(
+        "events: {}  windows: {}  token_budget: {token_budget}  model: {model}",
+        events.len(),
+        windows.len()
+    );
     println!("endpoint: {endpoint}\n");
 
     // Build the REAL prose prompt for every window; record sizes.
@@ -92,7 +95,11 @@ async fn main() {
     let targets: Vec<usize> = match only_window {
         Some(i) => vec![i],
         None => {
-            let max_idx = built.iter().max_by_key(|(_, c, _, _)| *c).map(|(i, _, _, _)| *i).unwrap_or(0);
+            let max_idx = built
+                .iter()
+                .max_by_key(|(_, c, _, _)| *c)
+                .map(|(i, _, _, _)| *i)
+                .unwrap_or(0);
             vec![max_idx]
         }
     };
@@ -108,8 +115,10 @@ async fn main() {
     for target in targets {
         let (idx, chars, est_tokens, prompt) = &built[target];
         let num_ctx_fix = est_tokens + 2_048; // window + headroom for the JSON output
-        say(&format!("──────────────────────────────────────────────────────────────"));
-        say(&format!("WINDOW {idx}: {chars} chars  ~{est_tokens} est tokens"));
+        say("──────────────────────────────────────────────────────────────");
+        say(&format!(
+            "WINDOW {idx}: {chars} chars  ~{est_tokens} est tokens"
+        ));
         say(&format!(
             "  Arm A = current prod (NO num_ctx -> ollama default 4096)   Arm B = fix (num_ctx={num_ctx_fix})\n"
         ));
@@ -128,7 +137,13 @@ async fn main() {
             "prompt": prompt, "think": false,
             "options": { "temperature": 0.0, "num_ctx": num_ctx_fix, "num_predict": num_predict }
         });
-        run_arm(&client, &endpoint, &format!("B (fix, num_ctx={num_ctx_fix})"), arm_b).await;
+        run_arm(
+            &client,
+            &endpoint,
+            &format!("B (fix, num_ctx={num_ctx_fix})"),
+            arm_b,
+        )
+        .await;
     }
 }
 
@@ -150,7 +165,9 @@ async fn run_arm(client: &reqwest::Client, endpoint: &str, label: &str, body: Va
     let full: Value = match resp.json().await {
         Ok(v) => v,
         Err(e) => {
-            say(&format!("  [{label}] body decode error (status {status}): {e}"));
+            say(&format!(
+                "  [{label}] body decode error (status {status}): {e}"
+            ));
             return;
         }
     };
@@ -162,13 +179,21 @@ async fn run_arm(client: &reqwest::Client, endpoint: &str, label: &str, body: Va
     let (parse_ok, cand_count, parse_note): (bool, i64, String) =
         match serde_json::from_str::<Value>(response_text) {
             Ok(v) => match v.get("candidates").and_then(|c| c.as_array()) {
-                Some(arr) => (true, arr.len() as i64, "valid JSON, has candidates[]".to_owned()),
+                Some(arr) => (
+                    true,
+                    arr.len() as i64,
+                    "valid JSON, has candidates[]".to_owned(),
+                ),
                 None => {
                     let keys: Vec<String> = v
                         .as_object()
                         .map(|o| o.keys().take(8).cloned().collect())
                         .unwrap_or_default();
-                    (false, -1, format!("valid JSON but NO candidates key; top keys={keys:?}"))
+                    (
+                        false,
+                        -1,
+                        format!("valid JSON but NO candidates key; top keys={keys:?}"),
+                    )
                 }
             },
             Err(e) => (false, -1, format!("INVALID JSON: {e}")),
@@ -178,7 +203,9 @@ async fn run_arm(client: &reqwest::Client, endpoint: &str, label: &str, body: Va
         "  [{label}] status={status} prompt_eval_count={prompt_eval:?} eval_count={eval:?} resp_len={}",
         response_text.chars().count()
     ));
-    say(&format!("    parse_ok={parse_ok} candidates={cand_count}  {parse_note}"));
+    say(&format!(
+        "    parse_ok={parse_ok} candidates={cand_count}  {parse_note}"
+    ));
     let snippet: String = response_text.chars().take(700).collect();
     say(&format!("    raw response (first 700 chars): {snippet}\n"));
 }

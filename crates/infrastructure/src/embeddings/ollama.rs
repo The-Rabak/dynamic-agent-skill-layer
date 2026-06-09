@@ -6,6 +6,43 @@ use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use tokio::{sync::Semaphore, task::JoinSet};
 
+/// Default embedding model name used when `OLLAMA_EMBED_MODEL` is unset or blank.
+///
+/// Appears exactly once on the Rust side; both `resolve_embedding_model` and
+/// `OllamaEmbeddingConfig::default` reference this constant so a future default
+/// change touches one location.
+const DEFAULT_EMBEDDING_MODEL: &str = "nomic-embed-text";
+
+/// Resolves the embedding model name from an optional raw env value.
+///
+/// `None` (env var unset) or `Some("")` / `Some("  ")` (blank, emitted by
+/// docker-compose interpolation when the host var is unset, e.g.
+/// `OLLAMA_EMBED_MODEL: ${OLLAMA_EMBED_MODEL:-}`) both return the default
+/// `"nomic-embed-text"`. Any non-blank value is returned as-is after trimming
+/// surrounding whitespace.
+///
+/// This pure function exists so `#240` can test the resolution logic without
+/// touching the global process environment.
+pub fn resolve_embedding_model(raw: Option<&str>) -> String {
+    match raw {
+        Some(v) if !v.trim().is_empty() => v.trim().to_owned(),
+        _ => DEFAULT_EMBEDDING_MODEL.to_owned(),
+    }
+}
+
+/// Reads the configured embedding model name from the process environment.
+///
+/// Delegates to [`resolve_embedding_model`] with the current value of
+/// `OLLAMA_EMBED_MODEL`. Unset or blank returns `"nomic-embed-text"` so existing
+/// deployments are unaffected. Set to `"qwen3-embedding:4b"` to activate the
+/// qwen local-dense-retrieval arm.
+///
+/// Blank is treated as absent — docker-compose interpolation emits an empty string
+/// when the host env var is unset (e.g. `OLLAMA_EMBED_MODEL: ${OLLAMA_EMBED_MODEL:-}`).
+pub fn embedding_model_from_env() -> String {
+    resolve_embedding_model(std::env::var("OLLAMA_EMBED_MODEL").ok().as_deref())
+}
+
 /// Conservative character budget for a single embedding input.
 ///
 /// The embedding model processes each input in one physical batch (Ollama /
@@ -62,7 +99,7 @@ impl Default for OllamaEmbeddingConfig {
     fn default() -> Self {
         Self {
             base_url: "http://127.0.0.1:11434".to_owned(),
-            model: "nomic-embed-text".to_owned(),
+            model: DEFAULT_EMBEDDING_MODEL.to_owned(),
             max_concurrency: 4,
         }
     }
@@ -347,15 +384,58 @@ mod tests {
         server.await.expect("mock server should complete");
     }
 
-    /// Proves `EmbeddingModelInfo` correctly captures the model name configured.
+    /// Proves `EmbeddingModelInfo` derives `Clone` and `PartialEq` correctly —
+    /// a clone equals the original and two distinct instances with the same fields
+    /// are equal, while differing instances are not.
     #[test]
-    fn embedding_model_info_holds_model_name_and_dimension() {
-        let info = EmbeddingModelInfo {
+    fn embedding_model_info_clone_and_eq_round_trip() {
+        let original = EmbeddingModelInfo {
             model_name: "qwen3-embedding:4b".to_owned(),
             dimension: 2560,
         };
-        assert_eq!(info.model_name, "qwen3-embedding:4b");
-        assert_eq!(info.dimension, 2560);
+        let cloned = original.clone();
+        assert_eq!(original, cloned, "clone must equal the original");
+
+        let other = EmbeddingModelInfo {
+            model_name: "nomic-embed-text".to_owned(),
+            dimension: 768,
+        };
+        assert_ne!(original, other, "instances with different fields must not be equal");
+    }
+
+    /// Proves `resolve_embedding_model` returns the default when the raw value is None.
+    #[test]
+    fn resolve_embedding_model_returns_default_when_raw_is_none() {
+        assert_eq!(
+            resolve_embedding_model(None),
+            "nomic-embed-text",
+            "None (env var unset) must yield the nomic default"
+        );
+    }
+
+    /// Proves `resolve_embedding_model` returns the default when the raw value is blank.
+    #[test]
+    fn resolve_embedding_model_returns_default_when_raw_is_blank() {
+        assert_eq!(
+            resolve_embedding_model(Some("")),
+            "nomic-embed-text",
+            "empty string (docker-compose interpolation) must yield the nomic default"
+        );
+        assert_eq!(
+            resolve_embedding_model(Some("   ")),
+            "nomic-embed-text",
+            "whitespace-only string must yield the nomic default"
+        );
+    }
+
+    /// Proves `resolve_embedding_model` returns the configured model when the raw value is set.
+    #[test]
+    fn resolve_embedding_model_returns_configured_model_when_raw_is_set() {
+        assert_eq!(
+            resolve_embedding_model(Some("qwen3-embedding:4b")),
+            "qwen3-embedding:4b",
+            "a non-blank model name must be returned as-is"
+        );
     }
 
     #[tokio::test]

@@ -108,13 +108,13 @@ fn load_rich_transcript_fixture() -> domain::SessionTranscript {
         }
         let value: serde_json::Value =
             serde_json::from_str(line).expect("fixture must be valid JSON per line");
-        if let Some(role) = value.pointer("/message/role").and_then(|v| v.as_str()) {
-            if let Some(text) = value.pointer("/message/content").and_then(|v| v.as_str()) {
-                entries.push(TranscriptEntry {
-                    speaker: role.to_owned(),
-                    content: text.to_owned(),
-                });
-            }
+        if let Some(role) = value.pointer("/message/role").and_then(|v| v.as_str())
+            && let Some(text) = value.pointer("/message/content").and_then(|v| v.as_str())
+        {
+            entries.push(TranscriptEntry {
+                speaker: role.to_owned(),
+                content: text.to_owned(),
+            });
         }
     }
     assert!(
@@ -178,9 +178,7 @@ fn write_parity_report(
     let mut lines: Vec<String> = Vec::new();
     lines.push(format!("# Claude Code Provider Parity Report — {run_id}"));
     lines.push(String::new());
-    lines.push(format!(
-        "Fixture: tests/fixtures/session-rich-transcript.jsonl"
-    ));
+    lines.push("Fixture: tests/fixtures/session-rich-transcript.jsonl".to_owned());
     lines.push(format!(
         "Taught concepts: {}",
         taught_concept_groups()
@@ -192,7 +190,7 @@ fn write_parity_report(
     lines.push(String::new());
 
     if let Some(reason) = skip_reason {
-        lines.push(format!("## SKIPPED"));
+        lines.push("## SKIPPED".to_owned());
         lines.push(format!("Reason: {reason}"));
         lines.push(String::new());
         lines

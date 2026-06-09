@@ -21,27 +21,41 @@ use crate::persistence::outbox::{OutboxVectorStore, VectorPointListing};
 /// keeps the name safe as a Qdrant collection identifier (which must be a valid
 /// C-style identifier or URL segment in many environments).
 ///
+/// # Errors
+///
+/// Returns `QdrantError::InvalidConfiguration` when `model` is empty or consists
+/// entirely of non-alphanumeric characters, which would produce a bare `skills__`
+/// collection name and silently overlap with any other degenerate model name.
+///
+/// Note: a broader charset guard (`^[A-Za-z0-9_-]+$`) at config construction is
+/// tracked by #241 and will compose with this slug-level guard.
+///
 /// Examples:
-///   `"nomic-embed-text"`   → `"skills__nomic-embed-text"`
-///   `"qwen3-embedding:4b"` → `"skills__qwen3-embedding-4b"`
-///   `"some/model:latest"`  → `"skills__some-model-latest"`
-pub fn model_keyed_collection_name(model: &str) -> String {
-    let slug: String = model
-        .to_ascii_lowercase()
-        .chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || c == '-' {
-                c
-            } else {
-                '-'
-            }
-        })
-        .collect::<String>()
-        .split('-')
+///   `"nomic-embed-text"`   → `Ok("skills__nomic-embed-text")`
+///   `"qwen3-embedding:4b"` → `Ok("skills__qwen3-embedding-4b")`
+///   `"some/model:latest"`  → `Ok("skills__some-model-latest")`
+///   `""` / `"/:@"`         → `Err(InvalidConfiguration(...))`
+pub fn model_keyed_collection_name(model: &str) -> Result<String, QdrantError> {
+    // Replace every non-alphanumeric, non-hyphen character with a hyphen, then
+    // split on hyphens and discard empty segments to collapse consecutive ones.
+    // Using `split` + `filter` + `join` avoids the redundant intermediate `String`
+    // allocation that the previous `collect::<String>().split(...)` chain incurred.
+    let lowered = model.to_ascii_lowercase();
+    let slug = lowered
+        .split(|c: char| !c.is_ascii_alphanumeric() && c != '-')
+        .flat_map(|part| part.split('-'))
         .filter(|segment| !segment.is_empty())
         .collect::<Vec<_>>()
         .join("-");
-    format!("skills__{slug}")
+
+    if slug.is_empty() {
+        return Err(QdrantError::InvalidConfiguration(format!(
+            "OLLAMA_EMBED_MODEL produced an empty collection slug for model='{model}'; \
+             the model name must contain at least one alphanumeric character"
+        )));
+    }
+
+    Ok(format!("skills__{slug}"))
 }
 
 /// Configuration for the Qdrant REST HTTP adapter.
@@ -71,7 +85,13 @@ impl Default for QdrantConfig {
             // Port 6333 is the Qdrant REST interface. Do NOT use 6334 (gRPC).
             endpoint: "http://127.0.0.1:6333".to_owned(),
             timeout_ms: 500,
-            collection_name: "skills".to_owned(),
+            // LEGACY SENTINEL — never use this directly.
+            // Real collections are always model-keyed via `model_keyed_collection_name(...)`,
+            // which produces `skills__<slug>` names that encode the embedding dimension.
+            // Any call site that spreads `..QdrantConfig::default()` MUST override
+            // `collection_name` explicitly, or the adapter will target this sentinel
+            // and fail at runtime when the collection does not exist.
+            collection_name: "UNCONFIGURED__use_model_keyed_collection_name".to_owned(),
         }
     }
 }
@@ -124,6 +144,35 @@ impl QdrantAdapter {
         if config.timeout_ms == 0 {
             return Err(QdrantError::InvalidConfiguration(
                 "timeout_ms must be greater than zero".to_owned(),
+            ));
+        }
+
+        // Charset guard for the collection name: only ASCII letters, digits, hyphens, and
+        // underscores are permitted.  Qdrant collection names are interpolated directly into
+        // REST path segments via `format!` (e.g. `/collections/{name}/points`), so a value
+        // like `skills/../../admin` would silently traverse the Qdrant path hierarchy.
+        //
+        // This guard subsumes #234's empty-slug guard for the QDRANT_COLLECTION override path
+        // (the model-keyed path already produces safe `[a-z0-9-]` slugs, but environment
+        // overrides are operator-supplied and must be validated at construction).
+        if !config
+            .collection_name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+        {
+            return Err(QdrantError::InvalidConfiguration(format!(
+                "collection name {:?} contains characters outside [A-Za-z0-9_-]; \
+                 collection names are used as Qdrant REST path segments and must not \
+                 contain path traversal characters like '/', '.', or whitespace",
+                config.collection_name
+            )));
+        }
+
+        // An empty collection name passes the charset check (vacuously true) but is
+        // also invalid — reject it explicitly so the error message is unambiguous.
+        if config.collection_name.trim().is_empty() {
+            return Err(QdrantError::InvalidConfiguration(
+                "collection_name must not be blank".to_owned(),
             ));
         }
 
@@ -189,7 +238,23 @@ impl QdrantAdapter {
             // Collection already exists — verify its dimension matches expectations.
             // A mismatch means nomic and qwen vectors would be mixed in a single
             // collection; that silently corrupts cosine-similarity ranking.
-            let body: Value = response.json().await.unwrap_or(Value::Null);
+            //
+            // Note: if the JSON response body cannot be parsed (network/framing
+            // error after headers), we log the real parse error so the operator
+            // can distinguish a transient read failure from a genuinely missing
+            // dimension field in an older Qdrant version.
+            let body: Value = response
+                .json()
+                .await
+                .unwrap_or_else(|parse_err| {
+                    tracing::warn!(
+                        error = %parse_err,
+                        collection_name,
+                        "could not parse Qdrant collection-info response body; \
+                         falling through to missing-dimension path"
+                    );
+                    Value::Null
+                });
             let observed_size: Option<u64> = body
                 .pointer("/result/config/params/vectors/size")
                 .and_then(Value::as_u64);
@@ -206,13 +271,15 @@ impl QdrantAdapter {
                 }
                 None => {
                     // Qdrant response did not include a parseable dimension field.
-                    // Log a warning and continue rather than blocking boot on a
-                    // missing field from an older Qdrant version.
+                    // This can happen for two reasons: (1) the body failed to parse
+                    // (logged above via unwrap_or_else) or (2) an older Qdrant
+                    // version omits the size field. Log a warning and continue
+                    // rather than blocking boot on a missing field.
                     tracing::warn!(
                         collection_name,
                         expected_dimension = vector_size,
-                        "could not parse collection dimension from Qdrant GET response; \
-                         skipping dimension guard (upgrade Qdrant if this recurs)"
+                        "could not extract dimension from Qdrant collection-info; \
+                         skipping dimension guard (upgrade Qdrant or check logs above)"
                     );
                 }
             }
@@ -310,9 +377,24 @@ impl OutboxVectorStore for QdrantAdapter {
             .send_with_timeout(self.client.put(endpoint).json(&body))
             .await
             .map_err(|error| error.to_string())?;
-        self.expect_ok_status(response)
-            .await
-            .map_err(|error| error.to_string())?;
+        let result = self.expect_ok_status(response).await;
+        if let Err(ref error) = result {
+            // Surface write failures with vector size so an operator can distinguish
+            // a dimension mismatch (the primary offline-bypass corruption path) from
+            // transient network errors. This is especially important when Qdrant was
+            // offline at boot and the dimension guard was skipped — the first write
+            // batch surfaces the mismatch here rather than silently recording it only
+            // in the outbox `failed` column.
+            tracing::error!(
+                collection,
+                vector_size = vector.len(),
+                %error,
+                "qdrant upsert failed — if this mentions vector size, the collection \
+                 may have a dimension mismatch (dimension guard was skipped at boot \
+                 because Qdrant was offline; drop the collection or change OLLAMA_EMBED_MODEL)"
+            );
+        }
+        result.map_err(|error| error.to_string())?;
         Ok(())
     }
 
@@ -516,6 +598,69 @@ mod tests {
             .expect_err("blank endpoint should fail config validation");
 
         assert!(matches!(error, QdrantError::InvalidConfiguration(_)));
+    }
+
+    /// Proves the collection-name charset guard rejects path-traversal characters.
+    ///
+    /// A `QDRANT_COLLECTION` override like `skills/../../admin` would be interpolated
+    /// directly into Qdrant REST paths via `format!`.  The guard must catch this at
+    /// construction, before any network I/O.
+    #[test]
+    fn qdrant_adapter_rejects_collection_name_with_path_traversal() {
+        let dangerous_names = [
+            "skills/../../admin",
+            "skills/../secrets",
+            "collections/evil",
+            "a..b",
+            "name with spaces",
+            "name\nnewline",
+            "name%2Fslash",
+        ];
+
+        for name in &dangerous_names {
+            let config = QdrantConfig {
+                collection_name: (*name).to_owned(),
+                ..QdrantConfig::default()
+            };
+            let error = QdrantAdapter::new(reqwest::Client::new(), config).expect_err(
+                &format!("collection name {name:?} must be rejected by the charset guard"),
+            );
+            assert!(
+                matches!(error, QdrantError::InvalidConfiguration(_)),
+                "error must be InvalidConfiguration for name {name:?}, got: {error:?}"
+            );
+            let msg = error.to_string();
+            assert!(
+                msg.contains("collection name"),
+                "error message must mention 'collection name' for input {name:?}, got: {msg}"
+            );
+        }
+    }
+
+    /// Proves the charset guard accepts well-formed collection names used in production.
+    ///
+    /// Model-keyed names like `skills__nomic-embed-text` and operator-supplied
+    /// test-isolation names like `skills_ns_abc123` must pass without error.
+    #[test]
+    fn qdrant_adapter_accepts_valid_collection_names() {
+        let valid_names = [
+            "skills",
+            "skills__nomic-embed-text",
+            "skills__qwen3-embedding-4b",
+            "skills_ns_abc123",
+            "UNCONFIGURED__use_model_keyed_collection_name",
+            "A1-z9_",
+        ];
+
+        for name in &valid_names {
+            let config = QdrantConfig {
+                collection_name: (*name).to_owned(),
+                ..QdrantConfig::default()
+            };
+            QdrantAdapter::new(reqwest::Client::new(), config).unwrap_or_else(|_| {
+                panic!("valid collection name {name:?} must be accepted by the charset guard")
+            });
+        }
     }
 
     #[tokio::test]
@@ -791,17 +936,149 @@ mod tests {
     #[test]
     fn model_keyed_collection_name_derives_safe_identifier_from_model() {
         assert_eq!(
-            model_keyed_collection_name("nomic-embed-text"),
+            model_keyed_collection_name("nomic-embed-text").unwrap(),
             "skills__nomic-embed-text"
         );
         assert_eq!(
-            model_keyed_collection_name("qwen3-embedding:4b"),
+            model_keyed_collection_name("qwen3-embedding:4b").unwrap(),
             "skills__qwen3-embedding-4b"
         );
         assert_eq!(
-            model_keyed_collection_name("some/model:latest"),
+            model_keyed_collection_name("some/model:latest").unwrap(),
             "skills__some-model-latest"
         );
+    }
+
+    /// Proves the two live V1.7 embedding arms slug to DISTINCT collections so
+    /// an operator running both arms simultaneously cannot corrupt one with the
+    /// other's vectors. This is the honesty invariant for the arm comparison.
+    #[test]
+    fn model_keyed_collection_name_live_arms_are_distinct() {
+        let nomic = model_keyed_collection_name("nomic-embed-text")
+            .expect("nomic-embed-text must produce a valid slug");
+        let qwen = model_keyed_collection_name("qwen3-embedding:4b")
+            .expect("qwen3-embedding:4b must produce a valid slug");
+
+        assert_ne!(
+            nomic, qwen,
+            "live V1.7 arms must map to distinct collections; \
+             collision would silently mix vectors from different models"
+        );
+        assert_eq!(nomic, "skills__nomic-embed-text");
+        assert_eq!(qwen, "skills__qwen3-embedding-4b");
+    }
+
+    /// Proves that an empty model name fails loud rather than silently producing
+    /// the bare `skills__` collection name, which would overlap with any other
+    /// degenerate model name and corrupt the honest arm comparison.
+    #[test]
+    fn model_keyed_collection_name_empty_model_fails_loud() {
+        let err = model_keyed_collection_name("")
+            .expect_err("empty model name must fail loud, not produce skills__");
+        assert!(
+            matches!(err, QdrantError::InvalidConfiguration(_)),
+            "error variant must be InvalidConfiguration, got: {err:?}"
+        );
+        let msg = err.to_string();
+        assert!(
+            msg.contains("empty collection slug"),
+            "error message must mention empty collection slug, got: {msg}"
+        );
+    }
+
+    /// Proves that a model name made entirely of non-alphanumeric characters (e.g.
+    /// `"/:@#"`) also fails loud — same root cause as the empty-string case.
+    #[test]
+    fn model_keyed_collection_name_all_symbol_model_fails_loud() {
+        let err = model_keyed_collection_name("/:@#")
+            .expect_err("all-symbol model name must fail loud, not produce skills__");
+        assert!(
+            matches!(err, QdrantError::InvalidConfiguration(_)),
+            "error variant must be InvalidConfiguration, got: {err:?}"
+        );
+    }
+
+    /// Proves `ensure_collection` returns `Ok(())` — not an error — when the HTTP 200
+    /// response body cannot be parsed as JSON.
+    ///
+    /// A network/framing error after the headers (e.g. truncated body) must NOT be
+    /// silently routed to the "missing size field" warn-and-continue branch as if the
+    /// field were merely absent in an older Qdrant. Both code paths result in `Ok(())`,
+    /// but the `unwrap_or_else` variant logs the real parse error separately, allowing
+    /// an operator to distinguish a transient failure from a genuinely missing field.
+    #[tokio::test]
+    async fn ensure_collection_200_with_invalid_json_body_returns_ok_not_error() {
+        // The response body is deliberately not valid JSON — simulates a truncated
+        // or corrupted response body after a 200 status.
+        let (endpoint, server) =
+            spawn_single_response_server("200 OK", "this is not json at all {{").await;
+
+        let adapter = QdrantAdapter::new(
+            reqwest::Client::new(),
+            QdrantConfig {
+                endpoint,
+                timeout_ms: 1_000,
+                ..QdrantConfig::default()
+            },
+        )
+        .expect("test config should be valid");
+
+        // Should return Ok — the parse failure is logged but not propagated as an error.
+        adapter
+            .ensure_collection("skills", 768)
+            .await
+            .expect("a 200 response with unparseable body must return Ok, not fail");
+
+        server.await.expect("mock server should complete");
+    }
+
+    /// Proves that the dimension guard does NOT run on the 409 cold-start path.
+    ///
+    /// When two callers race to create the collection, the loser receives a 409 on
+    /// the PUT. Since the GET probe returned 404 (not 200), no dimension check was
+    /// performed, and the 409 is treated as success. This is correct: the creator
+    /// (winner) already validated the collection on its own GET→200 or fresh create.
+    ///
+    /// This test confirms there is no regression to the #157 fix: 409 on PUT is
+    /// benign success; dimension guard is gated on GET→200 only, never on PUT→409.
+    #[tokio::test]
+    async fn ensure_collection_409_create_does_not_run_dimension_check() {
+        // GET probe → 404: collection does not exist yet (no dimension info available).
+        // PUT create → 409: a concurrent caller already created it.
+        // No dimension check should happen because the GET returned 404, not 200.
+        // (Caller expects 2560 but we pass 768 here — if the check ran, it would fail;
+        //  the test proves it does NOT run on the PUT→409 path.)
+        let (endpoint, server) = spawn_sequence_response_server(vec![
+            (
+                "404 Not Found".to_owned(),
+                r#"{"status":"not_found"}"#.to_owned(),
+            ),
+            (
+                "409 Conflict".to_owned(),
+                r#"{"status":"conflict","description":"already exists"}"#.to_owned(),
+            ),
+        ])
+        .await;
+
+        let adapter = QdrantAdapter::new(
+            reqwest::Client::new(),
+            QdrantConfig {
+                endpoint,
+                timeout_ms: 1_000,
+                ..QdrantConfig::default()
+            },
+        )
+        .expect("test config should be valid");
+
+        // Caller expects 2560 — but no dimension check runs because the probe returned 404,
+        // so there was no existing collection info to compare against.
+        adapter
+            .ensure_collection("skills", 2560)
+            .await
+            .expect("409 on PUT must be treated as success regardless of expected dimension; \
+                     dimension guard only runs on GET→200");
+
+        server.await.expect("mock server should complete");
     }
 
     /// Proves `ensure_collection` fails loud when the existing collection has a

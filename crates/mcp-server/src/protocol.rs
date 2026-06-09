@@ -983,4 +983,99 @@ mod tests {
             error.code
         );
     }
+
+    /// Proves that `/health` exposes an `embedding_arm` component when the health
+    /// checker is wired with model + dimension + collection at boot. This is the
+    /// agent-native parity requirement from #239: the active embedding arm that
+    /// determines which vector space `find_skill` queries must be observable via
+    /// the HTTP health endpoint, not only via container logs.
+    ///
+    /// The detail format is `model=<name> dim=<n> collection=<name>`, sourced from
+    /// the `EmbeddingModelInfo` discovered at boot plus the resolved collection name.
+    #[tokio::test]
+    async fn health_endpoint_exposes_embedding_arm_component_with_model_dim_collection() {
+        let app = McpServerApp::with_explicit_graph(
+            Arc::new(NoOpEmbeddingService),
+            RetrievalSnapshot::new(vec![], 0),
+            RetrievalConfig::default(),
+            None,
+        );
+        // Simulate the boot-time wiring performed by main.rs after from_environment().
+        let health_checker = InfrastructureHealthChecker::new().with_static_component(
+            "embedding_arm",
+            true,
+            "model=nomic-embed-text dim=768 collection=skills-nomic-embed-text",
+        );
+        let app_router = router(app, health_checker);
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("ephemeral port should bind");
+        let addr: SocketAddr = listener.local_addr().expect("listener has local addr");
+        tokio::spawn(async move {
+            axum::serve(listener, app_router)
+                .await
+                .expect("test server should serve");
+        });
+
+        let client = reqwest::Client::new();
+        let response = client
+            .get(format!("http://{addr}/health"))
+            .send()
+            .await
+            .expect("GET /health request should complete");
+
+        assert_eq!(
+            response.status(),
+            reqwest::StatusCode::OK,
+            "/health must return 200 when all components are healthy"
+        );
+
+        let body: serde_json::Value = response
+            .json()
+            .await
+            .expect("/health response must be valid JSON");
+
+        let components = body
+            .get("components")
+            .and_then(|v| v.as_array())
+            .expect("/health response must contain a 'components' array");
+
+        let arm = components
+            .iter()
+            .find(|c| c.get("name").and_then(|n| n.as_str()) == Some("embedding_arm"))
+            .expect(
+                "embedding_arm component must be present in /health output — \
+                 agents need this to discover which vector space produced find_skill results"
+            );
+
+        assert_eq!(
+            arm.get("healthy").and_then(|v| v.as_bool()),
+            Some(true),
+            "embedding_arm component must be marked healthy"
+        );
+
+        let detail = arm
+            .get("detail")
+            .and_then(|v| v.as_str())
+            .expect("embedding_arm must have a detail field");
+
+        assert!(
+            detail.contains("model="),
+            "embedding_arm detail must contain 'model=': got '{detail}'"
+        );
+        assert!(
+            detail.contains("dim="),
+            "embedding_arm detail must contain 'dim=': got '{detail}'"
+        );
+        assert!(
+            detail.contains("collection="),
+            "embedding_arm detail must contain 'collection=': got '{detail}'"
+        );
+        assert_eq!(
+            detail,
+            "model=nomic-embed-text dim=768 collection=skills-nomic-embed-text",
+            "embedding_arm detail must be 'model=X dim=Y collection=Z'"
+        );
+    }
 }

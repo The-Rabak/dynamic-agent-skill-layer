@@ -26,6 +26,12 @@ BEGIN;
 -- Rollback (down):
 --   ALTER TABLE skills DROP COLUMN IF EXISTS generality;
 --   ALTER TABLE skills DROP COLUMN IF EXISTS generality_rationale;
+--
+-- WRITE-AHEAD SCHEMA: generality/generality_rationale columns are populated via
+--   .pending SKILL.md frontmatter (session-extractor/src/writer.rs) + the LLM
+--   verifier, NOT via the skills row today.  No production code SELECTs these
+--   columns yet.  Ratified alongside 008 on 2026-06-09 (owner triage #233):
+--   dormant, additive, nullable, idempotent (pg_attribute guards).
 
 DO $$
 BEGIN

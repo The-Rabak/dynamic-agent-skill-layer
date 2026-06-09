@@ -44,6 +44,7 @@ import sys
 import time
 import urllib.request
 from pathlib import Path
+from urllib.parse import urlparse
 
 MCP_URL = "http://127.0.0.1:3001/mcp"
 JUDGE_MODEL = "claude-sonnet-4-6"  # production default (DEFAULT_CLAUDE_MODEL)
@@ -68,18 +69,56 @@ def _parse_bool_env(value: str) -> bool:
     return value.strip().lower() in ("true", "1", "yes")
 
 
-def _discover_dimension_from_live_server() -> int | None:
+def _validate_ollama_host(ollama_host: str) -> None:
+    """Validate the OLLAMA_HOST value; raise ValueError on any obviously unsafe or malformed value.
+
+    Accepts only http:// or https:// schemes.  Rejects link-local and cloud-metadata IP
+    ranges (169.254.x.x) that would expose the host to SSRF in a container-networked
+    environment.  Empty strings are also rejected.
+
+    This is the Python-side implementation of the OLLAMA_HOST validation described in #241.
+    The Rust side (qdrant.rs) is handled in #234.
+    """
+    if not ollama_host or not ollama_host.strip():
+        raise ValueError("OLLAMA_HOST is empty; set it to a valid http/https base URL")
+
+    parsed = urlparse(ollama_host)
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError(
+            f"OLLAMA_HOST has unsupported scheme {parsed.scheme!r}; "
+            f"only 'http' and 'https' are allowed (got {ollama_host!r})"
+        )
+
+    # Reject link-local (169.254.x.x) and APIPA/cloud-metadata ranges
+    # (169.254.169.254 is the AWS/GCP metadata endpoint — a classic SSRF target).
+    hostname = parsed.hostname or ""
+    if hostname.startswith("169.254."):
+        raise ValueError(
+            f"OLLAMA_HOST resolves to a link-local/metadata IP range (169.254.x.x): "
+            f"{ollama_host!r} — this is an SSRF risk; use localhost or an explicit host"
+        )
+
+
+def _probe_ollama_dimension(model: str) -> int | None:
     """Probe the live Ollama embed endpoint to discover the actual vector dimension.
 
-    Returns the integer dimension (e.g. 768 for nomic, 2560 for qwen3-embedding:4b)
-    or None if the endpoint is unreachable or returns no vector.  The caller
-    decides what to do with None — never invent a dimension.
+    Sends a single embedding request with the given model name and returns the
+    integer dimension (e.g. 768 for nomic-embed-text, 2560 for qwen3-embedding:4b),
+    or None if the endpoint is unreachable, returns an empty vector, or errors.
 
-    This reflects the same probe that the Rust `OllamaEmbeddingService::discover_dimension`
+    On any failure, a diagnostic line is printed to stderr that includes the endpoint
+    URL and the exception type — this makes silent offline failures visible without
+    hard-crashing runs where Ollama is intentionally absent.
+
+    The caller decides what to do with None; a gated report must reject None for a
+    live arm (see `--gate` / `--require-dimension` handling in `main()`).
+
+    This mirrors the probe that the Rust `OllamaEmbeddingService::discover_dimension`
     makes at boot, so the report's dimension matches the server's actual collection size.
+
+    Args:
+        model: The Ollama model name to probe (must match what the live server uses).
     """
-    model = os.environ.get("OLLAMA_EMBED_MODEL", ARM_METADATA_DEFAULTS["embedder_model"])
-    # The stack's Ollama is mapped to port 11444 on the host.
     ollama_host = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11444")
     endpoint = ollama_host.rstrip("/") + "/api/embeddings"
     try:
@@ -90,11 +129,17 @@ def _discover_dimension_from_live_server() -> int | None:
             body = json.loads(resp.read())
         vec = body.get("embedding", [])
         return len(vec) if vec else None
-    except Exception:
+    except Exception as exc:
+        print(
+            f"[dimension-probe] WARNING: could not probe dimension from {endpoint!r} "
+            f"(model={model!r}, error={type(exc).__name__}: {exc})",
+            file=sys.stderr,
+        )
         return None
 
 
-def build_arm_metadata(env_overrides: dict | None = None) -> dict:
+def build_arm_metadata(env_overrides: dict | None = None,
+                       dimension: int | None = None) -> dict:
     """Read V1.7 retrieval arm metadata from the environment (or env_overrides).
 
     Returns a dict with keys: backend, embedder_model, dimension, dense, sparse, rerank.
@@ -104,14 +149,18 @@ def build_arm_metadata(env_overrides: dict | None = None) -> dict:
     When a variable is absent the current production default is used and is
     honestly labelled — no invented values.
 
-    The `dimension` field is discovered from the LIVE Ollama endpoint so the
-    report reflects the actual vector size used by the active model — never a
-    hardcoded doc value. If the endpoint is unreachable, dimension is None (not
-    a guess).
+    The `dimension` field is NOT probed here.  Callers that need the live
+    dimension must call `_probe_ollama_dimension(embedder_model)` separately
+    and pass the result in.  This keeps I/O out of a function that reads as a
+    pure env-inspector, and ensures `dimension` and `embedder_model` always
+    agree (both come from the same merged env).
 
-    env_overrides: optional dict of {name: value} to treat as additional env
-    vars (used by the sweep to test each config arm without actually setting
-    process-level env; callers pass the overrides dict from CONFIGS).
+    Args:
+        env_overrides: optional dict of {name: value} to treat as additional env
+            vars (used by the sweep to test each config arm without actually
+            setting process-level env; callers pass the overrides dict from CONFIGS).
+        dimension: the probed vector dimension for embedder_model; None when Ollama
+            is unreachable or the probe was not requested.
     """
     merged_env = dict(os.environ)
     if env_overrides:
@@ -123,11 +172,6 @@ def build_arm_metadata(env_overrides: dict | None = None) -> dict:
                              ARM_METADATA_DEFAULTS["backend"])
     sparse_raw = merged_env.get("RETRIEVAL_SPARSE", "")
     rerank_raw = merged_env.get("RETRIEVAL_RERANK", "")
-
-    # Discover the real embedding dimension from the live Ollama endpoint.
-    # This ensures the report carries the actual model output size, not a
-    # hardcoded or doc-stated value (qwen docs say 2560 but trust the live model).
-    dimension = _discover_dimension_from_live_server()
 
     return {
         "backend": backend,
@@ -277,6 +321,9 @@ def main():
     ap.add_argument("--regression-floor", type=float, default=0.60,
                     help="judge-augmented MRR hard floor for --gate (regression guard); "
                          "the 0.80 target stays the documented aspiration")
+    ap.add_argument("--require-dimension", action="store_true",
+                    help="fail loud (exit nonzero) when the Ollama dimension probe returns "
+                         "None for a live arm; use with --gate on any gated CI run")
     ap.add_argument("--config-label", default="default")
     args = ap.parse_args()
 
@@ -295,9 +342,37 @@ def main():
     pos = [q for q in queries if q.get("kind") != "negative"]
     neg = [q for q in queries if q.get("kind") == "negative"]
 
-    # Read arm metadata from the environment.  Fields default to the current
-    # production values when the env var is absent (honest, no invented values).
-    arm = build_arm_metadata()
+    # Validate OLLAMA_HOST before any network I/O.  A bad scheme or a link-local
+    # IP would let the probe silently target the wrong endpoint (#241 Python side).
+    ollama_host = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11444")
+    try:
+        _validate_ollama_host(ollama_host)
+    except ValueError as exc:
+        print(f"[config] FATAL: invalid OLLAMA_HOST: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    # Resolve the embedder model from the environment first so the dimension
+    # probe and the arm metadata dict always agree on the model name.
+    embedder_model = os.environ.get("OLLAMA_EMBED_MODEL",
+                                    ARM_METADATA_DEFAULTS["embedder_model"])
+
+    # Probe the live Ollama endpoint for the actual vector dimension.
+    # This is an I/O operation and lives here in main(), not inside build_arm_metadata().
+    dimension = _probe_ollama_dimension(embedder_model)
+
+    if args.require_dimension and dimension is None:
+        print(
+            f"[gate] FATAL: --require-dimension is set but the dimension probe returned "
+            f"None for model {embedder_model!r} at {ollama_host!r}.\n"
+            f"Ensure Ollama is reachable at OLLAMA_HOST and the model is loaded before "
+            f"running a gated report.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    # Read arm metadata from the environment.  The dimension is passed in (not
+    # probed inside build_arm_metadata) so dimension and embedder_model always agree.
+    arm = build_arm_metadata(dimension=dimension)
 
     # 1. Drive the REAL server for every query; collect ranked results + descriptions
     #    and capture per-query end-to-end latency of the find_skill HTTP call.
@@ -419,6 +494,21 @@ def main():
         # regression floor (guards against backslide below today's measured
         # level without faking the unmet aspiration green).
         asp_met = (agg_judge["mrr"] >= t["mrr"] and agg_judge["ndcg_at_3"] >= t["ndcg_at_3"])
+
+        # A null dimension in a gated report means the arm is unidentified — the
+        # report cannot be reliably attributed to a specific model.  Fail loud so
+        # the measurement surface stays honest (no silent fallback in a gate path).
+        if arm["dimension"] is None:
+            print(
+                f"\n[gate] FATAL: arm dimension is None for embedder={arm['embedder_model']!r}.\n"
+                f"The Ollama probe failed or returned an empty vector.  A report with an "
+                f"unknown dimension cannot be reliably attributed to this arm.\n"
+                f"Ensure Ollama is reachable at OLLAMA_HOST={ollama_host!r} and the model "
+                f"is loaded, or pass --require-dimension to catch this before report generation.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
         print(f"\n[gate] judge-aug MRR={agg_judge['mrr']:.3f} nDCG@3={agg_judge['ndcg_at_3']:.3f} "
               f"no_match={no_match_precision} | aspiration 0.80/0.80/0.90 "
               f"{'MET' if asp_met else 'UNMET (tracked in docs/assessments/)'}")

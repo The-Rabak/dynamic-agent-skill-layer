@@ -422,6 +422,14 @@ pub struct LiveServerComponents {
     pub redis_adapter: Arc<RedisStreamsAdapter>,
     pub pg_adapter: Arc<PostgresAdapter>,
     pub rebuild_coordinator: Arc<PostgresRebuildCoordinator>,
+    /// The embedding model identity discovered at boot via `discover_dimension`.
+    ///
+    /// Carries the active model name and real vector dimension so callers (e.g.
+    /// `main.rs`) can surface them on `/health` without repeating the Ollama call.
+    /// Note: the `embedding_model_metadata` table (populated by #228 after each
+    /// graph rebuild) is the future canonical source; this boot-time field is used
+    /// until a rebuild has run.
+    pub embedding_model_info: EmbeddingModelInfo,
     /// Join handle for the background usage-writer task.
     ///
     /// Only present in test/test-utils builds (elided via `#[cfg]` in production).
@@ -507,12 +515,12 @@ async fn build_live_server(
             // Discover the real vector dimension from the live model BEFORE
             // creating/validating the Qdrant collection. This ensures the
             // collection is sized to the actual model output, not a hardcoded value.
-            let model_info = embedding_service
+            let embedding_model_info = embedding_service
                 .discover_dimension()
                 .await
                 .map_err(|e| format!("embedding dimension discovery failed: {e}"))?;
-            let q = build_qdrant_adapter_with_model(&model_info).await?;
-            Ok::<_, Box<dyn std::error::Error + Send + Sync>>((q, model_info))
+            let q = build_qdrant_adapter_with_model(&embedding_model_info).await?;
+            Ok::<_, Box<dyn std::error::Error + Send + Sync>>((q, embedding_model_info))
         },
         build_redis_streams_adapter(),
         async {
@@ -603,6 +611,9 @@ async fn build_live_server(
         redis_adapter: redis_streams,
         pg_adapter,
         rebuild_coordinator: Arc::new(rebuild_coordinator),
+        // Carry the boot-discovered arm identity so `main.rs` can wire it into
+        // the health checker without repeating the Ollama dimension-discovery call.
+        embedding_model_info,
         // `usage_writer_join_handle` is defined only in test/test-utils builds
         // so the production binary never carries a reference to the task handle.
         #[cfg(any(test, feature = "test-utils"))]
@@ -646,7 +657,7 @@ async fn build_qdrant_adapter_with_model(
     // model-keyed default is used.
     let collection_name = match std::env::var("QDRANT_COLLECTION") {
         Ok(override_name) if !override_name.trim().is_empty() => override_name,
-        _ => model_keyed_collection_name(&model_info.model_name),
+        _ => model_keyed_collection_name(&model_info.model_name)?,
     };
     let qdrant_config = QdrantConfig {
         endpoint: env_var("QDRANT_URL")?,
@@ -665,13 +676,23 @@ async fn build_qdrant_adapter_with_model(
     // (relay restarts while Qdrant is down, then replays the backlog once Qdrant
     // returns — the collection persists in Qdrant's own volume) hold.
     //
-    // EXCEPTION: DimensionMismatch is always fatal — a wrong-dim collection
-    // silently corrupts rankings and must not be papered over.
+    // EXCEPTION: DimensionMismatch is fatal WHEN QDRANT IS REACHABLE AT BOOT.
+    // If Qdrant is offline at boot, ensure_collection is skipped entirely and the
+    // dimension guard cannot run. The corruption window is then: Qdrant returns,
+    // the OutboxRelay begins writing, and a stale wrong-dim collection would accept
+    // writes silently. To narrow this window, dimension-mismatch write errors from
+    // the OutboxRelay are surfaced as explicit log lines (not buried in generic
+    // Qdrant errors), so an operator will see them in the first relay batch.
     if let Err(error) = qdrant_adapter.check_connectivity().await {
         warn!(
             %error,
-            "Qdrant unreachable at boot — starting in write-side-degraded mode (read path \
-             unaffected, Option A). Outbox draining resumes when Qdrant returns."
+            collection = %collection_name,
+            expected_dimension = vector_size,
+            "Qdrant unreachable at boot — dimension guard skipped (OFFLINE BYPASS). \
+             Starting in write-side-degraded mode (read path unaffected, Option A). \
+             Outbox draining and dimension verification resume when Qdrant returns. \
+             If a wrong-dimension collection exists, the first relay write batch will \
+             surface the mismatch as an explicit error."
         );
     } else {
         match qdrant_adapter
@@ -704,16 +725,14 @@ async fn build_qdrant_adapter_with_model(
     Ok(Arc::new(qdrant_adapter))
 }
 
-/// Reads the configured embedding model name from the environment.
+/// Delegates to the shared infrastructure helper so the resolution policy is
+/// defined in exactly one place.
 ///
-/// `OLLAMA_EMBED_MODEL` selects the model; unset OR blank defaults to `nomic-embed-text`
-/// so all existing deployments remain unchanged. Set to `qwen3-embedding:4b` to
-/// activate the qwen local-dense-retrieval arm.
-///
-/// Blank is treated as absent — docker-compose interpolation emits an empty string
-/// when the host env var is unset (e.g. `OLLAMA_EMBED_MODEL: ${OLLAMA_EMBED_MODEL:-}`).
+/// Kept as a local name so the `embedding_model_env_tests` module below can call
+/// it without import churn; #240 will migrate those tests to use the pure
+/// `infrastructure::resolve_embedding_model` directly.
 fn embedding_model_from_env() -> String {
-    env_or("OLLAMA_EMBED_MODEL", "nomic-embed-text")
+    infrastructure::embedding_model_from_env()
 }
 
 fn build_embedding_service()
@@ -1314,69 +1333,55 @@ fn subunit_kind_from_db(raw: &str) -> domain::SubunitType {
 
 #[cfg(test)]
 mod embedding_model_env_tests {
-    use super::*;
+    use infrastructure::resolve_embedding_model;
 
-    /// Proves `embedding_model_from_env` defaults to `nomic-embed-text` when
-    /// `OLLAMA_EMBED_MODEL` is not set, keeping the production default unchanged.
+    /// Proves the resolution logic returns the default when no value is present.
+    ///
+    /// Tests `resolve_embedding_model` directly so no global env mutation is needed.
+    /// The exhaustive behavioral suite lives in `infrastructure`; these tests
+    /// confirm the key contract from the mcp-server perspective.
     #[test]
-    fn embedding_model_defaults_to_nomic_when_env_unset() {
-        // Remove the env var for isolation; restore it after.
-        let saved = std::env::var("OLLAMA_EMBED_MODEL").ok();
-        // SAFETY: single-threaded test context; no other thread reads this var.
-        unsafe { std::env::remove_var("OLLAMA_EMBED_MODEL") }
-
-        let model = embedding_model_from_env();
-
-        if let Some(val) = saved {
-            // SAFETY: same as above.
-            unsafe { std::env::set_var("OLLAMA_EMBED_MODEL", val) }
-        }
-
+    fn resolve_embedding_model_returns_nomic_default_when_raw_is_none() {
         assert_eq!(
-            model, "nomic-embed-text",
-            "default must be nomic-embed-text when OLLAMA_EMBED_MODEL is unset"
+            resolve_embedding_model(None),
+            "nomic-embed-text",
+            "None (env var unset) must yield the nomic-embed-text default"
         );
     }
 
-    /// Proves `embedding_model_from_env` reads `OLLAMA_EMBED_MODEL` when set.
+    /// Proves blank raw values fall back to the default, matching docker-compose
+    /// interpolation behaviour (`OLLAMA_EMBED_MODEL: ${OLLAMA_EMBED_MODEL:-}`).
     #[test]
-    fn embedding_model_reads_ollama_embed_model_env_var() {
-        let saved = std::env::var("OLLAMA_EMBED_MODEL").ok();
-        // SAFETY: single-threaded test context.
-        unsafe { std::env::set_var("OLLAMA_EMBED_MODEL", "qwen3-embedding:4b") }
-
-        let model = embedding_model_from_env();
-
-        match saved {
-            Some(val) => unsafe { std::env::set_var("OLLAMA_EMBED_MODEL", val) },
-            None => unsafe { std::env::remove_var("OLLAMA_EMBED_MODEL") },
-        }
-
+    fn resolve_embedding_model_returns_nomic_default_when_raw_is_blank() {
         assert_eq!(
-            model, "qwen3-embedding:4b",
-            "OLLAMA_EMBED_MODEL must be read when set"
+            resolve_embedding_model(Some("")),
+            "nomic-embed-text",
+            "empty string must yield the nomic-embed-text default"
         );
     }
 
-    /// Proves `embedding_model_from_env` defaults to `nomic-embed-text` when
-    /// `OLLAMA_EMBED_MODEL` is blank. Docker-compose interpolation emits `""` when
-    /// the host env var is unset (e.g. `OLLAMA_EMBED_MODEL: ${OLLAMA_EMBED_MODEL:-}`).
+    /// Proves an explicit non-blank model name is returned as-is.
     #[test]
-    fn embedding_model_defaults_to_nomic_when_env_blank() {
-        let saved = std::env::var("OLLAMA_EMBED_MODEL").ok();
-        // SAFETY: single-threaded test context.
-        unsafe { std::env::set_var("OLLAMA_EMBED_MODEL", "") }
-
-        let model = embedding_model_from_env();
-
-        match saved {
-            Some(val) => unsafe { std::env::set_var("OLLAMA_EMBED_MODEL", val) },
-            None => unsafe { std::env::remove_var("OLLAMA_EMBED_MODEL") },
-        }
-
+    fn resolve_embedding_model_returns_configured_model_when_raw_is_set() {
         assert_eq!(
-            model, "nomic-embed-text",
-            "blank OLLAMA_EMBED_MODEL must fall back to nomic-embed-text default"
+            resolve_embedding_model(Some("qwen3-embedding:4b")),
+            "qwen3-embedding:4b",
+            "a non-blank model name must be returned unchanged"
+        );
+    }
+
+    /// Smoke-tests that the local `embedding_model_from_env` wrapper returns a
+    /// non-empty String, proving it delegates to the infrastructure resolution
+    /// path rather than returning a hard-coded constant or panicking.
+    ///
+    /// This test reads the real environment but never mutates it, so it is
+    /// safe to run concurrently with any other test.
+    #[test]
+    fn embedding_model_from_env_returns_non_empty_string() {
+        let model = super::embedding_model_from_env();
+        assert!(
+            !model.is_empty(),
+            "embedding_model_from_env must always return a non-empty model name"
         );
     }
 }

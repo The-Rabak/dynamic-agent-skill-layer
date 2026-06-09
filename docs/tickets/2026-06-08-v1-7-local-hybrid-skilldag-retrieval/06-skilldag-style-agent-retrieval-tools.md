@@ -50,6 +50,7 @@ Expose retrieval as an agent-callable typed graph surface instead of only opaque
 - Output includes enough score/rationale detail for an agent to decide what to read.
 - Real-server MCP/HTTP test proves the surface works against a live graph.
 - Any `crates/compiler/src/` change is explicitly justified as a measured `compile_context` change; otherwise compiler behavior stays unchanged.
+- `find_skill` / `search_skill_graph` responses MUST carry retrieval-context provenance: an optional `retrieval_context { embedding_model, collection, graph_version }` field, so an agent can tell which vector space produced results. Owner of this contract: T06 (for consistency across the agent tools). (Source: review finding #243 / agent-native W2.)
 
 ## Shared / Global Notes
 
@@ -62,6 +63,14 @@ This is user-facing protocol work. Preserve backward compatibility where possibl
 - Existing `find_skill` is the sharp mid-session path; this ticket should either extend it carefully or add a companion tool with a clear contract.
 - Important unknown: exact MCP tool naming should minimize migration cost for existing harnesses.
 - `crates/compiler/src/` is listed only for conditional measured `compile_context` integration. It is not permission to silently inject graph neighbors.
+
+## Inherited Changes — V1.7 batch 1-2 triage (todos 228-244)
+
+These landed on `feat/v-1-7` during the 228-243 triage swarm (2026-06-09) and bind this ticket (the `retrieval_context` AC above is sourced from #243; the below give it a ready data source + precedent):
+
+- **The `retrieval_context { embedding_model, collection, graph_version }` data already exists server-side.** `embedding_model` + `collection` are persisted in `embedding_model_metadata` (`key='active'`, written per rebuild by #228) and surfaced via the `/health` `embedding_arm` component (#239). Reuse that source (`LiveServerComponents.embedding_model_info` + the persisted row) rather than re-discovering — `with_static_component` + that field are the established pattern.
+- **`model_keyed_collection_name` now returns `Result<String, QdrantError>`** (#234) — if this ticket derives a collection for provenance, handle the Result.
+- **`/health` `embedding_arm` is the agent-native parity precedent** (#239): any capability a human gains from logs, expose to agents too — apply the same bar to the new graph tools.
 
 ## Parent Refs
 

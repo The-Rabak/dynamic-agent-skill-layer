@@ -161,7 +161,7 @@ pub fn mine_skeleton(events: &[SessionEvent]) -> Option<ProcedureSkeleton> {
             is_error,
             exit_code,
             ..
-        } => *is_error || exit_code.map_or(false, |code| code != 0),
+        } => *is_error || exit_code.is_some_and(|code| code != 0),
         _ => false,
     })?;
 
@@ -224,24 +224,22 @@ fn find_resolution_arc_end(arc_events: &[SessionEvent]) -> usize {
     let mut last_success_end: Option<usize> = None;
 
     for (pos, event) in arc_events.iter().enumerate() {
-        match event {
-            SessionEvent::ToolResult {
-                is_error,
-                exit_code,
-                ..
-            } => {
-                let is_success = !is_error && exit_code.map_or(true, |code| code == 0);
-                let is_failure = *is_error || exit_code.map_or(false, |code| code != 0);
-                if is_success {
-                    // Record as a candidate arc-end (may be superseded by a later failure).
-                    last_success_end = Some(pos + 1);
-                } else if is_failure {
-                    // A new failure after a recorded success: the success was not the terminal one.
-                    // Reset so we continue looking for the true arc end.
-                    last_success_end = None;
-                }
+        if let SessionEvent::ToolResult {
+            is_error,
+            exit_code,
+            ..
+        } = event
+        {
+            let is_success = !is_error && exit_code.is_none_or(|code| code == 0);
+            let is_failure = *is_error || exit_code.is_some_and(|code| code != 0);
+            if is_success {
+                // Record as a candidate arc-end (may be superseded by a later failure).
+                last_success_end = Some(pos + 1);
+            } else if is_failure {
+                // A new failure after a recorded success: the success was not the terminal one.
+                // Reset so we continue looking for the true arc end.
+                last_success_end = None;
             }
-            _ => {}
         }
     }
 

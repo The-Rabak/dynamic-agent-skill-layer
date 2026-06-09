@@ -21,7 +21,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "info",
     ))?;
 
-    let health_checker = DependencyFactory::build_health_checker_from_environment();
+    let mut health_checker = DependencyFactory::build_health_checker_from_environment();
     let address = std::env::var("MCP_SERVER_ADDR")
         .unwrap_or_else(|_| DEFAULT_MCP_SERVER_ADDR.to_owned())
         .parse()?;
@@ -31,10 +31,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // which measures each lever on the REAL running server by rebooting it per
     // config. Absent variables fall back to the calibrated defaults.
     let retrieval_config = RetrievalConfig::from_env();
-    let app = McpServerApp::from_environment(retrieval_config)
+    let live = McpServerApp::from_environment(retrieval_config)
         .await
-        .map_err(|error| -> Box<dyn std::error::Error> { error.to_string().into() })?
-        .app;
+        .map_err(|error| -> Box<dyn std::error::Error> { error.to_string().into() })?;
+
+    // Surface the active embedding arm on /health so agents can discover which
+    // vector space produced find_skill results — agent-native parity (#239).
+    // Sources the boot-discovered model name + dimension from EmbeddingModelInfo
+    // (set by build_live_server after discover_dimension) and the resolved
+    // collection name from the Qdrant adapter config.
+    // Future: once #228's embedding_model_metadata row is populated by the first
+    // graph rebuild, that row is the canonical source; the boot value is used until
+    // then (and is always correct for the currently active arm).
+    health_checker = health_checker.with_static_component(
+        "embedding_arm",
+        true,
+        format!(
+            "model={} dim={} collection={}",
+            live.embedding_model_info.model_name,
+            live.embedding_model_info.dimension,
+            live.qdrant_adapter.config.collection_name,
+        ),
+    );
+
+    let app = live.app;
 
     info!(
         service = "mcp-server",

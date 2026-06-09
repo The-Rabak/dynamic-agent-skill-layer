@@ -497,7 +497,7 @@ pub async fn run_maintenance_worker_from_environment() -> Result<(), Maintenance
     let mut cron = MaintenanceCron::new(config.cron_interval)?;
 
     let db_url = env_var("DATABASE_URL")
-        .map_err(|error| MaintenanceRuntimeError::InvalidConfiguration(error))?;
+        .map_err(MaintenanceRuntimeError::InvalidConfiguration)?;
     // Self-heal a missing application database before connecting (see
     // `ensure_database_exists`): a stale/test-initialized volume otherwise
     // crash-loops the worker on `database "X" does not exist`.
@@ -631,13 +631,15 @@ fn build_merge_verifier_from_environment() -> Result<Arc<dyn LlmEquivalenceVerif
         "claude" => {
             let api_key = env_var("ANTHROPIC_API_KEY")
                 .map_err(|e| format!("merge verifier (Claude): {e}"))?;
-            let mut config = ClaudeMergeVerifierConfig::default();
-            config.api_key = api_key;
-            if let Ok(base_url) = std::env::var("ANTHROPIC_BASE_URL")
-                && !base_url.trim().is_empty()
-            {
-                config.base_url = base_url;
-            }
+            let base_url = std::env::var("ANTHROPIC_BASE_URL")
+                .ok()
+                .filter(|s| !s.trim().is_empty())
+                .unwrap_or_default();
+            let config = ClaudeMergeVerifierConfig {
+                api_key,
+                base_url,
+                ..ClaudeMergeVerifierConfig::default()
+            };
             let verifier = ClaudeMergeVerifier::from_config(config)
                 .map_err(|e| format!("ClaudeMergeVerifier init failed: {e}"))?;
             Ok(Arc::new(verifier) as Arc<dyn LlmEquivalenceVerifier>)
@@ -755,14 +757,12 @@ fn build_project_identifier_tokens(scope_roots: &[std::path::PathBuf]) -> Vec<St
             continue;
         }
         for component in root.components() {
-            if let Component::Normal(name) = component {
-                if let Some(name_str) = name.to_str() {
-                    if name_str.len() > 2
-                        && !SKIP_COMPONENTS.contains(&name_str.to_ascii_lowercase().as_str())
-                    {
-                        tokens.push(name_str.to_owned());
-                    }
-                }
+            if let Component::Normal(name) = component
+                && let Some(name_str) = name.to_str()
+                && name_str.len() > 2
+                && !SKIP_COMPONENTS.contains(&name_str.to_ascii_lowercase().as_str())
+            {
+                tokens.push(name_str.to_owned());
             }
         }
     }
@@ -796,13 +796,15 @@ fn build_generality_verifier_from_environment() -> Result<Arc<dyn SkillGeneralit
         "claude" => {
             let api_key = env_var("ANTHROPIC_API_KEY")
                 .map_err(|e| format!("generality verifier (Claude): {e}"))?;
-            let mut config = ClaudeGeneralityVerifierConfig::default();
-            config.api_key = api_key;
-            if let Ok(base_url) = std::env::var("ANTHROPIC_BASE_URL")
-                && !base_url.trim().is_empty()
-            {
-                config.base_url = base_url;
-            }
+            let base_url = std::env::var("ANTHROPIC_BASE_URL")
+                .ok()
+                .filter(|s| !s.trim().is_empty())
+                .unwrap_or_default();
+            let config = ClaudeGeneralityVerifierConfig {
+                api_key,
+                base_url,
+                ..ClaudeGeneralityVerifierConfig::default()
+            };
             let verifier = ClaudeGeneralityVerifier::from_config(config)
                 .map_err(|e| format!("ClaudeGeneralityVerifier init failed: {e}"))?;
             Ok(Arc::new(verifier) as Arc<dyn SkillGeneralityVerifier>)
@@ -1187,7 +1189,7 @@ mod tests {
         ));
         std::fs::create_dir_all(&global_root).expect("mkdir must succeed");
 
-        let result = probe_global_write_roots(&[global_root.clone()]);
+        let result = probe_global_write_roots(std::slice::from_ref(&global_root));
 
         // Clean up regardless of result.
         let _ = std::fs::remove_dir_all(&global_root);
@@ -1216,7 +1218,7 @@ mod tests {
         std::fs::set_permissions(&global_root, std::fs::Permissions::from_mode(0o555))
             .expect("set_permissions must succeed");
 
-        let result = probe_global_write_roots(&[global_root.clone()]);
+        let result = probe_global_write_roots(std::slice::from_ref(&global_root));
 
         // Restore write permission so cleanup does not fail.
         let _ = std::fs::set_permissions(&global_root, std::fs::Permissions::from_mode(0o755));

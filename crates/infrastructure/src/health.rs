@@ -388,4 +388,56 @@ mod tests {
             "usage_write must always be 'enabled' — no rollback flag exists"
         );
     }
+
+    /// Proves that `with_static_component("embedding_arm", ...)` surfaces the
+    /// active embedding arm in the `/health` report so agents can discover which
+    /// vector space produced `find_skill` results without tailing container logs.
+    ///
+    /// The detail format is `model=<name> dim=<n> collection=<name>`, matching the
+    /// `extraction_provider` / `usage_write` convention established in `main.rs`.
+    /// Data source: boot-discovered `EmbeddingModelInfo` (model + dimension) plus the
+    /// Qdrant adapter's resolved collection name. See #228 for the future
+    /// `embedding_model_metadata` row source once a graph rebuild has run.
+    #[tokio::test]
+    async fn embedding_arm_component_surfaces_model_dimension_and_collection_in_health() {
+        let checker = InfrastructureHealthChecker::new().with_static_component(
+            "embedding_arm",
+            true,
+            "model=nomic-embed-text dim=768 collection=skills-nomic-embed-text",
+        );
+
+        let report = checker.check().await;
+
+        assert!(
+            report.healthy,
+            "a healthy embedding_arm component must not flip the overall health flag"
+        );
+
+        let arm = report
+            .components
+            .iter()
+            .find(|c| c.name == "embedding_arm")
+            .expect("embedding_arm must be present in /health output");
+        assert!(arm.healthy, "embedding_arm component must be marked healthy");
+        assert!(
+            arm.detail.contains("model="),
+            "embedding_arm detail must contain 'model=': got '{}'",
+            arm.detail
+        );
+        assert!(
+            arm.detail.contains("dim="),
+            "embedding_arm detail must contain 'dim=': got '{}'",
+            arm.detail
+        );
+        assert!(
+            arm.detail.contains("collection="),
+            "embedding_arm detail must contain 'collection=': got '{}'",
+            arm.detail
+        );
+        assert_eq!(
+            arm.detail,
+            "model=nomic-embed-text dim=768 collection=skills-nomic-embed-text",
+            "embedding_arm detail format must be 'model=X dim=Y collection=Z'"
+        );
+    }
 }
