@@ -140,9 +140,15 @@ pub fn build_skill_sparse_vectors(
 /// IDF scaling is applied server-side by Qdrant's `"modifier": "idf"` on the
 /// collection's sparse vector slot — there is nothing further to compute here.
 ///
-/// Duplicate query terms are de-duplicated: only one index entry per unique token.
-/// Hash collisions (two distinct tokens mapping to the same index) are merged
-/// additively, incrementing that bucket's weight by 1.0 per colliding term.
+/// Duplicate query terms are de-duplicated: repeated occurrences of the same token
+/// do not accumulate; the first occurrence establishes weight `1.0` and subsequent
+/// occurrences of the same token are ignored. This matches the standard BM25-query
+/// convention where TF saturation applies only on the document side and query terms
+/// are unit-weighted.
+///
+/// Genuine hash collisions (two *distinct* tokens that happen to share the same FNV-1a
+/// index) also resolve to weight `1.0` at the shared bucket — the `or_insert` is
+/// idempotent and does not accumulate across collisions either.
 ///
 /// Returns `(indices, values)` in unspecified order. Both slices are the same
 /// length. An empty query produces empty slices.
@@ -150,9 +156,10 @@ pub fn query_sparse_vector(query: &str) -> (Vec<u32>, Vec<f32>) {
     let tokens = tokenize(query);
     let mut index_weight: HashMap<u32, f32> = HashMap::new();
     for token in tokens {
-        *index_weight
-            .entry(term_to_sparse_index(&token))
-            .or_insert(0.0) += 1.0;
+        // Idempotent unit-weight insert: the first occurrence of any token (or any
+        // token that hashes to this index) establishes weight 1.0; repeats are
+        // no-ops. Do NOT accumulate — TF weighting belongs only on the document side.
+        index_weight.entry(term_to_sparse_index(&token)).or_insert(1.0);
     }
     let mut indices = Vec::with_capacity(index_weight.len());
     let mut values = Vec::with_capacity(index_weight.len());
@@ -230,15 +237,16 @@ mod tests {
     }
 
     /// `query_sparse_vector` must de-duplicate repeated query terms so each
-    /// unique token appears at most once in the output (weight = 1.0 per unique term).
+    /// unique token contributes exactly weight `1.0` at its index, regardless of how
+    /// many times the term appears in the query string.
     ///
-    /// Note: the weight for a deduplicated term is 1.0 from the first occurrence;
-    /// subsequent occurrences of the same term hash to the same index and add 1.0
-    /// (via HashMap merge). The test verifies the count of distinct indices equals
-    /// the count of distinct tokens.
+    /// This matches the Qdrant `modifier: idf` convention: the client sends unit
+    /// weights; IDF scaling is applied server-side. Accumulating TF on the query side
+    /// would over-weight repeated terms before the server applies IDF.
     #[test]
     fn query_sparse_vector_deduplicates_repeated_terms() {
-        // "redis" appears three times, "async" once — should yield 2 distinct indices.
+        // "redis" appears three times, "async" once — should yield 2 distinct indices,
+        // each with weight 1.0.
         let (indices, values) = query_sparse_vector("redis redis redis async");
         assert_eq!(
             indices.len(),
@@ -251,6 +259,13 @@ mod tests {
             2,
             "three 'redis' + one 'async' must collapse to 2 distinct index entries"
         );
+        // Every weight must be exactly 1.0 — repeated occurrences must not accumulate.
+        for &w in &values {
+            assert_eq!(
+                w, 1.0,
+                "each distinct query term must contribute weight 1.0, got {w}"
+            );
+        }
     }
 
     /// An empty query must produce empty slices without panic.

@@ -174,6 +174,73 @@ impl Bm25Index {
     }
 }
 
+/// All skill fields used to build the BM25 / sparse-vector lexical document.
+///
+/// Collect fields here before calling [`skill_lexical_document`].  Using a
+/// struct avoids a 10-argument function signature while keeping the assembly
+/// logic explicit and testable.
+///
+/// `avoid_when` is **not** a member because it must never enter the lexical
+/// document; see [`skill_lexical_document`] for the rationale.
+pub struct SkillLexicalFields<'a> {
+    pub name: &'a str,
+    pub description: &'a str,
+    pub tags: &'a [String],
+    pub tools: &'a [String],
+    pub artifacts: &'a [String],
+    pub invariants: &'a [String],
+    pub use_when: &'a [String],
+    pub requires: &'a [String],
+    pub produces: &'a [String],
+    /// Pre-joined subunit title+content (caller builds this with
+    /// `subunits.iter().map(|su| format!("{} {}", su.title, su.content)).collect::<Vec<_>>().join(" ")`).
+    pub subunit_text: &'a str,
+}
+
+/// Assembles the BM25 / sparse-vector lexical document for a single skill.
+///
+/// This is the **single source of truth** for the skill lexical surface used by
+/// both the read-side snapshot BM25 index (`build_graph_from_pg` in `mcp-server`)
+/// and the write-side Qdrant sparse vectors (`graph-builder` outbox relay).
+/// Both arms must index and score skills against the *same* lexical document so
+/// that `qdrant_hybrid` and `snapshot_hybrid` produce consistent rankings.
+///
+/// # Field policy
+/// Included (from [`SkillLexicalFields`]): `name`, `description`, `tags`,
+/// `tools`, `artifacts`, `invariants`, `use_when`, `requires`, `produces`, and
+/// `subunit_text`.
+///
+/// Excluded: `avoid_when` — its keywords describe anti-patterns; including them
+/// would surface this skill for queries describing situations where it must
+/// **not** apply.
+///
+/// # Output shape
+/// Space-separated field values in the order listed above, followed by a space
+/// and `subunit_text`. When `subunit_text` is empty the document ends with a
+/// single trailing space — this matches the canonical read-side shape and is
+/// acceptable for tokenization (the tokenizer strips empty tokens).
+///
+/// # Note on future field additions
+/// Any new skill field that should influence BM25 ranking MUST be added to
+/// [`SkillLexicalFields`], to this function, and to the unit test
+/// `skill_lexical_document_includes_expected_fields_and_excludes_avoid_when` —
+/// the three places that would otherwise drift silently.
+pub fn skill_lexical_document(fields: &SkillLexicalFields<'_>) -> String {
+    format!(
+        "{} {} {} {} {} {} {} {} {}",
+        fields.name,
+        fields.description,
+        fields.tags.join(" "),
+        fields.tools.join(" "),
+        fields.artifacts.join(" "),
+        fields.invariants.join(" "),
+        fields.use_when.join(" "),
+        fields.requires.join(" "),
+        fields.produces.join(" "),
+    ) + " "
+        + fields.subunit_text
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -307,5 +374,105 @@ mod tests {
         let index = Bm25Index::build(&docs);
         let results = index.score(&[], &[0]);
         assert!(results.is_empty());
+    }
+
+    /// `skill_lexical_document` must include all 9 named fields plus subunit text
+    /// and must exclude `avoid_when`.
+    ///
+    /// This test is the compile-time-enforced specification of the lexical document
+    /// policy. Any future field addition to the skill schema that should affect BM25
+    /// ranking must update this function AND update this test — the two places that
+    /// would otherwise drift silently.
+    #[test]
+    fn skill_lexical_document_includes_expected_fields_and_excludes_avoid_when() {
+        let name = "use-redis-streams";
+        let description = "how to produce and consume redis streams";
+        let tags = vec!["redis".to_owned(), "streams".to_owned()];
+        let tools = vec!["redis-cli".to_owned(), "tokio".to_owned()];
+        let artifacts = vec!["stream_key".to_owned()];
+        let invariants = vec!["idempotent_consumer".to_owned()];
+        let use_when = vec!["high_throughput_queue".to_owned()];
+        let requires = vec!["redis_6_plus".to_owned()];
+        let produces = vec!["consumer_group_log".to_owned()];
+        let subunit_text = "XADD and XREAD usage patterns";
+        // avoid_when must NOT appear in the document — it describes anti-patterns
+        // that would surface this skill for queries describing situations where it
+        // must NOT apply.
+        let avoid_when_term = "simple_pub_sub";
+
+        let doc = skill_lexical_document(&SkillLexicalFields {
+            name,
+            description,
+            tags: &tags,
+            tools: &tools,
+            artifacts: &artifacts,
+            invariants: &invariants,
+            use_when: &use_when,
+            requires: &requires,
+            produces: &produces,
+            subunit_text,
+        });
+
+        assert!(doc.contains(name), "document must contain skill name");
+        assert!(
+            doc.contains(description),
+            "document must contain description"
+        );
+        assert!(doc.contains("redis"), "document must contain tags");
+        assert!(doc.contains("redis-cli"), "document must contain tools");
+        assert!(
+            doc.contains("stream_key"),
+            "document must contain artifacts"
+        );
+        assert!(
+            doc.contains("idempotent_consumer"),
+            "document must contain invariants"
+        );
+        assert!(
+            doc.contains("high_throughput_queue"),
+            "document must contain use_when"
+        );
+        assert!(
+            doc.contains("redis_6_plus"),
+            "document must contain requires"
+        );
+        assert!(
+            doc.contains("consumer_group_log"),
+            "document must contain produces"
+        );
+        assert!(
+            doc.contains(subunit_text),
+            "document must contain subunit text"
+        );
+        assert!(
+            !doc.contains(avoid_when_term),
+            "document must NOT contain avoid_when terms"
+        );
+    }
+
+    /// `skill_lexical_document` output is byte-for-byte identical whether the
+    /// subunit text is empty or not — the read-side and write-side construction
+    /// shapes produced the same string; this test guards the canonical shape.
+    #[test]
+    fn skill_lexical_document_empty_subunit_produces_trailing_space() {
+        let doc = skill_lexical_document(&SkillLexicalFields {
+            name: "name",
+            description: "desc",
+            tags: &["tag".to_owned()],
+            tools: &["tool".to_owned()],
+            artifacts: &["artifact".to_owned()],
+            invariants: &["inv".to_owned()],
+            use_when: &["trigger".to_owned()],
+            requires: &["req".to_owned()],
+            produces: &["out".to_owned()],
+            subunit_text: "",
+        });
+        // When subunit_text is empty the document ends with a single trailing
+        // space — matching the pre-existing behavior of the read-side expression
+        // `format!("...") + " " + ""`.
+        assert!(
+            doc.ends_with(' '),
+            "empty subunit must produce a trailing space (canonical shape)"
+        );
     }
 }

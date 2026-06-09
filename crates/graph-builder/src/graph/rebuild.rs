@@ -6,7 +6,7 @@ use infrastructure::{
     PostgresGraphWriteCoordinator, PostgresRebuildCoordinator, RebuildCoordinator,
     VECTOR_UPSERT_EVENT_TYPE, stable_skill_uuid,
 };
-use retrieval::{Bm25Index, build_skill_sparse_vectors};
+use retrieval::{Bm25Index, SkillLexicalFields, build_skill_sparse_vectors, skill_lexical_document};
 use serde_json::json;
 use thiserror::Error;
 use uuid::Uuid;
@@ -310,10 +310,9 @@ where
         // for each skill and include them in the outbox payload. The relay reads these
         // and routes to `upsert_hybrid_point` on the hybrid collection.
         //
-        // The lexical document format mirrors `build_graph_from_pg` in mcp-server:
-        // name + description + tags + tools + artifacts + invariants + use_when +
-        // requires + produces + subunit titles/content.
-        // `avoid_when` is intentionally excluded — its keywords describe anti-patterns.
+        // Field policy and avoid_when exclusion rationale live in
+        // `retrieval::bm25::skill_lexical_document` — the single source of truth shared
+        // with the read-side BM25 index path in mcp-server.
         let sparse_vecs: Option<Vec<(Vec<u32>, Vec<f32>)>> = if self.hybrid_collection.is_some() {
             let raw_docs: Vec<(usize, String)> = mutation
                 .skills
@@ -326,19 +325,18 @@ where
                         .map(|su| format!("{} {}", su.title, su.content))
                         .collect::<Vec<_>>()
                         .join(" ");
-                    let doc = format!(
-                        "{} {} {} {} {} {} {} {} {} {}",
-                        skill.name,
-                        skill.description,
-                        skill.tags.join(" "),
-                        skill.tools.join(" "),
-                        skill.artifacts.join(" "),
-                        skill.invariants.join(" "),
-                        skill.use_when.join(" "),
-                        skill.requires.join(" "),
-                        skill.produces.join(" "),
-                        subunit_text,
-                    );
+                    let doc = skill_lexical_document(&SkillLexicalFields {
+                        name: &skill.name,
+                        description: &skill.description,
+                        tags: &skill.tags,
+                        tools: &skill.tools,
+                        artifacts: &skill.artifacts,
+                        invariants: &skill.invariants,
+                        use_when: &skill.use_when,
+                        requires: &skill.requires,
+                        produces: &skill.produces,
+                        subunit_text: &subunit_text,
+                    });
                     (idx, doc)
                 })
                 .collect();

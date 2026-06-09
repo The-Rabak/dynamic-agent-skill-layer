@@ -382,9 +382,13 @@ fn perform_scope_search(
         ),
         // SnapshotDense: unchanged candidate pool (current behavior).
         RetrievalBackend::SnapshotDense => dense_candidate_indices.clone(),
-        // sub-unit C: QdrantHybrid is not yet implemented; route to dense so
-        // the binary stays runnable. Sub-unit C will replace this pass-through.
-        RetrievalBackend::QdrantHybrid => dense_candidate_indices.clone(), // sub-unit C
+        // QdrantHybrid is dispatched by the orchestrator exclusively through
+        // `search_scopes_with_qdrant_candidates`, which never reaches this
+        // function. If this arm fires, the caller broke the dispatch invariant.
+        RetrievalBackend::QdrantHybrid => unreachable!(
+            "QdrantHybrid dispatches via search_scopes_with_qdrant_candidates, \
+             never perform_scope_search"
+        ),
     };
 
     // Cosine scores keyed by global skill index, used below when assembling

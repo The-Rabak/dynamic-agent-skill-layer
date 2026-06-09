@@ -10,7 +10,7 @@ pub mod scope_resolution;
 pub mod scoring;
 pub mod sparse;
 
-pub use bm25::Bm25Index;
+pub use bm25::{Bm25Index, SkillLexicalFields, skill_lexical_document};
 pub use circuit_breaker::{CircuitBreaker, CircuitState};
 pub use cosine_rank::{CosineHit, rank_by_cosine};
 pub use dual_scope::{

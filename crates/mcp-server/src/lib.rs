@@ -49,6 +49,7 @@ use maintenance::RetirementConfig;
 use retrieval::{
     CircuitBreaker, DualScopeResolver, HybridCandidate, HybridCandidateSource, HybridQueryError,
     RetrievalBackend, RetrievalConfig, RetrievalOrchestrator, RetrievalSnapshot, SkillRetriever,
+    SkillLexicalFields, skill_lexical_document,
 };
 use tokio::sync::mpsc;
 use tools::{
@@ -1199,17 +1200,9 @@ async fn build_graph_from_pg(
     // PersistedGraphSkillRecord (including migration-009 multi-view fields) BEFORE
     // `skills` is consumed by `.into_iter()` below.
     //
-    // Field set (see comment near the BM25 index build below for rationale):
-    //   name, description, tags — skill identity and semantic surface
-    //   tools, artifacts        — exact lexical identifiers (crate names, file types)
-    //   invariants              — constraint keywords
-    //   use_when, requires      — trigger and prerequisite terms
-    //   produces                — output artifact terms
-    //   subunit title+content   — extracted knowledge body
-    //
-    // avoid_when is intentionally EXCLUDED: its keywords describe anti-patterns and
-    // including them would surface this skill for queries describing exactly the
-    // situations where it must NOT apply.
+    // Field policy and avoid_when exclusion rationale live in
+    // `retrieval::bm25::skill_lexical_document` — the single source of truth shared
+    // with the write-side sparse-vector path in graph-builder.
     let bm25_raw_docs: Vec<String> = skills
         .iter()
         .map(|record| {
@@ -1219,19 +1212,18 @@ async fn build_graph_from_pg(
                 .map(|su| format!("{} {}", su.title, su.content))
                 .collect::<Vec<_>>()
                 .join(" ");
-            format!(
-                "{} {} {} {} {} {} {} {} {}",
-                record.name,
-                record.description,
-                record.tags.join(" "),
-                record.tools.join(" "),
-                record.artifacts.join(" "),
-                record.invariants.join(" "),
-                record.use_when.join(" "),
-                record.requires.join(" "),
-                record.produces.join(" "),
-            ) + " "
-                + &subunit_text
+            skill_lexical_document(&SkillLexicalFields {
+                name: &record.name,
+                description: &record.description,
+                tags: &record.tags,
+                tools: &record.tools,
+                artifacts: &record.artifacts,
+                invariants: &record.invariants,
+                use_when: &record.use_when,
+                requires: &record.requires,
+                produces: &record.produces,
+                subunit_text: &subunit_text,
+            })
         })
         .collect();
 
