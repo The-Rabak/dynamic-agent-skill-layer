@@ -37,12 +37,12 @@ use domain::{EmbeddingService, ScopeResolver};
 #[cfg(any(test, feature = "test-utils"))]
 use infrastructure::OutboxVectorStore;
 use infrastructure::{
-    EnvPathGlobalResolver, FsMarkerProjectResolver, OllamaEmbeddingConfig,
+    EmbeddingModelInfo, EnvPathGlobalResolver, FsMarkerProjectResolver, OllamaEmbeddingConfig,
     OllamaEmbeddingService, PostgresAdapter, PostgresConfig, PostgresGraphSnapshotStore,
     PostgresGraphWriteCoordinator, PostgresPool, PostgresRebuildCoordinator,
-    PostgresUsageSampleStore, PostgresUsageWriter, QdrantAdapter, QdrantConfig, RedisClient,
-    RedisStreamsAdapter, RedisStreamsConfig, SessionUsageRecord, SkillSelectionRecord,
-    TranscriptIngestQueue, UsagePersistencePort, UsageSampleStore,
+    PostgresUsageSampleStore, PostgresUsageWriter, QdrantAdapter, QdrantConfig, QdrantError,
+    RedisClient, RedisStreamsAdapter, RedisStreamsConfig, SessionUsageRecord, SkillSelectionRecord,
+    TranscriptIngestQueue, UsagePersistencePort, UsageSampleStore, model_keyed_collection_name,
 };
 use maintenance::RetirementConfig;
 use retrieval::{
@@ -496,12 +496,23 @@ impl LiveServerComponents {
 async fn build_live_server(
     config: RetrievalConfig,
 ) -> Result<LiveServerComponents, Box<dyn std::error::Error + Send + Sync>> {
-    let (pg_adapter, (qdrant_adapter, embedding_service), redis_streams, redis_client) = tokio::try_join!(
+    // Build the embedding service first (sync, no network) so we can discover
+    // its real vector dimension before setting up the Qdrant collection.
+    // The model is read from OLLAMA_EMBED_MODEL (defaults to nomic-embed-text).
+    let embedding_service = build_embedding_service()?;
+
+    let (pg_adapter, (qdrant_adapter, embedding_model_info), redis_streams, redis_client) = tokio::try_join!(
         build_pg_adapter(),
         async {
-            let q = build_qdrant_adapter().await?;
-            let e = build_embedding_service()?;
-            Ok::<_, Box<dyn std::error::Error + Send + Sync>>((q, e))
+            // Discover the real vector dimension from the live model BEFORE
+            // creating/validating the Qdrant collection. This ensures the
+            // collection is sized to the actual model output, not a hardcoded value.
+            let model_info = embedding_service
+                .discover_dimension()
+                .await
+                .map_err(|e| format!("embedding dimension discovery failed: {e}"))?;
+            let q = build_qdrant_adapter_with_model(&model_info).await?;
+            Ok::<_, Box<dyn std::error::Error + Send + Sync>>((q, model_info))
         },
         build_redis_streams_adapter(),
         async {
@@ -509,6 +520,13 @@ async fn build_live_server(
             Ok::<_, Box<dyn std::error::Error + Send + Sync>>(c)
         },
     )?;
+
+    info!(
+        embedder_model = %embedding_model_info.model_name,
+        dimension = embedding_model_info.dimension,
+        collection = %qdrant_adapter.config.collection_name,
+        "embedding model and qdrant collection confirmed"
+    );
 
     let write_coordinator = PostgresGraphWriteCoordinator::new(pg_adapter.pool().clone());
     let rebuild_coordinator = PostgresRebuildCoordinator::new(pg_adapter.pool().clone());
@@ -610,19 +628,33 @@ async fn build_pg_adapter() -> Result<Arc<PostgresAdapter>, Box<dyn std::error::
     Ok(Arc::new(pg_adapter))
 }
 
-async fn build_qdrant_adapter()
--> Result<Arc<QdrantAdapter>, Box<dyn std::error::Error + Send + Sync>> {
-    // `QDRANT_COLLECTION` defaults to the canonical `skills` so the production
-    // binary and the live containers are unaffected. Per-run test isolation
-    // (#164) overrides it with a unique collection so a destructive teardown
-    // never touches the shared `skills` collection.
-    let collection_name = env_or("QDRANT_COLLECTION", "skills");
+/// Builds the Qdrant adapter with a model-keyed collection name and the real
+/// vector dimension discovered from the live embedding model.
+///
+/// Collection naming: if `QDRANT_COLLECTION` is set explicitly (used by the
+/// per-run test isolation guard, #164), that value overrides the model-keyed
+/// default. Otherwise the collection name is derived from the active model so
+/// nomic (768-dim) and qwen (2560-dim) collections coexist side by side.
+///
+/// Fails loud on dimension mismatch — a wrong-dim collection can never be
+/// silently reused (see `QdrantError::DimensionMismatch`).
+async fn build_qdrant_adapter_with_model(
+    model_info: &EmbeddingModelInfo,
+) -> Result<Arc<QdrantAdapter>, Box<dyn std::error::Error + Send + Sync>> {
+    // Per-run test isolation (#164) overrides the collection with a unique name.
+    // Production and live containers leave QDRANT_COLLECTION unset, so the
+    // model-keyed default is used.
+    let collection_name = match std::env::var("QDRANT_COLLECTION") {
+        Ok(override_name) if !override_name.trim().is_empty() => override_name,
+        _ => model_keyed_collection_name(&model_info.model_name),
+    };
     let qdrant_config = QdrantConfig {
         endpoint: env_var("QDRANT_URL")?,
         timeout_ms: 3_000,
         collection_name: collection_name.clone(),
     };
     let qdrant_adapter = QdrantAdapter::from_config(qdrant_config)?;
+    let vector_size = model_info.dimension as u64;
     // Qdrant boot-resilience (Option A / ADR-0001, DS-004): Qdrant is a WRITE-SIDE
     // store only — the read path serves entirely from the in-memory snapshot. A
     // Qdrant outage at boot must therefore NOT prevent the server from coming up and
@@ -632,24 +664,56 @@ async fn build_qdrant_adapter()
     // proceeds, instead of aborting. This is what lets the durability contract
     // (relay restarts while Qdrant is down, then replays the backlog once Qdrant
     // returns — the collection persists in Qdrant's own volume) hold.
+    //
+    // EXCEPTION: DimensionMismatch is always fatal — a wrong-dim collection
+    // silently corrupts rankings and must not be papered over.
     if let Err(error) = qdrant_adapter.check_connectivity().await {
         warn!(
             %error,
             "Qdrant unreachable at boot — starting in write-side-degraded mode (read path \
              unaffected, Option A). Outbox draining resumes when Qdrant returns."
         );
-    } else if let Err(error) = qdrant_adapter
-        .ensure_collection(&collection_name, 768)
-        .await
-    {
-        warn!(
-            %error,
-            collection = %collection_name,
-            "Qdrant reachable but ensure_collection failed at boot — the OutboxRelay will \
-             retry; read path unaffected."
-        );
+    } else {
+        match qdrant_adapter
+            .ensure_collection(&collection_name, vector_size)
+            .await
+        {
+            Ok(()) => {}
+            Err(QdrantError::DimensionMismatch { .. }) => {
+                // Dimension mismatch is fatal — propagate immediately rather than
+                // degrading, because a wrong-dim collection would silently corrupt
+                // every cosine-similarity ranking.
+                return Err(format!(
+                    "qdrant collection '{collection_name}' has the wrong dimension for \
+                     model '{}' (expected {vector_size}); drop the collection or change \
+                     OLLAMA_EMBED_MODEL",
+                    model_info.model_name
+                )
+                .into());
+            }
+            Err(error) => {
+                warn!(
+                    %error,
+                    collection = %collection_name,
+                    "Qdrant reachable but ensure_collection failed at boot — the OutboxRelay will \
+                     retry; read path unaffected."
+                );
+            }
+        }
     }
     Ok(Arc::new(qdrant_adapter))
+}
+
+/// Reads the configured embedding model name from the environment.
+///
+/// `OLLAMA_EMBED_MODEL` selects the model; unset OR blank defaults to `nomic-embed-text`
+/// so all existing deployments remain unchanged. Set to `qwen3-embedding:4b` to
+/// activate the qwen local-dense-retrieval arm.
+///
+/// Blank is treated as absent — docker-compose interpolation emits an empty string
+/// when the host env var is unset (e.g. `OLLAMA_EMBED_MODEL: ${OLLAMA_EMBED_MODEL:-}`).
+fn embedding_model_from_env() -> String {
+    env_or("OLLAMA_EMBED_MODEL", "nomic-embed-text")
 }
 
 fn build_embedding_service()
@@ -671,7 +735,7 @@ fn build_embedding_service()
     }
     let ollama_config = OllamaEmbeddingConfig {
         base_url: env_var("OLLAMA_URL")?,
-        model: "nomic-embed-text".to_owned(),
+        model: embedding_model_from_env(),
         max_concurrency,
     };
     let embedding_service = OllamaEmbeddingService::from_config(ollama_config)
@@ -1245,5 +1309,74 @@ fn subunit_kind_from_db(raw: &str) -> domain::SubunitType {
         "evidence" => domain::SubunitType::Evidence,
         "summary" => domain::SubunitType::Summary,
         _ => domain::SubunitType::Procedure,
+    }
+}
+
+#[cfg(test)]
+mod embedding_model_env_tests {
+    use super::*;
+
+    /// Proves `embedding_model_from_env` defaults to `nomic-embed-text` when
+    /// `OLLAMA_EMBED_MODEL` is not set, keeping the production default unchanged.
+    #[test]
+    fn embedding_model_defaults_to_nomic_when_env_unset() {
+        // Remove the env var for isolation; restore it after.
+        let saved = std::env::var("OLLAMA_EMBED_MODEL").ok();
+        // SAFETY: single-threaded test context; no other thread reads this var.
+        unsafe { std::env::remove_var("OLLAMA_EMBED_MODEL") }
+
+        let model = embedding_model_from_env();
+
+        if let Some(val) = saved {
+            // SAFETY: same as above.
+            unsafe { std::env::set_var("OLLAMA_EMBED_MODEL", val) }
+        }
+
+        assert_eq!(
+            model, "nomic-embed-text",
+            "default must be nomic-embed-text when OLLAMA_EMBED_MODEL is unset"
+        );
+    }
+
+    /// Proves `embedding_model_from_env` reads `OLLAMA_EMBED_MODEL` when set.
+    #[test]
+    fn embedding_model_reads_ollama_embed_model_env_var() {
+        let saved = std::env::var("OLLAMA_EMBED_MODEL").ok();
+        // SAFETY: single-threaded test context.
+        unsafe { std::env::set_var("OLLAMA_EMBED_MODEL", "qwen3-embedding:4b") }
+
+        let model = embedding_model_from_env();
+
+        match saved {
+            Some(val) => unsafe { std::env::set_var("OLLAMA_EMBED_MODEL", val) },
+            None => unsafe { std::env::remove_var("OLLAMA_EMBED_MODEL") },
+        }
+
+        assert_eq!(
+            model, "qwen3-embedding:4b",
+            "OLLAMA_EMBED_MODEL must be read when set"
+        );
+    }
+
+    /// Proves `embedding_model_from_env` defaults to `nomic-embed-text` when
+    /// `OLLAMA_EMBED_MODEL` is blank. Docker-compose interpolation emits `""` when
+    /// the host env var is unset (e.g. `OLLAMA_EMBED_MODEL: ${OLLAMA_EMBED_MODEL:-}`).
+    #[test]
+    fn embedding_model_defaults_to_nomic_when_env_blank() {
+        let saved = std::env::var("OLLAMA_EMBED_MODEL").ok();
+        // SAFETY: single-threaded test context.
+        unsafe { std::env::set_var("OLLAMA_EMBED_MODEL", "") }
+
+        let model = embedding_model_from_env();
+
+        match saved {
+            Some(val) => unsafe { std::env::set_var("OLLAMA_EMBED_MODEL", val) },
+            None => unsafe { std::env::remove_var("OLLAMA_EMBED_MODEL") },
+        }
+
+        assert_eq!(
+            model, "nomic-embed-text",
+            "blank OLLAMA_EMBED_MODEL must fall back to nomic-embed-text default"
+        );
     }
 }

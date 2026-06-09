@@ -6,11 +6,11 @@ use graph_builder::{
     WatcherRecovery,
 };
 use infrastructure::{
-    CircuitState, DependencyFactory, EventEnvelope, HealthReport, InfrastructureHealthChecker,
-    OllamaEmbeddingConfig, OllamaEmbeddingService, OutboxRelay, PostgresAdapter, PostgresConfig,
-    PostgresGraphWriteCoordinator, PostgresRebuildCoordinator, QdrantAdapter, QdrantConfig,
-    RebuildCoordinator, RedisStreamError, RedisStreamsAdapter, RedisStreamsConfig,
-    logging::init_logging,
+    CircuitState, DependencyFactory, EmbeddingModelInfo, EventEnvelope, HealthReport,
+    InfrastructureHealthChecker, OllamaEmbeddingConfig, OllamaEmbeddingService, OutboxRelay,
+    PostgresAdapter, PostgresConfig, PostgresGraphWriteCoordinator, PostgresRebuildCoordinator,
+    QdrantAdapter, QdrantConfig, QdrantError, RebuildCoordinator, RedisStreamError,
+    RedisStreamsAdapter, RedisStreamsConfig, logging::init_logging, model_keyed_collection_name,
 };
 use serde::Serialize;
 use tokio::{
@@ -198,15 +198,24 @@ async fn maybe_replay_graph_rebuilt(
     }
 }
 
-/// Builds a real Ollama embedding service from the `OLLAMA_URL` environment variable.
+/// Builds a real Ollama embedding service from the environment.
 ///
-/// Fails loud when `OLLAMA_URL` is unset — there is no fallback embedder in production.
+/// Reads `OLLAMA_URL` (required) and `OLLAMA_EMBED_MODEL` (optional, defaults
+/// to `nomic-embed-text`). Fails loud when `OLLAMA_URL` is unset — there is no
+/// fallback embedder in production.
 fn build_embedding_service() -> Result<OllamaEmbeddingService, Box<dyn std::error::Error>> {
     let base_url = std::env::var("OLLAMA_URL")
         .map_err(|_| "OLLAMA_URL must be set to connect to the embedding service")?;
+    // OLLAMA_EMBED_MODEL selects the dense-retrieval arm; unset OR blank defaults
+    // to nomic-embed-text so existing deployments are unaffected. Blank is treated
+    // as absent — docker-compose interpolation emits "" when the host env is unset.
+    let model = match std::env::var("OLLAMA_EMBED_MODEL") {
+        Ok(v) if !v.trim().is_empty() => v,
+        _ => "nomic-embed-text".to_owned(),
+    };
     let config = OllamaEmbeddingConfig {
         base_url,
-        model: "nomic-embed-text".to_owned(),
+        model,
         max_concurrency: 4,
     };
     OllamaEmbeddingService::from_config(config).map_err(|e| e.to_string().into())
@@ -332,22 +341,54 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let rebuild_coordinator = PostgresRebuildCoordinator::new(pg_adapter.pool().clone());
     let outbox_coordinator = PostgresGraphWriteCoordinator::new(pg_adapter.pool().clone());
+
+    let embedding_service = build_embedding_service()?;
+
+    // Discover the real vector dimension from the live model before setting up
+    // the Qdrant collection. This prevents hardcoded dimension mismatches when
+    // switching from nomic (768) to qwen (2560) or any future model.
+    let model_info: EmbeddingModelInfo = embedding_service
+        .discover_dimension()
+        .await
+        .map_err(|e| format!("embedding dimension discovery failed: {e}"))?;
+    tracing::info!(
+        embedder_model = %model_info.model_name,
+        dimension = model_info.dimension,
+        "embedding model dimension discovered"
+    );
+
+    // Collection name is model-keyed so nomic (768-dim) and qwen (2560-dim)
+    // collections coexist without clobbering each other. The QdrantAdapter is
+    // constructed WITH the model-keyed collection so upsert_vector targets the
+    // correct collection at write time.
+    let collection_name = model_keyed_collection_name(&model_info.model_name);
+    let vector_size = model_info.dimension as u64;
+
     let qdrant_adapter = QdrantAdapter::new(
         reqwest::Client::new(),
         QdrantConfig {
             endpoint: qdrant_url,
+            collection_name: collection_name.clone(),
             ..QdrantConfig::default()
         },
     )
     .map_err(|error| error.to_string())?;
 
-    let embedding_service = build_embedding_service()?;
-
     let _ = pg_adapter.run_migrations().await;
     qdrant_adapter
-        .ensure_collection(&qdrant_adapter.config.collection_name, 768)
+        .ensure_collection(&collection_name, vector_size)
         .await
-        .map_err(|error| format!("qdrant collection setup: {error}"))?;
+        .map_err(|error| match &error {
+            QdrantError::DimensionMismatch { .. } => {
+                // Dimension mismatch is fatal — a wrong-dim collection silently
+                // corrupts cosine rankings and must not proceed.
+                format!(
+                    "qdrant collection '{collection_name}' dimension mismatch for model '{}': {error}",
+                    model_info.model_name
+                )
+            }
+            _ => format!("qdrant collection setup: {error}"),
+        })?;
 
     let hdbscan_config = HdbscanConfig::default();
 

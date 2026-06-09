@@ -3,7 +3,7 @@ plan_ref: docs/plans/2026-06-08-feat-v1-7-local-hybrid-skilldag-retrieval-plan.m
 architecture_ref: "explicit-handoff: parent plan ## Architectural Context and ## Proposed V1.7 Architecture"
 execution_shape: vertical-slices
 ticket_set_status: in_progress
-last_completed_batch: 1
+last_completed_batch: 2
 total_batches: 8
 ---
 
@@ -29,7 +29,7 @@ Execution shape: `vertical-slices`
 ## Execution Batches
 
 - **Batch 1:** T01. Status: completed (session work-2026-06-09-070746; held-out MRR 0.767 / no-match 1.0, gate exit 0).
-- **Batch 2:** T02. Status: pending.
+- **Batch 2:** T02. Status: completed (session work-2026-06-09-084626; qwen 2560-dim arm live MRR 0.767/nDCG 0.709 vs nomic 0.767/0.749 — nomic stays default; model-keyed collections; migration 008 + orphaned 007 registered).
 - **Batch 3:** T03. Status: pending.
 - **Batch 4:** T04. Status: pending.
 - **Batch 5:** T05. Status: pending.
@@ -52,7 +52,7 @@ File-overlap safety notes:
 | Ticket | Title | Batch | Depends on | Feature home | Status |
 |---|---:|---:|---|---|---|
 | [T01](01-measurement-harness-arms.md) | V1.7 measurement harness arms | 1 | none | `tests/e2e` quality harness and `scripts/retrieval_quality_*` | completed |
-| [T02](02-qwen3-embedder-rebuild-safety.md) | Local Qwen3 embedder backend and rebuild safety | 2 | T01 | `crates/infrastructure/src/embeddings`, `crates/graph-builder`, `crates/mcp-server` | ready |
+| [T02](02-qwen3-embedder-rebuild-safety.md) | Local Qwen3 embedder backend and rebuild safety | 2 | T01 | `crates/infrastructure/src/embeddings`, `crates/graph-builder`, `crates/mcp-server` | completed |
 | [T03](03-expanded-skill-format-multiview-fields.md) | Expanded skill format and multi-view extraction fields | 3 | T02 | `crates/session-extractor` and `crates/graph-builder/src/extraction` | ready |
 | [T04](04-hybrid-dense-bm25-candidate-generation.md) | Hybrid dense/BM25 candidate generation | 4 | T01, T02, T03 | `crates/retrieval` | ready |
 | [T05](05-typed-skill-graph-edge-storage.md) | Typed skill graph storage and cold-start edge proposals | 5 | T03 | `crates/graph-builder` and persistence graph schema | ready |

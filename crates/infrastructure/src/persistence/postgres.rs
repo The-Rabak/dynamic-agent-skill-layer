@@ -21,6 +21,14 @@ const MIGRATION_005: &str = include_str!("../../migrations/005_skill_source_path
 /// both an HDBSCAN cluster community and a tag community simultaneously (dual
 /// membership per CONTEXT.md §2.2).
 const MIGRATION_006: &str = include_str!("../../migrations/006_community_skills_source.sql");
+/// Migration 007: adds advisory scope-generality hints (`generality`,
+/// `generality_rationale`) to `skills` so extraction can signal whether a skill
+/// is project-local or globally promotable.
+const MIGRATION_007: &str = include_str!("../../migrations/007_skill_generality.sql");
+/// Migration 008: creates the `embedding_model_metadata` table so graph rebuilds
+/// record which embedding model + dimension + collection produced the current
+/// Qdrant vectors (V1.7 multi-arm observability).
+const MIGRATION_008: &str = include_str!("../../migrations/008_embedding_model_metadata.sql");
 
 /// Ordered migration set: each entry is `(stable_id, sql)`.
 ///
@@ -31,7 +39,8 @@ const MIGRATION_006: &str = include_str!("../../migrations/006_community_skills_
 /// Ordering matters because later migrations depend on objects created by earlier
 /// ones (002 reuses the trigger function from 001; 003 adds columns to tables from
 /// 001; 004 adds a constraint to session_logs; 005 adds a column to skills;
-/// 006 widens community_skills for dual membership).
+/// 006 widens community_skills for dual membership; 007 adds generality columns;
+/// 008 adds embedding_model_metadata table).
 ///
 /// Individual migrations remain idempotent (`IF NOT EXISTS` / `ADD COLUMN IF NOT
 /// EXISTS`) as a belt-and-braces safety net, but the tracking table is the primary
@@ -43,6 +52,8 @@ const MIGRATIONS: &[(&str, &str)] = &[
     ("004_session_logs_status_check", MIGRATION_004),
     ("005_skill_source_paths", MIGRATION_005),
     ("006_community_skills_source", MIGRATION_006),
+    ("007_skill_generality", MIGRATION_007),
+    ("008_embedding_model_metadata", MIGRATION_008),
 ];
 
 #[derive(Debug, Clone)]
@@ -458,9 +469,9 @@ mod tests {
     }
 
     #[test]
-    fn migration_set_is_ordered_001_through_006() {
+    fn migration_set_is_ordered_001_through_008() {
         // MIGRATIONS is now &[(&str, &str)] — (stable_id, sql). Assert that
-        // the ids and sql content appear in the correct 001..006 order.
+        // the ids and sql content appear in the correct 001..008 order.
         let ids: Vec<&str> = MIGRATIONS.iter().map(|(id, _)| *id).collect();
         assert_eq!(
             ids,
@@ -471,8 +482,10 @@ mod tests {
                 "004_session_logs_status_check",
                 "005_skill_source_paths",
                 "006_community_skills_source",
+                "007_skill_generality",
+                "008_embedding_model_metadata",
             ],
-            "migration ids must appear in 001..006 order"
+            "migration ids must appear in 001..008 order"
         );
 
         let sqls: Vec<&str> = MIGRATIONS.iter().map(|(_, sql)| *sql).collect();
@@ -485,8 +498,10 @@ mod tests {
                 MIGRATION_004,
                 MIGRATION_005,
                 MIGRATION_006,
+                MIGRATION_007,
+                MIGRATION_008,
             ],
-            "migration sql bodies must match the include_str! constants in 001..006 order"
+            "migration sql bodies must match the include_str! constants in 001..008 order"
         );
     }
 

@@ -8,6 +8,42 @@ use tokio::time::timeout;
 
 use crate::persistence::outbox::{OutboxVectorStore, VectorPointListing};
 
+/// Derives a Qdrant collection name scoped to the embedding model.
+///
+/// Collection names are model-keyed so that embeddings from different models
+/// (with different dimensions) coexist side-by-side without collision. A
+/// nomic-embed-text (768-dim) run and a qwen3-embedding:4b (2560-dim) run each
+/// get their own collection; switching the env var selects the right one and
+/// never clobbers the other.
+///
+/// The model name is lowercased and any character that is not ASCII alphanumeric
+/// or `-` is replaced with `-`, then consecutive hyphens are collapsed. This
+/// keeps the name safe as a Qdrant collection identifier (which must be a valid
+/// C-style identifier or URL segment in many environments).
+///
+/// Examples:
+///   `"nomic-embed-text"`   → `"skills__nomic-embed-text"`
+///   `"qwen3-embedding:4b"` → `"skills__qwen3-embedding-4b"`
+///   `"some/model:latest"`  → `"skills__some-model-latest"`
+pub fn model_keyed_collection_name(model: &str) -> String {
+    let slug: String = model
+        .to_ascii_lowercase()
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' {
+                c
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>()
+        .split('-')
+        .filter(|segment| !segment.is_empty())
+        .collect::<Vec<_>>()
+        .join("-");
+    format!("skills__{slug}")
+}
+
 /// Configuration for the Qdrant REST HTTP adapter.
 ///
 /// Qdrant exposes two interfaces on separate ports:
@@ -52,6 +88,19 @@ pub enum QdrantError {
     UnexpectedStatus { status: StatusCode },
     #[error("qdrant response status field must be 'ok', got '{status}'")]
     UnexpectedResponse { status: String },
+    /// The existing collection was created with a different vector size than the
+    /// caller expects. Silently reusing a wrong-dimension collection corrupts
+    /// cosine-similarity ranking; the only safe action is to fail loud and let
+    /// the operator drop the old collection or change the model.
+    #[error(
+        "qdrant collection '{collection}' has dimension {observed} but caller expects {expected}; \
+         drop the collection or change the embedder model — mixed-dimension vectors are invalid"
+    )]
+    DimensionMismatch {
+        collection: String,
+        observed: u64,
+        expected: u64,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -116,6 +165,16 @@ impl QdrantAdapter {
     ///
     /// Both `mcp-server` and `graph-builder` call this on startup, so the race
     /// is a real cold-start scenario (bug #157).
+    ///
+    /// # Dimension guard
+    ///
+    /// If the collection already exists (HTTP 200), the observed vector size is
+    /// extracted from the response and compared to `vector_size`. A mismatch
+    /// returns `QdrantError::DimensionMismatch` — silently reusing a
+    /// wrong-dimension collection corrupts cosine rankings and must never
+    /// succeed quietly. When the body does not contain a parseable dimension
+    /// (e.g. an older Qdrant version), the guard logs a warning and continues
+    /// rather than blocking boot on a missing field.
     pub async fn ensure_collection(
         &self,
         collection_name: &str,
@@ -127,7 +186,36 @@ impl QdrantAdapter {
         );
         let response = self.client.get(&endpoint).send().await?;
         if response.status() == StatusCode::OK {
-            // Collection already exists — no work needed.
+            // Collection already exists — verify its dimension matches expectations.
+            // A mismatch means nomic and qwen vectors would be mixed in a single
+            // collection; that silently corrupts cosine-similarity ranking.
+            let body: Value = response.json().await.unwrap_or(Value::Null);
+            let observed_size: Option<u64> = body
+                .pointer("/result/config/params/vectors/size")
+                .and_then(Value::as_u64);
+            match observed_size {
+                Some(observed) if observed != vector_size => {
+                    return Err(QdrantError::DimensionMismatch {
+                        collection: collection_name.to_owned(),
+                        observed,
+                        expected: vector_size,
+                    });
+                }
+                Some(_) => {
+                    // Dimension matches — collection is correct; nothing to do.
+                }
+                None => {
+                    // Qdrant response did not include a parseable dimension field.
+                    // Log a warning and continue rather than blocking boot on a
+                    // missing field from an older Qdrant version.
+                    tracing::warn!(
+                        collection_name,
+                        expected_dimension = vector_size,
+                        "could not parse collection dimension from Qdrant GET response; \
+                         skipping dimension guard (upgrade Qdrant if this recurs)"
+                    );
+                }
+            }
             return Ok(());
         }
 
@@ -695,6 +783,78 @@ mod tests {
             .ensure_collection("skills", 768)
             .await
             .expect("200 on probe must return Ok immediately without a create request");
+
+        server.await.expect("mock server should complete");
+    }
+
+    /// Proves `model_keyed_collection_name` derives a safe collection name from a model string.
+    #[test]
+    fn model_keyed_collection_name_derives_safe_identifier_from_model() {
+        assert_eq!(
+            model_keyed_collection_name("nomic-embed-text"),
+            "skills__nomic-embed-text"
+        );
+        assert_eq!(
+            model_keyed_collection_name("qwen3-embedding:4b"),
+            "skills__qwen3-embedding-4b"
+        );
+        assert_eq!(
+            model_keyed_collection_name("some/model:latest"),
+            "skills__some-model-latest"
+        );
+    }
+
+    /// Proves `ensure_collection` fails loud when the existing collection has a
+    /// different dimension than the caller expects.
+    #[tokio::test]
+    async fn ensure_collection_fails_loud_on_dimension_mismatch() {
+        // GET probe returns 200 with a 768-dim collection; caller expects 2560.
+        let body = r#"{"status":"ok","result":{"config":{"params":{"vectors":{"size":768,"distance":"Cosine"}}}}}"#;
+        let (endpoint, server) = spawn_single_response_server("200 OK", body).await;
+
+        let adapter = QdrantAdapter::new(
+            reqwest::Client::new(),
+            QdrantConfig {
+                endpoint,
+                timeout_ms: 1_000,
+                ..QdrantConfig::default()
+            },
+        )
+        .expect("test config should be valid");
+
+        let error = adapter.ensure_collection("skills", 2560).await.expect_err(
+            "dimension mismatch must fail loud, not silently reuse the wrong collection",
+        );
+
+        assert!(
+            matches!(error, QdrantError::DimensionMismatch { .. }),
+            "error variant must be DimensionMismatch, got: {error:?}"
+        );
+
+        server.await.expect("mock server should complete");
+    }
+
+    /// Proves `ensure_collection` succeeds when the existing collection's dimension
+    /// matches the caller's expected dimension (happy path after the guard).
+    #[tokio::test]
+    async fn ensure_collection_succeeds_when_existing_dimension_matches() {
+        let body = r#"{"status":"ok","result":{"config":{"params":{"vectors":{"size":768,"distance":"Cosine"}}}}}"#;
+        let (endpoint, server) = spawn_single_response_server("200 OK", body).await;
+
+        let adapter = QdrantAdapter::new(
+            reqwest::Client::new(),
+            QdrantConfig {
+                endpoint,
+                timeout_ms: 1_000,
+                ..QdrantConfig::default()
+            },
+        )
+        .expect("test config should be valid");
+
+        adapter
+            .ensure_collection("skills", 768)
+            .await
+            .expect("matching dimension must succeed");
 
         server.await.expect("mock server should complete");
     }

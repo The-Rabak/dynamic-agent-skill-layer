@@ -68,15 +68,46 @@ def _parse_bool_env(value: str) -> bool:
     return value.strip().lower() in ("true", "1", "yes")
 
 
+def _discover_dimension_from_live_server() -> int | None:
+    """Probe the live Ollama embed endpoint to discover the actual vector dimension.
+
+    Returns the integer dimension (e.g. 768 for nomic, 2560 for qwen3-embedding:4b)
+    or None if the endpoint is unreachable or returns no vector.  The caller
+    decides what to do with None — never invent a dimension.
+
+    This reflects the same probe that the Rust `OllamaEmbeddingService::discover_dimension`
+    makes at boot, so the report's dimension matches the server's actual collection size.
+    """
+    model = os.environ.get("OLLAMA_EMBED_MODEL", ARM_METADATA_DEFAULTS["embedder_model"])
+    # The stack's Ollama is mapped to port 11444 on the host.
+    ollama_host = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11444")
+    endpoint = ollama_host.rstrip("/") + "/api/embeddings"
+    try:
+        payload = json.dumps({"model": model, "prompt": "dimension probe"}).encode()
+        req = urllib.request.Request(endpoint, data=payload,
+                                     headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            body = json.loads(resp.read())
+        vec = body.get("embedding", [])
+        return len(vec) if vec else None
+    except Exception:
+        return None
+
+
 def build_arm_metadata(env_overrides: dict | None = None) -> dict:
     """Read V1.7 retrieval arm metadata from the environment (or env_overrides).
 
-    Returns a dict with keys: backend, embedder_model, dense, sparse, rerank.
+    Returns a dict with keys: backend, embedder_model, dimension, dense, sparse, rerank.
 
     Fields are read from environment variables that mirror the real server's
     configuration surface (RetrievalConfig::from_env + OLLAMA_EMBED_MODEL).
     When a variable is absent the current production default is used and is
     honestly labelled — no invented values.
+
+    The `dimension` field is discovered from the LIVE Ollama endpoint so the
+    report reflects the actual vector size used by the active model — never a
+    hardcoded doc value. If the endpoint is unreachable, dimension is None (not
+    a guess).
 
     env_overrides: optional dict of {name: value} to treat as additional env
     vars (used by the sweep to test each config arm without actually setting
@@ -93,9 +124,15 @@ def build_arm_metadata(env_overrides: dict | None = None) -> dict:
     sparse_raw = merged_env.get("RETRIEVAL_SPARSE", "")
     rerank_raw = merged_env.get("RETRIEVAL_RERANK", "")
 
+    # Discover the real embedding dimension from the live Ollama endpoint.
+    # This ensures the report carries the actual model output size, not a
+    # hardcoded or doc-stated value (qwen docs say 2560 but trust the live model).
+    dimension = _discover_dimension_from_live_server()
+
     return {
         "backend": backend,
         "embedder_model": embedder_model,
+        "dimension": dimension,  # real discovered dimension; None if Ollama unreachable
         "dense": True,  # always on; sparse is additive, not a replacement
         "sparse": _parse_bool_env(sparse_raw) if sparse_raw.strip() else False,
         "rerank": _parse_bool_env(rerank_raw) if rerank_raw.strip() else False,
@@ -362,8 +399,9 @@ def main():
     Path(args.out).write_text(json.dumps(report, indent=1))
 
     print(f"\n=== RETRIEVAL QUALITY (LIVE mcp-server / find_skill) — {args.config_label} / {args.split} ===")
+    dim_str = str(arm['dimension']) if arm['dimension'] is not None else "unknown"
     print(f"arm: backend={arm['backend']}  embedder={arm['embedder_model']}  "
-          f"dense={arm['dense']}  sparse={arm['sparse']}  rerank={arm['rerank']}")
+          f"dimension={dim_str}  dense={arm['dense']}  sparse={arm['sparse']}  rerank={arm['rerank']}")
     print(f"positives={len(per_query)} negatives={len(neg)} "
           f"judged={len(cache)} (relevant={report['judged_relevant']})")
     lat = report["latency_ms"]

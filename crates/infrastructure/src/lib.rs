@@ -26,7 +26,7 @@ pub mod vector {
     pub mod qdrant;
 }
 
-pub use embeddings::ollama::{OllamaEmbeddingConfig, OllamaEmbeddingService};
+pub use embeddings::ollama::{EmbeddingModelInfo, OllamaEmbeddingConfig, OllamaEmbeddingService};
 pub use extraction::claude::{ClaudeExtractionConfig, ClaudeExtractor};
 pub use extraction::claude_code::{
     ClaudeCodeExtractionConfig, ClaudeCodeExtractor, claude_code_generate_text,
@@ -43,10 +43,10 @@ pub use extraction::merge_verifier::{
     ClaudeMergeVerifier, ClaudeMergeVerifierConfig, EquivalenceDecision, LlmEquivalenceVerifier,
     OllamaMergeVerifier, OllamaMergeVerifierConfig, TextLlmEquivalenceVerifier,
 };
+pub use extraction::ollama::{OllamaExtractionConfig, OllamaExtractor};
 pub use extraction::prompt_contract::{
     build_text_json_extraction_prompt, render_sanitized_transcript_lines,
 };
-pub use extraction::ollama::{OllamaExtractionConfig, OllamaExtractor};
 pub use extraction::text_llm::{ClaudeCodeTextLlm, OllamaTextLlm, StructuredTextLlm};
 pub use health::{DependencyFactory, HealthComponent, HealthReport, InfrastructureHealthChecker};
 pub use persistence::outbox::{
@@ -91,7 +91,7 @@ pub use streaming::redis::{
     EventEnvelope, RedisStreamError, RedisStreamsAdapter, RedisStreamsConfig,
     SKILL_LAYER_CONSUMER_GROUP, SKILL_LAYER_STREAM_KEY, StreamMessage,
 };
-pub use vector::qdrant::{QdrantAdapter, QdrantConfig, QdrantError};
+pub use vector::qdrant::{QdrantAdapter, QdrantConfig, QdrantError, model_keyed_collection_name};
 
 // Re-export infrastructure-bound types so service crates never import
 // reqwest, sqlx, or redis directly.

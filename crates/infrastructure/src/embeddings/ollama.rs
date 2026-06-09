@@ -37,6 +37,20 @@ fn cap_to_embed_window(text: &str) -> String {
     text.chars().take(MAX_EMBED_INPUT_CHARS).collect()
 }
 
+/// Identity and dimension of the active embedding model, discovered from the
+/// live Ollama service via a real embed call.
+///
+/// Returned by `OllamaEmbeddingService::discover_dimension` so callers can
+/// create a correctly-sized Qdrant collection without hardcoding a dimension.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EmbeddingModelInfo {
+    /// The model name as configured (e.g. `"nomic-embed-text"` or `"qwen3-embedding:4b"`).
+    pub model_name: String,
+    /// The real vector dimension returned by the live model. Discovered from the
+    /// actual embed response — not a hardcoded doc value.
+    pub dimension: usize,
+}
+
 #[derive(Debug, Clone)]
 pub struct OllamaEmbeddingConfig {
     pub base_url: String,
@@ -102,6 +116,24 @@ impl OllamaEmbeddingService {
             client,
             semaphore: Arc::new(Semaphore::new(config.max_concurrency)),
             config,
+        })
+    }
+
+    /// Discovers the real embedding dimension by sending a minimal probe request
+    /// to the live Ollama model and measuring the returned vector length.
+    ///
+    /// This must be called before `ensure_collection` so the collection is sized
+    /// to the actual model output, not a hardcoded or doc-stated dimension. The
+    /// qwen3-embedding:4b docs say 2560 but the live model is authoritative.
+    ///
+    /// Fails loud if the model returns an empty vector or is unreachable.
+    pub async fn discover_dimension(&self) -> Result<EmbeddingModelInfo, EmbeddingError> {
+        // A minimal ASCII probe that fits any embedding model's token budget.
+        let probe_text = "dimension probe";
+        let vector = self.embed(probe_text).await?;
+        Ok(EmbeddingModelInfo {
+            model_name: self.config.model.clone(),
+            dimension: vector.len(),
         })
     }
 
@@ -240,7 +272,91 @@ impl EmbeddingService for OllamaEmbeddingService {
 
 #[cfg(test)]
 mod tests {
+    use tokio::{
+        io::{AsyncReadExt, AsyncWriteExt},
+        net::TcpListener,
+        task::JoinHandle,
+    };
+
     use super::*;
+
+    /// Starts a one-shot HTTP server that responds to the first request with the
+    /// supplied status and body. Returns the base URL and the server join handle.
+    async fn spawn_response_server(status_line: &str, body: &str) -> (String, JoinHandle<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("test listener should bind");
+        let address = listener
+            .local_addr()
+            .expect("bound listener should have local addr");
+        let status_line = status_line.to_owned();
+        let body = body.to_owned();
+
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener
+                .accept()
+                .await
+                .expect("server should accept one connection");
+            let mut buf = vec![0u8; 4096];
+            let _ = socket.read(&mut buf).await;
+            let response = format!(
+                "HTTP/1.1 {status_line}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            socket
+                .write_all(response.as_bytes())
+                .await
+                .expect("server should write response");
+        });
+
+        (format!("http://{address}"), server)
+    }
+
+    /// Proves `discover_dimension` returns the real vector length from the live
+    /// embed response — NOT a hardcoded value.
+    #[tokio::test]
+    async fn discover_dimension_returns_real_vector_length_from_embed_response() {
+        // Fake Ollama: returns a 5-dim vector (arbitrary test size).
+        let fake_vector = vec![0.1_f32; 5];
+        let body = format!(
+            r#"{{"embedding":{}}}"#,
+            serde_json::to_string(&fake_vector).unwrap()
+        );
+        let (base_url, server) = spawn_response_server("200 OK", &body).await;
+
+        let config = OllamaEmbeddingConfig {
+            base_url,
+            model: "test-model".to_owned(),
+            max_concurrency: 1,
+        };
+        let service =
+            OllamaEmbeddingService::new(reqwest::Client::new(), config).expect("config valid");
+
+        let info = service
+            .discover_dimension()
+            .await
+            .expect("discover_dimension must succeed with a valid embed response");
+
+        assert_eq!(info.model_name, "test-model");
+        assert_eq!(
+            info.dimension, 5,
+            "dimension must match the live response length"
+        );
+
+        server.await.expect("mock server should complete");
+    }
+
+    /// Proves `EmbeddingModelInfo` correctly captures the model name configured.
+    #[test]
+    fn embedding_model_info_holds_model_name_and_dimension() {
+        let info = EmbeddingModelInfo {
+            model_name: "qwen3-embedding:4b".to_owned(),
+            dimension: 2560,
+        };
+        assert_eq!(info.model_name, "qwen3-embedding:4b");
+        assert_eq!(info.dimension, 2560);
+    }
 
     #[tokio::test]
     async fn embed_text_rejects_blank_input() {
