@@ -381,6 +381,11 @@ fn corpus_document_frequencies(skills: &[BuiltSkill]) -> HashMap<String, usize> 
 /// Tokenizes text into lowercase alphanumeric terms of length >= 3, dropping
 /// stopwords and purely numeric tokens.  Pure punctuation/whitespace splits the
 /// stream into terms.
+///
+/// NOTE (#249): this is INTENTIONALLY distinct from `retrieval::text::tokenize_tokens`.
+/// It applies a community-keyword policy (min length 3, stopword + pure-digit
+/// removal) that the retrieval lexical tokenizer must NOT — they serve different
+/// purposes, so they are deliberately not unified.
 fn tokenize(text: &str) -> impl Iterator<Item = String> + '_ {
     text.split(|c: char| !c.is_alphanumeric())
         .filter(|raw| raw.len() >= 3)

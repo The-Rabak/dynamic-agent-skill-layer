@@ -21,9 +21,14 @@
 use std::collections::HashMap;
 
 /// Default BM25 term-frequency saturation constant.
-const BM25_K1: f32 = 1.2;
-/// Default BM25 document-length normalization constant.
-const BM25_B: f32 = 0.75;
+///
+/// `pub(crate)` so the write side (`sparse.rs`, which computes the TF-saturation
+/// weights stored in Qdrant) imports the SAME value rather than re-declaring it —
+/// the two must match or the index and the sparse vectors score differently (#249).
+pub(crate) const BM25_K1: f32 = 1.2;
+/// Default BM25 document-length normalization constant. Shared with `sparse.rs`
+/// (see [`BM25_K1`]).
+pub(crate) const BM25_B: f32 = 0.75;
 
 /// In-memory Okapi BM25 index over a skill corpus.
 ///
@@ -68,14 +73,10 @@ impl Bm25Index {
         let mut doc_lengths: HashMap<usize, usize> = HashMap::new();
 
         for (skill_index, text) in docs {
-            // Split into a raw token stream (with repetitions) for accurate TF and
-            // document-length counts. `tokenize()` returns a BTreeSet which deduplicates
-            // — we cannot use it directly for TF or doc-length here.
-            let tokens: Vec<String> = text
-                .split(|ch: char| !ch.is_alphanumeric())
-                .map(|t| t.trim().to_lowercase())
-                .filter(|t| !t.is_empty())
-                .collect();
+            // Raw token stream (duplicates preserved) for accurate TF and
+            // document-length counts. Shared tokenizer is the single source of
+            // truth so indexing and query scoring can never drift (#249).
+            let tokens = crate::text::tokenize_tokens(text);
             let token_count = tokens.len();
             doc_lengths.insert(*skill_index, token_count);
 

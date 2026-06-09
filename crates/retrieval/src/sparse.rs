@@ -26,11 +26,10 @@
 /// regardless of which corpus was loaded.
 use std::collections::HashMap;
 
-use crate::bm25::Bm25Index;
+use crate::bm25::{BM25_B, BM25_K1, Bm25Index};
 
-/// BM25 TF-saturation constants — must match `Bm25Index`.
-const K1: f32 = 1.2;
-const B: f32 = 0.75;
+// BM25 TF-saturation constants are imported from `bm25` (the single definition)
+// so the write-side sparse weights cannot drift from the index scoring (#249).
 
 /// Maps a lowercase token to a stable u32 sparse-vector index using FNV-1a.
 ///
@@ -60,18 +59,6 @@ pub fn term_to_sparse_index(term: &str) -> u32 {
     hash
 }
 
-/// Tokenizes text the same way as `Bm25Index::build` and `Bm25Index::score`:
-/// split on non-alphanumeric characters, lowercase, filter empty tokens.
-///
-/// This function is intentionally private — callers go through
-/// `build_skill_sparse_vectors` and `query_sparse_vector`.
-fn tokenize(text: &str) -> Vec<String> {
-    text.split(|ch: char| !ch.is_alphanumeric())
-        .map(|t| t.trim().to_lowercase())
-        .filter(|t| !t.is_empty())
-        .collect()
-}
-
 /// Builds per-skill BM25 TF-saturation sparse vectors from the skill corpus.
 ///
 /// Takes a slice of `(skill_index, lexical_doc_text)` pairs (the same format
@@ -97,12 +84,12 @@ pub fn build_skill_sparse_vectors(
 
     docs.iter()
         .map(|(skill_index, text)| {
-            let tokens = tokenize(text);
+            let tokens = crate::text::tokenize_tokens(text);
             let dl = doc_lengths
                 .get(skill_index)
                 .copied()
                 .unwrap_or(tokens.len()) as f32;
-            let length_norm = 1.0 - B + B * (dl / avgdl.max(1.0));
+            let length_norm = 1.0 - BM25_B + BM25_B * (dl / avgdl.max(1.0));
 
             // Accumulate term frequencies for this document.
             let mut tf_map: HashMap<String, usize> = HashMap::new();
@@ -114,7 +101,7 @@ pub fn build_skill_sparse_vectors(
             let mut index_weight: HashMap<u32, f32> = HashMap::new();
             for (term, &tf) in &tf_map {
                 let tf_f = tf as f32;
-                let weight = tf_f * (K1 + 1.0) / (tf_f + K1 * length_norm);
+                let weight = tf_f * (BM25_K1 + 1.0) / (tf_f + BM25_K1 * length_norm);
                 if weight > 0.0 {
                     // Additive merge on hash collision (harmless for BM25 scoring).
                     *index_weight
@@ -153,7 +140,7 @@ pub fn build_skill_sparse_vectors(
 /// Returns `(indices, values)` in unspecified order. Both slices are the same
 /// length. An empty query produces empty slices.
 pub fn query_sparse_vector(query: &str) -> (Vec<u32>, Vec<f32>) {
-    let tokens = tokenize(query);
+    let tokens = crate::text::tokenize_tokens(query);
     let mut index_weight: HashMap<u32, f32> = HashMap::new();
     for token in tokens {
         // Idempotent unit-weight insert: the first occurrence of any token (or any

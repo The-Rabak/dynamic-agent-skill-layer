@@ -21,13 +21,13 @@ pub struct CosineHit {
 /// call with a live Qdrant query behind the unchanged `SkillRetriever` trait.
 pub fn rank_by_cosine(
     prompt_embedding: &[f32],
-    skill_embeddings: &[Vec<f32>],
+    skill_embeddings: &[&[f32]],
     limit: usize,
 ) -> Vec<CosineHit> {
     let mut hits: Vec<CosineHit> = skill_embeddings
         .iter()
         .enumerate()
-        .map(|(skill_index, embedding)| CosineHit {
+        .map(|(skill_index, &embedding)| CosineHit {
             skill_index,
             semantic_score: cosine_similarity(prompt_embedding, embedding).max(0.0),
         })
@@ -62,8 +62,9 @@ mod tests {
     fn rank_by_cosine_orders_by_semantic_score() {
         let prompt = vec![1.0, 0.0];
         let embeddings = vec![vec![0.9, 0.0], vec![0.2, 0.8], vec![1.0, 0.0]];
+        let embedding_refs: Vec<&[f32]> = embeddings.iter().map(Vec::as_slice).collect();
 
-        let hits = rank_by_cosine(&prompt, &embeddings, 2);
+        let hits = rank_by_cosine(&prompt, &embedding_refs, 2);
         assert_eq!(hits.len(), 2);
         assert!(hits.iter().any(|hit| hit.skill_index == 0));
         assert!(hits.iter().any(|hit| hit.skill_index == 2));

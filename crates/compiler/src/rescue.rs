@@ -158,6 +158,10 @@ fn build_match_reason(skill: &CompilerSkillInput) -> String {
     parts.join(" | ")
 }
 
+// NOTE (#249): identical split policy to `retrieval::text::tokenize_tokens`, but
+// kept as a local copy because `compiler` does not depend on `retrieval` and the
+// shared tokenizer is `pub(crate)` to that crate. If these two ever need to share,
+// promote the retrieval tokenizer to a small shared crate rather than re-exporting.
 fn tokenize(input: &str) -> BTreeSet<String> {
     input
         .split(|ch: char| !ch.is_alphanumeric())

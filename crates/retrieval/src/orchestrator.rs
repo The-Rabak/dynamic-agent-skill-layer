@@ -137,19 +137,35 @@ pub struct RetrievalSnapshot {
     pub community_centroids: HashMap<String, Vec<f32>>,
     /// Pre-built Okapi BM25 index over the skill corpus for the `SnapshotHybrid`
     /// arm (T04-B). Built unconditionally at snapshot construction by
-    /// `build_graph_from_pg` so the backend can switch dense↔hybrid at request
-    /// time without a graph rebuild. `None` for cold-start (empty corpus) and
-    /// test snapshots that do not exercise the hybrid arm.
+    /// `build_graph_from_pg` — including an empty-but-valid index for an empty
+    /// corpus (#247) — so the backend can switch dense↔hybrid at request time
+    /// without a graph rebuild, and so the hybrid arm never observes `None` in
+    /// production. `None` only for test snapshots that do not exercise the hybrid
+    /// arm; reaching `SnapshotHybrid` with `None` is a fail-loud programming error.
     pub bm25_index: Option<Arc<Bm25Index>>,
+    /// Stable skill id → index into `skills`, built once at construction so the
+    /// `qdrant_hybrid` read path can map Qdrant candidates back to snapshot rows
+    /// in O(1) instead of an O(k×N) linear scan per request (#254). First index
+    /// wins on a duplicate id, matching the prior `iter().find()` semantics.
+    pub skill_id_to_index: HashMap<String, usize>,
 }
 
 impl RetrievalSnapshot {
     pub fn new(skills: Vec<SeededSkill>, graph_version: i64) -> Self {
+        // Derived purely from `skills`, so it stays consistent for every snapshot
+        // (tests included) without a separate builder step that could drift.
+        let mut skill_id_to_index = HashMap::with_capacity(skills.len());
+        for (idx, seeded) in skills.iter().enumerate() {
+            skill_id_to_index
+                .entry(seeded.skill.id.as_str().to_owned())
+                .or_insert(idx);
+        }
         Self {
             graph_version,
             skills,
             community_centroids: HashMap::new(),
             bm25_index: None,
+            skill_id_to_index,
         }
     }
 
@@ -771,28 +787,18 @@ where
             .query_hybrid(prompt_embedding, &sparse_indices, &sparse_values, limit)
             .await?;
 
-        // Build a stable_id → (snapshot_index, fused_score) lookup from the snapshot.
-        // This is O(skills) at most; the snapshot is already in memory.
-        let mut stable_id_to_index: HashMap<&str, (usize, f32)> =
-            HashMap::with_capacity(qdrant_candidates.len());
-        for candidate in &qdrant_candidates {
-            // Find the first snapshot skill whose stable id matches.
-            if let Some((idx, _)) =
-                graph.skills.iter().enumerate().find(|(_, seeded)| {
-                    seeded.skill.id.as_str() == candidate.skill_stable_id.as_str()
-                })
-            {
-                stable_id_to_index.insert(
-                    candidate.skill_stable_id.as_str(),
-                    (idx, candidate.fused_score),
-                );
-            }
-        }
-
-        // Build a fused_score_by_index map for lexical_score population below.
-        let fused_score_by_index: HashMap<usize, f32> = stable_id_to_index
-            .values()
-            .map(|&(idx, score)| (idx, score))
+        // Map each Qdrant candidate's stable id to its snapshot index via the
+        // snapshot's precomputed `skill_id_to_index` (O(1) per candidate, built
+        // once at construction — #254). Candidates with no matching snapshot row
+        // are dropped (the snapshot is the source of truth for what is loaded).
+        let fused_score_by_index: HashMap<usize, f32> = qdrant_candidates
+            .iter()
+            .filter_map(|candidate| {
+                graph
+                    .skill_id_to_index
+                    .get(candidate.skill_stable_id.as_str())
+                    .map(|&idx| (idx, candidate.fused_score))
+            })
             .collect();
 
         Ok(search_scopes_with_qdrant_candidates(

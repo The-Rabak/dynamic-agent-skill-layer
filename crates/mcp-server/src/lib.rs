@@ -1054,7 +1054,16 @@ async fn build_graph_from_pg(
         .map_err(|e| format!("failed to list skills from PG: {e}"))?;
 
     if skills.is_empty() {
-        return Ok(RetrievalSnapshot::new(vec![], graph_version));
+        // Build an empty-but-valid BM25 index even for an empty corpus so the
+        // `SnapshotHybrid` arm never observes a `None` index in production. A
+        // present BM25 index is a construction invariant of every snapshot this
+        // function returns — not an optional add-on — so the hybrid candidate
+        // expander can treat a missing index as a hard programming error (#247).
+        // `Bm25Index::build(&[])` returns a valid empty index (empty query → no hits).
+        let bm25_index = Arc::new(retrieval::Bm25Index::build(&[]));
+        return Ok(
+            RetrievalSnapshot::new(vec![], graph_version).with_bm25_index(bm25_index)
+        );
     }
 
     // Safety guard against unbounded memory growth. Truncating (rather than

@@ -550,41 +550,16 @@ impl RebuildCoordinator for PostgresRebuildCoordinator {
             // migration 009. No production reader SELECTs them yet; T04/T05 will.
             // NULL is stored when a field is empty (Vec is empty → bind as Option::None)
             // to stay consistent with the nullable column definition.
-            let use_when_opt: Option<&[String]> = if skill.use_when.is_empty() {
-                None
-            } else {
-                Some(&skill.use_when)
-            };
-            let avoid_when_opt: Option<&[String]> = if skill.avoid_when.is_empty() {
-                None
-            } else {
-                Some(&skill.avoid_when)
-            };
-            let artifacts_opt: Option<&[String]> = if skill.artifacts.is_empty() {
-                None
-            } else {
-                Some(&skill.artifacts)
-            };
-            let tools_opt: Option<&[String]> = if skill.tools.is_empty() {
-                None
-            } else {
-                Some(&skill.tools)
-            };
-            let invariants_opt: Option<&[String]> = if skill.invariants.is_empty() {
-                None
-            } else {
-                Some(&skill.invariants)
-            };
-            let requires_opt: Option<&[String]> = if skill.requires.is_empty() {
-                None
-            } else {
-                Some(&skill.requires)
-            };
-            let produces_opt: Option<&[String]> = if skill.produces.is_empty() {
-                None
-            } else {
-                Some(&skill.produces)
-            };
+            // Empty Vec → NULL (the column is nullable); non-empty → bind the slice.
+            let use_when_opt = (!skill.use_when.is_empty()).then_some(skill.use_when.as_slice());
+            let avoid_when_opt =
+                (!skill.avoid_when.is_empty()).then_some(skill.avoid_when.as_slice());
+            let artifacts_opt = (!skill.artifacts.is_empty()).then_some(skill.artifacts.as_slice());
+            let tools_opt = (!skill.tools.is_empty()).then_some(skill.tools.as_slice());
+            let invariants_opt =
+                (!skill.invariants.is_empty()).then_some(skill.invariants.as_slice());
+            let requires_opt = (!skill.requires.is_empty()).then_some(skill.requires.as_slice());
+            let produces_opt = (!skill.produces.is_empty()).then_some(skill.produces.as_slice());
             sqlx::query(
                 r#"
                 INSERT INTO skills (

@@ -3,6 +3,7 @@ use std::collections::BTreeSet;
 use domain::Subunit;
 
 use crate::cosine_rank::cosine_similarity;
+use crate::orchestrator::SeededSkill;
 
 /// Weight of the semantic (cosine) component in a subunit's displayed relevance.
 /// Semantic dominates so a subunit that *means* the same thing as the query ranks
@@ -36,16 +37,17 @@ pub struct GraphHit {
 /// overlap, and derives the skill's `subunit_evidence` (mean of top-k semantic
 /// scores) for the eq.3 β term.
 ///
-/// `skill_subunit_embeddings` is parallel to `skill_subunits`: entry `i` holds one
-/// embedding per subunit of skill `i` (same order). A missing/empty embedding makes
-/// that subunit's semantic score 0 and it falls back to lexical only — this never
-/// panics on a subunit that was not embedded.
+/// Reads each candidate skill's name/description/tags and subunits directly from
+/// the snapshot `skills` slice (indexed by `candidate_indices`) — it does NOT
+/// receive full-corpus projection clones, so a query touches only the ~k candidate
+/// rows it actually scores rather than rebuilding N-sized Vecs per request (#254).
+/// Each skill's `subunit_embeddings[i]` is the embedding of its i-th subunit (same
+/// order); a missing/empty embedding makes that subunit's semantic score 0 and it
+/// falls back to lexical only — this never panics on a subunit that was not embedded.
 pub fn search_graph(
     prompt: &str,
     prompt_embedding: &[f32],
-    skill_text: &[String],
-    skill_subunits: &[Vec<Subunit>],
-    skill_subunit_embeddings: &[Vec<Vec<f32>>],
+    skills: &[SeededSkill],
     candidate_indices: &[usize],
     max_subunits_per_skill: usize,
 ) -> Vec<GraphHit> {
@@ -54,11 +56,17 @@ pub fn search_graph(
     candidate_indices
         .iter()
         .filter_map(|skill_index| {
-            let text = skill_text.get(*skill_index)?;
-            let subunits = skill_subunits.get(*skill_index)?;
-            let subunit_embeddings = skill_subunit_embeddings.get(*skill_index);
+            let seeded = skills.get(*skill_index)?;
+            let text = format!(
+                "{} {} {}",
+                seeded.skill.name,
+                seeded.skill.description,
+                seeded.skill.tags.join(" ")
+            );
+            let subunits = &seeded.subunits;
+            let subunit_embeddings = &seeded.subunit_embeddings;
 
-            let lexical_score = token_overlap_score(&prompt_tokens, &tokenize(text));
+            let lexical_score = token_overlap_score(&prompt_tokens, &tokenize(&text));
 
             // Score every subunit: semantic (cosine) + lexical (token overlap).
             let mut scored: Vec<(SubunitProjection, f32)> = subunits
@@ -67,7 +75,7 @@ pub fn search_graph(
                 .enumerate()
                 .map(|(position, subunit)| {
                     let semantic = subunit_embeddings
-                        .and_then(|embeddings| embeddings.get(position))
+                        .get(position)
                         .map(|embedding| cosine_similarity(prompt_embedding, embedding).max(0.0))
                         .unwrap_or(0.0);
                     let lexical = token_overlap_score(
@@ -115,12 +123,11 @@ pub fn search_graph(
         .collect()
 }
 
+/// Deduplicated token set for token-overlap scoring. Thin wrapper over the
+/// shared raw tokenizer (#249) — the dedup is the only difference from the
+/// TF-preserving callers; the split policy itself lives in one place.
 pub(crate) fn tokenize(input: &str) -> BTreeSet<String> {
-    input
-        .split(|ch: char| !ch.is_alphanumeric())
-        .map(|token| token.trim().to_lowercase())
-        .filter(|token| !token.is_empty())
-        .collect()
+    crate::text::tokenize_tokens(input).into_iter().collect()
 }
 
 pub(crate) fn token_overlap_score(lhs: &BTreeSet<String>, rhs: &BTreeSet<String>) -> f32 {
@@ -134,7 +141,7 @@ pub(crate) fn token_overlap_score(lhs: &BTreeSet<String>, rhs: &BTreeSet<String>
 
 #[cfg(test)]
 mod tests {
-    use domain::{DomainId, LifecycleStatus, SubunitType};
+    use domain::{DomainId, LifecycleStatus, ScopeType, Skill, SkillStatus, SubunitType};
 
     use super::*;
 
@@ -149,19 +156,38 @@ mod tests {
         }
     }
 
+    /// Builds a minimal `SeededSkill` for `search_graph` tests. `text` becomes the
+    /// skill name (search_graph derives the lexical document from name+description+
+    /// tags); `subunit_embeddings[i]` is the embedding of subunit `i`.
+    fn seeded(text: &str, subunits: Vec<Subunit>, subunit_embeddings: Vec<Vec<f32>>) -> SeededSkill {
+        SeededSkill {
+            skill: Skill {
+                id: DomainId::new_unchecked("skill-1"),
+                name: text.to_owned(),
+                description: String::new(),
+                scope: ScopeType::Global,
+                status: SkillStatus::Ready,
+                lifecycle: LifecycleStatus::Active,
+                tags: vec![],
+                subunit_ids: vec![],
+                community_id: None,
+            },
+            scope_id: "global".to_owned(),
+            source_paths: vec![],
+            embedding: vec![],
+            subunits,
+            subunit_embeddings,
+            prior: 0.0,
+            community_boost: 0.0,
+        }
+    }
+
     #[test]
     fn search_graph_projects_relevant_subunits() {
         let sub = subunit("sub-1", "Read a file", "Use std::fs::read_to_string");
 
-        let hits = search_graph(
-            "how to read file",
-            &[1.0, 0.0],
-            &["read files in rust".to_owned()],
-            &[vec![sub]],
-            &[vec![vec![1.0, 0.0]]],
-            &[0],
-            3,
-        );
+        let skills = vec![seeded("read files in rust", vec![sub], vec![vec![1.0, 0.0]])];
+        let hits = search_graph("how to read file", &[1.0, 0.0], &skills, &[0], 3);
 
         assert_eq!(hits.len(), 1);
         assert!(hits[0].lexical_score > 0.0);
@@ -185,18 +211,15 @@ mod tests {
         let irrelevant = subunit("irrelevant", "delta echo", "foxtrot golf hotel");
 
         // No lexical overlap between prompt tokens and either subunit's tokens.
-        let hits = search_graph(
-            prompt,
-            &prompt_embedding,
-            &["skill text with no query tokens".to_owned()],
-            &[vec![relevant.clone(), irrelevant.clone()]],
-            &[vec![
+        let skills = vec![seeded(
+            "skill text with no query tokens",
+            vec![relevant.clone(), irrelevant.clone()],
+            vec![
                 vec![1.0, 0.0], // relevant: cosine(query)=1
                 vec![0.0, 1.0], // irrelevant: cosine(query)=0
-            ]],
-            &[0],
-            3,
-        );
+            ],
+        )];
+        let hits = search_graph(prompt, &prompt_embedding, &skills, &[0], 3);
 
         assert_eq!(hits.len(), 1);
         let hit = &hits[0];

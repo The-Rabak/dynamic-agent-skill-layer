@@ -9,14 +9,12 @@ pub mod orchestrator;
 pub mod scope_resolution;
 pub mod scoring;
 pub mod sparse;
+pub(crate) mod text;
 
 pub use bm25::{Bm25Index, SkillLexicalFields, skill_lexical_document};
 pub use circuit_breaker::{CircuitBreaker, CircuitState};
 pub use cosine_rank::{CosineHit, rank_by_cosine};
-pub use dual_scope::{
-    ScopedSearchFailure, ScopedSearchResult, run_project_and_global_concurrently,
-    search_scopes_concurrently,
-};
+pub use dual_scope::{ScopedSearchFailure, ScopedSearchResult, search_scopes_concurrently};
 pub use fusion::{FusedCandidate, ScopeRanking, mmr_select, weighted_reciprocal_rank_fusion};
 pub use graph_search::{GraphHit, SubunitProjection, search_graph};
 pub use hybrid::{HybridCandidate, HybridCandidateSource, HybridQueryError};
