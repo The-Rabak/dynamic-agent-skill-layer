@@ -1,0 +1,67 @@
+---
+ticket_id: T10
+title: Seed a real ≥200-skill corpus by dogfooding the ingestion pipeline
+kind: foundation
+status: ready
+plan_ref: docs/plans/2026-06-08-feat-v1-7-local-hybrid-skilldag-retrieval-plan.md
+tickets_ref: docs/tickets/2026-06-08-v1-7-local-hybrid-skilldag-retrieval/index.md
+architecture_ref: "explicit-handoff: parent plan ## Architectural Context (extraction + graph flow)"
+source_packet_ref: "promoted from todo #216 (P0)"
+feature_home: "ingestion pipeline end-to-end: crates/session-extractor, crates/graph-builder, scripts/, tests/e2e"
+depends_on:
+  - T03
+dependency_type: hard
+serves:
+  - The real corpus that efficacy (T14/T15), the hybrid re-sweep (T11), and trigger-aware retrieval (T12) all consume
+files:
+  - scripts/
+  - tests/e2e/
+  - crates/session-extractor/
+  - crates/graph-builder/
+test_command: "real-stack dogfood ingestion run + PG/Qdrant corpus count verification + recorded ingestion log"
+tdd_mode: ralph
+---
+
+# Seed a real ≥200-skill corpus by dogfooding the ingestion pipeline
+
+## Serves
+
+Multiple downstream tickets need a realistic skill corpus that does not exist yet: efficacy (T14), SWE-bench (T15), the multi-view hybrid re-sweep (T11), and trigger-aware priming (T12). Calibrating or measuring against an empty/toy corpus is meaningless. This is the FOUNDATION ticket — build the corpus FIRST, by running real sessions/transcripts through the ACTUAL capture → extract → `.pending` → human-approve → graph-rebuild loop (dogfooding), so the corpus also exercises and hardens the ingestion path. Because T03 now wires the multi-view extraction fields, this dogfood run is also what first populates `use_when`/`tools`/`artifacts`/`invariants`/… on real skills (the data #259/T11 needs).
+
+## Scope
+
+- Produce ≥200 real, curated, actionable skills in filesystem + PG + Qdrant with real HDBSCAN + tag communities, through the live pipeline.
+- Span multiple domains/communities and both project + global scopes.
+- Record an ingestion log: per-source yield, draft-acceptance rate, weaknesses found (filed as follow-ups).
+- Produce a named, reproducible corpus snapshot that downstream tickets consume as their baseline.
+- Verify multi-view fields populate during extraction (PG `cardinality(tools)>0` count > 0), so T11 has real multi-view content.
+
+## Scope Fence
+
+- No skill in the measured corpus may be hand-authored as a shortcut around ingestion.
+- Do not bypass the `.pending` human gate.
+- Do not tune retrieval to the corpus during seeding (that is T11/T12 territory, on a frozen snapshot).
+
+## Acceptance Criteria
+
+- [ ] ≥200 real skills exist in filesystem + PG + Qdrant with real communities, produced through the actual pipeline against the live stack.
+- [ ] Skills span multiple domains/communities and both project + global scopes.
+- [ ] A recorded ingestion log: per-source yield, draft-acceptance rate, weaknesses (follow-ups filed).
+- [ ] A named, reproducible corpus snapshot that T11/T12/T14/T15 consume as baseline.
+- [ ] Verified: a meaningful fraction of seeded skills carry populated multi-view fields (PG count).
+- [ ] No corpus skill was hand-authored as a shortcut around ingestion.
+
+## Local Context
+
+- WHY source: plan `## Architectural Context`; this is the corpus prerequisite the plan's efficacy non-goals depend on downstream.
+- Ordering: must land before T11/T12/T14/T15.
+- #218/T15 (SWE-bench) organically generates real corpus too — coordinate so the dogfood and SWE-bench corpora are reconcilable, not duplicative.
+
+## Source
+
+Promoted 2026-06-09 from todo #216 (P0, foundation for 205/208/209/210). Original analysis preserved in git history of `todos/216-*`.
+
+## Parent Refs
+
+- Plan: `docs/plans/2026-06-08-feat-v1-7-local-hybrid-skilldag-retrieval-plan.md`
+- Ticket set: `docs/tickets/2026-06-08-v1-7-local-hybrid-skilldag-retrieval/index.md`
