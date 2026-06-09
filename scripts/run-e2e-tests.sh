@@ -2,6 +2,7 @@
 set -euo pipefail
 
 INCLUDE_DREAM=0
+INCLUDE_QUALITY=0
 SKIP_INFRA=0
 SKIP_LIVE=0
 
@@ -9,6 +10,9 @@ for arg in "$@"; do
   case "$arg" in
     --include-dream)
       INCLUDE_DREAM=1
+      ;;
+    --include-quality)
+      INCLUDE_QUALITY=1
       ;;
     --skip-infra)
       SKIP_INFRA=1
@@ -18,7 +22,7 @@ for arg in "$@"; do
       ;;
     *)
       echo "Unknown option: $arg" >&2
-      echo "Usage: $0 [--include-dream] [--skip-infra] [--skip-live]" >&2
+      echo "Usage: $0 [--include-dream] [--include-quality] [--skip-infra] [--skip-live]" >&2
       exit 1
       ;;
   esac
@@ -27,6 +31,24 @@ done
 COMPOSE_FILE="docker-compose.test.yml"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
+
+# ---------------------------------------------------------------------------
+# Run-scoped report directory
+#
+# Every run writes its flat <scenario>__<test_id>.json reports and its
+# per-run stage tree under this unique directory.  The aggregator and the
+# summary script read ONLY from here, so stale artifacts from prior runs
+# (still sitting in tests/e2e/reports/) can never contaminate this run's
+# result.
+#
+# The env var is exported BEFORE any `cargo test` invocation so every test
+# process inherits it and StageLogger picks it up automatically.
+# ---------------------------------------------------------------------------
+REPORTS_BASE_DIR="${REPO_ROOT}/tests/e2e/reports"
+RUN_ID="run-$(date +%Y%m%d-%H%M%S)-$$"
+export E2E_RUN_REPORT_DIR="${REPORTS_BASE_DIR}/runs/${RUN_ID}"
+mkdir -p "${E2E_RUN_REPORT_DIR}"
+echo "==> Run artifacts dir: ${E2E_RUN_REPORT_DIR}"
 
 # Port mappings — keep in sync with docker-compose.test.yml
 OLLAMA_PORT=11444
@@ -58,7 +80,8 @@ if [[ "${SKIP_INFRA}" -eq 0 ]]; then
   cargo test -p graph-builder --test test_real_infrastructure_e2e
 
   echo "==> Running maintenance real-infrastructure E2E tests"
-  cargo test -p maintenance --test test_maintenance_e2e
+  # test_maintenance_e2e requires the `test-utils` feature (gated test doubles, #161).
+  cargo test -p maintenance --features test-utils --test test_maintenance_e2e
 
   if [[ "${SKIP_LIVE}" -eq 0 ]]; then
     echo "==> Building mcp-server and graph-builder test images"
@@ -73,10 +96,56 @@ if [[ "${SKIP_INFRA}" -eq 0 ]]; then
 
     echo "==> Running live data plane roundtrip E2E test"
     export OLLAMA_URL="http://localhost:${OLLAMA_PORT}"
-    export QDRANT_URL="http://localhost:${QDRANT_GRPC_PORT}"
+    # T08 fix: use the REST port (16333) here, not the gRPC port (16334).
+    # The QdrantAdapter uses HTTP/REST; pointing at gRPC (16334) causes
+    # hyper::Parse(Version) errors in check_connectivity.
+    export QDRANT_URL="http://localhost:${QDRANT_HTTP_PORT}"
     export DATABASE_URL="postgres://skill_layer:skill_layer@localhost:${POSTGRES_PORT}/skill_layer_test"
     export REDIS_URL="redis://localhost:${REDIS_PORT}"
-    cargo test -p mcp-server --test test_live_data_plane_roundtrip -- --ignored
+    # The extraction provider reads OLLAMA_EXTRACTION_ENDPOINT (not OLLAMA_URL) and
+    # defaults to :11434, which nothing serves in this topology. Point it at the
+    # real Ollama so live extraction actually runs (todo 103).
+    export OLLAMA_EXTRACTION_ENDPOINT="http://localhost:${OLLAMA_PORT}/api/generate"
+    cargo test -p mcp-server --features test-utils --test test_live_data_plane_roundtrip -- --ignored
+
+    echo "==> Running transcript ingest queue E2E test (todo 103: shipped hook → queue → drain → .pending)"
+    cargo test -p mcp-server --features test-utils --test test_transcript_ingest_queue_e2e -- --ignored
+
+    if [[ "${INCLUDE_QUALITY}" -eq 1 ]]; then
+      # DIAGNOSTIC, NON-GATING. These brutal honesty probes measure the shipped
+      # system against ground truth and are EXPECTED to fail loudly when a gap is
+      # open (retrieval quality below bar, latency over the 500ms budget, semantic
+      # not beating keyword matching, #154 project scope degraded, #156 recovery).
+      # We run them against the live mcp-server + graph-builder containers and do
+      # NOT abort the suite on their failure — their per-test output and the
+      # emitted reports under tests/e2e/reports/ are the evidence. Run them
+      # directly for a true exit code:
+      #   cargo test -p mcp-server --features test-utils --test test_retrieval_quality -- --ignored
+      echo "==> [DIAGNOSTIC] Retrieval-quality harness (precision/recall/MRR/nDCG, semantic-vs-lexical, latency SLO)"
+      cargo test -p mcp-server --features test-utils --test test_retrieval_quality -- --ignored \
+        || echo "    [DIAGNOSTIC] retrieval-quality harness reported failures — see tests/e2e/reports/ (non-gating)"
+
+      echo "==> [DIAGNOSTIC] Brutal deployment-truth probes (#154 containerized project scope, #156 builder-crash recovery)"
+      cargo test -p mcp-server --features test-utils --test test_brutal_probes -- --ignored \
+        || echo "    [DIAGNOSTIC] brutal probes reported failures — see tests/e2e/reports/ (non-gating)"
+
+      echo "==> [DIAGNOSTIC] Extraction-content-quality (real Ollama extraction → .pending must CAPTURE the taught procedure)"
+      cargo test -p mcp-server --features test-utils --test test_extraction_quality -- --ignored \
+        || echo "    [DIAGNOSTIC] extraction-quality reported failures — see tests/e2e/reports/ (non-gating)"
+
+      # Retrieval quality (#210) — drives the REAL running mcp-server over HTTP
+      # (find_skill) + the real claude judge; NO in-process reconstruction.
+      # The hard gate is a REGRESSION FLOOR (judge-aug held-out MRR >= 0.60,
+      # no_match precision >= 0.90) guarding against backslide below the measured
+      # level. The 0.80/0.80 target stays the documented ASPIRATION (currently
+      # unmet at MRR 0.644) tracked in
+      # docs/assessments/2026-06-07-retrieval-quality-234-corpus-measured.md —
+      # printed for visibility, NOT faked green, NOT lowered.
+      # Requires: live 234-corpus + Ollama + the `claude` CLI on PATH.
+      echo "==> [GATING] Retrieval quality on the real 234-corpus (regression floor MRR >= 0.60; aspiration 0.80 tracked)"
+      python3 "${REPO_ROOT}/scripts/retrieval_quality_live.py" --split held_out --gate \
+        --regression-floor 0.60 --config-label "release-gate"
+    fi
 
     echo "==> Tearing down service containers"
     docker compose --ansi never -f "${REPO_ROOT}/${COMPOSE_FILE}" rm -sf mcp-server graph-builder
@@ -84,7 +153,7 @@ if [[ "${SKIP_INFRA}" -eq 0 ]]; then
 fi
 
 echo "==> Running realistic MCP E2E tests"
-cargo test -p mcp-server \
+cargo test -p mcp-server --features test-utils \
   --test test_compile_context \
   --test test_dual_scope \
   --test test_extract_session \
@@ -92,55 +161,68 @@ cargo test -p mcp-server \
   --test test_concurrency_stress
 
 echo "==> Running realistic graph-builder E2E tests"
-cargo test -p graph-builder \
-  --test test_watcher_rebuild \
+# test_watcher_rebuild requires the `test-utils` feature (gated test doubles, #161).
+cargo test -p graph-builder --features test-utils \
+  --test test_watcher_rebuild
+# test_watcher_churn_reconciliation is registered under mcp-server (needs test-utils),
+# not graph-builder — see crates/mcp-server/Cargo.toml.
+cargo test -p mcp-server --features test-utils \
   --test test_watcher_churn_reconciliation
 
 echo "==> Validating dream-state contract tests compile and register"
-cargo test -p mcp-server --test test_dream_state_contract -- --skip ignored
+cargo test -p mcp-server --features test-utils --test test_dream_state_contract -- --skip ignored
 
 if [[ "${INCLUDE_DREAM}" -eq 1 ]]; then
   echo "==> Running promoted dream-state contract tests (DS-003 through DS-007)"
-  cargo test -p mcp-server --test test_dream_state_contract \
+  # cargo accepts only ONE positional TESTNAME before `--`; the libtest harness
+  # after `--` accepts multiple filter substrings (OR-matched), so the five
+  # promoted-contract names go after `-- --ignored`.
+  cargo test -p mcp-server --features test-utils --test test_dream_state_contract \
+    -- --ignored \
     dependency_chaos_matrix \
     outbox_backlog_replays \
     qdrant_pg_drift \
     sustained_watcher_and_extraction \
-    high_qps_compile_context \
-    -- --ignored
+    high_qps_compile_context
 
   echo "==> Running watcher churn live E2E test"
-  cargo test -p graph-builder --test test_watcher_churn_reconciliation watcher_churn_and_reconciliation_converges_to_correct_graph_state_under_live_pg_qdrant -- --ignored
+  cargo test -p mcp-server --features test-utils --test test_watcher_churn_reconciliation watcher_churn_and_reconciliation_converges_to_correct_graph_state_under_live_pg_qdrant -- --ignored
 
   echo "==> Running concurrency stress live E2E tests"
-  cargo test -p mcp-server --test test_concurrency_stress -- --ignored
+  cargo test -p mcp-server --features test-utils --test test_concurrency_stress -- --ignored
 
   echo "==> Running all live data plane E2E tests"
-  cargo test -p mcp-server --test test_live_data_plane_roundtrip -- --ignored
+  cargo test -p mcp-server --features test-utils --test test_live_data_plane_roundtrip -- --ignored
 fi
 
 echo "==> All selected E2E suites completed"
 
 echo "==> Aggregating E2E reports"
-REPORTS_DIR="${REPO_ROOT}/tests/e2e/reports"
 TIMESTAMP=$(date +%Y%m%d%H%M%S)
-AGGREGATE_REPORT="${REPORTS_DIR}/run__${TIMESTAMP}.json"
+AGGREGATE_REPORT="${E2E_RUN_REPORT_DIR}/run__${TIMESTAMP}.json"
 
-# Count test results from report files
-if ls "${REPORTS_DIR}"/*.json 2>/dev/null | grep -qv "run__"; then
+# Glob ONLY the flat <scenario>__<test_id>.json files written by StageLogger
+# into this run's scoped directory.  The broader tests/e2e/reports/ tree is
+# intentionally NOT globbed here — stale files from prior runs must not
+# affect this run's aggregate.
+if ls "${E2E_RUN_REPORT_DIR}"/*.json 2>/dev/null | grep -qv "run__"; then
   echo "Found individual report files, aggregating..."
-  # Use python3 to merge all individual reports into one aggregate
+  # Use python3 to merge run-scoped reports into one aggregate.
   python3 -c "
-import json, glob, os
-reports_dir = '${REPORTS_DIR}'
+import json, glob, os, sys
+run_dir = '${E2E_RUN_REPORT_DIR}'
 reports = []
-for path in sorted(glob.glob(os.path.join(reports_dir, '*.json'))):
+for path in sorted(glob.glob(os.path.join(run_dir, '*.json'))):
+    basename = os.path.basename(path)
+    # Skip any pre-existing aggregate files (run__*.json) from re-ingestion.
+    if basename.startswith('run__'):
+        continue
     with open(path) as f:
         try:
             report = json.load(f)
             reports.append(report)
         except json.JSONDecodeError:
-            print(f'Warning: could not parse {path}')
+            print(f'Warning: could not parse {path}', file=sys.stderr)
 
 total = len(reports)
 passed = sum(1 for r in reports if r.get('outcome', {}).get('status') == 'Passed')
@@ -149,6 +231,8 @@ degraded_passed = sum(1 for r in reports if r.get('outcome', {}).get('status') =
                        and any(d.get('service') for d in r.get('degradation_events', [])))
 
 aggregate = {
+    'run_id': '${RUN_ID}',
+    'run_artifact_root': run_dir,
     'run_summary': {
         'total_tests': total,
         'passed': passed,
@@ -169,22 +253,40 @@ print(f'Aggregated {total} reports ({passed} passed, {failed} failed) into ${AGG
 "
 else
   echo "No individual reports found, creating minimal aggregate"
-  echo '{"run_summary":{"total_tests":0,"passed":0,"failed":0,"degraded_passed":0,"total_duration_ms":0,"start_time":"","end_time":"","container_versions":{}},"reports":[]}' > "${AGGREGATE_REPORT}"
+  python3 -c "
+import json
+aggregate = {
+    'run_id': '${RUN_ID}',
+    'run_artifact_root': '${E2E_RUN_REPORT_DIR}',
+    'run_summary': {'total_tests': 0, 'passed': 0, 'failed': 0, 'degraded_passed': 0,
+                    'total_duration_ms': 0, 'start_time': '', 'end_time': '',
+                    'container_versions': {}},
+    'reports': []
+}
+with open('${AGGREGATE_REPORT}', 'w') as f:
+    json.dump(aggregate, f, indent=2)
+"
 fi
 
+echo "==> Generating human-readable run summary"
+# Pass --input pointing at this run's aggregate so the summary reflects
+# ONLY this run, never stale artifacts from prior runs.
+python3 "${SCRIPT_DIR}/generate-e2e-summary.py" \
+    --input "${AGGREGATE_REPORT}" \
+    --output "${E2E_RUN_REPORT_DIR}/summary.md" \
+  2>&1 || echo "Warning: summary generation failed (non-fatal)"
+
+# Also write latest-summary.md so the repo-level convenience pointer is fresh.
+cp "${E2E_RUN_REPORT_DIR}/summary.md" \
+   "${REPORTS_BASE_DIR}/latest-summary.md" 2>/dev/null || true
+
 echo "==> Running judge contract validation"
-JUDGE_REPORT="${REPORTS_DIR}/judge_evaluation.json"
+JUDGE_REPORT="${E2E_RUN_REPORT_DIR}/judge_evaluation.json"
 python3 -c "
 import json, os
-reports_dir = '${REPORTS_DIR}'
 
-# Find the latest aggregate report
-agg_files = sorted([f for f in os.listdir(reports_dir) if f.startswith('run__') and f.endswith('.json')])
-if not agg_files:
-    print('No aggregate report found')
-    exit(1)
-
-with open(os.path.join(reports_dir, agg_files[-1])) as f:
+# Read ONLY the aggregate for THIS run — never glob the broad reports/ dir.
+with open('${AGGREGATE_REPORT}') as f:
     aggregate = json.load(f)
 
 reports = aggregate.get('reports', [])

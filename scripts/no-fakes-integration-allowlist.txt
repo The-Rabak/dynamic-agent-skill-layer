@@ -1,0 +1,26 @@
+# Frozen fake-debt manifest for tests/integration/.
+#
+# Every file listed here contains known fake/stub/mock usage that predates the
+# no-fakes constitution enforcement (2026-06-07). These files are FROZEN DEBT:
+# the guard will pass them even though they contain banned symbols.
+#
+# POLICY:
+# - This manifest may only SHRINK over time (never grow).
+# - Adding a new file here is a guard violation — the guard hard-fails on any
+#   tests/integration/ file that uses a banned symbol and is NOT in this list.
+# - Each file listed is tracked by a follow-up epic (issue #207+) for real
+#   Ollama/LLM wiring. Remove the entry once the file is fully converted.
+#
+# Format: one relative path per line (relative to repo root), no leading slash.
+# Blank lines and lines starting with '#' are ignored.
+
+tests/integration/test_admin_tools.rs
+tests/integration/test_compile_context.rs
+tests/integration/test_dual_scope.rs
+tests/integration/test_extract_session.rs
+tests/integration/test_merge_workflow.rs
+tests/integration/test_outbox_consistency.rs
+tests/integration/test_promotion_recurrence.rs
+tests/integration/test_retire_workflow.rs
+tests/integration/test_session_persistence.rs
+tests/integration/test_watcher_rebuild.rs

@@ -39,7 +39,7 @@ crates/
 ├── domain/           # Pure domain: types, traits, config (ZERO infra deps)
 ├── infrastructure/   # Concrete impls: Ollama clients, PG pool, Redis, resilience
 ├── mcp-server/       # Thin MCP transport: bootstrap, tool handlers, session state
-├── retrieval/        # Retrieval pipeline: Qdrant search, PG graph, scoring, MMR+RRF
+├── retrieval/        # Retrieval pipeline: in-memory cosine ranking over CQRS snapshot, scoring, MMR+RRF
 ├── compiler/         # Context compilation: template, rescue, formatting
 ├── graph-builder/    # Offline graph construction: watcher, extraction, embeddings, HDBSCAN
 ├── maintenance/      # Policy workflows: merge detection, retirement, cron trigger
@@ -60,9 +60,9 @@ crates/
   - Notes: All concrete external-system adapters live here. Service crates never instantiate `reqwest` or `sqlx::PgPool` directly — they get them from `infrastructure`.
 
 - **Feature home: `crates/retrieval/`**
-  - Owns: Qdrant vector search (per-scope); PG recursive CTE graph traversal; combined scoring per SkillRAE paper eq.3; MMR per-scope deduplication; RRF cross-scope fusion; dual-scope concurrent orchestrator; relevance-threshold filtering; result ranking
+  - Owns: in-memory cosine ranking over the `RetrievalSnapshot` (CQRS read model — see ADR-0001); Qdrant and PG are write-side only, consulted at snapshot-rebuild time, not at request time; combined scoring per SkillRAE paper eq.3; MMR per-scope deduplication; RRF cross-scope fusion; dual-scope concurrent orchestrator; relevance-threshold filtering; result ranking
   - Crosses into: `domain` (types, traits), `infrastructure` (concrete clients)
-  - Notes: Pure retrieval logic. No MCP transport concerns. No compilation. No session tracking. Testable in isolation with mock Qdrant/PG.
+  - Notes: Pure retrieval logic. No MCP transport concerns. No compilation. No session tracking. Testable in isolation against an in-memory snapshot; no Qdrant/PG read-path dependency (ADR-0001: zero inward dependency for `crates/retrieval` at request time).
 
 - **Feature home: `crates/compiler/`**
   - Owns: Structured markdown template compilation; rescue-aware subunit attachment; context formatting for Claude Code `additionalContext`
@@ -185,7 +185,7 @@ crates/
 
 - **Seam: Embedding generation**
   - **Adapter:** `OllamaEmbeddingService` (in `infrastructure`, implements `EmbeddingService`)
-  - **Contract:** Input = text or batch of texts. Output = `Vec<f32>` of configured dimension (768). Error = `EmbeddingError::ProviderUnavailable` on Ollama failure. Must not block caller longer than timeout (500ms for sync path, 5s for batch). Must not exceed concurrency semaphore (4 concurrent calls)
+  - **Contract:** Input = text or batch of texts. Output = `Vec<f32>` of configured dimension (768). Error = `EmbeddingError::ProviderUnavailable` on Ollama failure. Must not block caller longer than timeout (500ms for sync path, 5s for batch). Concurrency is bounded by a semaphore sized via `EMBED_MAX_CONCURRENCY` (default 16, raised from the original 4 so the warm read path meets the SC-1 "<500ms under concurrent load" SLA when multiple sessions embed prompts at once; pair with `OLLAMA_NUM_PARALLEL` on the Ollama server — see DS-007).
 
 - **Seam: Session transcript → skill extraction**
   - **Adapter:** `ClaudeExtractor` (default, in `infrastructure`, implements `TranscriptSkillExtractionService`) + `OllamaExtractor` (optional, config-gated, in `infrastructure`)

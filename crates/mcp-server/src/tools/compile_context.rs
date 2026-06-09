@@ -1,8 +1,4 @@
-use std::{
-    collections::BTreeMap,
-    sync::Arc,
-    time::Instant,
-};
+use std::{collections::BTreeMap, sync::Arc, time::Instant};
 
 use compiler::{
     CompilerHighlightInput, CompilerRescueCueInput, CompilerSkillInput, TemplateOnlyCompiler,
@@ -21,11 +17,39 @@ pub enum CompileContextStatus {
     DuplicateSuppressed,
 }
 
+/// The lifecycle event that caused a `compile_context` call.
+///
+/// Bounded to a fixed set of meaningful variants so callers cannot pass
+/// arbitrary strings. Unknown string values from JSON deserialize to `Other`,
+/// which preserves the "unknown = no bypass" behavior safely.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TriggerKind {
+    /// Post-compaction re-inject: bypasses session suppression for this single call
+    /// so the agent receives fresh context after Claude Code summarizes the conversation.
+    Compact,
+    /// Any unrecognized trigger value. Treated as an ordinary call — no bypass.
+    #[serde(other)]
+    Other,
+}
+
+/// Request to compile skill context for the current session.
+///
+/// The optional `trigger` hint identifies the lifecycle event that caused this
+/// call. When `trigger` is `TriggerKind::Compact` (a post-compaction re-inject),
+/// session suppression is bypassed for this single call so the agent receives
+/// fresh context after summarization. All other trigger values (or `None`) leave
+/// suppression semantics unchanged.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CompileContextRequest {
     pub prompt: String,
     pub session_id: String,
     pub repo_path: String,
+    /// Lifecycle event that triggered this call.
+    /// `TriggerKind::Compact` bypasses session suppression for a single re-inject.
+    /// Unknown string values deserialize to `TriggerKind::Other` (no bypass).
+    #[serde(default)]
+    pub trigger: Option<TriggerKind>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -64,15 +88,37 @@ impl CompileContextTool {
     }
 
     pub async fn invoke(&self, request: CompileContextRequest) -> CompileContextResponse {
+        self.invoke_and_capture_outcome(request).await.0
+    }
+
+    /// Invokes `compile_context` and returns both the response and the retrieval
+    /// outcome (if a live retrieval was performed).
+    ///
+    /// The second element is `Some` only when a real retrieval ran (not when the
+    /// response was served from cache or suppression). Callers at the coordination
+    /// layer (`McpServerApp::compile_context`) use this to extract selected skill
+    /// IDs and scores for the async usage write — without adding persistence into
+    /// this pure query-compile unit.
+    pub async fn invoke_and_capture_outcome(
+        &self,
+        request: CompileContextRequest,
+    ) -> (CompileContextResponse, Option<RetrievalOutcome>) {
         let started_at = Instant::now();
         let graph_version = self.retriever.current_graph_version();
         let scopes = self.retriever.configured_scopes();
 
-        if let Some(response) = self
-            .try_suppression_or_cache(&request, &scopes, graph_version, started_at)
-            .await
+        // A `compact`-triggered call re-injects context after Claude Code summarizes
+        // the conversation. Suppression would block it with `DuplicateSuppressed`,
+        // making the re-inject hook a silent no-op. Bypass suppression for this
+        // single call only — production suppression semantics remain unchanged (T08).
+        let compact_bypass = matches!(request.trigger, Some(TriggerKind::Compact));
+
+        if !compact_bypass
+            && let Some(response) = self
+                .try_suppression_or_cache(&request, &scopes, graph_version, started_at)
+                .await
         {
-            return response;
+            return (response, None);
         }
 
         let outcome = self
@@ -80,7 +126,10 @@ impl CompileContextTool {
             .retrieve(&request.prompt, Some(request.repo_path.as_str()))
             .await;
 
-        self.handle_retrieval_result(&request, outcome, &scopes).await
+        let response = self
+            .handle_retrieval_result(&request, &outcome, &scopes)
+            .await;
+        (response, Some(outcome))
     }
 
     async fn try_suppression_or_cache(
@@ -140,7 +189,7 @@ impl CompileContextTool {
     async fn handle_retrieval_result(
         &self,
         request: &CompileContextRequest,
-        outcome: RetrievalOutcome,
+        outcome: &RetrievalOutcome,
         scopes: &[String],
     ) -> CompileContextResponse {
         if outcome.skills.is_empty() {
@@ -153,8 +202,8 @@ impl CompileContextTool {
                         .cloned()
                         .or_else(|| Some("retrieval_degraded".to_owned())),
                     additional_context: None,
-                    health: outcome.health,
-                    scopes_considered: outcome.scopes_considered,
+                    health: outcome.health.clone(),
+                    scopes_considered: outcome.scopes_considered.clone(),
                     graph_version: outcome.graph_version,
                     latency_ms: outcome.latency_ms,
                     source: "retrieval".to_owned(),
@@ -190,15 +239,15 @@ impl CompileContextTool {
                 status: CompileContextStatus::NoMatch,
                 reason_code: Some("no_relevant_skills".to_owned()),
                 additional_context: None,
-                health: outcome.health,
-                scopes_considered: outcome.scopes_considered,
+                health: outcome.health.clone(),
+                scopes_considered: outcome.scopes_considered.clone(),
                 graph_version: outcome.graph_version,
                 latency_ms: outcome.latency_ms,
                 source: "retrieval".to_owned(),
             };
         }
 
-        let markdown = self.compile_markdown(&request.prompt, &outcome);
+        let markdown = self.compile_markdown(&request.prompt, outcome);
 
         if outcome.is_degraded() {
             return CompileContextResponse {
@@ -209,23 +258,23 @@ impl CompileContextTool {
                     .cloned()
                     .or_else(|| Some("retrieval_degraded".to_owned())),
                 additional_context: Some(markdown),
-                health: outcome.health,
-                scopes_considered: outcome.scopes_considered,
+                health: outcome.health.clone(),
+                scopes_considered: outcome.scopes_considered.clone(),
                 graph_version: outcome.graph_version,
                 latency_ms: outcome.latency_ms,
                 source: "retrieval".to_owned(),
             };
         }
 
-        self.cache_and_suppress_ok(request, &outcome, &markdown, scopes)
+        self.cache_and_suppress_ok(request, outcome, &markdown, scopes)
             .await;
 
         CompileContextResponse {
             status: CompileContextStatus::Ok,
             reason_code: None,
             additional_context: Some(markdown),
-            health: outcome.health,
-            scopes_considered: outcome.scopes_considered,
+            health: outcome.health.clone(),
+            scopes_considered: outcome.scopes_considered.clone(),
             graph_version: outcome.graph_version,
             latency_ms: outcome.latency_ms,
             source: "retrieval".to_owned(),
@@ -283,6 +332,10 @@ impl CompileContextTool {
                         relevance: highlight.relevance,
                     })
                     .collect(),
+                // Thread scope + rationale through for the deterministic
+                // "Why These Skills" section in render_markdown.
+                matched_scope: retrieved.scored_skill.matched_scope.as_str().to_owned(),
+                rationale: retrieved.scored_skill.rationale.clone(),
             })
             .collect();
         let rescue_pool: Vec<CompilerRescueCueInput> = outcome

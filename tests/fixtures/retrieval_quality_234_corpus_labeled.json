@@ -1,0 +1,962 @@
+{
+ "_description": "Labeled relevance corpus for the 234-skill real-corpus retrieval quality sweep (#210). Unlike retrieval_quality_labeled.json (toy 8-skill fixture), this file targets the REAL live corpus in skill_layer_test with 234 active/ready skills. Queries authored OFFLINE from skill content read from PG WITHOUT running the retriever \u2014 no flatter-bias. Split: 20 anchor skills for TUNING, 15 anchor skills for HELD-OUT evaluation (disjoint). Both sets include lexical and disjoint query kinds plus negatives. Anchors are the hard recall targets.",
+ "_authoring_protocol": "Each query was derived by reading the anchor skill's description and subunits from Postgres (offline, no retriever access). Lexical queries share key terms with the skill. Disjoint queries paraphrase the skill's intent using vocabulary NOT appearing in the skill's name, description, or tags. The retriever was NOT run during authoring to prevent flatter-bias. Authoring date: 2026-06-07, corpus snapshot: 234 skills (179 global + 55 project).",
+ "_target_set": "FROZEN BEFORE SWEEP: MRR >= 0.80, nDCG@3 >= 0.80, no_match precision >= 0.90",
+ "_split": "tuning_anchors (20) vs held_out_anchors (15), disjoint by anchor skill",
+ "_thresholds": {
+  "note": "FROZEN target committed BEFORE the tuning sweep per the #210 contract. Do NOT lower these to force green.",
+  "mean_mrr_min": 0.8,
+  "mean_precision_at_1_min": 0.75,
+  "mean_ndcg_at_3_min": 0.8,
+  "disjoint_recall_at_3_min": 0.6,
+  "semantic_must_beat_lexical_map_on_disjoint": true,
+  "negative_max_false_match_rate": 0.1,
+  "latency_p95_ms_budget": 500
+ },
+ "_tuning_query_ids": [
+  "t-lex-append-log",
+  "t-dis-append-log",
+  "t-lex-clippy-target",
+  "t-dis-clippy-target",
+  "t-lex-docker-health",
+  "t-dis-docker-health",
+  "t-lex-env-fail-loud",
+  "t-dis-env-fail-loud",
+  "t-lex-forced-tool-use",
+  "t-dis-forced-tool-use",
+  "t-lex-git-conv-commit",
+  "t-dis-git-conv-commit",
+  "t-lex-no-prod-stubs",
+  "t-dis-no-prod-stubs",
+  "t-lex-pg-truncate-ddl",
+  "t-dis-pg-truncate-ddl",
+  "t-lex-retrieval-thresh",
+  "t-dis-retrieval-thresh",
+  "t-lex-tokio-file-io",
+  "t-dis-tokio-file-io",
+  "t-lex-arch-drift",
+  "t-dis-arch-drift",
+  "t-lex-batch-triage",
+  "t-dis-batch-triage",
+  "t-lex-deep-grok",
+  "t-dis-deep-grok",
+  "t-lex-mrr-corpus-poll",
+  "t-dis-mrr-corpus-poll",
+  "t-lex-kv-prefix",
+  "t-dis-kv-prefix",
+  "t-lex-ollama-think-leak",
+  "t-dis-ollama-think-leak",
+  "t-lex-parallel-safety",
+  "t-dis-parallel-safety",
+  "t-lex-rust-unit-test",
+  "t-dis-rust-unit-test",
+  "t-lex-serde-default",
+  "t-dis-serde-default",
+  "t-lex-silent-seam",
+  "t-dis-silent-seam",
+  "t-neg-1",
+  "t-neg-2",
+  "t-neg-3",
+  "t-neg-4",
+  "t-neg-5"
+ ],
+ "_held_out_query_ids": [
+  "h-lex-scope-fence",
+  "h-dis-scope-fence",
+  "h-lex-validate-agent",
+  "h-dis-validate-agent",
+  "h-lex-fail-provenance",
+  "h-dis-fail-provenance",
+  "h-lex-pre-action-verify",
+  "h-dis-pre-action-verify",
+  "h-lex-edge-level",
+  "h-dis-edge-level",
+  "h-lex-ci-human-gate",
+  "h-dis-ci-human-gate",
+  "h-lex-llm-think-json",
+  "h-dis-llm-think-json",
+  "h-lex-incr-commit",
+  "h-dis-incr-commit",
+  "h-lex-git-co-authored",
+  "h-dis-git-co-authored",
+  "h-lex-concurrency-bringup",
+  "h-dis-concurrency-bringup",
+  "h-lex-retrieval-mrr-diag",
+  "h-dis-retrieval-mrr-diag",
+  "h-lex-arch-drift-item",
+  "h-dis-arch-drift-item",
+  "h-lex-kv-store-prefix",
+  "h-dis-kv-store-prefix",
+  "h-lex-serde-fail",
+  "h-dis-serde-fail",
+  "h-lex-pg-async-deadlock",
+  "h-dis-pg-async-deadlock",
+  "h-neg-1",
+  "h-neg-2",
+  "h-neg-3",
+  "h-neg-4",
+  "h-neg-5"
+ ],
+ "queries": [
+  {
+   "id": "t-lex-append-log",
+   "kind": "lexical",
+   "split": "tuning",
+   "text": "postgres append log one row per event instead of upsert to preserve per-event metadata",
+   "anchor": "append-log-model-for-event-tracking",
+   "relevant": [
+    "append-log-model-for-event-tracking"
+   ]
+  },
+  {
+   "id": "t-dis-append-log",
+   "kind": "disjoint",
+   "split": "tuning",
+   "text": "keep a permanent ledger of every action by writing a fresh entry each time rather than overwriting the previous tally",
+   "anchor": "append-log-model-for-event-tracking",
+   "relevant": [
+    "append-log-model-for-event-tracking"
+   ]
+  },
+  {
+   "id": "t-lex-clippy-target",
+   "kind": "lexical",
+   "split": "tuning",
+   "text": "cargo clippy --lib --bins scope only production code avoid pre-existing lint violations in e2e files",
+   "anchor": "cargo-clippy-target-isolation",
+   "relevant": [
+    "cargo-clippy-target-isolation"
+   ]
+  },
+  {
+   "id": "t-dis-clippy-target",
+   "kind": "disjoint",
+   "split": "tuning",
+   "text": "restrict the static-analysis pass to only the deliverable modules so noise from shared testing scaffolding does not pollute the report",
+   "anchor": "cargo-clippy-target-isolation",
+   "relevant": [
+    "cargo-clippy-target-isolation"
+   ]
+  },
+  {
+   "id": "t-lex-docker-health",
+   "kind": "lexical",
+   "split": "tuning",
+   "text": "docker compose healthcheck condition service_healthy depends_on postgres redis qdrant readiness probe",
+   "anchor": "docker-compose-service-health",
+   "relevant": [
+    "docker-compose-service-health"
+   ]
+  },
+  {
+   "id": "t-dis-docker-health",
+   "kind": "disjoint",
+   "split": "tuning",
+   "text": "make a dependent container hold off from launching until the upstream box signals its internal diagnostics are passing",
+   "anchor": "docker-compose-service-health",
+   "relevant": [
+    "docker-compose-service-health"
+   ]
+  },
+  {
+   "id": "t-lex-env-fail-loud",
+   "kind": "lexical",
+   "split": "tuning",
+   "text": "environment variable configuration parsing fail loud panic on invalid value never silent fallback default",
+   "anchor": "env-var-fail-loud-parsing",
+   "relevant": [
+    "env-var-fail-loud-parsing"
+   ]
+  },
+  {
+   "id": "t-dis-env-fail-loud",
+   "kind": "disjoint",
+   "split": "tuning",
+   "text": "when a process setting supplied by the operator is malformed, crash immediately rather than quietly substituting a built-in value",
+   "anchor": "env-var-fail-loud-parsing",
+   "relevant": [
+    "env-var-fail-loud-parsing"
+   ]
+  },
+  {
+   "id": "t-lex-forced-tool-use",
+   "kind": "lexical",
+   "split": "tuning",
+   "text": "anthropic API tool_use function calling forced structured JSON output schema enforcement reliable LLM",
+   "anchor": "forced-tool-use-for-reliable-llm-json-output",
+   "relevant": [
+    "forced-tool-use-for-reliable-llm-json-output"
+   ]
+  },
+  {
+   "id": "t-dis-forced-tool-use",
+   "kind": "disjoint",
+   "split": "tuning",
+   "text": "compel a language model to emit a precise shape every time by routing its output through a declared callable interface rather than hoping free prose parses cleanly",
+   "anchor": "forced-tool-use-for-reliable-llm-json-output",
+   "relevant": [
+    "forced-tool-use-for-reliable-llm-json-output"
+   ]
+  },
+  {
+   "id": "t-lex-git-conv-commit",
+   "kind": "lexical",
+   "split": "tuning",
+   "text": "conventional commit message format feat fix docs refactor trunk-based branching git workflow",
+   "anchor": "git-conventional-commit-workflow",
+   "relevant": [
+    "git-conventional-commit-workflow"
+   ]
+  },
+  {
+   "id": "t-dis-git-conv-commit",
+   "kind": "disjoint",
+   "split": "tuning",
+   "text": "structure each checkpoint description with a typed prefix and a slim summary so the change stream stays navigable and reviewable",
+   "anchor": "git-conventional-commit-workflow",
+   "relevant": [
+    "git-conventional-commit-workflow"
+   ]
+  },
+  {
+   "id": "t-lex-no-prod-stubs",
+   "kind": "lexical",
+   "split": "tuning",
+   "text": "production stubs fakes placeholders forbidden fail loud panic at seam real wiring required no fallback",
+   "anchor": "no-production-stubs-fail-loud",
+   "relevant": [
+    "no-production-stubs-fail-loud"
+   ]
+  },
+  {
+   "id": "t-dis-no-prod-stubs",
+   "kind": "disjoint",
+   "split": "tuning",
+   "text": "live execution paths must blow up visibly if any component is missing or simulated rather than quietly degrading to a canned stand-in",
+   "anchor": "no-production-stubs-fail-loud",
+   "relevant": [
+    "no-production-stubs-fail-loud"
+   ]
+  },
+  {
+   "id": "t-lex-pg-truncate-ddl",
+   "kind": "lexical",
+   "split": "tuning",
+   "text": "postgresql deadlock TRUNCATE TABLE test teardown async writer in-flight transaction cascade",
+   "anchor": "postgres-truncate-teardown-deadlock",
+   "relevant": [
+    "postgres-truncate-teardown-deadlock"
+   ]
+  },
+  {
+   "id": "t-dis-pg-truncate-ddl",
+   "kind": "disjoint",
+   "split": "tuning",
+   "text": "the cleanup step hangs because a background writer still holds a table lock that the table-wipe needs to acquire",
+   "anchor": "postgres-truncate-teardown-deadlock",
+   "relevant": [
+    "postgres-truncate-teardown-deadlock"
+   ]
+  },
+  {
+   "id": "t-lex-retrieval-thresh",
+   "kind": "lexical",
+   "split": "tuning",
+   "text": "calibrate retrieval relevance threshold embedding cosine gap between highest negative and lowest positive scores",
+   "anchor": "retrieval-threshold-calibration",
+   "relevant": [
+    "retrieval-threshold-calibration"
+   ]
+  },
+  {
+   "id": "t-dis-retrieval-thresh",
+   "kind": "disjoint",
+   "split": "tuning",
+   "text": "find the cutoff score that separates genuinely off-topic queries from on-point ones by measuring the narrowest gap between the worst accepted and best rejected result",
+   "anchor": "retrieval-threshold-calibration",
+   "relevant": [
+    "retrieval-threshold-calibration"
+   ]
+  },
+  {
+   "id": "t-lex-tokio-file-io",
+   "kind": "lexical",
+   "split": "tuning",
+   "text": "tokio async file I/O rust read write BufReader non-blocking error boundaries",
+   "anchor": "rust-tokio-async-file-io",
+   "relevant": [
+    "rust-tokio-async-file-io"
+   ]
+  },
+  {
+   "id": "t-dis-tokio-file-io",
+   "kind": "disjoint",
+   "split": "tuning",
+   "text": "stream bytes from storage without holding up the cooperative scheduler using the Rust async runtime's native disk primitives",
+   "anchor": "rust-tokio-async-file-io",
+   "relevant": [
+    "rust-tokio-async-file-io"
+   ]
+  },
+  {
+   "id": "t-lex-arch-drift",
+   "kind": "lexical",
+   "split": "tuning",
+   "text": "architecture drift code review DRIFT items flagging human decision required auto-apply deferred",
+   "anchor": "architecture-drift-item-escalation",
+   "relevant": [
+    "architecture-drift-item-escalation"
+   ]
+  },
+  {
+   "id": "t-dis-arch-drift",
+   "kind": "disjoint",
+   "split": "tuning",
+   "text": "when inspection reveals that a change reverses an established design choice, label it separately so a stakeholder must approve before it proceeds",
+   "anchor": "architecture-drift-item-escalation",
+   "relevant": [
+    "architecture-drift-item-escalation"
+   ]
+  },
+  {
+   "id": "t-lex-batch-triage",
+   "kind": "lexical",
+   "split": "tuning",
+   "text": "batch todo triage workflow verify findings categorize accept-or-decide open decisions recorded priority p1 p2 p3",
+   "anchor": "batch-todo-triage-with-decision-gating",
+   "relevant": [
+    "batch-todo-triage-with-decision-gating"
+   ]
+  },
+  {
+   "id": "t-dis-batch-triage",
+   "kind": "disjoint",
+   "split": "tuning",
+   "text": "work through a pile of pending items by confirming each against the codebase before marking it accepted, and holding any with genuine alternatives aside for explicit resolution one at a time",
+   "anchor": "batch-todo-triage-with-decision-gating",
+   "relevant": [
+    "batch-todo-triage-with-decision-gating"
+   ]
+  },
+  {
+   "id": "t-lex-deep-grok",
+   "kind": "lexical",
+   "split": "tuning",
+   "text": "fully understand repository logic paths documentation implementation before writing code pre-execution standing rule",
+   "anchor": "deep-repo-grok-before-execution",
+   "relevant": [
+    "deep-repo-grok-before-execution"
+   ]
+  },
+  {
+   "id": "t-dis-deep-grok",
+   "kind": "disjoint",
+   "split": "tuning",
+   "text": "absorb the whole system map \u2014 entry points, data flows, boundary contracts \u2014 before putting a single changed character on disk",
+   "anchor": "deep-repo-grok-before-execution",
+   "relevant": [
+    "deep-repo-grok-before-execution"
+   ]
+  },
+  {
+   "id": "t-lex-mrr-corpus-poll",
+   "kind": "lexical",
+   "split": "tuning",
+   "text": "low MRR retrieval benchmark foreign namespace skills polluting global graph top-k displacement contamination",
+   "anchor": "diagnose-retrieval-mrr-collapse-from-corpus-pollution",
+   "relevant": [
+    "diagnose-retrieval-mrr-collapse-from-corpus-pollution"
+   ]
+  },
+  {
+   "id": "t-dis-mrr-corpus-poll",
+   "kind": "disjoint",
+   "split": "tuning",
+   "text": "the ranking quality suddenly plunged because leftover entries from another test suite are squatting in the shared index and pushing the real targets out of the result window",
+   "anchor": "diagnose-retrieval-mrr-collapse-from-corpus-pollution",
+   "relevant": [
+    "diagnose-retrieval-mrr-collapse-from-corpus-pollution"
+   ]
+  },
+  {
+   "id": "t-lex-kv-prefix",
+   "kind": "lexical",
+   "split": "tuning",
+   "text": "kv store dashmap prefix-based clearing key format write must match clear prefix remove_prefix silent no-op stale state",
+   "anchor": "kv-store-write-clear-prefix-consistency",
+   "relevant": [
+    "kv-store-write-clear-prefix-consistency"
+   ]
+  },
+  {
+   "id": "t-dis-kv-prefix",
+   "kind": "disjoint",
+   "split": "tuning",
+   "text": "the cache invalidation sweep quietly does nothing because the key template used at insert time differs from the pattern used at eviction time",
+   "anchor": "kv-store-write-clear-prefix-consistency",
+   "relevant": [
+    "kv-store-write-clear-prefix-consistency"
+   ]
+  },
+  {
+   "id": "t-lex-ollama-think-leak",
+   "kind": "lexical",
+   "split": "tuning",
+   "text": "ollama thinking model gemma chain-of-thought leaks into JSON keys think false structured output contamination",
+   "anchor": "ollama-thinking-model-json-output-contamination",
+   "relevant": [
+    "ollama-thinking-model-json-output-contamination"
+   ]
+  },
+  {
+   "id": "t-dis-ollama-think-leak",
+   "kind": "disjoint",
+   "split": "tuning",
+   "text": "the local inference server is including its internal monologue as extra fields in the response object instead of restricting output to the requested schema",
+   "anchor": "ollama-thinking-model-json-output-contamination",
+   "relevant": [
+    "ollama-thinking-model-json-output-contamination"
+   ]
+  },
+  {
+   "id": "t-lex-parallel-safety",
+   "kind": "lexical",
+   "split": "tuning",
+   "text": "parallel agent dispatch scope fence file surface partition CI gates validate fence compliance promotion lifecycle",
+   "anchor": "parallel-agent-full-safety-lifecycle",
+   "relevant": [
+    "parallel-agent-full-safety-lifecycle"
+   ]
+  },
+  {
+   "id": "t-dis-parallel-safety",
+   "kind": "disjoint",
+   "split": "tuning",
+   "text": "send multiple workers at the same codebase simultaneously without collisions by assigning each its own non-overlapping patch of files and verifying nobody strayed before merging",
+   "anchor": "parallel-agent-full-safety-lifecycle",
+   "relevant": [
+    "parallel-agent-full-safety-lifecycle"
+   ]
+  },
+  {
+   "id": "t-lex-rust-unit-test",
+   "kind": "lexical",
+   "split": "tuning",
+   "text": "rust unit testing cfg test module tokio test async test-utils feature gate integration test helpers",
+   "anchor": "rust-unit-testing-patterns",
+   "relevant": [
+    "rust-unit-testing-patterns"
+   ]
+  },
+  {
+   "id": "t-dis-rust-unit-test",
+   "kind": "disjoint",
+   "split": "tuning",
+   "text": "place fast in-module proofs behind a compile-time gate so they never ship in release builds, and put slower roundtrip checks in a separate feature-controlled harness",
+   "anchor": "rust-unit-testing-patterns",
+   "relevant": [
+    "rust-unit-testing-patterns"
+   ]
+  },
+  {
+   "id": "t-lex-serde-default",
+   "kind": "lexical",
+   "split": "tuning",
+   "text": "serde default on required fields silently zero empty value deserialization shape mismatch fail loud anti-pattern",
+   "anchor": "serde-default-silent-failure-anti-pattern",
+   "relevant": [
+    "serde-default-silent-failure-anti-pattern"
+   ]
+  },
+  {
+   "id": "t-dis-serde-default",
+   "kind": "disjoint",
+   "split": "tuning",
+   "text": "the deserialization layer quietly substitutes an empty placeholder when a mandatory piece of data is absent instead of returning an error the caller can act on",
+   "anchor": "serde-default-silent-failure-anti-pattern",
+   "relevant": [
+    "serde-default-silent-failure-anti-pattern"
+   ]
+  },
+  {
+   "id": "t-lex-silent-seam",
+   "kind": "lexical",
+   "split": "tuning",
+   "text": "integration seams subprocess API call pipe parser swallowed errors silent failure audit loud observable surface",
+   "anchor": "silent-failure-audit-at-integration-seams",
+   "relevant": [
+    "silent-failure-audit-at-integration-seams"
+   ]
+  },
+  {
+   "id": "t-dis-silent-seam",
+   "kind": "disjoint",
+   "split": "tuning",
+   "text": "at every point where the process hands off to an outside system, make sure a breakdown produces a visible alarm rather than a quiet partial result",
+   "anchor": "silent-failure-audit-at-integration-seams",
+   "relevant": [
+    "silent-failure-audit-at-integration-seams"
+   ]
+  },
+  {
+   "id": "t-neg-1",
+   "kind": "negative",
+   "split": "tuning",
+   "text": "sourdough bread bulk fermentation and shaping loaves at home",
+   "anchor": null,
+   "relevant": []
+  },
+  {
+   "id": "t-neg-2",
+   "kind": "negative",
+   "split": "tuning",
+   "text": "kubernetes ingress TLS cert-manager automatic certificate renewal",
+   "anchor": null,
+   "relevant": []
+  },
+  {
+   "id": "t-neg-3",
+   "kind": "negative",
+   "split": "tuning",
+   "text": "react hooks useEffect useMemo state management component lifecycle",
+   "anchor": null,
+   "relevant": []
+  },
+  {
+   "id": "t-neg-4",
+   "kind": "negative",
+   "split": "tuning",
+   "text": "machine learning gradient descent hyperparameter optimization neural networks backpropagation",
+   "anchor": null,
+   "relevant": []
+  },
+  {
+   "id": "t-neg-5",
+   "kind": "negative",
+   "split": "tuning",
+   "text": "quarterly estimated self-employment tax payment IRS form schedule C",
+   "anchor": null,
+   "relevant": []
+  },
+  {
+   "id": "h-lex-scope-fence",
+   "kind": "lexical",
+   "split": "held_out",
+   "text": "scope creep ticket out-of-scope boundary explicit documentation todos prevent drift",
+   "anchor": "scope-fence-in-tickets",
+   "relevant": [
+    "scope-fence-in-tickets"
+   ]
+  },
+  {
+   "id": "h-dis-scope-fence",
+   "kind": "disjoint",
+   "split": "held_out",
+   "text": "write down inside each work item the adjacent concerns it deliberately excludes so nobody quietly expands its footprint",
+   "anchor": "scope-fence-in-tickets",
+   "relevant": [
+    "scope-fence-in-tickets"
+   ]
+  },
+  {
+   "id": "h-lex-validate-agent",
+   "kind": "lexical",
+   "split": "held_out",
+   "text": "subagent self-reported success independent validation inspect actual diff never trust agent completion claim",
+   "anchor": "validate-agent-outputs-independently",
+   "relevant": [
+    "validate-agent-outputs-independently"
+   ]
+  },
+  {
+   "id": "h-dis-validate-agent",
+   "kind": "disjoint",
+   "split": "held_out",
+   "text": "after an automated worker says it finished, personally verify the produced artifacts rather than accepting its summary as ground truth",
+   "anchor": "validate-agent-outputs-independently",
+   "relevant": [
+    "validate-agent-outputs-independently"
+   ]
+  },
+  {
+   "id": "h-lex-fail-provenance",
+   "kind": "lexical",
+   "split": "held_out",
+   "text": "test failure pre-existing or newly introduced determine ownership before remediation provenance triage",
+   "anchor": "failure-provenance-triage-before-remediation",
+   "relevant": [
+    "failure-provenance-triage-before-remediation"
+   ]
+  },
+  {
+   "id": "h-dis-fail-provenance",
+   "kind": "disjoint",
+   "split": "held_out",
+   "text": "before spending time repairing a broken check, establish whether the breakage existed before your branch touched anything",
+   "anchor": "failure-provenance-triage-before-remediation",
+   "relevant": [
+    "failure-provenance-triage-before-remediation"
+   ]
+  },
+  {
+   "id": "h-lex-pre-action-verify",
+   "kind": "lexical",
+   "split": "held_out",
+   "text": "before consequential action commit dispatch agent verify current system state matches assumptions independently",
+   "anchor": "pre-action-state-verification",
+   "relevant": [
+    "pre-action-state-verification"
+   ]
+  },
+  {
+   "id": "h-dis-pre-action-verify",
+   "kind": "disjoint",
+   "split": "held_out",
+   "text": "take a snapshot of the world as it actually stands right now before pulling a trigger that is hard to undo",
+   "anchor": "pre-action-state-verification",
+   "relevant": [
+    "pre-action-state-verification"
+   ]
+  },
+  {
+   "id": "h-lex-edge-level",
+   "kind": "lexical",
+   "split": "held_out",
+   "text": "idempotent reconcile loop crash recovery edge events optimization level-based guarantee SessionEnd shutdown",
+   "anchor": "edge-vs-level-reconcile-for-crash-recovery",
+   "relevant": [
+    "edge-vs-level-reconcile-for-crash-recovery"
+   ]
+  },
+  {
+   "id": "h-dis-edge-level",
+   "kind": "disjoint",
+   "split": "held_out",
+   "text": "treat the explicit termination signal as a nice-to-have shortcut and rely on a periodic self-healing pass as the real durability guarantee",
+   "anchor": "edge-vs-level-reconcile-for-crash-recovery",
+   "relevant": [
+    "edge-vs-level-reconcile-for-crash-recovery"
+   ]
+  },
+  {
+   "id": "h-lex-ci-human-gate",
+   "kind": "lexical",
+   "split": "held_out",
+   "text": "github actions CI workflow runner stanza human approval gate before commit never auto-apply infra changes",
+   "anchor": "human-gate-ci-infra-changes",
+   "relevant": [
+    "human-gate-ci-infra-changes"
+   ]
+  },
+  {
+   "id": "h-dis-ci-human-gate",
+   "kind": "disjoint",
+   "split": "held_out",
+   "text": "halt and present the automated pipeline configuration changes to a person for explicit sign-off before writing them to version control",
+   "anchor": "human-gate-ci-infra-changes",
+   "relevant": [
+    "human-gate-ci-infra-changes"
+   ]
+  },
+  {
+   "id": "h-lex-llm-think-json",
+   "kind": "lexical",
+   "split": "held_out",
+   "text": "LLM thinking tokens JSON leak prevention think false structured output seam uniformly prevent serde default mask",
+   "anchor": "llm-thinking-token-json-leak-prevention",
+   "relevant": [
+    "llm-thinking-token-json-leak-prevention"
+   ]
+  },
+  {
+   "id": "h-dis-llm-think-json",
+   "kind": "disjoint",
+   "split": "held_out",
+   "text": "block reasoning traces from contaminating the expected output shape by disabling the inner monologue flag at every call site that parses the response as data",
+   "anchor": "llm-thinking-token-json-leak-prevention",
+   "relevant": [
+    "llm-thinking-token-json-leak-prevention"
+   ]
+  },
+  {
+   "id": "h-lex-incr-commit",
+   "kind": "lexical",
+   "split": "held_out",
+   "text": "incremental unit commit staging explicit git add exclude tool-cache directories untracked hygiene",
+   "anchor": "incremental-unit-commit-staging",
+   "relevant": [
+    "incremental-unit-commit-staging"
+   ]
+  },
+  {
+   "id": "h-dis-incr-commit",
+   "kind": "disjoint",
+   "split": "held_out",
+   "text": "when checkpointing a logical unit of work, hand-pick the relevant changed files rather than sweeping everything up, so tooling noise stays out of the permanent record",
+   "anchor": "incremental-unit-commit-staging",
+   "relevant": [
+    "incremental-unit-commit-staging"
+   ]
+  },
+  {
+   "id": "h-lex-git-co-authored",
+   "kind": "lexical",
+   "split": "held_out",
+   "text": "conventional commit format Co-Authored-By footer every commit collaboration git message convention",
+   "anchor": "conventional-commits-with-co-authored-by",
+   "relevant": [
+    "conventional-commits-with-co-authored-by"
+   ]
+  },
+  {
+   "id": "h-dis-git-co-authored",
+   "kind": "disjoint",
+   "split": "held_out",
+   "text": "stamp each checkpoint with a typed prefix line and a contributor attribution trailer so the history stays structured and credit is properly recorded",
+   "anchor": "conventional-commits-with-co-authored-by",
+   "relevant": [
+    "conventional-commits-with-co-authored-by"
+   ]
+  },
+  {
+   "id": "h-lex-concurrency-bringup",
+   "kind": "lexical",
+   "split": "held_out",
+   "text": "process-wide exclusive bringup Docker Compose services concurrently double-checked lock service list Rust",
+   "anchor": "concurrency-safe-service-bringup-once",
+   "relevant": [
+    "concurrency-safe-service-bringup-once"
+   ]
+  },
+  {
+   "id": "h-dis-concurrency-bringup",
+   "kind": "disjoint",
+   "split": "held_out",
+   "text": "ensure the external supporting stack is started exactly once even when several test processes race to launch it simultaneously",
+   "anchor": "concurrency-safe-service-bringup-once",
+   "relevant": [
+    "concurrency-safe-service-bringup-once"
+   ]
+  },
+  {
+   "id": "h-lex-retrieval-mrr-diag",
+   "kind": "lexical",
+   "split": "held_out",
+   "text": "diagnose MRR collapse benchmark foreign skills polluting global graph top-k displacement namespace isolation",
+   "anchor": "diagnose-retrieval-mrr-collapse-from-corpus-pollution",
+   "relevant": [
+    "diagnose-retrieval-mrr-collapse-from-corpus-pollution"
+   ]
+  },
+  {
+   "id": "h-dis-retrieval-mrr-diag",
+   "kind": "disjoint",
+   "split": "held_out",
+   "text": "quality numbers collapsed because entries from another suite are crowding out the real candidates; identify and evict the intruders before re-measuring",
+   "anchor": "diagnose-retrieval-mrr-collapse-from-corpus-pollution",
+   "relevant": [
+    "diagnose-retrieval-mrr-collapse-from-corpus-pollution"
+   ]
+  },
+  {
+   "id": "h-lex-arch-drift-item",
+   "kind": "lexical",
+   "split": "held_out",
+   "text": "architecture drift review item DRIFT tag human decision required not auto-applied recorded waiver ADR",
+   "anchor": "architecture-drift-item-escalation",
+   "relevant": [
+    "architecture-drift-item-escalation"
+   ]
+  },
+  {
+   "id": "h-dis-arch-drift-item",
+   "kind": "disjoint",
+   "split": "held_out",
+   "text": "surface a finding that challenges an agreed-upon design choice so the team can decide whether to absorb it or keep the original direction, rather than applying it silently",
+   "anchor": "architecture-drift-item-escalation",
+   "relevant": [
+    "architecture-drift-item-escalation"
+   ]
+  },
+  {
+   "id": "h-lex-kv-store-prefix",
+   "kind": "lexical",
+   "split": "held_out",
+   "text": "kv store prefix clear key format consistency write-prefix match remove_prefix stale entries remain",
+   "anchor": "kv-store-write-clear-prefix-consistency",
+   "relevant": [
+    "kv-store-write-clear-prefix-consistency"
+   ]
+  },
+  {
+   "id": "h-dis-kv-store-prefix",
+   "kind": "disjoint",
+   "split": "held_out",
+   "text": "the deletion sweep leaves entries behind because the pattern it scans for does not match how those entries were originally stored",
+   "anchor": "kv-store-write-clear-prefix-consistency",
+   "relevant": [
+    "kv-store-write-clear-prefix-consistency"
+   ]
+  },
+  {
+   "id": "h-lex-serde-fail",
+   "kind": "lexical",
+   "split": "held_out",
+   "text": "serde default on required struct field silent zero value deserialization error hidden anti-pattern rust",
+   "anchor": "serde-default-silent-failure-anti-pattern",
+   "relevant": [
+    "serde-default-silent-failure-anti-pattern"
+   ]
+  },
+  {
+   "id": "h-dis-serde-fail",
+   "kind": "disjoint",
+   "split": "held_out",
+   "text": "a mandatory data field is absent in the incoming payload, but the code treats it as if it were present with an empty value, masking the problem",
+   "anchor": "serde-default-silent-failure-anti-pattern",
+   "relevant": [
+    "serde-default-silent-failure-anti-pattern"
+   ]
+  },
+  {
+   "id": "h-lex-pg-async-deadlock",
+   "kind": "lexical",
+   "split": "held_out",
+   "text": "postgres deadlock teardown TRUNCATE async writers race test cleanup ACCESS EXCLUSIVE lock",
+   "anchor": "postgres-truncate-teardown-deadlock",
+   "relevant": [
+    "postgres-truncate-teardown-deadlock"
+   ]
+  },
+  {
+   "id": "h-dis-pg-async-deadlock",
+   "kind": "disjoint",
+   "split": "held_out",
+   "text": "test shutdown freezes because a still-running background writer holds the same table lock the wipe operation needs",
+   "anchor": "postgres-truncate-teardown-deadlock",
+   "relevant": [
+    "postgres-truncate-teardown-deadlock"
+   ]
+  },
+  {
+   "id": "h-neg-1",
+   "kind": "negative",
+   "split": "held_out",
+   "text": "terraform provider configuration AWS S3 bucket lifecycle rules",
+   "anchor": null,
+   "relevant": []
+  },
+  {
+   "id": "h-neg-2",
+   "kind": "negative",
+   "split": "held_out",
+   "text": "photosynthesis chloroplast light-dependent reactions ATP synthesis",
+   "anchor": null,
+   "relevant": []
+  },
+  {
+   "id": "h-neg-3",
+   "kind": "negative",
+   "split": "held_out",
+   "text": "stock portfolio rebalancing dollar-cost averaging index funds",
+   "anchor": null,
+   "relevant": []
+  },
+  {
+   "id": "h-neg-4",
+   "kind": "negative",
+   "split": "held_out",
+   "text": "Swift UI SwiftUI navigation stack sheet modal presentation iOS",
+   "anchor": null,
+   "relevant": []
+  },
+  {
+   "id": "h-neg-5",
+   "kind": "negative",
+   "split": "held_out",
+   "text": "relational algebra join operations Cartesian product normalization",
+   "anchor": null,
+   "relevant": []
+  },
+  {
+   "id": "x-neg-1",
+   "kind": "negative",
+   "split": "held_out",
+   "text": "mongodb aggregation pipeline $lookup sharding replica set election",
+   "anchor": null,
+   "relevant": []
+  },
+  {
+   "id": "x-neg-2",
+   "kind": "negative",
+   "split": "tuning",
+   "text": "graphql schema resolver n+1 dataloader batching apollo federation",
+   "anchor": null,
+   "relevant": []
+  },
+  {
+   "id": "x-neg-3",
+   "kind": "negative",
+   "split": "held_out",
+   "text": "kafka consumer group partition rebalance offset commit exactly-once",
+   "anchor": null,
+   "relevant": []
+  },
+  {
+   "id": "x-neg-4",
+   "kind": "negative",
+   "split": "tuning",
+   "text": "unreal engine nanite lumen virtual shadow maps level streaming",
+   "anchor": null,
+   "relevant": []
+  },
+  {
+   "id": "x-neg-5",
+   "kind": "negative",
+   "split": "held_out",
+   "text": "css grid flexbox responsive breakpoints tailwind utility classes",
+   "anchor": null,
+   "relevant": []
+  },
+  {
+   "id": "x-neg-6",
+   "kind": "negative",
+   "split": "tuning",
+   "text": "bluetooth low energy GATT characteristic notification embedded firmware",
+   "anchor": null,
+   "relevant": []
+  },
+  {
+   "id": "x-neg-7",
+   "kind": "negative",
+   "split": "held_out",
+   "text": "solidity smart contract reentrancy gas optimization ERC-20 allowance",
+   "anchor": null,
+   "relevant": []
+  },
+  {
+   "id": "x-neg-8",
+   "kind": "negative",
+   "split": "tuning",
+   "text": "espresso extraction grind size tamping pressure crema dialing in",
+   "anchor": null,
+   "relevant": []
+  },
+  {
+   "id": "x-neg-9",
+   "kind": "negative",
+   "split": "held_out",
+   "text": "marathon training tapering VO2 max zone 2 heart rate base building",
+   "anchor": null,
+   "relevant": []
+  },
+  {
+   "id": "x-neg-10",
+   "kind": "negative",
+   "split": "tuning",
+   "text": "oil painting underpainting glazing impasto color temperature mixing",
+   "anchor": null,
+   "relevant": []
+  }
+ ]
+}

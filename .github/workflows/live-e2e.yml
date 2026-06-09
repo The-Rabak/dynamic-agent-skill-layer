@@ -1,0 +1,159 @@
+# CI gate for the live data-plane E2E suite (V1.5 SC-V1.5-E).
+#
+# Runs the full test stack via `docker-compose.test.yml` (PG + Qdrant + Redis
+# + Ollama + mcp-server + graph-builder), executes
+# `run-e2e-tests.sh --include-dream` with `--test-threads=1` semantics for the
+# docker-stop/start dream tests, enforces the domain/retrieval purity invariant
+# via `cargo tree`, and uploads the human-readable summary + JSON reports as a
+# build artifact on both success and failure.
+#
+# Model pull: `nomic-embed-text` (~274 MB) is always pulled.
+# `granite4:3b` (~2 GB) is documented as the CI-omitted model: it is used only
+# by the Ollama extraction provider; extraction tests fall back to "unavailable"
+# gracefully when the model is absent.
+#
+# IMPORTANT: this file is HUMAN-GATED infra-config (Constitution v2.1.0).
+# Changes require human approval before commit.  See ticket T10 in
+# docs/tickets/2026-05-31-skill-layer-v1-5/10-green-live-suite-and-ci-gate.md.
+
+name: live-e2e
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+# Cancel any in-progress run for the same branch/PR so we never queue up a
+# stale run behind a newer push.
+concurrency:
+  group: live-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  no-fakes-guard:
+    name: No-fakes constitution guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Runs scripts/check-no-fakes.sh which enforces:
+      #   • tests/e2e/         — must be completely fake-free (hard-fail on any hit)
+      #   • crates/*/src       — no banned symbols outside #[cfg(test)] (hard-fail)
+      #   • tests/integration/ — no NEW fakes beyond the frozen allowlist (hard-fail)
+      # The integration allowlist may only shrink; adding a new file there fails here.
+      - name: Run no-fakes guard
+        run: |
+          set -euo pipefail
+          chmod +x scripts/check-no-fakes.sh
+          bash scripts/check-no-fakes.sh
+
+  live-e2e:
+    name: Live E2E suite (docker-compose.test.yml)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: no-fakes-guard
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache Rust build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      # ── Cargo purity gate ───────────────────────────────────────────────────
+      # The `domain` and `retrieval` crates must remain infrastructure-free.
+      # Fail the job immediately if sqlx, redis, or qdrant appear in their
+      # direct dependency trees — these are pure business-logic layers.
+      - name: Purity gate — domain (must not depend on sqlx/redis/qdrant)
+        run: |
+          set -euo pipefail
+          output=$(cargo tree -p domain --depth 1 2>&1)
+          echo "$output"
+          if echo "$output" | grep -qE 'sqlx|redis|qdrant'; then
+            echo "PURITY VIOLATION: domain depends on infrastructure crate(s)"
+            exit 1
+          fi
+          echo "domain purity: OK"
+
+      - name: Purity gate — retrieval (must not depend on sqlx/redis/qdrant)
+        run: |
+          set -euo pipefail
+          output=$(cargo tree -p retrieval --depth 1 2>&1)
+          echo "$output"
+          if echo "$output" | grep -qE 'sqlx|redis|qdrant'; then
+            echo "PURITY VIOLATION: retrieval depends on infrastructure crate(s)"
+            exit 1
+          fi
+          echo "retrieval purity: OK"
+
+      # ── Build quality gates ─────────────────────────────────────────────────
+      - name: Format check
+        run: cargo fmt --check
+
+      - name: Clippy (deny warnings)
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      # ── Unit + integration tests ─────────────────────────────────────────────
+      - name: Unit and integration tests
+        run: cargo test --workspace
+
+      # ── Prepare Docker environment ─────────────────────────────────────────
+      # Create the external ollama_data volume expected by docker-compose.test.yml.
+      - name: Create ollama_data Docker volume
+        run: docker volume create ollama_data
+
+      # Pull the embedding model via a one-shot container before the test stack
+      # starts, so the first test that needs it does not time out waiting for
+      # the pull.  `nomic-embed-text` (~274 MB) is required by the retrieval
+      # round-trip.  `granite4:3b` (~2 GB) is omitted in CI.
+      - name: Pull Ollama model (nomic-embed-text)
+        run: |
+          docker run --rm \
+            -v ollama_data:/root/.ollama \
+            ollama/ollama:0.24.0 \
+            pull nomic-embed-text
+
+      # ── Live E2E suite ───────────────────────────────────────────────────────
+      # `--include-dream` runs the promoted dream-state contract tests.
+      # The dream tests use docker stop/start internally; the runner already
+      # invokes those cargo test commands with `--test-threads=1`.
+      #
+      # The script owns all docker-compose lifecycle (up, healthchecks, down).
+      # run-e2e-tests.sh exits non-zero on any test failure → job fails.
+      - name: Run live E2E suite (--include-dream)
+        run: |
+          set -euo pipefail
+          chmod +x scripts/run-e2e-tests.sh
+          ./scripts/run-e2e-tests.sh --include-dream
+
+      # ── Upload artifacts (always — readable without raw JSON) ────────────────
+      - name: Upload E2E reports (summary + JSON)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-reports-${{ github.run_id }}
+          path: |
+            tests/e2e/reports/latest-summary.md
+            tests/e2e/reports/run__*.json
+            tests/e2e/reports/judge_evaluation.json
+          retention-days: 30
+          if-no-files-found: warn

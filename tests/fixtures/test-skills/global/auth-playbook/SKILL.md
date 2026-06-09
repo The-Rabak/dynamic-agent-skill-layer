@@ -1,5 +1,17 @@
+---
+name: auth-playbook
+description: Authentication and authorization workflow patterns for backend services, covering JWT validation, OAuth2 token exchange, session lifecycle management, middleware integration, and refresh token rotation strategies.
+tags:
+- auth
+- security
+- jwt
+- oauth2
+- session
+- token
+- middleware
+---
+
 # auth-playbook
-tags: auth, security, jwt, oauth2, session, token, middleware
 
 Authentication and authorization workflow patterns for backend services, covering JWT validation, OAuth2 token exchange, session lifecycle management, middleware integration, and refresh token rotation strategies.
 

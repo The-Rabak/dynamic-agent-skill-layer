@@ -16,22 +16,24 @@ path = "src/main.rs"
 [[test]]
 name = "test_watcher_rebuild"
 path = "../../tests/integration/test_watcher_rebuild.rs"
+required-features = ["test-utils"]
 
 [[test]]
 name = "test_outbox_consistency"
 path = "../../tests/integration/test_outbox_consistency.rs"
-
-[[test]]
-name = "test_watcher_churn_reconciliation"
-path = "../../tests/e2e/test_watcher_churn_reconciliation.rs"
+required-features = ["test-utils"]
 
 [[test]]
 name = "test_real_infrastructure_e2e"
 path = "../../tests/e2e/test_real_infrastructure_e2e.rs"
 
+[features]
+test-utils = []
+
 [dependencies]
 async-trait = "0.1.89"
 blake3 = "1.8.2"
+hdbscan = { version = "0.12", features = ["parallel"] }
 chrono = { version = "0.4.42", features = ["clock", "serde"] }
 domain = { path = "../domain" }
 infrastructure = { path = "../infrastructure" }
@@ -39,6 +41,7 @@ notify = "8.2.0"
 notify-debouncer-full = "0.6.0"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.145"
+serde_yaml = "0.9.34"
 thiserror = "2.0.18"
 tokio = { version = "1.48.0", features = ["macros", "rt-multi-thread"] }
 tracing = "0.1.41"
@@ -49,5 +52,4 @@ walkdir = "2.5.0"
 
 [dev-dependencies]
 async-trait = "0.1.89"
-mcp-server = { path = "../mcp-server", features = ["test-utils"] }
 retrieval = { path = "../retrieval" }

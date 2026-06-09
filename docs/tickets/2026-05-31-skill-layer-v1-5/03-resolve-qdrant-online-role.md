@@ -2,7 +2,7 @@
 ticket_id: T03
 title: Resolve Qdrant's online role (Option A + CQRS docs + honest health)
 kind: hardening # tracer-bullet | expansion | hardening | infra-track | fix-batch
-status: ready # ready | in_progress | blocked | completed
+status: completed # ready | in_progress | blocked | completed
 plan_ref: docs/plans/2026-05-31-feat-skill-layer-v1-5-close-the-loop-plan.md
 tickets_ref: docs/tickets/2026-05-31-skill-layer-v1-5/index.md
 architecture_ref: docs/architecture/2026-05-31-skill-layer-v1-5-close-the-loop-architecture.md
@@ -13,12 +13,9 @@ dependency_type: hard # none | hard | soft | parallel-safe
 serves:
   - SC-V1.5-F (no production stub paths remain)
 files:
+  - crates/retrieval/src/cosine_rank.rs
   - crates/retrieval/src/orchestrator.rs
-  - crates/retrieval/src/dual_scope.rs
-  - crates/infrastructure/src/vector/qdrant.rs
   - crates/infrastructure/src/health.rs
-  - docs/architecture/adr-0001-online-graph-source-v1-5.md
-  - docs/reference/online-retrieval-cqrs.md
 test_command: cargo test -p retrieval
 tdd_mode: inherit
 ---

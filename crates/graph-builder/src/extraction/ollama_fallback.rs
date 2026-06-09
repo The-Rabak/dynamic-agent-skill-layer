@@ -171,11 +171,6 @@ fn ollama_config_from_environment() -> Result<OllamaExtractionConfig, String> {
     if let Ok(model) = std::env::var("OLLAMA_EXTRACTION_MODEL") {
         config.model = model;
     }
-    if let Ok(timeout_ms) = std::env::var("OLLAMA_EXTRACTION_TIMEOUT_MS") {
-        config.timeout_ms = timeout_ms.parse().map_err(|error| {
-            format!("invalid OLLAMA_EXTRACTION_TIMEOUT_MS value for fallback: {error}")
-        })?;
-    }
     Ok(config)
 }
 
@@ -216,6 +211,8 @@ mod tests {
                 conventions: vec!["Stay deterministic".to_owned()],
                 assets: vec!["docs/skill.md".to_owned()],
                 confidence: 0.8,
+                generality: None,
+                generality_rationale: None,
             }]),
         };
 

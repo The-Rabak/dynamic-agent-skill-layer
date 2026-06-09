@@ -30,13 +30,38 @@ services:
       - "16334:6334"
 
   ollama:
-    image: ollama/ollama:0.24.0
+    image: ollama/ollama:latest
+    environment:
+      # Parallel request slots so concurrent embed calls are served in parallel
+      # (DS-007 warm-path p95 budget). Pair with EMBED_MAX_CONCURRENCY on clients.
+      OLLAMA_NUM_PARALLEL: ${OLLAMA_NUM_PARALLEL:-4}
+      # Keep every model resident for 24h after last use so a warmed model is never
+      # evicted mid-suite. We do NOT impose request timeouts on model calls (a slow
+      # cold load must never cut a call off); keeping models warm is how we keep
+      # latency sane instead of timing out. Override via OLLAMA_KEEP_ALIVE.
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-24h}
+    # NVIDIA GPU passthrough (RTX/GeForce). Requires the NVIDIA Container Toolkit
+    # on the host (the `nvidia` docker runtime). The ollama/ollama image
+    # auto-detects CUDA and runs embeddings on the GPU — dramatically faster than
+    # CPU inference (CPU batch embeds were timing out the live e2e tests).
+    # NOTE: this is NVIDIA-only. macOS/Metal cannot be used from a Linux
+    # container — Docker on Mac has no GPU passthrough; run Ollama natively there.
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     ports:
       - "11444:11434"
     volumes:
       - ollama_data:/root/.ollama
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:11434/api/tags"]
+      # ollama/ollama ships neither wget nor curl — only the `ollama` binary.
+      # `ollama ps` returns 0 once the server is serving (the old wget probe
+      # always failed → container reported unhealthy despite a healthy server).
+      test: ["CMD", "ollama", "ps"]
       interval: 10s
       timeout: 5s
       retries: 20
@@ -104,13 +129,46 @@ services:
       RUST_LOG: debug
       DATABASE_URL: postgres://skill_layer:skill_layer@postgres:5432/skill_layer_test
       REDIS_URL: redis://redis:6379
-      QDRANT_URL: http://qdrant:6334
+      # T08 fix: use REST port 6333, not gRPC port 6334.
+      QDRANT_URL: http://qdrant:6333
       OLLAMA_URL: http://ollama:11434
       MCP_SERVER_ADDR: 0.0.0.0:3001
+      # Run all LLM extraction/merge through gemma4:12b for this measurement run.
+      OLLAMA_EXTRACTION_MODEL: gemma4:12b
+      OLLAMA_EXTRACTION_TIMEOUT_MS: "300000"
+      MERGE_VERIFIER_MODEL: gemma4:12b
+      GENERALITY_VERIFIER_MODEL: gemma4:12b
       SKILL_GLOBAL_PATHS: /skills/global
       SKILL_GLOBAL_ALLOWED_ROOTS: /skills/global
+      # Declares the in-container project scope root (issue #154) so compile_context
+      # can resolve project scope to `ok` instead of always degrading (the working
+      # directory is `/` with no marker). graph-builder builds project skills from
+      # this same mounted root, so their source_paths match it.
+      SKILL_PROJECT_ROOT: /skills/project
+      # Retrieval ranking levers — env-overridable for operational retuning and
+      # the #210 quality sweep (RetrievalConfig::from_env). Unset host vars pass
+      # through empty and fall back to the calibrated defaults (env_or treats
+      # empty as absent). The sweep sets one or more of these and reboots only
+      # the mcp-server to measure each config on the REAL running server.
+      RETRIEVAL_ALPHA: ${RETRIEVAL_ALPHA:-}
+      RETRIEVAL_BETA: ${RETRIEVAL_BETA:-}
+      RETRIEVAL_GAMMA: ${RETRIEVAL_GAMMA:-}
+      RETRIEVAL_LAMBDA: ${RETRIEVAL_LAMBDA:-}
+      RETRIEVAL_MMR_LAMBDA: ${RETRIEVAL_MMR_LAMBDA:-}
+      RETRIEVAL_CANDIDATE_LIMIT: ${RETRIEVAL_CANDIDATE_LIMIT:-}
+      RETRIEVAL_MAX_RESULTS: ${RETRIEVAL_MAX_RESULTS:-}
+      RETRIEVAL_MAX_SUBUNITS_PER_SKILL: ${RETRIEVAL_MAX_SUBUNITS_PER_SKILL:-}
+      RETRIEVAL_RESCUE_THRESHOLD: ${RETRIEVAL_RESCUE_THRESHOLD:-}
+      RETRIEVAL_RELEVANCE_THRESHOLD: ${RETRIEVAL_RELEVANCE_THRESHOLD:-}
+      RETRIEVAL_PROJECT_SCOPE_WEIGHT: ${RETRIEVAL_PROJECT_SCOPE_WEIGHT:-}
+      RETRIEVAL_GLOBAL_SCOPE_WEIGHT: ${RETRIEVAL_GLOBAL_SCOPE_WEIGHT:-}
+      RETRIEVAL_RRF_K: ${RETRIEVAL_RRF_K:-}
+      RETRIEVAL_COMMUNITY_BOOST_MODE: ${RETRIEVAL_COMMUNITY_BOOST_MODE:-}
     volumes:
       - test-global-skills:/skills/global:ro
+      # mcp-server must see the project skills root so SKILL_PROJECT_ROOT resolves
+      # (the resolver verifies the directory exists) and project-scope matching works.
+      - test-project-skills:/skills/project:ro
       - test-transcripts:/transcripts:ro
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3001/health"]
@@ -138,11 +196,15 @@ services:
       RUST_LOG: debug
       DATABASE_URL: postgres://skill_layer:skill_layer@postgres:5432/skill_layer_test
       REDIS_URL: redis://redis:6379
-      QDRANT_URL: http://qdrant:6334
+      # T08 fix: use REST port 6333, not gRPC port 6334.
+      QDRANT_URL: http://qdrant:6333
       OLLAMA_URL: http://ollama:11434
       GRAPH_BUILDER_PROJECT_ROOT: /skills/project
       GRAPH_BUILDER_GLOBAL_ROOT: /skills/global
       GRAPH_BUILDER_POLL_INTERVAL_MS: "5000"
+      # LLM subunit-extraction fallback (rare) uses gemma4:12b for this run.
+      OLLAMA_EXTRACTION_MODEL: gemma4:12b
+      OLLAMA_EXTRACTION_TIMEOUT_MS: "300000"
     volumes:
       - test-project-skills:/skills/project:ro
       - test-global-skills:/skills/global:ro

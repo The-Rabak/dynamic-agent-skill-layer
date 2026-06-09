@@ -6,13 +6,16 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use domain::ScopeType;
+use domain::{HdbscanConfig, ScopeType};
 use graph_builder::{
-    GraphRebuildOrchestrator, InMemoryDurableGraphState, ScopeRoot,
-    SkillFileChangeKind, SkillWatcher, WatcherRecovery, watcher::build_snapshot,
+    GraphRebuildOrchestrator, InMemoryDurableGraphState, ScopeRoot, SkillFileChangeKind,
+    SkillWatcher, WatcherRecovery, watcher::build_snapshot,
 };
-use infrastructure::{EventEnvelope, OutboxVectorStore, PostgresGraphSnapshotStore, RebuildCoordinator};
-use mcp_server::build_live_server;
+use infrastructure::{
+    EventEnvelope, OllamaEmbeddingConfig, OllamaEmbeddingService, OutboxVectorStore,
+    PostgresGraphSnapshotStore, RebuildCoordinator,
+};
+use mcp_server::McpServerApp;
 use retrieval::RetrievalConfig;
 
 #[path = "report.rs"]
@@ -20,6 +23,10 @@ mod report;
 
 #[path = "../integration/env_guard.rs"]
 mod env_guard;
+
+fn requires_live_stack() -> bool {
+    std::env::var("SKILL_LAYER_E2E_ENABLED").is_ok_and(|v| v == "1")
+}
 
 fn fixture_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -56,6 +63,12 @@ fn copy_tree(from: &Path, to: &Path) {
     }
 }
 
+/// Validates watcher churn detection and snapshot reconciliation without any live services.
+///
+/// This test covers file-system mechanics only: pending → active renames, modifications,
+/// snapshot-based deletion recovery, and reconciliation idempotency. It does NOT run the
+/// graph rebuild (which requires real embeddings); see
+/// `watcher_churn_graph_rebuild_correctness_with_live_ollama` for the live rebuild assertions.
 #[tokio::test]
 async fn watcher_churn_and_reconciliation_preserve_contracts_under_heavy_file_activity() {
     let sandbox = fresh_sandbox();
@@ -89,7 +102,7 @@ async fn watcher_churn_and_reconciliation_preserve_contracts_under_heavy_file_ac
         fs::write(
             &pending_path,
             format!(
-                "# stress-skill-{i:02}\n\ntags: stress\n\npending phase for churn scenario {i:02}\n"
+                "---\nname: stress-skill-{i:02}\ndescription: pending phase for churn scenario {i:02}\ntags:\n- stress\n---\n\n# stress-skill-{i:02}\n\npending phase for churn scenario {i:02}\n"
             ),
         )
         .expect("pending skill should be writable");
@@ -113,7 +126,126 @@ async fn watcher_churn_and_reconciliation_preserve_contracts_under_heavy_file_ac
             fs::write(
                 &active_path,
                 format!(
-                    "# stress-skill-{i:02}\n\ntags: stress\n\nupdated content for churn scenario {i:02}\n"
+                    "---\nname: stress-skill-{i:02}\ndescription: updated content for churn scenario {i:02}\ntags:\n- stress\n---\n\n# stress-skill-{i:02}\n\nupdated content for churn scenario {i:02}\n"
+                ),
+            )
+            .expect("active skill should be writable");
+            let modify_changes = watcher
+                .collect_file_changes()
+                .expect("active modification should be detected");
+            assert!(modify_changes.iter().any(|change| {
+                change.file_path == active_path && change.kind == SkillFileChangeKind::Modified
+            }));
+            observed_changes.extend(modify_changes);
+        }
+
+        active_paths.push(active_path);
+    }
+
+    let previous_snapshot = watcher.current_snapshot();
+    let deleted_paths = active_paths
+        .iter()
+        .take(8)
+        .cloned()
+        .collect::<Vec<PathBuf>>();
+    for deleted in &deleted_paths {
+        fs::remove_file(deleted).expect("active skill should be removable");
+    }
+    let current_snapshot = build_snapshot(&scopes).expect("snapshot should rebuild");
+    let mut recovery = WatcherRecovery::with_generation_window(32);
+    let recovered_first = recovery.reconcile(&previous_snapshot, &current_snapshot, &scopes);
+    let recovered_second = recovery.reconcile(&previous_snapshot, &current_snapshot, &scopes);
+    assert_eq!(
+        recovered_first
+            .iter()
+            .filter(|change| change.kind == SkillFileChangeKind::Deleted)
+            .count(),
+        deleted_paths.len()
+    );
+    assert!(
+        recovered_second.is_empty(),
+        "reconciliation should remain idempotent for repeated snapshots"
+    );
+
+    fs::remove_dir_all(&sandbox).expect("sandbox should clean up");
+}
+
+/// Proves that `GraphRebuildOrchestrator` correctly rebuilds the skill graph from churn-derived
+/// changes using real Ollama `nomic-embed-text` embeddings. Validates the durable-state
+/// operation sequence, published events, audit trail, and that only active SKILL.md files
+/// appear in the persisted mutation.
+///
+/// Uses `InMemoryDurableGraphState` (no live PG) to isolate the rebuild mechanics from
+/// database concerns. See `watcher_churn_and_reconciliation_converges_to_correct_graph_state_under_live_pg_qdrant`
+/// for the full PG+Qdrant live path.
+///
+/// To run:
+/// ```bash
+/// SKILL_LAYER_E2E_ENABLED=1 OLLAMA_URL=http://127.0.0.1:11444 \
+///   cargo test -p mcp-server --features test-utils --test test_watcher_churn_reconciliation \
+///   watcher_churn_graph_rebuild_correctness_with_live_ollama \
+///   -- --ignored --nocapture
+/// ```
+#[ignore = "live: requires SKILL_LAYER_E2E_ENABLED=1 + OLLAMA_URL (nomic-embed-text)"]
+#[tokio::test]
+async fn watcher_churn_graph_rebuild_correctness_with_live_ollama() {
+    if !requires_live_stack() {
+        eprintln!("SKIP: SKILL_LAYER_E2E_ENABLED != 1");
+        return;
+    }
+
+    let ollama_url = std::env::var("OLLAMA_URL")
+        .expect("OLLAMA_URL must be set for live watcher-rebuild e2e (e.g. http://127.0.0.1:11444)");
+
+    let sandbox = fresh_sandbox();
+    let project_root = sandbox.join("project");
+    let global_root = sandbox.join("global");
+    copy_tree(&fixture_root().join("project"), &project_root);
+    copy_tree(&fixture_root().join("global"), &global_root);
+
+    let scopes = vec![
+        ScopeRoot::new("project", ScopeType::Project, project_root.clone()),
+        ScopeRoot::new("global", ScopeType::Global, global_root.clone()),
+    ];
+
+    let mut watcher = SkillWatcher::new(scopes.clone()).expect("watcher should initialize");
+    let mut observed_changes = watcher
+        .collect_file_changes()
+        .expect("initial scan should succeed");
+
+    let mut active_paths = Vec::new();
+    for i in 0..20usize {
+        let skill_dir = project_root.join(format!("stress-skill-{i:02}"));
+        fs::create_dir_all(&skill_dir).expect("skill directory should be creatable");
+        let pending_path = skill_dir.join("SKILL.md.pending");
+        fs::write(
+            &pending_path,
+            format!(
+                "---\nname: stress-skill-{i:02}\ndescription: pending phase for churn scenario {i:02}\ntags:\n- stress\n---\n\n# stress-skill-{i:02}\n\npending phase for churn scenario {i:02}\n"
+            ),
+        )
+        .expect("pending skill should be writable");
+        observed_changes.extend(
+            watcher
+                .collect_file_changes()
+                .expect("pending create should be detected"),
+        );
+
+        let active_path = skill_dir.join("SKILL.md");
+        fs::rename(&pending_path, &active_path).expect("pending file should rename to active");
+        let rename_changes = watcher
+            .collect_file_changes()
+            .expect("approval rename should be detected");
+        assert!(rename_changes.iter().any(|change| {
+            change.file_path == active_path && change.kind == SkillFileChangeKind::ApprovedRename
+        }));
+        observed_changes.extend(rename_changes);
+
+        if i % 2 == 0 {
+            fs::write(
+                &active_path,
+                format!(
+                    "---\nname: stress-skill-{i:02}\ndescription: updated content for churn scenario {i:02}\ntags:\n- stress\n---\n\n# stress-skill-{i:02}\n\nupdated content for churn scenario {i:02}\n"
                 ),
             )
             .expect("active skill should be writable");
@@ -156,11 +288,19 @@ async fn watcher_churn_and_reconciliation_preserve_contracts_under_heavy_file_ac
 
     observed_changes.extend(recovered_first);
 
+    let embedding_service = OllamaEmbeddingService::from_config(OllamaEmbeddingConfig {
+        base_url: ollama_url,
+        model: "nomic-embed-text".to_owned(),
+        max_concurrency: 4,
+    })
+    .expect("live: OllamaEmbeddingService must init from OLLAMA_URL");
+
     let mut durable_state = InMemoryDurableGraphState::with_synthetic_outbox_drain();
     let mut published_events: Vec<EventEnvelope> = Vec::new();
-    let mut orchestrator = GraphRebuildOrchestrator::new(&mut durable_state, &mut published_events);
+    let mut orchestrator =
+        GraphRebuildOrchestrator::new(&mut durable_state, &mut published_events, &embedding_service);
     let outcome = orchestrator
-        .rebuild_from_changes(&scopes, &observed_changes)
+        .rebuild_from_changes(&scopes, &observed_changes, &HdbscanConfig::default())
         .await
         .expect("rebuild should succeed after churn and reconciliation");
 
@@ -228,13 +368,13 @@ fn retrieval_config_for_watcher() -> RetrievalConfig {
 #[ignore = "requires live containers"]
 #[tokio::test]
 async fn watcher_churn_and_reconciliation_converges_to_correct_graph_state_under_live_pg_qdrant() {
-    let _env_guard = env_guard::configure_scope_env();
+    let namespace = env_guard::isolated_namespace().await;
     let mut builder = report::ReportBuilder::new(
         "watcher_churn_and_reconciliation_converges_to_correct_graph_state_under_live_pg_qdrant",
     );
 
     let start = std::time::Instant::now();
-    let components = build_live_server(retrieval_config_for_watcher())
+    let components = McpServerApp::from_environment(retrieval_config_for_watcher())
         .await
         .expect("should connect to live infrastructure");
     builder.record_latency("server_bootstrap", start.elapsed().as_millis() as u64);
@@ -263,7 +403,7 @@ async fn watcher_churn_and_reconciliation_converges_to_correct_graph_state_under
         fs::write(
             &pending_path,
             format!(
-                "# stress-skill-{i:02}\n\ntags: stress\n\npending phase for churn scenario {i:02}\n"
+                "---\nname: stress-skill-{i:02}\ndescription: pending phase for churn scenario {i:02}\ntags:\n- stress\n---\n\n# stress-skill-{i:02}\n\npending phase for churn scenario {i:02}\n"
             ),
         )
         .expect("pending skill should be writable");
@@ -287,7 +427,7 @@ async fn watcher_churn_and_reconciliation_converges_to_correct_graph_state_under
             fs::write(
                 &active_path,
                 format!(
-                    "# stress-skill-{i:02}\n\ntags: stress\n\nupdated content for churn scenario {i:02}\n"
+                    "---\nname: stress-skill-{i:02}\ndescription: updated content for churn scenario {i:02}\ntags:\n- stress\n---\n\n# stress-skill-{i:02}\n\nupdated content for churn scenario {i:02}\n"
                 ),
             )
             .expect("active skill should be writable");
@@ -332,13 +472,24 @@ async fn watcher_churn_and_reconciliation_converges_to_correct_graph_state_under
 
     let rebuild_start = std::time::Instant::now();
 
-    let skills = graph_builder::graph::build::build_skills_from_scope_roots(
-        &scopes,
-        &graph_builder::graph::embeddings::DeterministicEmbeddingGenerator,
+    let ollama_url = std::env::var("OLLAMA_URL").expect("OLLAMA_URL must be set for live e2e");
+    let embedding_service = infrastructure::OllamaEmbeddingService::from_config(
+        infrastructure::OllamaEmbeddingConfig {
+            base_url: ollama_url,
+            model: "nomic-embed-text".to_owned(),
+            max_concurrency: 4,
+        },
     )
-    .expect("build should succeed");
+    .expect("OllamaEmbeddingService should build with valid config");
 
-    let communities = graph_builder::graph::communities::assign_communities(&skills);
+    let skills =
+        graph_builder::graph::build::build_skills_from_scope_roots(&scopes, &embedding_service)
+            .await
+            .expect("build should succeed");
+
+    let communities =
+        graph_builder::graph::communities::assign_communities(&skills, &HdbscanConfig::default())
+            .expect("community assignment must succeed");
     let audits = observed_changes
         .iter()
         .map(|change| graph_builder::graph::rebuild::AuditRecord {
@@ -363,6 +514,7 @@ async fn watcher_churn_and_reconciliation_converges_to_correct_graph_state_under
                 description: skill.description.clone(),
                 scope: skill.scope_type,
                 tags: skill.tags.clone(),
+                source_paths: vec![skill.source_path.display().to_string()],
                 subunits: skill
                     .subunits
                     .iter()
@@ -381,6 +533,7 @@ async fn watcher_churn_and_reconciliation_converges_to_correct_graph_state_under
                 name: community.community_name.clone(),
                 scope: community.scope,
                 member_skill_ids: community.skill_ids.clone(),
+                source: community.source.as_db_str().to_owned(),
             })
             .collect(),
     };
@@ -397,13 +550,21 @@ async fn watcher_churn_and_reconciliation_converges_to_correct_graph_state_under
         .await
         .expect("should persist mutation to live PG");
 
-    builder.record_latency("rebuild_and_persist", rebuild_start.elapsed().as_millis() as u64);
-    builder.push_action("rebuild", report::ReportedAction {
-        description: "persist churn mutation to live PG via rebuild_coordinator".to_owned(),
-        status: report::AssertionResult::Passed,
-        side_effects: vec![report::SideEffect::DbRowInserted { table: format!("graph_version {new_version}") }],
-        duration_ms: rebuild_start.elapsed().as_millis() as u64,
-    });
+    builder.record_latency(
+        "rebuild_and_persist",
+        rebuild_start.elapsed().as_millis() as u64,
+    );
+    builder.push_action(
+        "rebuild",
+        report::ReportedAction {
+            description: "persist churn mutation to live PG via rebuild_coordinator".to_owned(),
+            status: report::AssertionResult::Passed,
+            side_effects: vec![report::SideEffect::DbRowInserted {
+                table: format!("graph_version {new_version}"),
+            }],
+            duration_ms: rebuild_start.elapsed().as_millis() as u64,
+        },
+    );
 
     assert!(
         new_version > version_before,
@@ -430,14 +591,17 @@ async fn watcher_churn_and_reconciliation_converges_to_correct_graph_state_under
         "all persisted skills should have non-empty subunits"
     );
 
-    builder.push_action("pg_verify", report::ReportedAction {
-        description: format!(
-            "PG skills table contains {active_skill_count} active skills"
-        ),
-        status: report::AssertionResult::Passed,
-        side_effects: vec![report::SideEffect::DbRowInserted { table: format!("{active_skill_count} skills") }],
-        duration_ms: pg_verify_start.elapsed().as_millis() as u64,
-    });
+    builder.push_action(
+        "pg_verify",
+        report::ReportedAction {
+            description: format!("PG skills table contains {active_skill_count} active skills"),
+            status: report::AssertionResult::Passed,
+            side_effects: vec![report::SideEffect::DbRowInserted {
+                table: format!("{active_skill_count} skills"),
+            }],
+            duration_ms: pg_verify_start.elapsed().as_millis() as u64,
+        },
+    );
 
     let qdrant_verify_start = std::time::Instant::now();
     let point_ids = components
@@ -446,12 +610,15 @@ async fn watcher_churn_and_reconciliation_converges_to_correct_graph_state_under
         .await
         .expect("should list Qdrant points");
 
-    builder.push_action("qdrant_verify", report::ReportedAction {
-        description: format!("Qdrant contains {} points", point_ids.point_ids.len()),
-        status: report::AssertionResult::Passed,
-        side_effects: vec![],
-        duration_ms: qdrant_verify_start.elapsed().as_millis() as u64,
-    });
+    builder.push_action(
+        "qdrant_verify",
+        report::ReportedAction {
+            description: format!("Qdrant contains {} points", point_ids.point_ids.len()),
+            status: report::AssertionResult::Passed,
+            side_effects: vec![],
+            duration_ms: qdrant_verify_start.elapsed().as_millis() as u64,
+        },
+    );
 
     builder.add_contract_assertion(report::ContractAssertion {
         contract_name: "watcher_churn_live_reconciliation".to_owned(),
@@ -466,12 +633,16 @@ async fn watcher_churn_and_reconciliation_converges_to_correct_graph_state_under
     });
 
     let report = builder.build();
-    let report_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../tests/e2e/reports");
+    let report_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/e2e/reports");
     fs::create_dir_all(&report_dir).expect("reports dir should exist");
     let report_path = report_dir.join(format!("{}__{}.json", report.test_name, report.test_id));
     let report_json = serde_json::to_string_pretty(&report).expect("report should serialize");
     fs::write(&report_path, report_json).expect("report should be writable");
 
-    components.teardown().await.expect("teardown should succeed");
+    components
+        .teardown()
+        .await
+        .expect("teardown should succeed");
     fs::remove_dir_all(&sandbox).expect("sandbox should clean up");
+    namespace.cleanup().await;
 }

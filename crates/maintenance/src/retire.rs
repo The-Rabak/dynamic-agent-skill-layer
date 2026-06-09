@@ -8,10 +8,7 @@ use std::{
 use chrono::{DateTime, Duration, Utc};
 use thiserror::Error;
 
-use crate::audit::{
-    MaintenanceAuditEvent, MaintenanceAuditSink, NoopMaintenanceAuditSink,
-    RetirementProposalAuditEvent,
-};
+use crate::audit::{MaintenanceAuditEvent, MaintenanceAuditSink, RetirementProposalAuditEvent};
 use crate::merge::SkillSnapshot;
 
 /// Recorded usage event for retirement scoring.
@@ -47,22 +44,12 @@ impl Default for RetirementConfig {
 }
 
 /// Scores stale skills and writes non-destructive `.retired` proposal markers.
-pub struct RetirementProposalWriter<'s, S = NoopMaintenanceAuditSink>
+pub struct RetirementProposalWriter<'s, S>
 where
     S: MaintenanceAuditSink,
 {
     config: RetirementConfig,
     audit_sink: &'s S,
-}
-
-impl<'s> RetirementProposalWriter<'s, NoopMaintenanceAuditSink> {
-    /// Creates a retirement workflow with explicit scoring settings.
-    pub fn new(config: RetirementConfig) -> Self {
-        Self {
-            config,
-            audit_sink: &NoopMaintenanceAuditSink,
-        }
-    }
 }
 
 impl<'s, S> RetirementProposalWriter<'s, S>
@@ -84,11 +71,18 @@ where
         let usage_index = usage_samples_by_skill_id(usage_samples);
         let mut proposals = Vec::new();
         for skill in skills {
+            // Cold-start guard: only skills with usage evidence are retirement
+            // candidates. The caller emits a sample for every skill that has ever
+            // been used and drops never-used skills, so a missing entry here means
+            // "never used" — which is NOT proof of staleness (the skill may be
+            // brand new). Skipping it prevents mass-retiring a fresh corpus that
+            // has no usage history yet. Ever-used-but-cold skills still carry a
+            // sample and fall through to the threshold check below.
+            let Some(samples) = usage_index.get(&skill.id) else {
+                continue;
+            };
             let usage_score = calculate_usage_score_per_month(
-                usage_index
-                    .get(&skill.id)
-                    .map(Vec::as_slice)
-                    .unwrap_or_default(),
+                samples.as_slice(),
                 now,
                 self.config.scoring_window_days,
             );

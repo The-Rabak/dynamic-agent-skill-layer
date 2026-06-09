@@ -9,36 +9,60 @@ description = "Offline maintenance workflows for merge, retirement, and schedule
 name = "maintenance"
 path = "src/lib.rs"
 
+[[bin]]
+name = "maintenance-worker"
+path = "src/main.rs"
+
 [[test]]
 name = "test_merge_workflow"
 path = "../../tests/integration/test_merge_workflow.rs"
+required-features = ["test-utils"]
 
 [[test]]
 name = "test_retire_workflow"
 path = "../../tests/integration/test_retire_workflow.rs"
+required-features = ["test-utils"]
 
 [[test]]
 name = "test_pending_lifecycle"
 path = "../../tests/integration/test_pending_lifecycle.rs"
+required-features = ["test-utils"]
 
 [[test]]
 name = "test_pending_lifecycle_frontmatter_contract"
 path = "../../tests/integration/test_pending_lifecycle_frontmatter_contract.rs"
+required-features = ["test-utils"]
 
 [[test]]
 name = "test_cleanup_scan_resilience"
 path = "../../tests/integration/test_cleanup_scan_resilience.rs"
 
 [[test]]
+name = "test_promotion_recurrence"
+path = "../../tests/integration/test_promotion_recurrence.rs"
+required-features = ["test-utils"]
+
+[[test]]
 name = "test_maintenance_e2e"
 path = "../../tests/e2e/test_maintenance_e2e.rs"
+required-features = ["test-utils"]
+
+[[test]]
+name = "test_skill_md_roundtrip"
+path = "../../tests/integration/test_skill_md_roundtrip.rs"
+required-features = ["test-utils"]
+
+[features]
+test-utils = ["graph-builder/test-utils", "session-extractor/test-utils"]
 
 [dependencies]
+async-trait = "0.1.89"
 blake3 = "1.8.2"
 chrono = { version = "0.4.42", features = ["clock", "serde"] }
 domain = { path = "../domain" }
 infrastructure = { path = "../infrastructure" }
 graph-builder = { path = "../graph-builder" }
+session-extractor = { path = "../session-extractor" }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.145"
 serde_yaml = "0.9.34"
@@ -50,4 +74,4 @@ uuid = { version = "1.18.1", features = ["serde", "v7"] }
 walkdir = "2.5.0"
 
 [dev-dependencies]
-session-extractor = { path = "../session-extractor" }
+graph-builder = { path = "../graph-builder", features = ["test-utils"] }

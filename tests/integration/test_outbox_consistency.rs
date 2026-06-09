@@ -8,7 +8,7 @@ use std::{
 
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
-use domain::ScopeType;
+use domain::{HdbscanConfig, ScopeType};
 use graph_builder::{
     DurableGraphState, GraphRebuildOrchestrator, ScopeRoot, SkillFileChange, SkillFileChangeKind,
     graph::rebuild::GraphRebuildError, watcher::FileChangeSource,
@@ -438,7 +438,7 @@ async fn drain_correlation_outbox_completes_with_unrelated_backlog_present() {
         .expect("relay should initialize for valid contract");
 
     relay
-        .drain_correlation_outbox(&coordinator, target_correlation_id, 2)
+        .drain_correlation_outbox(&coordinator, target_correlation_id)
         .await
         .expect("drain should complete for target correlation");
 
@@ -680,11 +680,15 @@ async fn graph_rebuilt_is_not_emitted_when_outbox_drain_fails() {
         idempotency_key: "ordering:hash-ordering".to_owned(),
     };
 
+    let embedder = graph_builder::graph::embeddings::DeterministicEmbeddingService;
     let mut durable_state = OutboxDrainRequiredState::default();
     let mut published_events = Vec::new();
-    let mut orchestrator = GraphRebuildOrchestrator::new(&mut durable_state, &mut published_events);
+    let mut orchestrator =
+        GraphRebuildOrchestrator::new(&mut durable_state, &mut published_events, &embedder);
 
-    let result = orchestrator.rebuild_from_changes(&[scope], &[file_change]).await;
+    let result = orchestrator
+        .rebuild_from_changes(&[scope], &[file_change], &HdbscanConfig::default())
+        .await;
     assert!(result.is_err());
     assert!(
         published_events.is_empty(),
@@ -705,6 +709,7 @@ async fn graph_rebuilt_is_not_emitted_when_outbox_drain_fails() {
 struct RelayBackedState {
     operation_log: Vec<String>,
     graph_version: i64,
+    #[allow(dead_code)]
     outbox_events: Vec<OutboxEvent>,
     outbox_pending_count: usize,
 }
@@ -758,12 +763,14 @@ async fn graph_rebuilt_ordering_persist_then_outbox_drain_then_version_then_even
         idempotency_key: "ordering:hash".to_owned(),
     };
 
+    let embedder = graph_builder::graph::embeddings::DeterministicEmbeddingService;
     let mut durable_state = RelayBackedState::default();
     let mut published_events = Vec::new();
-    let mut orchestrator = GraphRebuildOrchestrator::new(&mut durable_state, &mut published_events);
+    let mut orchestrator =
+        GraphRebuildOrchestrator::new(&mut durable_state, &mut published_events, &embedder);
 
-    let outcome = orchestrator
-        .rebuild_from_changes(&[scope], &[file_change])
+    let _outcome = orchestrator
+        .rebuild_from_changes(&[scope], &[file_change], &HdbscanConfig::default())
         .await
         .expect("rebuild should succeed with clean relay");
 
@@ -803,6 +810,7 @@ async fn graph_rebuilt_fails_when_outbox_drain_reports_pending_items() {
         idempotency_key: "backlog:hash".to_owned(),
     };
 
+    let embedder = graph_builder::graph::embeddings::DeterministicEmbeddingService;
     let mut durable_state = RelayBackedState {
         operation_log: Vec::new(),
         graph_version: 0,
@@ -810,10 +818,11 @@ async fn graph_rebuilt_fails_when_outbox_drain_reports_pending_items() {
         outbox_pending_count: 3,
     };
     let mut published_events = Vec::new();
-    let mut orchestrator = GraphRebuildOrchestrator::new(&mut durable_state, &mut published_events);
+    let mut orchestrator =
+        GraphRebuildOrchestrator::new(&mut durable_state, &mut published_events, &embedder);
 
     let result = orchestrator
-        .rebuild_from_changes(&[scope], &[file_change])
+        .rebuild_from_changes(&[scope], &[file_change], &HdbscanConfig::default())
         .await;
     assert!(result.is_err());
     assert!(
@@ -829,4 +838,136 @@ async fn graph_rebuilt_fails_when_outbox_drain_reports_pending_items() {
     );
 
     fs::remove_dir_all(&sandbox).expect("sandbox should clean up");
+}
+
+/// Stall guard: the drain has NO arbitrary poll cap — it drains until empty.
+/// The only non-success exit is a genuine stall: a relay pass that claims nothing
+/// while events are still pending (e.g. all of them sitting in retry backoff with
+/// a future `available_at`). That must fail LOUD with a "made no progress" error,
+/// derived from real progress — never spin forever and never silently give up at
+/// an arbitrary cycle count. Regression for the no-arbitrary-limits mandate.
+#[tokio::test]
+async fn drain_correlation_outbox_fails_loud_on_genuine_stall_no_progress() {
+    let target_correlation_id = Uuid::now_v7();
+    // Seed pending events whose `available_at` is in the future: they ARE pending
+    // (has_pending → true) but cannot be claimed yet (claim filters available_at
+    // <= now). So the very first relay pass claims 0 while pending remains → stall.
+    let seed_events: Vec<InMemoryOutboxEvent> = (0..3)
+        .map(|i| {
+            let mut event =
+                seed_pending_vector_event(target_correlation_id, &format!("stalled-hash-{i}"));
+            event.available_at = Utc::now() + Duration::hours(1);
+            event
+        })
+        .collect();
+    let coordinator = InMemoryOutboxCoordinator::new(seed_events);
+    let vector_store = InMemoryVectorStore::default();
+    let relay = OutboxRelay::new(&coordinator, &vector_store, 10, 0)
+        .expect("relay should initialize for valid contract");
+
+    let result = relay
+        .drain_correlation_outbox(&coordinator, target_correlation_id)
+        .await;
+
+    assert!(
+        result.is_err(),
+        "drain must fail loud when pending events cannot be claimed (genuine stall)"
+    );
+    let error_text = result.unwrap_err().to_string();
+    assert!(
+        error_text.contains("made no progress"),
+        "error must describe a genuine stall, not an arbitrary cap: {error_text}"
+    );
+    assert_eq!(
+        coordinator.pending_count_for_correlation(target_correlation_id),
+        3,
+        "the unclaimable pending events remain pending and are surfaced loudly"
+    );
+}
+
+/// Proves that `drain_correlation_outbox` drains a backlog far larger than one
+/// claim batch — to completion, with NO arbitrary poll cap.
+///
+/// Direct regression guard for the 234-skill corpus failure where a hardcoded cap
+/// of 5 at batch=10 reached only 50 events and errored the rebuild. Here 60 events
+/// at batch=10 need 6 cycles; the drain must keep going until the outbox is empty.
+#[tokio::test]
+async fn drain_correlation_outbox_completes_fully_across_many_poll_cycles() {
+    let target_correlation_id = Uuid::now_v7();
+    // 60 events at claim_limit=10 requires exactly 6 poll cycles to drain —
+    // the old cap of 5 would have errored at event 50, leaving 10 stuck.
+    let seed_events: Vec<InMemoryOutboxEvent> = (0..60)
+        .map(|i| seed_pending_vector_event(target_correlation_id, &format!("multi-batch-hash-{i}")))
+        .collect();
+    let event_ids: Vec<Uuid> = seed_events
+        .iter()
+        .map(|event| event.event.event_id)
+        .collect();
+    let coordinator = InMemoryOutboxCoordinator::new(seed_events);
+    let vector_store = InMemoryVectorStore::default();
+    // claim_limit=10 means each relay_once_for_correlation call processes at most 10 events.
+    let relay = OutboxRelay::new(&coordinator, &vector_store, 10, 0)
+        .expect("relay should initialize for valid contract");
+
+    relay
+        .drain_correlation_outbox(&coordinator, target_correlation_id)
+        .await
+        .expect("drain must complete for 60 events across 6 poll cycles");
+
+    for (i, event_id) in event_ids.iter().enumerate() {
+        let event = coordinator.event_by_id(*event_id);
+        assert_eq!(
+            event.status, "published",
+            "event {i} (id={event_id}) must be published after full drain"
+        );
+    }
+    assert_eq!(
+        coordinator.pending_count_for_correlation(target_correlation_id),
+        0,
+        "all 60 pending events must be drained — none should remain pending"
+    );
+}
+
+/// Proves that `relay_all_pending_to_completion` drains orphaned pending events
+/// from multiple correlations, regardless of which correlation produced them.
+///
+/// This guards the startup self-heal path: a previously-failed rebuild leaves
+/// `pending` events behind whose correlation_id matches the dead rebuild.
+/// `relay_all_pending_to_completion` must relay them all to Qdrant.
+#[tokio::test]
+async fn relay_all_pending_to_completion_drains_orphaned_events_from_multiple_correlations() {
+    let correlation_a = Uuid::now_v7();
+    let correlation_b = Uuid::now_v7();
+    // Simulate two failed rebuilds leaving orphaned pending events.
+    let orphaned_events: Vec<InMemoryOutboxEvent> = (0..15)
+        .map(|i| {
+            let correlation_id = if i < 8 { correlation_a } else { correlation_b };
+            seed_pending_vector_event(correlation_id, &format!("orphan-hash-{i}"))
+        })
+        .collect();
+    let event_ids: Vec<Uuid> = orphaned_events
+        .iter()
+        .map(|event| event.event.event_id)
+        .collect();
+    let coordinator = InMemoryOutboxCoordinator::new(orphaned_events);
+    let vector_store = InMemoryVectorStore::default();
+    let relay = OutboxRelay::new(&coordinator, &vector_store, 10, 0)
+        .expect("relay should initialize for valid contract");
+
+    let total_published = relay
+        .relay_all_pending_to_completion()
+        .await
+        .expect("relay must drain all orphaned pending events");
+
+    assert_eq!(
+        total_published, 15,
+        "all 15 orphaned events across two correlations must be published"
+    );
+    for (i, event_id) in event_ids.iter().enumerate() {
+        let event = coordinator.event_by_id(*event_id);
+        assert_eq!(
+            event.status, "published",
+            "orphaned event {i} (id={event_id}) must reach published state"
+        );
+    }
 }

@@ -1,0 +1,135 @@
+{
+  "_description": "Shared fixture corpus for retrieval quality validation (T09). Contains realistic agent-work skills across Rust, Docker Compose, git, testing, and security. Used by tests/e2e and scripts/run-demo.sh to validate threshold alignment without artificial tuning.",
+  "_thresholds": {
+    "relevance_threshold": 0.20,
+    "rescue_threshold": 0.15,
+    "candidate_limit": 50,
+    "max_results": 3,
+    "scope_timeout_ms": 400,
+    "note": "These are the RetrievalConfig defaults. Positive fixtures must clear 0.20; negative fixtures must stay below it on a cold-start empty graph."
+  },
+  "positive_fixtures": [
+    {
+      "id": "rust-tokio-async-file-io",
+      "name": "rust-tokio-async-file-io",
+      "description": "Async file I/O patterns in Rust using tokio::fs — reading, writing, and error boundaries for async contexts",
+      "scope": "global",
+      "tags": ["rust", "tokio", "async", "file", "io"],
+      "subunits": [
+        {
+          "kind": "procedure",
+          "title": "Read file with tokio::fs::read_to_string",
+          "content": "Use tokio::fs::read_to_string for small files; prefer BufReader for large files to avoid loading the entire content into memory at once"
+        },
+        {
+          "kind": "convention",
+          "title": "Propagate IO errors with anyhow or thiserror",
+          "content": "Wrap tokio::io::Error in a domain error type using thiserror; avoid unwrap at async file boundaries"
+        }
+      ],
+      "roundtrip_prompt": "how to read files in rust with tokio async",
+      "expected_match": true,
+      "rationale": "Highly lexical and semantic overlap: rust + tokio + async + file + read all appear in both skill and prompt"
+    },
+    {
+      "id": "docker-compose-service-health",
+      "name": "docker-compose-service-health",
+      "description": "Docker Compose healthcheck patterns for Postgres, Redis, and Qdrant — wait-for-healthy sequencing in test environments",
+      "scope": "global",
+      "tags": ["docker", "compose", "healthcheck", "postgres", "redis", "qdrant"],
+      "subunits": [
+        {
+          "kind": "procedure",
+          "title": "Add HEALTHCHECK to Compose services",
+          "content": "Use condition: service_healthy in depends_on so dependent containers wait for the health probe to pass before starting"
+        },
+        {
+          "kind": "convention",
+          "title": "Use alpine pg_isready for Postgres health probes",
+          "content": "HEALTHCHECK CMD pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB} -q is the canonical probe — avoids full connection overhead"
+        }
+      ],
+      "roundtrip_prompt": "docker compose healthcheck postgres redis wait for healthy",
+      "expected_match": true,
+      "rationale": "Strong lexical overlap on docker, compose, healthcheck, postgres, redis"
+    },
+    {
+      "id": "git-conventional-commit-workflow",
+      "name": "git-conventional-commit-workflow",
+      "description": "Conventional commit message format and git workflow for incremental feature development with trunk-based branching",
+      "scope": "global",
+      "tags": ["git", "commit", "workflow", "branching", "conventional"],
+      "subunits": [
+        {
+          "kind": "procedure",
+          "title": "Write a conventional commit message",
+          "content": "Format: <type>(<scope>): <description>. Types: feat, fix, docs, refactor, test, chore. Scope is the affected crate or module."
+        },
+        {
+          "kind": "convention",
+          "title": "Create feature branches from main",
+          "content": "Branch from main, prefix with feat/, fix/, or docs/. Rebase before merge to keep a linear history."
+        }
+      ],
+      "roundtrip_prompt": "git commit message format conventional commits feature branch",
+      "expected_match": true,
+      "rationale": "Direct lexical match on git, commit, conventional, branch"
+    },
+    {
+      "id": "rust-unit-testing-patterns",
+      "name": "rust-unit-testing-patterns",
+      "description": "Rust unit and integration testing patterns — test module structure, assertion helpers, and test-only feature gates",
+      "scope": "global",
+      "tags": ["rust", "testing", "unit", "integration", "assert"],
+      "subunits": [
+        {
+          "kind": "procedure",
+          "title": "Inline test module with #[cfg(test)]",
+          "content": "Place unit tests in a #[cfg(test)] mod tests block at the bottom of the source file. Use #[test] for sync and #[tokio::test] for async tests."
+        },
+        {
+          "kind": "convention",
+          "title": "Use test-utils feature gate for integration test helpers",
+          "content": "Expose test-only types and constructors behind a cfg(feature = 'test-utils') gate so production builds are never polluted."
+        }
+      ],
+      "roundtrip_prompt": "rust unit test async tokio test module structure",
+      "expected_match": true,
+      "rationale": "Semantic overlap on rust + testing + async + tokio"
+    },
+    {
+      "id": "security-secrets-management",
+      "name": "security-secrets-management",
+      "description": "Secrets management patterns for agent-based systems — environment variables, never-log rules, and secret rotation without restart",
+      "scope": "global",
+      "tags": ["security", "secrets", "env", "rotation", "credentials"],
+      "subunits": [
+        {
+          "kind": "convention",
+          "title": "Never log secrets or credentials",
+          "content": "Secrets sourced from env vars must not appear in tracing spans or error messages. Use #[tracing::instrument(skip(secret))] to suppress secret fields."
+        },
+        {
+          "kind": "procedure",
+          "title": "Rotate secrets without restart using env reload",
+          "content": "Trigger a secret reload by watching a signal (SIGHUP) or a Redis pub/sub message; reload the env var in the hot path without stopping the server."
+        }
+      ],
+      "roundtrip_prompt": "how to manage secrets credentials security env variables",
+      "expected_match": true,
+      "rationale": "Semantic and lexical match on secrets, credentials, security, env"
+    }
+  ],
+  "negative_fixtures": [
+    {
+      "prompt": "how to make a cappuccino with an espresso machine",
+      "expected_match": false,
+      "rationale": "Completely unrelated to agent-work skills. An empty graph or a skills graph with only Rust/Docker/git content must return no_match for this prompt."
+    },
+    {
+      "prompt": "what is the capital of france",
+      "expected_match": false,
+      "rationale": "General knowledge question with zero overlap with any agent-work skill in the corpus. Proves the threshold gate is not trivially passed."
+    }
+  ]
+}

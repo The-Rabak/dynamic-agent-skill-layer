@@ -310,25 +310,56 @@ where
     }
 
     /// Drains outbox entries scoped to one correlation id before rebuild visibility changes.
+    ///
+    /// Drains **until the correlation's outbox is empty** — there is no arbitrary
+    /// poll-cycle cap. A durable queue must be drained to completion, never cut
+    /// off at a magic cycle count (that is the foot-gun that silently lost vectors
+    /// at scale). The loop terminates on exactly two conditions:
+    /// - the outbox is empty → `Ok`;
+    /// - a relay pass claims nothing while events are still pending → a genuine
+    ///   stall (events stuck in retry backoff or unprocessable). That is surfaced
+    ///   LOUDLY as an error rather than spinning forever — a real stuck state,
+    ///   derived from actual progress, not an arbitrary limit.
     pub async fn drain_correlation_outbox<I: OutboxInspection>(
         &self,
         inspection: &I,
         correlation_id: Uuid,
-        max_polls: u32,
     ) -> Result<(), OutboxRelayError> {
-        for _ in 0..max_polls {
+        loop {
             if !inspection
                 .has_pending_for_correlation(correlation_id)
                 .await?
             {
                 return Ok(());
             }
-            let _ = self.relay_once_for_correlation(correlation_id).await?;
+            let report = self.relay_once_for_correlation(correlation_id).await?;
+            if report.claimed == 0 {
+                return Err(OutboxRelayError::InvalidPayload(format!(
+                    "outbox for correlation `{correlation_id}` has pending events that could not \
+                     be claimed or relayed (stuck or in retry backoff); drain made no progress"
+                )));
+            }
         }
+    }
 
-        Err(OutboxRelayError::InvalidPayload(format!(
-            "outbox for correlation `{correlation_id}` did not drain after {max_polls} poll cycles"
-        )))
+    /// Relays all globally pending outbox events, regardless of correlation id.
+    ///
+    /// Intended for startup self-heal: if a previous rebuild failed mid-drain and
+    /// left orphaned `pending` events behind, this method drains them before the
+    /// next rebuild cycle runs. Drains **to completion** — no arbitrary cycle cap;
+    /// it loops until a `relay_once` pass claims nothing (queue drained / nothing
+    /// currently claimable).
+    ///
+    /// Returns the total number of events published across all cycles.
+    pub async fn relay_all_pending_to_completion(&self) -> Result<usize, OutboxRelayError> {
+        let mut total_published: usize = 0;
+        loop {
+            let report = self.relay_once().await?;
+            total_published = total_published.saturating_add(report.published);
+            if report.claimed == 0 {
+                return Ok(total_published);
+            }
+        }
     }
 }
 
@@ -460,6 +491,50 @@ async fn insert_outbox_event(
         }
         Err(error) => Err(OutboxError::Persistence(error)),
     }
+}
+
+/// Inserts an outbox event using `ON CONFLICT (idempotency_key) DO NOTHING`.
+///
+/// A content-addressed key that already exists in `outbox_events` means the
+/// vector is either enqueued or already published — skipping is correct.
+/// This variant exists ONLY for paths where replaying the same content-addressed
+/// event is safe by design (e.g. rebuild vector emission). Do NOT replace
+/// `insert_outbox_event` with this for the general case: the strict
+/// `IdempotencyConflict` error is intentional for duplicate-detection elsewhere.
+async fn insert_outbox_event_idempotent(
+    executor: impl sqlx::Executor<'_, Database = Postgres>,
+    event: &OutboxEvent,
+    schema_version: i32,
+) -> Result<bool, OutboxError> {
+    let result = sqlx::query(
+        r#"
+        INSERT INTO outbox_events (
+            event_id,
+            event_type,
+            correlation_id,
+            idempotency_key,
+            schema_version,
+            payload,
+            occurred_at,
+            available_at,
+            status
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), 'pending')
+        ON CONFLICT (idempotency_key) DO NOTHING
+        "#,
+    )
+    .bind(event.event_id)
+    .bind(&event.event_type)
+    .bind(event.correlation_id)
+    .bind(&event.idempotency_key)
+    .bind(schema_version)
+    .bind(&event.payload)
+    .bind(event.timestamp)
+    .execute(executor)
+    .await
+    .map_err(OutboxError::Persistence)?;
+
+    // rows_affected == 0 means the key already existed and was skipped (benign).
+    Ok(result.rows_affected() > 0)
 }
 
 #[async_trait]
@@ -733,6 +808,28 @@ impl OutboxInspection for PostgresGraphWriteCoordinator {
         }
 
         Ok(records)
+    }
+}
+
+impl PostgresGraphWriteCoordinator {
+    /// Appends an outbox event, silently skipping if the idempotency key already exists.
+    ///
+    /// Returns `true` if the row was newly inserted, `false` if a row with the
+    /// same `idempotency_key` already existed and the insert was skipped.
+    ///
+    /// Use this ONLY for content-addressed events where replaying the same key is
+    /// safe by design (e.g. rebuild vector emission). The standard
+    /// `append_outbox_event` preserves strict exactly-once semantics and must
+    /// NOT be replaced by this method for the general outbox case.
+    pub async fn append_outbox_event_idempotent(
+        &self,
+        event: &OutboxEvent,
+    ) -> Result<bool, OutboxError> {
+        let schema_version = validate_outbox_event(event)?;
+        let mut tx = self.begin_outbox_transaction().await?;
+        let inserted = insert_outbox_event_idempotent(&mut *tx, event, schema_version).await?;
+        tx.commit().await?;
+        Ok(inserted)
     }
 }
 

@@ -10,6 +10,7 @@ use domain::{
     ExtractedSkillCandidate, ExtractionResult, PENDING_SKILL_FILE_NAME, REJECTED_SKILL_FILE_NAME,
     is_rejected_tombstone, pending_default_expires_at, pending_default_warning_at,
 };
+use infrastructure::extraction::prompt_contract::normalize_generality;
 use serde::Serialize;
 use thiserror::Error;
 
@@ -74,7 +75,7 @@ impl WriteTargetGuard {
 }
 
 /// Writes extracted candidates as `.pending` drafts for human approval by rename.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct PendingDraftWriter {
     global_scope_paths: Vec<PathBuf>,
     write_guard: WriteTargetGuard,
@@ -82,39 +83,61 @@ pub struct PendingDraftWriter {
 
 impl PendingDraftWriter {
     /// Creates a writer with configured global scope roots and a write-target guard.
-    pub fn new(global_scope_paths: Vec<PathBuf>) -> Self {
-        Self {
-            global_scope_paths,
-            write_guard: WriteTargetGuard::permissive(),
-        }
-    }
-
-    /// Creates a writer with an explicit write-target guard for testing.
-    pub fn new_with_guard(
-        global_scope_paths: Vec<PathBuf>,
-        write_guard: WriteTargetGuard,
-    ) -> Self {
+    ///
+    /// This is the standard bounded constructor for non-test code that already holds
+    /// pre-resolved scope paths and an explicit guard. Both arguments are required so
+    /// no call site can accidentally omit the write boundary.
+    pub fn new_with_guard(global_scope_paths: Vec<PathBuf>, write_guard: WriteTargetGuard) -> Self {
         Self {
             global_scope_paths,
             write_guard,
         }
     }
 
-    /// Builds a writer from `SKILL_GLOBAL_PATHS`.
+    /// Creates a writer with a permissive (write-anywhere) guard.
+    ///
+    /// **Test-only.** Production code must use [`Self::from_environment`], which fails
+    /// loud when `SKILL_GLOBAL_PATHS` is unset. Naming this explicitly forces every
+    /// call site to acknowledge it is bypassing the write boundary — which is the right
+    /// trade-off inside a sandbox but never acceptable at runtime.
+    #[cfg(any(test, feature = "test-utils"))]
+    pub fn new_unbounded_for_tests(global_scope_paths: Vec<PathBuf>) -> Self {
+        Self {
+            global_scope_paths,
+            write_guard: WriteTargetGuard::permissive(),
+        }
+    }
+
+    /// Builds a writer from environment variables.
+    ///
+    /// # Required environment variables
+    ///
+    /// - `SKILL_GLOBAL_PATHS` — colon-separated list of global scope root directories.
+    ///   **Must be set and non-empty.** An absent or empty value is an explicit
+    ///   misconfiguration: the writer refuses to start rather than silently write
+    ///   `.pending` drafts to an unbounded location.
+    /// - `SKILL_GLOBAL_WRITE_ROOTS` or `SKILL_GLOBAL_ALLOWED_ROOTS` — at least one must
+    ///   be set to configure the write-target guard.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`WriterError::MissingConfig`] when `SKILL_GLOBAL_PATHS` is unset or
+    /// resolves to zero entries after trimming.
     pub fn from_environment() -> Result<Self, WriterError> {
         let configured = std::env::var("SKILL_GLOBAL_PATHS").unwrap_or_default();
-        let mut global_scope_paths = configured
+        let global_scope_paths: Vec<PathBuf> = configured
             .split(':')
             .map(str::trim)
             .filter(|entry| !entry.is_empty())
             .map(PathBuf::from)
-            .collect::<Vec<_>>();
+            .collect();
         if global_scope_paths.is_empty() {
-            global_scope_paths.push(std::env::current_dir().map_err(|error| {
-                WriterError::ScopeResolution(format!(
-                    "could not resolve current directory fallback: {error}"
-                ))
-            })?);
+            return Err(WriterError::MissingConfig(
+                "SKILL_GLOBAL_PATHS is not set or is empty; \
+                 the writer refuses to start without an explicit, bounded scope root — \
+                 set SKILL_GLOBAL_PATHS to at least one directory path"
+                    .to_owned(),
+            ));
         }
 
         let write_guard = WriteTargetGuard::from_environment()?;
@@ -278,6 +301,10 @@ pub enum WriterError {
     RejectedTombstonePresent(String),
     #[error("write denied: path `{0}` is outside write-allowed output roots")]
     WriteDenied(String),
+    /// Required configuration is absent; the writer refused to start rather than silently
+    /// enter an unbounded write mode. Set the missing environment variable and restart.
+    #[error("writer configuration error: {0}")]
+    MissingConfig(String),
 }
 
 impl WriterError {
@@ -291,6 +318,7 @@ impl WriterError {
             Self::BatchValidation(_) => "pending_draft_batch_validation_failed",
             Self::RejectedTombstonePresent(_) => "rejected_tombstone_present",
             Self::WriteDenied(_) => "write_denied",
+            Self::MissingConfig(_) => "writer_missing_config",
         }
         .to_owned()
     }
@@ -301,8 +329,7 @@ fn resolve_write_allowed_roots() -> Result<Vec<PathBuf>, WriterError> {
         .or_else(|_| std::env::var("SKILL_GLOBAL_ALLOWED_ROOTS"))
         .map_err(|_| {
             WriterError::InvalidRepoPath(
-                "neither SKILL_GLOBAL_WRITE_ROOTS nor SKILL_GLOBAL_ALLOWED_ROOTS is set"
-                    .to_owned(),
+                "neither SKILL_GLOBAL_WRITE_ROOTS nor SKILL_GLOBAL_ALLOWED_ROOTS is set".to_owned(),
             )
         })?;
     let entries = split_env_paths(&env_value);
@@ -392,24 +419,29 @@ fn render_pending_markdown(
     let created_at = Utc::now();
     let warning_at = pending_default_warning_at(created_at);
     let expires_at = pending_default_expires_at(created_at);
+    // Normalize: any absent or unrecognised provider hint becomes "uncertain"
+    // explicitly. "uncertain" is not a fallback — it is the asserted honest default.
+    let generality = normalize_generality(candidate.generality.as_deref());
+    let generality_rationale = candidate.generality_rationale.as_deref().unwrap_or("");
     let frontmatter = PendingDraftFrontmatter {
         name: candidate.name.as_str(),
         description: candidate.description.as_str(),
-        suggested_tags: &candidate.tags,
+        tags: &candidate.tags,
         origin: "session_extraction",
         source_session_id,
         source_provider: provider_name,
         created_at: created_at.to_rfc3339(),
         warning_at: warning_at.to_rfc3339(),
         expires_at: expires_at.to_rfc3339(),
+        generality,
+        generality_rationale,
     };
     let frontmatter_yaml = serialize_frontmatter(&frontmatter)?;
-    let tags_line = if candidate.tags.is_empty() {
-        String::new()
-    } else {
-        format!("tags: {}\n", candidate.tags.join(", "))
-    };
 
+    // Unified SKILL.md format: the YAML frontmatter is the single source of
+    // truth for name/description/tags. The body carries the `# title`, the
+    // human-readable description prose, and the `##` subunit sections — it does
+    // NOT repeat a `tags:` line (that duplication is what drifted before #224).
     let mut markdown = String::new();
     markdown.push_str("---\n");
     markdown.push_str(&frontmatter_yaml);
@@ -417,9 +449,7 @@ fn render_pending_markdown(
         markdown.push('\n');
     }
     markdown.push_str("---\n\n");
-    markdown.push_str(&format!("# {}\n", candidate.name));
-    markdown.push_str(&tags_line);
-    markdown.push('\n');
+    markdown.push_str(&format!("# {}\n\n", candidate.name));
     markdown.push_str(&candidate.description);
     markdown.push_str("\n\n");
 
@@ -431,17 +461,31 @@ fn render_pending_markdown(
 }
 
 /// Frontmatter payload for pending skill proposals.
+///
+/// `generality` is always written as one of `"project"`, `"general"`, or
+/// `"uncertain"` — never absent. When the provider returned no hint the writer
+/// records `"uncertain"` explicitly so the maintenance promotion pass always has
+/// a concrete value to act on.
 #[derive(Serialize)]
 struct PendingDraftFrontmatter<'a> {
     name: &'a str,
     description: &'a str,
-    suggested_tags: &'a [String],
+    /// Canonical tag list. This is the single source of truth for tags in the
+    /// unified SKILL.md format — the markdown body no longer carries a `tags:`
+    /// line. Read back by the graph-builder reader's frontmatter parse.
+    tags: &'a [String],
     origin: &'a str,
     source_session_id: &'a str,
     source_provider: &'a str,
     created_at: String,
     warning_at: String,
     expires_at: String,
+    /// Advisory scope-generality hint. One of "project", "general", "uncertain".
+    generality: &'a str,
+    /// One-line rationale from the LLM explaining the generality judgement.
+    /// Empty string when the provider supplied no rationale.
+    #[serde(skip_serializing_if = "str::is_empty")]
+    generality_rationale: &'a str,
 }
 
 #[derive(Debug, Clone)]
@@ -557,6 +601,12 @@ mod tests {
 
     use super::*;
 
+    /// Serializes tests that mutate the process-global `SKILL_GLOBAL_*` env vars so
+    /// they cannot clobber each other under parallel `cargo test` (these tests had
+    /// no serialization and raced). Every env-mutating test holds this for its body.
+    static ENV_LOCK: std::sync::LazyLock<std::sync::Mutex<()>> =
+        std::sync::LazyLock::new(|| std::sync::Mutex::new(()));
+
     fn sandbox() -> PathBuf {
         let nonce = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -586,6 +636,8 @@ mod tests {
             conventions: vec![],
             assets: vec![],
             confidence: 0.9,
+            generality: None,
+            generality_rationale: None,
         }
     }
 
@@ -654,7 +706,8 @@ mod tests {
         let skill_source_root = sandbox.join("skills");
 
         fs::create_dir_all(&output_root).expect("output root should be creatable");
-        fs::create_dir_all(skill_source_root.join("my-skill")).expect("skill source should be creatable");
+        fs::create_dir_all(skill_source_root.join("my-skill"))
+            .expect("skill source should be creatable");
 
         // only output_root is in the write allowlist — skill_source_root is NOT
         let write_guard = WriteTargetGuard::new(vec![output_root.clone()]);
@@ -671,6 +724,7 @@ mod tests {
 
     #[test]
     fn write_guard_respects_env_var() {
+        let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
         let sandbox = sandbox();
         let write_root = sandbox.join("output-env");
         fs::create_dir_all(&write_root).expect("output root should be creatable");
@@ -684,7 +738,10 @@ mod tests {
             .expect("guard should build from SKILL_GLOBAL_WRITE_ROOTS");
 
         let result = guard.check_scope_root(&write_root);
-        assert!(result.is_ok(), "write to env-configured root must be allowed");
+        assert!(
+            result.is_ok(),
+            "write to env-configured root must be allowed"
+        );
 
         unsafe {
             env::remove_var("SKILL_GLOBAL_WRITE_ROOTS");
@@ -693,20 +750,27 @@ mod tests {
 
     #[test]
     fn write_guard_falls_back_to_allowed_roots_env_var() {
+        let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
         let sandbox = sandbox();
         let write_root = sandbox.join("fallback-root");
         fs::create_dir_all(&write_root).expect("fallback root should be creatable");
 
         unsafe {
             env::remove_var("SKILL_GLOBAL_WRITE_ROOTS");
-            env::set_var("SKILL_GLOBAL_ALLOWED_ROOTS", write_root.display().to_string());
+            env::set_var(
+                "SKILL_GLOBAL_ALLOWED_ROOTS",
+                write_root.display().to_string(),
+            );
         }
 
         let guard = WriteTargetGuard::from_environment()
             .expect("guard should fall back to SKILL_GLOBAL_ALLOWED_ROOTS");
 
         let result = guard.check_scope_root(&write_root);
-        assert!(result.is_ok(), "write to allowed-roots fallback must be permitted");
+        assert!(
+            result.is_ok(),
+            "write to allowed-roots fallback must be permitted"
+        );
 
         unsafe {
             env::remove_var("SKILL_GLOBAL_ALLOWED_ROOTS");
@@ -715,6 +779,7 @@ mod tests {
 
     #[test]
     fn writer_rejects_pending_drafts_when_pending_root_is_outside_guard() {
+        let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
         let sandbox = sandbox();
         let allowed_root = sandbox.join("allowed");
         let blocked_root = sandbox.join("blocked");
@@ -731,10 +796,7 @@ mod tests {
         let request = stub_request(Some(blocked_root.to_str().unwrap()));
 
         unsafe {
-            env::set_var(
-                "SKILL_GLOBAL_ALLOWED_ROOTS",
-                sandbox.display().to_string(),
-            );
+            env::set_var("SKILL_GLOBAL_ALLOWED_ROOTS", sandbox.display().to_string());
             env::remove_var("SKILL_GLOBAL_WRITE_ROOTS");
         }
 
@@ -757,6 +819,7 @@ mod tests {
 
     #[test]
     fn writer_allows_pending_drafts_inside_guard() {
+        let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
         let sandbox = sandbox();
         let output_root = sandbox.join("output");
         fs::create_dir_all(&output_root).expect("output root should be creatable");
@@ -772,10 +835,7 @@ mod tests {
         let request = stub_request(Some(repo_subdir.to_str().unwrap()));
 
         unsafe {
-            env::set_var(
-                "SKILL_GLOBAL_ALLOWED_ROOTS",
-                sandbox.display().to_string(),
-            );
+            env::set_var("SKILL_GLOBAL_ALLOWED_ROOTS", sandbox.display().to_string());
             env::remove_var("SKILL_GLOBAL_WRITE_ROOTS");
         }
 
@@ -818,5 +878,186 @@ mod tests {
     fn reason_code_write_denied_returns_stable_string() {
         let err = WriterError::WriteDenied("write denied: path `/skills/global/skills/foo/SKILL.md` is a skill source directory (read-only)".to_owned());
         assert_eq!(err.reason_code(), "write_denied");
+    }
+
+    // ── generality frontmatter tests ─────────────────────────────────────────
+
+    /// A candidate with `generality: None` must write `"uncertain"` into the
+    /// frontmatter — the explicit honest default, not a silent omission.
+    #[test]
+    fn pending_markdown_writes_uncertain_when_generality_is_none() {
+        let candidate = minimal_candidate("no-hint-skill");
+        let markdown = render_pending_markdown(&candidate, "session-abc", "test-provider")
+            .expect("render must succeed");
+        assert!(
+            markdown.contains("generality: uncertain"),
+            "absent generality must serialize as 'uncertain'; got:\n{markdown}"
+        );
+        // generality_rationale must be absent (empty string is skipped)
+        assert!(
+            !markdown.contains("generality_rationale"),
+            "absent rationale must be omitted from frontmatter; got:\n{markdown}"
+        );
+    }
+
+    #[test]
+    fn pending_markdown_writes_general_when_provider_signals_general() {
+        let mut candidate = minimal_candidate("cargo-test-workflow");
+        candidate.generality = Some("general".to_owned());
+        candidate.generality_rationale =
+            Some("No project-specific identifiers present.".to_owned());
+        let markdown = render_pending_markdown(&candidate, "session-abc", "test-provider")
+            .expect("render must succeed");
+        assert!(
+            markdown.contains("generality: general"),
+            "provider 'general' hint must be preserved in frontmatter; got:\n{markdown}"
+        );
+        assert!(
+            markdown.contains("generality_rationale: No project-specific identifiers present."),
+            "rationale must be present in frontmatter; got:\n{markdown}"
+        );
+    }
+
+    #[test]
+    fn pending_markdown_writes_project_when_provider_signals_project() {
+        let mut candidate = minimal_candidate("dasl-scope-resolution");
+        candidate.generality = Some("project".to_owned());
+        candidate.generality_rationale =
+            Some("References SKILL_GLOBAL_ALLOWED_ROOTS env var.".to_owned());
+        let markdown = render_pending_markdown(&candidate, "session-abc", "test-provider")
+            .expect("render must succeed");
+        assert!(
+            markdown.contains("generality: project"),
+            "provider 'project' hint must be preserved; got:\n{markdown}"
+        );
+    }
+
+    #[test]
+    fn pending_markdown_writes_uncertain_for_invalid_provider_generality() {
+        let mut candidate = minimal_candidate("bad-hint-skill");
+        // "global" and "tool-specific" are not valid enum values
+        candidate.generality = Some("global".to_owned());
+        let markdown = render_pending_markdown(&candidate, "session-abc", "test-provider")
+            .expect("render must succeed");
+        assert!(
+            markdown.contains("generality: uncertain"),
+            "invalid provider hint must normalize to 'uncertain'; got:\n{markdown}"
+        );
+    }
+
+    /// Regression: with `repo_path` set, a `general`-hinted candidate MUST still
+    /// write into the project scope directory. The generality hint must NEVER
+    /// trigger a global write.
+    #[test]
+    fn general_hinted_candidate_with_repo_path_writes_to_project_scope_not_global() {
+        let sandbox = sandbox();
+        let project_root = sandbox.join("my-project");
+        let global_root = sandbox.join("global");
+        fs::create_dir_all(&project_root).expect("project root must be creatable");
+        fs::create_dir_all(&global_root).expect("global root must be creatable");
+
+        // The writer has a global scope path pointing to global_root. With
+        // repo_path set, it must ignore that and write to project_root/.skills.
+        let writer = PendingDraftWriter::new_unbounded_for_tests(vec![global_root.clone()]);
+
+        let mut candidate = minimal_candidate("rust-testing");
+        candidate.generality = Some("general".to_owned());
+        candidate.generality_rationale = Some("Uses only standard cargo commands.".to_owned());
+        let result = minimal_result(vec![candidate]);
+
+        let request = stub_request(Some(project_root.to_str().unwrap()));
+
+        unsafe {
+            env::set_var("SKILL_GLOBAL_ALLOWED_ROOTS", sandbox.display().to_string());
+            env::remove_var("SKILL_GLOBAL_WRITE_ROOTS");
+        }
+
+        let committed = writer
+            .write_pending_drafts(&result, &request, "test")
+            .expect("write must succeed");
+
+        unsafe {
+            env::remove_var("SKILL_GLOBAL_ALLOWED_ROOTS");
+        }
+
+        assert!(!committed.is_empty(), "at least one path must be committed");
+
+        // Every committed path must live inside project_root, not global_root.
+        for path in &committed {
+            assert!(
+                path.starts_with(&project_root),
+                "committed path {path:?} must be inside project_root {project_root:?}, \
+                 not global_root — generality hint must never redirect routing"
+            );
+        }
+
+        // Assert no file was written inside global_root.
+        let global_skills_dir = global_root.join(".skills");
+        assert!(
+            !global_skills_dir.exists(),
+            "global .skills dir must NOT exist — general hint must not trigger global write"
+        );
+    }
+
+    /// Safety invariant: an absent or empty `SKILL_GLOBAL_PATHS` must be a loud
+    /// construction failure, never a silent fall-through to permissive write-anywhere
+    /// mode.  This test proves the production path (`from_environment`) enforces the
+    /// boundary at boot time before any draft can be written.
+    #[test]
+    fn from_environment_fails_loud_when_skill_global_paths_is_unset() {
+        let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
+
+        unsafe {
+            env::remove_var("SKILL_GLOBAL_PATHS");
+            // Provide a valid write-roots entry so the test isolates only the
+            // SKILL_GLOBAL_PATHS check and not the downstream write-roots check.
+            env::set_var("SKILL_GLOBAL_WRITE_ROOTS", env::temp_dir().display().to_string());
+        }
+
+        let result = PendingDraftWriter::from_environment();
+
+        unsafe {
+            env::remove_var("SKILL_GLOBAL_WRITE_ROOTS");
+        }
+
+        let err = result.expect_err(
+            "from_environment must fail when SKILL_GLOBAL_PATHS is unset — \
+             the writer must not silently enter permissive write-anywhere mode",
+        );
+        assert!(
+            matches!(err, WriterError::MissingConfig(_)),
+            "expected MissingConfig, got {err:?}"
+        );
+        assert!(
+            err.to_string().contains("SKILL_GLOBAL_PATHS"),
+            "error message must name the missing env var; got: {err}"
+        );
+    }
+
+    /// Variant: an empty string value for `SKILL_GLOBAL_PATHS` is treated the same as
+    /// unset — both are explicit misconfiguration, not a valid empty-roots list.
+    #[test]
+    fn from_environment_fails_loud_when_skill_global_paths_is_empty_string() {
+        let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
+
+        unsafe {
+            env::set_var("SKILL_GLOBAL_PATHS", "");
+            env::set_var("SKILL_GLOBAL_WRITE_ROOTS", env::temp_dir().display().to_string());
+        }
+
+        let result = PendingDraftWriter::from_environment();
+
+        unsafe {
+            env::remove_var("SKILL_GLOBAL_PATHS");
+            env::remove_var("SKILL_GLOBAL_WRITE_ROOTS");
+        }
+
+        let err = result.expect_err(
+            "from_environment must fail when SKILL_GLOBAL_PATHS is an empty string",
+        );
+        assert!(
+            matches!(err, WriterError::MissingConfig(_)),
+            "expected MissingConfig, got {err:?}"
+        );
     }
 }

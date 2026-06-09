@@ -1,0 +1,15 @@
+{
+  "timestamp": "2026-06-04T10:42:47.832632577+00:00",
+  "stage": "approval",
+  "input": {
+    "action": "rename SKILL.md.pending -> SKILL.md",
+    "scope": "global",
+    "slug": "harness-golden-1780569765717"
+  },
+  "output": {
+    "detail": "approved harness-golden-1780569765717/SKILL.md.pending → SKILL.md",
+    "elapsed_ms": 1094,
+    "ok": true
+  },
+  "infra_snapshot": null
+}

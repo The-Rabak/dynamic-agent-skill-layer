@@ -41,21 +41,53 @@ services:
     volumes:
       - qdrant_data:/qdrant/storage
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:6333/collections"]
+      # The qdrant image ships neither wget nor curl (only bash + the qdrant
+      # binary), so the old `wget http://localhost:6333/collections` probe could
+      # never run → the container reported unhealthy despite a fully serving
+      # server. bash's /dev/tcp talks to the readiness endpoint with no extra
+      # tooling; `/readyz` returns HTTP 200 once qdrant is ready to serve.
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/6333 && printf 'GET /readyz HTTP/1.0\r\n\r\n' >&3 && grep -q '200 OK' <&3"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 10s
 
   ollama:
-    image: ollama/ollama:0.24.0
+    image: ollama/ollama:latest
     container_name: ${COMPOSE_PROJECT_NAME:-skill-layer}-ollama
+    environment:
+      # Parallel request slots so concurrent compile_context embed calls are served
+      # in parallel rather than serialized — keeps the warm read path p95 under the
+      # 500ms SLA under concurrent sessions (DS-007). Pair with EMBED_MAX_CONCURRENCY
+      # on the clients. nomic-embed-text is small, so the extra loaded copies are cheap.
+      OLLAMA_NUM_PARALLEL: ${OLLAMA_NUM_PARALLEL:-4}
+      # Keep every model resident for 24h after last use. We impose NO request
+      # timeouts on model calls (a slow cold load must never cut a call off), so
+      # keeping models warm is how latency stays sane — a cold reload after idle
+      # would otherwise block the first call unboundedly. Override via OLLAMA_KEEP_ALIVE
+      # (e.g. "-1" for indefinite, "30m" on a shared box where holding VRAM 24/7 is costly).
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-24h}
+    # NVIDIA GPU passthrough (RTX/GeForce). Requires the NVIDIA Container Toolkit
+    # on the host (the `nvidia` docker runtime). Ollama auto-detects CUDA.
+    # NOTE: NVIDIA-only. macOS/Metal has no Docker GPU passthrough — on a Mac,
+    # run Ollama natively to use Metal (or drop this block on non-NVIDIA hosts).
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     ports:
       - "${OLLAMA_PORT:-11444}:11434"
     volumes:
       - ollama_data:/root/.ollama
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:11434/api/tags"]
+      # The ollama/ollama image ships neither wget nor curl — only the `ollama`
+      # binary. `ollama ps` returns 0 once the server is serving, so it is the
+      # correct in-image liveness probe (the old wget probe always failed → the
+      # container reported unhealthy despite a healthy server).
+      test: ["CMD", "ollama", "ps"]
       interval: 15s
       timeout: 5s
       retries: 10
@@ -97,11 +129,30 @@ services:
       OLLAMA_URL: http://ollama:11434
       SKILL_GLOBAL_PATHS: /skills/global
       SKILL_GLOBAL_ALLOWED_ROOTS: ${SKILL_GLOBAL_ALLOWED_ROOTS:-/skills/project,/skills/global}
+      # Declares the in-container project scope root (issue #154). The container's
+      # working directory is `/` with no `.git`/marker, so without this the project
+      # resolver returns ResolverUnavailable and compile_context degrades for EVERY
+      # query. Pointing it at the mounted project skills root makes
+      # FsMarkerProjectResolver resolve project scope directly; project-scoped skills
+      # (whose source_paths live under /skills/project) then match.
+      SKILL_PROJECT_ROOT: ${SKILL_PROJECT_ROOT:-/skills/project}
       GRAPH_BUILDER_PROJECT_ROOT: ${GRAPH_BUILDER_PROJECT_ROOT:-/skills/project}
       CLAUDE_TRANSCRIPT_ROOT: ${CLAUDE_TRANSCRIPT_ROOT:-/transcripts}
+      # Extraction provider for the extract_session worker pool. Ollama is the
+      # default local path (no cloud key).
+      # - =claude or =claude-api: Anthropic Messages API; requires ANTHROPIC_API_KEY
+      #   (loud startup error if key absent). Not available as =claude-code here —
+      #   the CLI provider is host-only and must not be set in this container config.
+      # - =claude-code / =claude-cli: host-only CLI subprocess; NOT available in the
+      #   stock container (no claude binary, no login). Use on bare-host deployments only.
+      EXTRACT_SESSION_PROVIDER: ${EXTRACT_SESSION_PROVIDER:-ollama}
+      # Shared secret for the localhost /ingest/transcript endpoint (todo 103/099).
+      # When set, host capture hooks must send a matching X-Ingest-Secret header.
+      # When empty, the endpoint relies on the 127.0.0.1 port binding alone.
+      TRANSCRIPT_INGEST_SECRET: ${TRANSCRIPT_INGEST_SECRET:-}
     volumes:
       - ${GRAPH_BUILDER_PROJECT_ROOT:-.}:/skills/project:ro
-      - ${SKILL_GLOBAL_HOST_PATH:-./docs}:/skills/global
+      - ${SKILL_GLOBAL_HOST_PATH:-${HOME}/.claude/skills}:/skills/global
       - ${CLAUDE_TRANSCRIPT_ROOT:-./tests/fixtures}:/transcripts:ro
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3001/health"]
@@ -138,7 +189,7 @@ services:
       GRAPH_BUILDER_ADDR: 0.0.0.0:${GRAPH_BUILDER_PORT:-8080}
     volumes:
       - ${GRAPH_BUILDER_PROJECT_ROOT:-.}:/skills/project:ro
-      - ${SKILL_GLOBAL_HOST_PATH:-./docs}:/skills/global
+      - ${SKILL_GLOBAL_HOST_PATH:-${HOME}/.claude/skills}:/skills/global
     # Graph-builder port also bound to localhost-only (same exposure contract as mcp-server).
     ports:
       - "127.0.0.1:${GRAPH_BUILDER_PORT:-8080}:8080"
@@ -172,6 +223,20 @@ services:
       REDIS_URL: redis://redis:6379
       QDRANT_URL: http://qdrant:6333
       OLLAMA_URL: http://ollama:11434
+      # Transcript-ingest queue drain (todo 103). The drain feeds queued content
+      # via transcript_inline, so CLAUDE_TRANSCRIPT_ROOT is never read for IO —
+      # it is required only by SessionExtractor::from_environment's construction
+      # contract. SKILL_GLOBAL_* + the writable project mount let the drain emit
+      # .pending drafts. Set MAINTENANCE_TRANSCRIPT_DRAIN=off to roll back.
+      CLAUDE_TRANSCRIPT_ROOT: /skills/global
+      SKILL_GLOBAL_PATHS: /skills/global
+      SKILL_GLOBAL_ALLOWED_ROOTS: ${SKILL_GLOBAL_ALLOWED_ROOTS:-/skills/project,/skills/global}
+      GRAPH_BUILDER_PROJECT_ROOT: ${GRAPH_BUILDER_PROJECT_ROOT:-/skills/project}
+      EXTRACT_SESSION_PROVIDER: ${EXTRACT_SESSION_PROVIDER:-ollama}
+    volumes:
+      # Writable (not :ro): the drain writes .pending drafts into <repo>/.skills.
+      - ${GRAPH_BUILDER_PROJECT_ROOT:-.}:/skills/project
+      - ${SKILL_GLOBAL_HOST_PATH:-${HOME}/.claude/skills}:/skills/global
     restart: unless-stopped
 
 volumes:

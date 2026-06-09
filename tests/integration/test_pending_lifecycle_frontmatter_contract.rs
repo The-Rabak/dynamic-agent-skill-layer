@@ -29,6 +29,8 @@ fn sample_candidate(name: &str) -> ExtractedSkillCandidate {
         conventions: vec!["Constrain scope".to_owned()],
         assets: vec!["docs/skill.md".to_owned()],
         confidence: 0.9,
+        generality: None,
+        generality_rationale: None,
     }
 }
 
@@ -53,7 +55,7 @@ fn frontmatter_from_markdown(markdown: &str) -> Value {
 #[test]
 fn pending_frontmatter_includes_created_warning_and_expiry_timestamps() {
     let sandbox = fresh_sandbox("pending-frontmatter-contract");
-    let writer = PendingDraftWriter::new(vec![sandbox.clone()]);
+    let writer = PendingDraftWriter::new_unbounded_for_tests(vec![sandbox.clone()]);
     let extraction_result = ExtractionResult {
         source_session_id: DomainId::new_unchecked("session-123"),
         candidates: vec![sample_candidate("Rust File IO Setup")],
@@ -100,7 +102,7 @@ fn pending_writer_batch_failure_does_not_leave_partial_drafts() {
     )
     .expect("blocked tombstone should be written");
 
-    let writer = PendingDraftWriter::new(vec![sandbox.clone()]);
+    let writer = PendingDraftWriter::new_unbounded_for_tests(vec![sandbox.clone()]);
     let extraction_result = ExtractionResult {
         source_session_id: DomainId::new_unchecked("session-atomic"),
         candidates: vec![
@@ -128,7 +130,7 @@ fn pending_writer_batch_failure_does_not_leave_partial_drafts() {
 #[test]
 fn pending_frontmatter_serializes_multiline_and_special_characters_safely() {
     let sandbox = fresh_sandbox("pending-frontmatter-escaping");
-    let writer = PendingDraftWriter::new(vec![sandbox.clone()]);
+    let writer = PendingDraftWriter::new_unbounded_for_tests(vec![sandbox.clone()]);
     let extraction_result = ExtractionResult {
         source_session_id: DomainId::new_unchecked("session-frontmatter"),
         candidates: vec![ExtractedSkillCandidate {
@@ -143,6 +145,8 @@ fn pending_frontmatter_serializes_multiline_and_special_characters_safely() {
             conventions: vec!["Fail closed".to_owned()],
             assets: vec!["docs/yaml.md".to_owned()],
             confidence: 0.88,
+            generality: None,
+            generality_rationale: None,
         }],
         provider: "claude".to_owned(),
     };
@@ -164,7 +168,7 @@ fn pending_frontmatter_serializes_multiline_and_special_characters_safely() {
     );
     assert_eq!(frontmatter["source_provider"], "claude");
     assert_eq!(
-        frontmatter["suggested_tags"],
+        frontmatter["tags"],
         Value::Sequence(vec![
             Value::String("security".to_owned()),
             Value::String("quoted \"tag\"".to_owned()),

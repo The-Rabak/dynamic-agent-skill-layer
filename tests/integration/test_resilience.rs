@@ -128,8 +128,12 @@ fn compose_dependency_gating_allows_degraded_startup() {
         .as_mapping()
         .expect("compose file should have a services mapping");
 
-    let hard_deps: &[(&str, &str)] = &[("postgres", "service_healthy"), ("redis", "service_healthy")];
-    let soft_deps: &[(&str, &str)] = &[("qdrant", "service_started"), ("ollama", "service_started")];
+    let hard_deps: &[(&str, &str)] = &[
+        ("postgres", "service_healthy"),
+        ("redis", "service_healthy"),
+    ];
+    let soft_deps: &[(&str, &str)] =
+        &[("qdrant", "service_started"), ("ollama", "service_started")];
 
     for runtime_service in &["mcp-server", "graph-builder", "maintenance-worker"] {
         let depends_on = services[runtime_service]["depends_on"]

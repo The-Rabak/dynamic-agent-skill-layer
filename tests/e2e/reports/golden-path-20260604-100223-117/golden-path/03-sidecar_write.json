@@ -1,0 +1,15 @@
+{
+  "timestamp": "2026-06-04T10:02:24.121842692+00:00",
+  "stage": "sidecar_write",
+  "input": {
+    "action": "write SKILL.md.pending via sidecar",
+    "scope": "Global",
+    "slug": "harness-golden-1780567343117"
+  },
+  "output": {
+    "detail": "wrote harness-golden-1780567343117/SKILL.md.pending to volume",
+    "elapsed_ms": 856,
+    "ok": true
+  },
+  "infra_snapshot": null
+}

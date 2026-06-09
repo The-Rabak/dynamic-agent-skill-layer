@@ -1,5 +1,12 @@
+---
+name: async-tokio
+description: Async runtime patterns for file workflows.
+tags:
+- rust
+- async
+---
+
 # async-tokio
-tags: rust, async
 
 Async runtime patterns for file workflows.
 

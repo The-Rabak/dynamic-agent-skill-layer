@@ -12,10 +12,10 @@ use domain::{
     Subunit, SubunitType,
 };
 use mcp_server::{
-    build_seeded_server,
+    McpServerApp,
     tools::compile_context::{CompileContextRequest, CompileContextStatus},
 };
-use retrieval::{RetrievalConfig, SeededGraph, SeededSkill};
+use retrieval::{RetrievalConfig, RetrievalSnapshot, SeededSkill};
 
 #[path = "env_guard.rs"]
 mod env_guard;
@@ -71,7 +71,7 @@ impl EmbeddingService for DeterministicEmbeddingService {
     }
 }
 
-fn seeded_dual_scope_graph() -> SeededGraph {
+fn seeded_dual_scope_graph() -> RetrievalSnapshot {
     let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
         .canonicalize()
@@ -102,13 +102,14 @@ fn seeded_dual_scope_graph() -> SeededGraph {
         community_id: None,
     };
 
-    SeededGraph::new(
+    RetrievalSnapshot::new(
         vec![
             SeededSkill {
                 skill: project_skill.clone(),
                 scope_id: "project".to_owned(),
                 source_paths: vec![repo_root.join("src/auth.rs")],
                 embedding: vec![1.0, 1.0, 0.0],
+                subunit_embeddings: vec![vec![1.0, 1.0, 0.0]],
                 subunits: vec![Subunit {
                     id: DomainId::new_unchecked("sub-project-rust-auth"),
                     skill_id: project_skill.id.clone(),
@@ -126,6 +127,7 @@ fn seeded_dual_scope_graph() -> SeededGraph {
                 scope_id: "global".to_owned(),
                 source_paths: vec![docs_root.join("global-rust-auth.md")],
                 embedding: vec![0.9, 1.0, 0.0],
+                subunit_embeddings: vec![vec![0.9, 1.0, 0.0]],
                 subunits: vec![Subunit {
                     id: DomainId::new_unchecked("sub-global-rust-auth"),
                     skill_id: global_skill.id.clone(),
@@ -176,7 +178,7 @@ fn configure_scope_env_with_missing_global_path() -> env_guard::ScopeEnvGuard {
 async fn compile_context_searches_project_and_global_with_project_priority_bias() {
     let _env_guard = env_guard::configure_scope_env();
 
-    let server = build_seeded_server(
+    let server = McpServerApp::with_explicit_graph(
         Arc::new(DeterministicEmbeddingService::healthy()),
         seeded_dual_scope_graph(),
         retrieval_config(),
@@ -188,6 +190,7 @@ async fn compile_context_searches_project_and_global_with_project_priority_bias(
             prompt: "debug rust auth middleware".to_owned(),
             session_id: "dual-scope-session".to_owned(),
             repo_path: test_repo_path(),
+            trigger: None,
         })
         .await;
 
@@ -216,7 +219,7 @@ async fn suppression_is_scoped_by_session_and_repo_pair_and_degraded_does_not_co
 {
     let _env_guard = env_guard::configure_scope_env();
 
-    let server = build_seeded_server(
+    let server = McpServerApp::with_explicit_graph(
         Arc::new(DeterministicEmbeddingService::fail_first()),
         seeded_dual_scope_graph(),
         retrieval_config(),
@@ -227,6 +230,7 @@ async fn suppression_is_scoped_by_session_and_repo_pair_and_degraded_does_not_co
         prompt: "debug rust auth middleware".to_owned(),
         session_id: "session-a".to_owned(),
         repo_path: test_repo_path(),
+        trigger: None,
     };
 
     let degraded = server.compile_context(base_request.clone()).await;
@@ -259,7 +263,7 @@ async fn suppression_is_scoped_by_session_and_repo_pair_and_degraded_does_not_co
 #[tokio::test]
 async fn compile_context_uses_request_repo_path_for_scope_resolution() {
     let _env_guard = env_guard::configure_scope_env();
-    let server = build_seeded_server(
+    let server = McpServerApp::with_explicit_graph(
         Arc::new(DeterministicEmbeddingService::healthy()),
         seeded_dual_scope_graph(),
         retrieval_config(),
@@ -281,6 +285,7 @@ async fn compile_context_uses_request_repo_path_for_scope_resolution() {
             prompt: "debug rust auth middleware".to_owned(),
             session_id: "repo-scope-valid".to_owned(),
             repo_path: valid_repo,
+            trigger: None,
         })
         .await;
     assert_eq!(valid_response.status, CompileContextStatus::Ok);
@@ -291,6 +296,7 @@ async fn compile_context_uses_request_repo_path_for_scope_resolution() {
             prompt: "debug rust auth middleware".to_owned(),
             session_id: "repo-scope-invalid".to_owned(),
             repo_path: sandbox.display().to_string(),
+            trigger: None,
         })
         .await;
     assert_eq!(invalid_response.status, CompileContextStatus::Degraded);
@@ -306,7 +312,7 @@ async fn compile_context_uses_request_repo_path_for_scope_resolution() {
 async fn partial_scope_failure_returns_degraded_with_available_context_and_no_suppression() {
     let _env_guard = configure_scope_env_with_missing_global_path();
 
-    let server = build_seeded_server(
+    let server = McpServerApp::with_explicit_graph(
         Arc::new(DeterministicEmbeddingService::healthy()),
         seeded_dual_scope_graph(),
         retrieval_config(),
@@ -317,6 +323,7 @@ async fn partial_scope_failure_returns_degraded_with_available_context_and_no_su
         prompt: "debug rust auth middleware".to_owned(),
         session_id: "partial-scope-failure".to_owned(),
         repo_path: test_repo_path(),
+        trigger: None,
     };
 
     let first = server.compile_context(request.clone()).await;

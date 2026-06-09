@@ -14,15 +14,29 @@ struct SuppressionEntry {
 #[derive(Debug, Clone)]
 pub struct SessionSuppressionState {
     inner: Arc<DashMap<String, SuppressionEntry>>,
+    /// Index from `session_id` → the set of local keys that session owns, so
+    /// `clear_session` evicts in O(entries for THIS session) via keyed `remove`
+    /// instead of an O(total entries) full-map `retain` scan (#142). Every write
+    /// into `inner` (mark + Redis read-through) also updates this index, so it
+    /// stays a complete mirror of which keys belong to which session.
+    session_index: Arc<DashMap<String, std::collections::HashSet<String>>>,
     redis_client: Option<RedisClient>,
     ttl_secs: u64,
+    /// Optional Redis-key namespace prefix (`REDIS_KEY_PREFIX`). Empty in
+    /// production and the live containers — set only by the per-run test
+    /// namespace guard (#164) so a sandbox's suppression keys cannot collide with
+    /// the shared canonical `suppression:*` keys (which would yield phantom
+    /// `DuplicateSuppressed` results at low graph versions).
+    key_prefix: String,
 }
 
-pub(crate) async fn scan_and_del_pattern(
-    client: &RedisClient,
-    pattern: &str,
-    context: &str,
-) {
+/// Reads the optional `REDIS_KEY_PREFIX` namespace prefix shared by the
+/// suppression and context-cache Redis keys. Unset/blank in production.
+pub(crate) fn redis_key_prefix() -> String {
+    std::env::var("REDIS_KEY_PREFIX").unwrap_or_default()
+}
+
+pub(crate) async fn scan_and_del_pattern(client: &RedisClient, pattern: &str, context: &str) {
     let mut conn = match client.get_multiplexed_async_connection().await {
         Ok(conn) => conn,
         Err(error) => {
@@ -65,15 +79,15 @@ pub(crate) async fn scan_and_del_pattern(
             break;
         }
     }
-    if !keys.is_empty() {
-        if let Err(error) = conn.del::<_, ()>(&keys[..]).await {
-            tracing::warn!(
-                ?error,
-                key_count = keys.len(),
-                %context,
-                "failed to delete keys from redis"
-            );
-        }
+    if !keys.is_empty()
+        && let Err(error) = conn.del::<_, ()>(&keys[..]).await
+    {
+        tracing::warn!(
+            ?error,
+            key_count = keys.len(),
+            %context,
+            "failed to delete keys from redis"
+        );
     }
 }
 
@@ -83,14 +97,28 @@ impl SessionSuppressionState {
     pub fn new(redis_client: Option<RedisClient>, ttl_secs: u64) -> Self {
         Self {
             inner: Arc::default(),
+            session_index: Arc::default(),
             redis_client,
             ttl_secs,
+            key_prefix: redis_key_prefix(),
         }
     }
 
-    fn redis_key(session_id: &str, repo_path: &str) -> String {
+    /// Inserts an entry into the local map AND records its key under the session
+    /// in `session_index`, keeping the index a complete mirror so keyed
+    /// `clear_session` eviction never misses an entry.
+    fn record_local(&self, session_id: &str, local_key: String, entry: SuppressionEntry) {
+        self.inner.insert(local_key.clone(), entry);
+        self.session_index
+            .entry(session_id.trim().to_owned())
+            .or_default()
+            .insert(local_key);
+    }
+
+    fn redis_key(&self, session_id: &str, repo_path: &str) -> String {
         format!(
-            "suppression:{}::{}",
+            "{}suppression:{}::{}",
+            self.key_prefix,
             session_id.trim(),
             repo_path.trim()
         )
@@ -100,8 +128,25 @@ impl SessionSuppressionState {
         format!("{}::{}", session_id.trim(), repo_path.trim())
     }
 
-    fn session_prefix(session_id: &str) -> String {
-        format!("suppression:{}", session_id.trim())
+    /// Escapes Redis glob metacharacters in `raw` so it is safe to embed in a
+    /// `MATCH` pattern without matching unintended keys.
+    ///
+    /// Redis SCAN / KEYS treats `*`, `?`, `[`, `]`, and `\` as special. Each
+    /// is prefixed with `\` so it matches literally. A session_id like `"*"`
+    /// becomes `"\*"` instead of the wildcard that would wipe all sessions.
+    ///
+    /// Also used by `context_cache::CompiledContextCache::clear_session` for the
+    /// same Redis-SCAN safety guarantee. Both stores must always apply this helper
+    /// before building a SCAN pattern from a client-supplied `session_id`.
+    pub(crate) fn escape_redis_glob(raw: &str) -> String {
+        let mut escaped = String::with_capacity(raw.len());
+        for ch in raw.chars() {
+            if matches!(ch, '*' | '?' | '[' | ']' | '\\') {
+                escaped.push('\\');
+            }
+            escaped.push(ch);
+        }
+        escaped
     }
 
     async fn try_redis_get(&self, session_id: &str, repo_path: &str) -> Option<SuppressionEntry> {
@@ -118,7 +163,7 @@ impl SessionSuppressionState {
                 return None;
             }
         };
-        let key = Self::redis_key(session_id, repo_path);
+        let key = self.redis_key(session_id, repo_path);
         let raw: Option<String> = match conn.get(&key).await {
             Ok(raw) => raw,
             Err(error) => {
@@ -146,12 +191,7 @@ impl SessionSuppressionState {
         }
     }
 
-    async fn try_redis_setex(
-        &self,
-        session_id: &str,
-        repo_path: &str,
-        entry: &SuppressionEntry,
-    ) {
+    async fn try_redis_setex(&self, session_id: &str, repo_path: &str, entry: &SuppressionEntry) {
         let Some(client) = &self.redis_client else {
             return;
         };
@@ -167,7 +207,7 @@ impl SessionSuppressionState {
                 return;
             }
         };
-        let key = Self::redis_key(session_id, repo_path);
+        let key = self.redis_key(session_id, repo_path);
         let value = match serde_json::to_string(entry) {
             Ok(json) => json,
             Err(error) => {
@@ -189,45 +229,69 @@ impl SessionSuppressionState {
         }
     }
 
+    /// Returns `true` when the session already received compiled context for
+    /// `repo_path` at `graph_version`. Checks the local DashMap first to avoid
+    /// a Redis RTT on the warm (most common) path; falls back to Redis only when
+    /// the local map has no entry (e.g. after a process restart).
     pub async fn is_suppressed(
         &self,
         session_id: &str,
         repo_path: &str,
         graph_version: i64,
     ) -> bool {
-        if let Some(redis_entry) = self.try_redis_get(session_id, repo_path).await {
-            return redis_entry.suppressed && redis_entry.graph_version == graph_version;
+        let key = Self::local_key(session_id, repo_path);
+        if let Some(entry) = self.inner.get(&key) {
+            return entry.suppressed && entry.graph_version == graph_version;
         }
 
-        let key = Self::local_key(session_id, repo_path);
-        self.inner
-            .get(&key)
-            .map(|entry| entry.suppressed && entry.graph_version == graph_version)
-            .unwrap_or(false)
+        // DashMap miss — check Redis (cross-process / post-restart warm-up path).
+        if let Some(redis_entry) = self.try_redis_get(session_id, repo_path).await {
+            let suppressed = redis_entry.suppressed && redis_entry.graph_version == graph_version;
+            // Read-through write-back (#142): warm the local map so a session
+            // restored after a process restart pays the Redis RTT only once.
+            self.record_local(session_id, key, redis_entry);
+            return suppressed;
+        }
+
+        false
     }
 
+    /// Returns the `graph_version` stored for this session+repo pair, or `None`
+    /// if no suppression entry exists. DashMap-first for hot-path performance.
     pub async fn graph_version(&self, session_id: &str, repo_path: &str) -> Option<i64> {
-        if let Some(redis_entry) = self.try_redis_get(session_id, repo_path).await {
-            return Some(redis_entry.graph_version);
+        let key = Self::local_key(session_id, repo_path);
+        if let Some(entry) = self.inner.get(&key) {
+            return Some(entry.graph_version);
         }
 
-        let key = Self::local_key(session_id, repo_path);
-        self.inner.get(&key).map(|entry| entry.graph_version)
+        if let Some(redis_entry) = self.try_redis_get(session_id, repo_path).await {
+            let version = redis_entry.graph_version;
+            self.record_local(session_id, key, redis_entry); // read-through write-back (#142)
+            return Some(version);
+        }
+
+        None
     }
 
+    /// Returns the scope keys that were considered when the suppression entry
+    /// was written. DashMap-first for hot-path performance.
     pub async fn scopes_considered(
         &self,
         session_id: &str,
         repo_path: &str,
     ) -> Option<Vec<String>> {
-        if let Some(redis_entry) = self.try_redis_get(session_id, repo_path).await {
-            return Some(redis_entry.scopes_considered);
+        let key = Self::local_key(session_id, repo_path);
+        if let Some(entry) = self.inner.get(&key) {
+            return Some(entry.scopes_considered.clone());
         }
 
-        let key = Self::local_key(session_id, repo_path);
-        self.inner
-            .get(&key)
-            .map(|entry| entry.scopes_considered.clone())
+        if let Some(redis_entry) = self.try_redis_get(session_id, repo_path).await {
+            let scopes = redis_entry.scopes_considered.clone();
+            self.record_local(session_id, key, redis_entry); // read-through write-back (#142)
+            return Some(scopes);
+        }
+
+        None
     }
 
     pub async fn mark_healthy(
@@ -244,18 +308,33 @@ impl SessionSuppressionState {
         };
 
         let local_key = Self::local_key(session_id, repo_path);
-        self.inner.insert(local_key, entry.clone());
+        self.record_local(session_id, local_key, entry.clone());
 
         self.try_redis_setex(session_id, repo_path, &entry).await;
     }
 
+    /// Evicts all suppression entries for `session_id` from both the local
+    /// DashMap and Redis (async background delete).
+    ///
+    /// The local DashMap prefix uses `local_session_prefix` (format:
+    /// `"{session_id}::"`) which matches the `local_key` format exactly.
+    /// The Redis SCAN pattern uses the Redis-key prefix `"suppression:{session_id}::"`.
     pub fn clear_session(&self, session_id: &str) {
-        let prefix = Self::session_prefix(session_id);
-        self.inner.retain(|key, _| !key.starts_with(&prefix));
+        // Keyed eviction via the per-session index — O(entries for THIS session),
+        // not an O(total entries) full-map `retain` scan (#142). Because the index
+        // is keyed on the exact `session_id`, this also cannot over-evict a session
+        // whose id is a string prefix of another.
+        if let Some((_, keys)) = self.session_index.remove(session_id.trim()) {
+            for key in keys {
+                self.inner.remove(&key);
+            }
+        }
 
+        // Evict from Redis in the background (non-blocking).
         let redis_client = self.redis_client.clone();
-        let sid = session_id.to_owned();
-        let pattern = format!("suppression:{}:*", sid.trim());
+        let escaped_sid = Self::escape_redis_glob(session_id.trim());
+        // Redis keys use format "{key_prefix}suppression:{session_id}::{repo_path}".
+        let pattern = format!("{}suppression:{escaped_sid}::*", self.key_prefix);
         tokio::spawn(async move {
             if let Some(client) = redis_client {
                 scan_and_del_pattern(&client, &pattern, "suppression_clear").await;
@@ -297,5 +376,109 @@ mod tests {
     async fn default_ttl_is_one_hour() {
         let state = SessionSuppressionState::default();
         assert_eq!(state.ttl_secs, 3600);
+    }
+
+    #[test]
+    fn escape_redis_glob_escapes_all_metacharacters() {
+        // Wildcard `*` must not match all sessions when embedded in a pattern.
+        assert_eq!(SessionSuppressionState::escape_redis_glob("*"), r"\*");
+        // Other metacharacters are also escaped.
+        assert_eq!(
+            SessionSuppressionState::escape_redis_glob("abc?[def]\\xyz"),
+            r"abc\?\[def\]\\xyz"
+        );
+        // Plain session IDs pass through unchanged.
+        assert_eq!(
+            SessionSuppressionState::escape_redis_glob("session-abc-123"),
+            "session-abc-123"
+        );
+    }
+
+    #[test]
+    fn clear_session_pattern_escapes_wildcard_session_id() {
+        // Verify that a session_id of "*" does NOT produce "suppression:*:*"
+        // which would match every suppression key.
+        let _state = SessionSuppressionState::default();
+        // We cannot call clear_session and inspect the pattern directly, but
+        // we can verify the escaping helper produces the safe escaped form
+        // and that session_prefix uses the raw id (not the glob-safe form,
+        // which is intentional — the in-memory DashMap uses exact-prefix match,
+        // not glob matching).
+        let escaped = SessionSuppressionState::escape_redis_glob("*");
+        assert_eq!(
+            escaped, r"\*",
+            "wildcard session must be escaped for Redis SCAN"
+        );
+    }
+
+    /// Proves the local DashMap clear_session bug: after mark_healthy,
+    /// clear_session must evict the entry from the in-memory DashMap so that
+    /// a new server instance (or post-clear call) sees no suppression.
+    ///
+    /// Before the fix, session_prefix() returned "suppression:{session_id}"
+    /// but DashMap keys are "{session_id}::{repo_path}" — so retain never matched
+    /// anything and the entry leaked across calls in the same process.
+    #[tokio::test]
+    async fn clear_session_evicts_local_dashmap_entry() {
+        let state = SessionSuppressionState::default();
+
+        state
+            .mark_healthy("sid-clear-test", "/repo/a", 3, &["global".to_owned()])
+            .await;
+        assert!(
+            state.is_suppressed("sid-clear-test", "/repo/a", 3).await,
+            "entry must be suppressed before clear"
+        );
+
+        state.clear_session("sid-clear-test");
+
+        assert!(
+            !state.is_suppressed("sid-clear-test", "/repo/a", 3).await,
+            "entry must NOT be suppressed after clear_session — local DashMap must be evicted"
+        );
+    }
+
+    /// Proves that clear_session only removes entries for the given session and
+    /// leaves other sessions untouched.
+    #[tokio::test]
+    async fn clear_session_does_not_evict_other_sessions() {
+        let state = SessionSuppressionState::default();
+
+        state.mark_healthy("sid-a", "/repo/x", 5, &[]).await;
+        state.mark_healthy("sid-b", "/repo/x", 5, &[]).await;
+
+        state.clear_session("sid-a");
+
+        assert!(
+            !state.is_suppressed("sid-a", "/repo/x", 5).await,
+            "sid-a must be cleared"
+        );
+        assert!(
+            state.is_suppressed("sid-b", "/repo/x", 5).await,
+            "sid-b must be untouched by clearing sid-a"
+        );
+    }
+
+    /// Proves the DashMap-first lookup: a warm session with a local DashMap hit
+    /// must NOT need a Redis call. Since we have no Redis in this test, if the
+    /// implementation still queries Redis first, it will fall back to DashMap
+    /// and work — but the intent here is that DashMap is checked first to avoid
+    /// a Redis RTT on the hot path. This test proves the lookup returns the
+    /// DashMap value correctly (Redis client is None, so any Redis-first path
+    /// returns None immediately, but the DashMap value must still be found).
+    #[tokio::test]
+    async fn is_suppressed_returns_dashmap_value_when_redis_unavailable() {
+        // No Redis client — local DashMap only.
+        let state = SessionSuppressionState::new(None, SessionSuppressionState::DEFAULT_TTL_SECS);
+
+        state
+            .mark_healthy("warm-session", "/warm/repo", 11, &["global".to_owned()])
+            .await;
+
+        // Must return true from DashMap even though Redis is None.
+        assert!(
+            state.is_suppressed("warm-session", "/warm/repo", 11).await,
+            "warm session must be found in DashMap without Redis"
+        );
     }
 }

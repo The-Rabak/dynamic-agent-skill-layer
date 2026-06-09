@@ -80,12 +80,35 @@ impl Default for CompilationConfig {
     }
 }
 
+/// Hyper-parameters for HDBSCAN community detection run during graph rebuild.
+///
+/// HDBSCAN is executed per scope against the in-memory 768-dim nomic-embed-text
+/// embeddings produced by the embedding step.  These parameters control cluster
+/// granularity and the noise floor.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HdbscanConfig {
+    /// Minimum number of skills required to form a semantic cluster.
+    /// Skills that never join a cluster large enough are labelled noise (-1)
+    /// and are represented as individual "unclustered" communities so they
+    /// remain retrievable.
+    pub min_cluster_size: usize,
+}
+
+impl Default for HdbscanConfig {
+    fn default() -> Self {
+        Self {
+            min_cluster_size: 3,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct DomainConfig {
     pub embedding: EmbeddingConfig,
     pub extraction: ExtractionConfig,
     pub scope: ScopeConfig,
     pub compilation: CompilationConfig,
+    pub hdbscan: HdbscanConfig,
 }
 
 impl DomainConfig {

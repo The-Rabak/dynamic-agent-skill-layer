@@ -24,27 +24,32 @@ async-trait = "0.1.89"
 compiler = { path = "../compiler" }
 dashmap = "6.1.0"
 domain = { path = "../domain" }
-graph-builder = { path = "../graph-builder" }
 infrastructure = { path = "../infrastructure" }
+maintenance = { path = "../maintenance" }
 retrieval = { path = "../retrieval" }
 session-extractor = { path = "../session-extractor" }
-redis = { version = "0.32.7", features = ["aio", "tokio-comp"] }
 reqwest = { version = "0.12.24", default-features = false, features = ["json", "rustls-tls"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.145"
-sqlx = { version = "0.8.6", default-features = false, features = ["runtime-tokio-rustls", "postgres"] }
-tokio = { version = "1.48.0", features = ["macros", "net", "rt-multi-thread"] }
+tokio = { version = "1.48.0", features = ["macros", "net", "rt-multi-thread", "sync"] }
 tracing = "0.1.41"
 blake3 = "1.8.2"
+uuid = { version = "1.18.1", features = ["v7"] }
 
 [features]
-test-utils = []
+test-utils = ["infrastructure/test-utils", "admin/test-utils", "session-extractor/test-utils"]
 
 [dev-dependencies]
 chrono = { version = "0.4.42", features = ["clock"] }
 criterion = { version = "0.5.1", features = ["async_tokio"] }
+graph-builder = { path = "../graph-builder", features = ["test-utils"] }
+infrastructure = { path = "../infrastructure", features = ["test-utils"] }
+maintenance = { path = "../maintenance" }
+redis = { version = "0.32.7", features = ["aio", "tokio-comp"] }
 serde_yaml = "0.9.34"
+sqlx = { version = "0.8.6", default-features = false, features = ["runtime-tokio-rustls", "postgres"] }
 uuid = { version = "1.18.1", features = ["v7"] }
+walkdir = "2.5.0"
 
 [[test]]
 name = "test_dual_scope"
@@ -53,10 +58,16 @@ path = "../../tests/integration/test_dual_scope.rs"
 [[test]]
 name = "test_extract_session"
 path = "../../tests/integration/test_extract_session.rs"
+required-features = ["test-utils"]
 
 [[test]]
 name = "test_live_data_plane_roundtrip"
 path = "../../tests/e2e/test_live_data_plane_roundtrip.rs"
+required-features = ["test-utils"]
+
+[[test]]
+name = "test_transcript_ingest_queue_e2e"
+path = "../../tests/e2e/test_transcript_ingest_queue_e2e.rs"
 required-features = ["test-utils"]
 
 [[test]]
@@ -65,13 +76,73 @@ path = "../../tests/e2e/test_concurrency_stress.rs"
 required-features = ["test-utils"]
 
 [[test]]
+name = "test_boot_time_live_retrieval"
+path = "../../tests/e2e/test_boot_time_live_retrieval.rs"
+required-features = ["test-utils"]
+
+[[test]]
 name = "test_dream_state_contract"
 path = "../../tests/e2e/test_dream_state_contract.rs"
 required-features = ["test-utils"]
 
 [[test]]
+name = "test_project_scope_container"
+path = "../../tests/e2e/test_project_scope_container.rs"
+required-features = ["test-utils"]
+
+[[test]]
+name = "test_watcher_churn_reconciliation"
+path = "../../tests/e2e/test_watcher_churn_reconciliation.rs"
+required-features = ["test-utils"]
+
+[[test]]
+name = "test_pg_source_paths_roundtrip"
+path = "../../tests/e2e/test_pg_source_paths_roundtrip.rs"
+required-features = ["test-utils"]
+
+[[test]]
+name = "test_support_harness_smoke"
+path = "../../tests/e2e/test_support_harness_smoke.rs"
+required-features = ["test-utils"]
+
+[[test]]
+name = "test_golden_path_real_app"
+path = "../../tests/e2e/test_golden_path_real_app.rs"
+required-features = ["test-utils"]
+
+[[test]]
+name = "test_redis_group_self_heal"
+path = "../../tests/e2e/test_redis_group_self_heal.rs"
+required-features = ["test-utils"]
+
+[[test]]
+name = "test_namespace_cleanup_on_panic"
+path = "../../tests/e2e/test_namespace_cleanup_on_panic.rs"
+required-features = ["test-utils"]
+
+[[test]]
+name = "test_retrieval_quality"
+path = "../../tests/e2e/test_retrieval_quality.rs"
+required-features = ["test-utils"]
+
+[[test]]
+name = "test_brutal_probes"
+path = "../../tests/e2e/test_brutal_probes.rs"
+required-features = ["test-utils"]
+
+[[test]]
+name = "test_extraction_quality"
+path = "../../tests/e2e/test_extraction_quality.rs"
+required-features = ["test-utils"]
+
+[[test]]
+name = "test_claude_code_provider_e2e"
+path = "../../tests/e2e/test_claude_code_provider_e2e.rs"
+
+[[test]]
 name = "test_admin_tools"
 path = "../../tests/integration/test_admin_tools.rs"
+required-features = ["test-utils"]
 
 [[test]]
 name = "test_resilience"

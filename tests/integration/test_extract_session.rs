@@ -102,6 +102,8 @@ impl TranscriptSkillExtractionService for SuccessfulExtractor {
                 ],
                 assets: vec!["docs/rust-file-io.md".to_owned()],
                 confidence: 0.92,
+                generality: None,
+                generality_rationale: None,
             }],
         })
     }
@@ -198,7 +200,7 @@ async fn extract_session_returns_processing_and_writes_pending_draft() {
         ExtractionProvider::Claude,
         Arc::new(SuccessfulExtractor),
         TranscriptLoader::new(transcript_root.clone()).expect("loader should initialize"),
-        PendingDraftWriter::new(vec![global_root.clone()]),
+        PendingDraftWriter::new_unbounded_for_tests(vec![global_root.clone()]),
         event_publisher.clone(),
     );
     let tool = ExtractSessionTool::new_for_tests(extractor);
@@ -238,8 +240,8 @@ async fn extract_session_returns_processing_and_writes_pending_draft() {
     assert!(pending_path.exists(), "pending draft should be written");
     let pending_body = std::fs::read_to_string(&pending_path).expect("pending file should read");
     assert!(
-        pending_body.contains("suggested_tags: [\"rust\", \"io\"]")
-            || pending_body.contains("suggested_tags:\n- rust\n- io"),
+        pending_body.contains("tags: [\"rust\", \"io\"]")
+            || pending_body.contains("tags:\n- rust\n- io"),
         "pending frontmatter should retain extracted tags, got:\n{pending_body}"
     );
     assert!(pending_body.contains("origin: session_extraction"));
@@ -268,7 +270,7 @@ async fn extract_session_rejects_repo_path_outside_allowed_roots() {
         ExtractionProvider::Claude,
         Arc::new(SuccessfulExtractor),
         TranscriptLoader::new(transcript_root.clone()).expect("loader should initialize"),
-        PendingDraftWriter::new(vec![global_root.clone()]),
+        PendingDraftWriter::new_unbounded_for_tests(vec![global_root.clone()]),
     );
     let tool = ExtractSessionTool::new_for_tests(extractor);
 
@@ -299,7 +301,7 @@ async fn extract_session_rejects_traversal_transcript_refs() {
         ExtractionProvider::Claude,
         Arc::new(SuccessfulExtractor),
         TranscriptLoader::new(transcript_root).expect("loader should initialize"),
-        PendingDraftWriter::new(vec![global_root]),
+        PendingDraftWriter::new_unbounded_for_tests(vec![global_root]),
     );
     let tool = ExtractSessionTool::new_for_tests(extractor);
 
@@ -339,7 +341,7 @@ async fn extract_session_emits_failed_lifecycle_event_on_background_error() {
         ExtractionProvider::Ollama,
         Arc::new(FailingExtractor),
         TranscriptLoader::new(transcript_root).expect("loader should initialize"),
-        PendingDraftWriter::new(vec![global_root]),
+        PendingDraftWriter::new_unbounded_for_tests(vec![global_root]),
         event_publisher.clone(),
     );
     let tool = ExtractSessionTool::new_for_tests(extractor);
@@ -383,6 +385,8 @@ fn providers_emit_same_contract_shape() {
             conventions: vec!["conv".to_owned()],
             assets: vec!["asset".to_owned()],
             confidence: 0.9,
+            generality: None,
+            generality_rationale: None,
         }],
     };
     let ollama_result = ExtractionResult {

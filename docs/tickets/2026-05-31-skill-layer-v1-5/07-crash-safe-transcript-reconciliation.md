@@ -2,7 +2,8 @@
 ticket_id: T07
 title: Crash-safe transcript reconciliation (the level-triggered guarantee)
 kind: hardening # tracer-bullet | expansion | hardening | infra-track | fix-batch
-status: ready # ready | in_progress | blocked | completed
+status: superseded # ready | in_progress | blocked | completed | superseded
+superseded_by: todo-103 # folded into the durable PG transcript-ingest queue
 plan_ref: docs/plans/2026-05-31-feat-skill-layer-v1-5-close-the-loop-plan.md
 tickets_ref: docs/tickets/2026-05-31-skill-layer-v1-5/index.md
 architecture_ref: docs/architecture/2026-05-31-skill-layer-v1-5-close-the-loop-architecture.md
@@ -21,6 +22,26 @@ tdd_mode: inherit
 ---
 
 # Crash-safe transcript reconciliation (the level-triggered guarantee)
+
+> **SUPERSEDED — folded into todo 103 (durable PG transcript-ingest queue), 2026-06-01.**
+> The crash-safe guarantee this ticket specified is now delivered by the queue, not a
+> filesystem-scan reconcile:
+> - **Marker table** (`003_processed_transcripts.sql`, `session_id, content_hash, processed_at`)
+>   → folded into the content-bearing `transcript_ingest_queue`
+>   (`crates/infrastructure/migrations/002_transcript_ingest_queue.sql`). The queue row IS the
+>   marker; dedup is keyed on `content_hash`.
+> - **`reconcile_transcripts()` FS-scan pass** → replaced by the queue **drain** in
+>   `crates/maintenance/src/transcript_drain.rs`, wired into the maintenance cron loop **and**
+>   worker startup (`crates/maintenance/src/runtime.rs`), bounded per sweep, retry/park on failure.
+> - **`MCP_TRANSCRIPT_RECONCILE=off`** rollback flag → `MAINTENANCE_TRANSCRIPT_DRAIN=off`.
+> - **Crash-safety belt-and-suspenders decision:** the original FS-scan caught sessions that
+>   fired *no* hook. The queue is push-only, so that residual gap (host killed before *any* of
+>   `PreCompact`/`SessionEnd` fires) is **not** covered. Decision: **accept the gap for v1.5**,
+>   mitigated by **dual capture** at PreCompact + SessionEnd; do **not** reintroduce a host
+>   `~/.claude` filesystem mount + scan (Option 4 deliberately removed that fragility). Revisit
+>   an optional FS-scan sweep post-v1.5 if field data shows the gap matters.
+>
+> See `todos/103-...md` and `docs/reference/transcript-ingress.md`.
 
 ## Serves
 - **SC-V1.5-B** — closes the crash hole: a session killed before `SessionEnd` fires is still extracted, exactly once, with no duplicate drafts for hook-handled sessions.

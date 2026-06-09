@@ -7,7 +7,7 @@ use std::{
 
 use domain::{
     ACTIVE_SKILL_FILE_NAME, PENDING_SKILL_FILE_NAME, REJECTED_SKILL_FILE_NAME,
-    RETIRED_SKILL_FILE_NAME, ScopeType, has_lifecycle_file_name,
+    RETIRED_SKILL_FILE_NAME, ScopeRoot, ScopeType, has_lifecycle_file_name,
 };
 use notify::{Config, RecommendedWatcher, RecursiveMode};
 use notify_debouncer_full::{Debouncer, FileIdMap, new_debouncer_opt};
@@ -39,23 +39,6 @@ pub struct SkillFileChange {
     pub source: FileChangeSource,
     pub content_hash: String,
     pub idempotency_key: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ScopeRoot {
-    pub scope_id: String,
-    pub scope_type: ScopeType,
-    pub root: PathBuf,
-}
-
-impl ScopeRoot {
-    pub fn new(scope_id: impl Into<String>, scope_type: ScopeType, root: PathBuf) -> Self {
-        Self {
-            scope_id: scope_id.into(),
-            scope_type,
-            root,
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -101,9 +84,36 @@ impl SkillWatcher {
                     scope.root.display().to_string(),
                 ));
             }
+            // Watch the scope root non-recursively, then add a recursive watch for
+            // each non-ignored immediate child. The scope root is frequently the
+            // repository root; recursively watching it whole made the debouncer's
+            // FileIdMap walk `target/`/`.git` (gigabytes of build artifacts and VCS
+            // objects) at boot, pegging the process at 100% CPU before it could
+            // ever serve /health. Pruning those subtrees keeps watch setup bounded
+            // to real source/skill trees. (Change detection itself is the polled
+            // `build_snapshot`, which applies the same `is_ignored_walk_dir`
+            // filter — so skipping these here loses no detection coverage.)
             debouncer
-                .watch(&scope.root, RecursiveMode::Recursive)
+                .watch(&scope.root, RecursiveMode::NonRecursive)
                 .map_err(|error| WatcherError::WatchSetup(error.to_string()))?;
+            for entry in fs::read_dir(&scope.root)
+                .map_err(|error| WatcherError::WatchSetup(error.to_string()))?
+            {
+                let entry = entry.map_err(|error| WatcherError::WatchSetup(error.to_string()))?;
+                if !entry.file_type().map(|kind| kind.is_dir()).unwrap_or(false) {
+                    continue;
+                }
+                if entry
+                    .file_name()
+                    .to_str()
+                    .is_some_and(|name| matches!(name, ".git" | "target" | "node_modules"))
+                {
+                    continue;
+                }
+                debouncer
+                    .watch(&entry.path(), RecursiveMode::Recursive)
+                    .map_err(|error| WatcherError::WatchSetup(error.to_string()))?;
+            }
         }
 
         Ok(Self {
@@ -138,7 +148,10 @@ impl SkillWatcher {
 pub fn build_snapshot(scopes: &[ScopeRoot]) -> Result<SkillSnapshot, WatcherError> {
     let mut snapshot = SkillSnapshot::new();
     for scope in scopes {
-        for entry in WalkDir::new(&scope.root) {
+        for entry in WalkDir::new(&scope.root)
+            .into_iter()
+            .filter_entry(|entry| !is_ignored_walk_dir(entry))
+        {
             let entry = entry.map_err(|error| WatcherError::Io(std::io::Error::other(error)))?;
             if !entry.file_type().is_file() {
                 continue;
@@ -370,6 +383,52 @@ fn build_change(
         content_hash,
         idempotency_key,
     }
+}
+
+/// Directory names pruned from skill-file scans and filesystem watches.
+///
+/// Two groups:
+/// - **Build / VCS noise** (`target`, `.git`, `node_modules`): the project scope
+///   root is frequently the repository root, and recursively walking/watching
+///   these gigabyte-scale trees pegged graph-builder at 100% CPU before it could
+///   ever serve `/health`.
+/// - **Coding-harness provider skill homes** (`.github`, `.claude`, `.opencode`,
+///   …): each harness ships its OWN built-in skills under these dotdirs. The
+///   skill layer manages its own skills — the dedicated project `.skills/` dir and
+///   the configured global root — and must NEVER ingest, merge, or *retire* a
+///   harness's built-in skills as if they were layer-managed (doing so wrote
+///   `.retired` markers across the harness skill trees and "retired" the user's
+///   harness skills). Pruning the provider dirs keeps the managed corpus to the
+///   layer's own skills. Extend this list as new harnesses appear.
+const IGNORED_DIR_NAMES: &[&str] = &[
+    // Build / VCS noise.
+    ".git",
+    "target",
+    "node_modules",
+    // Coding-harness provider skill homes (built-in skills the layer must not manage).
+    ".github",
+    ".claude",
+    ".opencode",
+    ".cursor",
+    ".continue",
+    ".aider",
+    ".codeium",
+    ".windsurf",
+    ".gemini",
+    ".amazonq",
+];
+
+/// Whether a `WalkDir`/watch entry is a directory we must never descend into when
+/// scanning for skill files (see [`IGNORED_DIR_NAMES`]).
+///
+/// Used via `WalkDir::filter_entry`, which prunes the entire subtree when this
+/// returns `true`. Only directories are matched, so files are always considered.
+pub(crate) fn is_ignored_walk_dir(entry: &walkdir::DirEntry) -> bool {
+    entry.file_type().is_dir()
+        && entry
+            .file_name()
+            .to_str()
+            .is_some_and(|name| IGNORED_DIR_NAMES.contains(&name))
 }
 
 pub(crate) fn is_active_skill_file(path: &Path) -> bool {

@@ -1,0 +1,26 @@
+{
+  "timestamp": "2026-06-04T11:05:17.113502848+00:00",
+  "stage": "baseline_snapshot",
+  "input": {
+    "description": "read baseline infrastructure state before seeding"
+  },
+  "output": {
+    "prev_graph_version": 17
+  },
+  "infra_snapshot": {
+    "captured_at": "2026-06-04T11:05:16.939830853+00:00",
+    "pg_graph_version": 17,
+    "pg_table_counts": {
+      "communities": 5,
+      "community_skills": 6,
+      "outbox_events": 6,
+      "skill_subunits": 13,
+      "skills": 6,
+      "subunits": 13,
+      "transcript_ingest_queue": 1
+    },
+    "qdrant_points_count": 0,
+    "qdrant_status": "green",
+    "redis_stream_len": 5
+  }
+}

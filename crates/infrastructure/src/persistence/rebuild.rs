@@ -30,6 +30,17 @@ pub struct LiveGraphSubunitRecord {
     pub content: String,
 }
 
+/// Write DTO used by the durable write path during a graph rebuild.
+///
+/// This record owns the authoritative domain types at write time: `scope` is
+/// [`ScopeType`] (the typed domain enum) and `source_paths` carries raw
+/// absolute path strings exactly as discovered by the graph builder. The DB
+/// stores `source_paths` as a `text[]` column; the retrieval read path
+/// re-resolves them to `PathBuf` values at boot (see [`PersistedGraphSkillRecord`]).
+///
+/// An empty `source_paths` is valid for skills seeded programmatically
+/// (e.g. E2E test fixtures); the retrieval boot adapter falls back to the
+/// configured scope root for those rows so scope matching still works.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LiveGraphSkillRecord {
     pub stable_id: String,
@@ -37,15 +48,28 @@ pub struct LiveGraphSkillRecord {
     pub description: String,
     pub scope: ScopeType,
     pub tags: Vec<String>,
+    /// Real SKILL.md file path(s) for this skill, as absolute path strings.
+    /// Empty for skills that were seeded without a filesystem origin.
+    pub source_paths: Vec<String>,
     pub subunits: Vec<LiveGraphSubunitRecord>,
 }
 
+/// Write DTO for a single community membership source.
+///
+/// A skill can appear in multiple `LiveGraphCommunityRecord` values
+/// (one per source) — this is how dual membership is expressed at the
+/// persistence boundary.  The `source` field maps directly to the
+/// `community_skills.source` column added in migration 006.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LiveGraphCommunityRecord {
     pub stable_id: String,
     pub name: String,
     pub scope: ScopeType,
+    /// Skills that belong to this community under `source`.
     pub member_skill_ids: Vec<String>,
+    /// Membership origin: `"hdbscan"` for semantic clusters, `"tag"` for
+    /// first-tag grouping.  Must match the DB CHECK constraint values.
+    pub source: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -64,7 +88,24 @@ pub struct PersistedGraphSubunitRecord {
     pub content: String,
 }
 
-/// Persisted skill projection used by live graph read adapters.
+/// Read projection returned by live graph read adapters from the database.
+///
+/// Unlike [`LiveGraphSkillRecord`] (the write DTO), this record uses raw DB
+/// strings for fields that carry typed values at write time: `scope` is a
+/// `String` (the raw DB value, e.g. `"project"` or `"global"`) rather than
+/// [`ScopeType`], and `source_paths` holds the raw path strings exactly as
+/// stored in the `skills.source_paths` `text[]` column. The retrieval boot
+/// adapter resolves these strings to `PathBuf` values via `canonicalize` with
+/// a raw-string fallback so scope prefix matching works even for paths that
+/// no longer exist on the current host.
+///
+/// Rows written before migration 005 carry an empty `source_paths` array;
+/// callers must fall back to the configured scope root for those rows.
+///
+/// `community_ids` carries ALL community memberships for this skill (across
+/// all sources — `hdbscan` and `tag`).  Migration 006 introduced dual
+/// membership; pre-migration rows with a single membership still return a
+/// one-element vec.  Empty when the skill has no memberships.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PersistedGraphSkillRecord {
     pub skill_id: String,
@@ -72,7 +113,12 @@ pub struct PersistedGraphSkillRecord {
     pub description: String,
     pub scope: String,
     pub tags: Vec<String>,
-    pub community_id: Option<String>,
+    /// Real SKILL.md source paths from `skills.source_paths`. Empty for
+    /// pre-migration rows or skills seeded without a filesystem origin.
+    pub source_paths: Vec<String>,
+    /// All community IDs this skill belongs to (any source).  Empty when the
+    /// skill has no community memberships.
+    pub community_ids: Vec<String>,
     pub subunits: Vec<PersistedGraphSubunitRecord>,
 }
 
@@ -97,15 +143,33 @@ impl PostgresGraphSnapshotStore {
     }
 
     pub async fn list_skills(&self) -> Result<Vec<PersistedGraphSkillRecord>, RebuildError> {
-        let skill_rows =
-            sqlx::query_as::<_, (String, String, String, Vec<String>, Option<String>, String)>(
-                r#"
+        // source_paths was added in migration 005; pre-migration rows return '{}'.
+        // community_ids aggregates ALL community memberships across sources (migration 006).
+        // Pre-migration rows with a single membership return a one-element array.
+        let skill_rows = sqlx::query_as::<
+            _,
+            (
+                String,
+                String,
+                String,
+                Vec<String>,
+                Vec<String>,
+                Vec<String>,
+                String,
+            ),
+        >(
+            r#"
             SELECT
                 skills.id::TEXT,
                 skills.name,
                 skills.description,
                 skills.tags,
-                communities.id::TEXT,
+                skills.source_paths,
+                COALESCE(
+                    ARRAY_AGG(DISTINCT communities.id::TEXT)
+                    FILTER (WHERE communities.id IS NOT NULL),
+                    '{}'::TEXT[]
+                ),
                 skills.scope
             FROM skills
             LEFT JOIN community_skills
@@ -113,11 +177,13 @@ impl PostgresGraphSnapshotStore {
             LEFT JOIN communities
                 ON communities.id = community_skills.community_id
             WHERE skills.lifecycle = 'active'
+            GROUP BY skills.id, skills.name, skills.description,
+                     skills.tags, skills.source_paths, skills.scope
             ORDER BY skills.id
             "#,
-            )
-            .fetch_all(&self.pool)
-            .await?;
+        )
+        .fetch_all(&self.pool)
+        .await?;
 
         let subunit_rows = sqlx::query_as::<_, (String, String, String, String, String)>(
             r#"
@@ -155,7 +221,7 @@ impl PostgresGraphSnapshotStore {
         Ok(skill_rows
             .into_iter()
             .map(
-                |(skill_id, name, description, tags, community_id, scope)| {
+                |(skill_id, name, description, tags, source_paths, community_ids, scope)| {
                     PersistedGraphSkillRecord {
                         subunits: subunits_by_skill.remove(&skill_id).unwrap_or_default(),
                         skill_id,
@@ -163,7 +229,8 @@ impl PostgresGraphSnapshotStore {
                         description,
                         scope,
                         tags,
-                        community_id,
+                        source_paths,
+                        community_ids,
                     }
                 },
             )
@@ -205,6 +272,25 @@ impl PostgresGraphSnapshotStore {
                 })
             })
             .collect()
+    }
+
+    /// Reads the durable `graph_state.graph_version`.
+    ///
+    /// Returns `0` on cold start (before any rebuild has written the singleton
+    /// row) so callers can build an empty snapshot that still reports the true
+    /// version rather than a hardcoded placeholder.
+    pub async fn current_graph_version(&self) -> Result<i64, RebuildError> {
+        let row: Option<(i64,)> = sqlx::query_as(
+            r#"
+            SELECT graph_version
+            FROM graph_state
+            WHERE singleton = TRUE
+            "#,
+        )
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(row.map(|(version,)| version).unwrap_or(0))
     }
 }
 
@@ -380,9 +466,9 @@ impl RebuildCoordinator for PostgresRebuildCoordinator {
             sqlx::query(
                 r#"
                 INSERT INTO skills (
-                    id, name, description, scope, status, lifecycle, tags, merged_from_scopes, graph_version
+                    id, name, description, scope, status, lifecycle, tags, source_paths, merged_from_scopes, graph_version
                 ) VALUES (
-                    $1, $2, $3, $4, 'ready', 'active', $5, '{}'::TEXT[], 0
+                    $1, $2, $3, $4, 'ready', 'active', $5, $6, '{}'::TEXT[], 0
                 )
                 "#,
             )
@@ -391,6 +477,7 @@ impl RebuildCoordinator for PostgresRebuildCoordinator {
             .bind(&skill.description)
             .bind(scope_to_db_value(skill.scope))
             .bind(&skill.tags)
+            .bind(&skill.source_paths)
             .execute(&mut *tx)
             .await?;
 
@@ -444,12 +531,13 @@ impl RebuildCoordinator for PostgresRebuildCoordinator {
             for member_skill_id in &community.member_skill_ids {
                 sqlx::query(
                     r#"
-                    INSERT INTO community_skills (community_id, skill_id)
-                    VALUES ($1, $2)
+                    INSERT INTO community_skills (community_id, skill_id, source)
+                    VALUES ($1, $2, $3)
                     "#,
                 )
                 .bind(community_id)
                 .bind(stable_uuid("skill", member_skill_id))
+                .bind(&community.source)
                 .execute(&mut *tx)
                 .await?;
             }
@@ -515,4 +603,62 @@ fn stable_uuid(entity_kind: &str, stable_id: &str) -> Uuid {
     bytes[6] = (bytes[6] & 0x0f) | 0x40;
     bytes[8] = (bytes[8] & 0x3f) | 0x80;
     Uuid::from_bytes(bytes)
+}
+
+/// Re-derives the persisted `skills.id` UUID for a skill's stable id.
+///
+/// The rebuild persistence path writes `skills.id = stable_uuid("skill",
+/// BuiltSkill.id)`, where `BuiltSkill.id` is the blake3 hex of the source path.
+/// Consumers that rebuild skills out-of-band from the filesystem (the maintenance
+/// worker's merge/retire passes) must key their `skill_usage` queries and joins on
+/// this SAME UUID — not the raw blake3 hex — or the usage `unnest($1::uuid[])`
+/// lookup rejects the id and, if coerced, would zero-match usage and mass-retire
+/// every skill. This is the single source of truth for that derivation.
+pub fn stable_skill_uuid(stable_id: &str) -> Uuid {
+    stable_uuid("skill", stable_id)
+}
+
+#[cfg(test)]
+mod tests {
+    /// Smoke test: deserializes `tests/fixtures/retrieval_corpus.json` and
+    /// asserts the field contract that all positive fixtures carry
+    /// `expected_match: true` and all negative fixtures carry
+    /// `expected_match: false`. Catches accidental edits that break the
+    /// threshold-alignment prose embedded in the fixture.
+    #[test]
+    fn retrieval_corpus_fixture_field_contract() {
+        let fixture_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tests/fixtures/retrieval_corpus.json");
+        let raw = std::fs::read_to_string(&fixture_path)
+            .expect("tests/fixtures/retrieval_corpus.json must be readable");
+        let corpus: serde_json::Value =
+            serde_json::from_str(&raw).expect("retrieval_corpus.json must be valid JSON");
+
+        let positives = corpus["positive_fixtures"]
+            .as_array()
+            .expect("positive_fixtures must be a JSON array");
+        for fixture in positives {
+            assert_eq!(
+                fixture["expected_match"],
+                serde_json::Value::Bool(true),
+                "positive fixture '{}' must have expected_match: true",
+                fixture["id"].as_str().unwrap_or("<unknown>")
+            );
+        }
+
+        let negatives = corpus["negative_fixtures"]
+            .as_array()
+            .expect("negative_fixtures must be a JSON array");
+        for fixture in negatives {
+            assert_eq!(
+                fixture["expected_match"],
+                serde_json::Value::Bool(false),
+                "negative fixture prompt '{}' must have expected_match: false",
+                fixture["prompt"].as_str().unwrap_or("<unknown>")
+            );
+        }
+
+        assert!(!positives.is_empty(), "positive_fixtures must not be empty");
+        assert!(!negatives.is_empty(), "negative_fixtures must not be empty");
+    }
 }

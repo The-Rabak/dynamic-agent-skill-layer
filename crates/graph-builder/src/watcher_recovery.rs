@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 
-use crate::watcher::{ScopeRoot, SkillFileChange, SkillSnapshot, diff_skill_snapshots};
+use domain::ScopeRoot;
+
+use crate::watcher::{SkillFileChange, SkillSnapshot, diff_skill_snapshots};
 
 /// Reconciles missed watcher transitions against durable snapshots.
 pub struct WatcherRecovery {
@@ -69,10 +71,10 @@ impl WatcherRecovery {
 mod tests {
     use std::{collections::BTreeMap, path::PathBuf};
 
-    use domain::ScopeType;
+    use domain::{ScopeRoot, ScopeType};
 
     use super::WatcherRecovery;
-    use crate::watcher::{ScopeRoot, SkillFileFingerprint, SkillSnapshot};
+    use crate::watcher::{SkillFileFingerprint, SkillSnapshot};
 
     fn scope_root() -> ScopeRoot {
         ScopeRoot::new("project", ScopeType::Project, PathBuf::from("/project"))

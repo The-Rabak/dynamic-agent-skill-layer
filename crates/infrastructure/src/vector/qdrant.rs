@@ -8,6 +8,20 @@ use tokio::time::timeout;
 
 use crate::persistence::outbox::{OutboxVectorStore, VectorPointListing};
 
+/// Configuration for the Qdrant REST HTTP adapter.
+///
+/// Qdrant exposes two interfaces on separate ports:
+///   - REST (HTTP/JSON): port 6333 (container) / 16333 (host-mapped in test compose)
+///   - gRPC:             port 6334 (container) / 16334 (host-mapped in test compose)
+///
+/// This adapter uses the REST interface exclusively. The `endpoint` field must
+/// point to the REST base URL (`:6333` / `:16333`). Using the gRPC port here
+/// will cause parse errors because gRPC uses binary framing, not HTTP/1.1.
+///
+/// Invariant: `QDRANT_URL` env var must export the REST base URL. Any
+/// `docker-compose` environment block or test-runner export that sets
+/// `QDRANT_URL` to a `:6334` (gRPC) address will break `check_connectivity`
+/// with a `hyper::Parse(Version)` error.
 #[derive(Debug, Clone)]
 pub struct QdrantConfig {
     pub endpoint: String,
@@ -18,6 +32,7 @@ pub struct QdrantConfig {
 impl Default for QdrantConfig {
     fn default() -> Self {
         Self {
+            // Port 6333 is the Qdrant REST interface. Do NOT use 6334 (gRPC).
             endpoint: "http://127.0.0.1:6333".to_owned(),
             timeout_ms: 500,
             collection_name: "skills".to_owned(),
@@ -93,15 +108,29 @@ impl QdrantAdapter {
         Ok(())
     }
 
-    pub async fn ensure_collection(&self, collection_name: &str, vector_size: u64) -> Result<(), QdrantError> {
+    /// Ensures the named Qdrant collection exists with the given vector size.
+    ///
+    /// Idempotent under concurrent callers: if another process creates the collection
+    /// between the GET probe and the PUT create, Qdrant returns `409 Conflict`.
+    /// This method treats 409 as success — the collection exists, which is the goal.
+    ///
+    /// Both `mcp-server` and `graph-builder` call this on startup, so the race
+    /// is a real cold-start scenario (bug #157).
+    pub async fn ensure_collection(
+        &self,
+        collection_name: &str,
+        vector_size: u64,
+    ) -> Result<(), QdrantError> {
         let endpoint = format!(
             "{}/collections/{collection_name}",
             self.config.endpoint.trim_end_matches('/')
         );
         let response = self.client.get(&endpoint).send().await?;
         if response.status() == StatusCode::OK {
+            // Collection already exists — no work needed.
             return Ok(());
         }
+
         let create_endpoint = format!(
             "{}/collections/{collection_name}",
             self.config.endpoint.trim_end_matches('/')
@@ -115,6 +144,17 @@ impl QdrantAdapter {
         let create_response = self
             .send_with_timeout(self.client.put(create_endpoint).json(&body))
             .await?;
+
+        // 409 Conflict means a concurrent caller already created the collection;
+        // the collection exists, which is the postcondition we need.
+        if create_response.status() == StatusCode::CONFLICT {
+            tracing::info!(
+                collection_name,
+                "qdrant collection already created by a concurrent caller (409 Conflict); treating as success"
+            );
+            return Ok(());
+        }
+
         self.expect_ok_status(create_response).await?;
         Ok(())
     }
@@ -379,8 +419,10 @@ mod tests {
 
     #[tokio::test]
     async fn qdrant_adapter_rejects_blank_endpoint() {
-        let mut config = QdrantConfig::default();
-        config.endpoint = " ".to_owned();
+        let config = QdrantConfig {
+            endpoint: " ".to_owned(),
+            ..QdrantConfig::default()
+        };
 
         let error = QdrantAdapter::new(reqwest::Client::new(), config)
             .expect_err("blank endpoint should fail config validation");
@@ -420,7 +462,7 @@ mod tests {
 
         let adapter = QdrantAdapter::new(
             reqwest::Client::new(),
-QdrantConfig {
+            QdrantConfig {
                 endpoint: format!("http://{address}"),
                 timeout_ms: 1_000,
                 collection_name: "skills".to_owned(),
@@ -461,11 +503,11 @@ QdrantConfig {
             spawn_single_response_server("404 Not Found", r#"{"status":"not_found"}"#).await;
         let adapter = QdrantAdapter::new(
             reqwest::Client::new(),
-QdrantConfig {
-            endpoint,
-            timeout_ms: 1_000,
-            ..QdrantConfig::default()
-        },
+            QdrantConfig {
+                endpoint,
+                timeout_ms: 1_000,
+                ..QdrantConfig::default()
+            },
         )
         .expect("test config should be valid");
 
@@ -488,11 +530,11 @@ QdrantConfig {
             spawn_single_response_server("404 Not Found", r#"{"status":"not_found"}"#).await;
         let adapter = QdrantAdapter::new(
             reqwest::Client::new(),
-QdrantConfig {
-            endpoint,
-            timeout_ms: 1_000,
-            ..QdrantConfig::default()
-        },
+            QdrantConfig {
+                endpoint,
+                timeout_ms: 1_000,
+                ..QdrantConfig::default()
+            },
         )
         .expect("test config should be valid");
 
@@ -515,11 +557,11 @@ QdrantConfig {
             spawn_single_response_server("404 Not Found", r#"{"status":"not_found"}"#).await;
         let adapter = QdrantAdapter::new(
             reqwest::Client::new(),
-QdrantConfig {
-            endpoint,
-            timeout_ms: 1_000,
-            ..QdrantConfig::default()
-        },
+            QdrantConfig {
+                endpoint,
+                timeout_ms: 1_000,
+                ..QdrantConfig::default()
+            },
         )
         .expect("test config should be valid");
 
@@ -549,11 +591,11 @@ QdrantConfig {
         .await;
         let adapter = QdrantAdapter::new(
             reqwest::Client::new(),
-QdrantConfig {
-            endpoint,
-            timeout_ms: 1_000,
-            ..QdrantConfig::default()
-        },
+            QdrantConfig {
+                endpoint,
+                timeout_ms: 1_000,
+                ..QdrantConfig::default()
+            },
         )
         .expect("test config should be valid");
 
@@ -574,11 +616,11 @@ QdrantConfig {
             spawn_single_response_server("404 Not Found", r#"{"status":"not_found"}"#).await;
         let adapter = QdrantAdapter::new(
             reqwest::Client::new(),
-QdrantConfig {
-            endpoint,
-            timeout_ms: 1_000,
-            ..QdrantConfig::default()
-        },
+            QdrantConfig {
+                endpoint,
+                timeout_ms: 1_000,
+                ..QdrantConfig::default()
+            },
         )
         .expect("test config should be valid");
 
@@ -590,5 +632,91 @@ QdrantConfig {
         assert!(!has_vector);
 
         server.await.expect("mock server should complete");
+    }
+
+    /// Proves `ensure_collection` treats HTTP 409 Conflict as success.
+    ///
+    /// When `mcp-server` and `graph-builder` race to create the same collection
+    /// on cold start, the losing caller receives 409 from Qdrant. The collection
+    /// exists — that is the goal — so 409 must be a benign success (bug #157).
+    #[tokio::test]
+    async fn ensure_collection_treats_409_as_success() {
+        // First request (GET probe) → 404 Not Found: collection does not exist yet.
+        // Second request (PUT create) → 409 Conflict: a concurrent caller created it.
+        let (endpoint, server) = spawn_sequence_response_server(vec![
+            (
+                "404 Not Found".to_owned(),
+                r#"{"status":"not_found"}"#.to_owned(),
+            ),
+            (
+                "409 Conflict".to_owned(),
+                r#"{"status":"conflict","description":"already exists"}"#.to_owned(),
+            ),
+        ])
+        .await;
+
+        let adapter = QdrantAdapter::new(
+            reqwest::Client::new(),
+            QdrantConfig {
+                endpoint,
+                timeout_ms: 1_000,
+                ..QdrantConfig::default()
+            },
+        )
+        .expect("test config should be valid");
+
+        adapter
+            .ensure_collection("skills", 768)
+            .await
+            .expect("409 Conflict must be treated as success — collection already exists");
+
+        server.await.expect("mock server should complete");
+    }
+
+    /// Proves `ensure_collection` skips creation when the collection already exists (200 on probe).
+    #[tokio::test]
+    async fn ensure_collection_is_noop_when_collection_exists() {
+        // Only one request expected: GET probe returns 200.
+        let (endpoint, server) =
+            spawn_single_response_server("200 OK", r#"{"status":"ok","result":{"name":"skills"}}"#)
+                .await;
+
+        let adapter = QdrantAdapter::new(
+            reqwest::Client::new(),
+            QdrantConfig {
+                endpoint,
+                timeout_ms: 1_000,
+                ..QdrantConfig::default()
+            },
+        )
+        .expect("test config should be valid");
+
+        adapter
+            .ensure_collection("skills", 768)
+            .await
+            .expect("200 on probe must return Ok immediately without a create request");
+
+        server.await.expect("mock server should complete");
+    }
+
+    /// Proves the `QdrantConfig` default endpoint uses the REST port (6333),
+    /// NOT the gRPC port (6334). Using the gRPC port for REST requests causes
+    /// `hyper::Parse(Version)` errors in `check_connectivity`.
+    ///
+    /// This is a named deletion guard: if the default endpoint is ever changed
+    /// to `:6334` (gRPC), this test will catch the regression immediately.
+    #[test]
+    fn qdrant_config_default_endpoint_uses_rest_port_not_grpc() {
+        let config = QdrantConfig::default();
+        assert!(
+            config.endpoint.contains(":6333"),
+            "QdrantConfig default endpoint must use REST port 6333, got: {}",
+            config.endpoint
+        );
+        assert!(
+            !config.endpoint.contains(":6334"),
+            "QdrantConfig default endpoint must NOT use gRPC port 6334, got: {}",
+            config.endpoint
+        );
     }
 }

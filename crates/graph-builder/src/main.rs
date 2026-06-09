@@ -1,14 +1,16 @@
 use std::{path::PathBuf, sync::Arc, time::Duration};
 
-use domain::ScopeType;
+use domain::{HdbscanConfig, ScopeRoot, ScopeType};
 use graph_builder::{
-    GraphRebuildOrchestrator, PostgresDurableGraphState, ScopeRoot, SkillFileChange, SkillWatcher,
+    GraphRebuildOrchestrator, PostgresDurableGraphState, SkillFileChange, SkillWatcher,
     WatcherRecovery,
 };
 use infrastructure::{
     CircuitState, DependencyFactory, EventEnvelope, HealthReport, InfrastructureHealthChecker,
-    PostgresAdapter, PostgresConfig, PostgresGraphWriteCoordinator, PostgresRebuildCoordinator,
-    QdrantAdapter, QdrantConfig, logging::init_logging,
+    OllamaEmbeddingConfig, OllamaEmbeddingService, OutboxRelay, PostgresAdapter, PostgresConfig,
+    PostgresGraphWriteCoordinator, PostgresRebuildCoordinator, QdrantAdapter, QdrantConfig,
+    RebuildCoordinator, RedisStreamError, RedisStreamsAdapter, RedisStreamsConfig,
+    logging::init_logging,
 };
 use serde::Serialize;
 use tokio::{
@@ -17,6 +19,12 @@ use tokio::{
     sync::RwLock,
     time::sleep,
 };
+
+/// Returns the value of `name` from the environment, or an error message suitable
+/// for boot-time failure. Required env vars must be present; there is no default.
+fn env_var(name: &str) -> Result<String, String> {
+    std::env::var(name).map_err(|_| format!("{name} must be set"))
+}
 
 fn build_scope_roots() -> Vec<ScopeRoot> {
     let repo_root = PathBuf::from(std::env::var("GRAPH_BUILDER_PROJECT_ROOT").unwrap_or_else(
@@ -47,6 +55,72 @@ fn polling_interval() -> Duration {
         .unwrap_or_else(|| Duration::from_secs(15))
 }
 
+/// Builds the Redis Streams adapter graph-builder publishes `graph.rebuilt` to.
+///
+/// This is the R-2 fix: before T02, `rebuild_from_changes` pushed each
+/// `graph.rebuilt` envelope into an in-memory `Vec` the rebuild loop never
+/// drained, so the online server never learned about rebuilds. The adapter must
+/// use the SAME stream/group the online subscriber reads (`skill-layer-events` /
+/// `skill-layer`) so the published event actually reaches it.
+fn build_redis_streams_adapter() -> Result<RedisStreamsAdapter, RedisStreamError> {
+    let redis_config = RedisStreamsConfig {
+        redis_url: std::env::var("REDIS_URL")
+            .unwrap_or_else(|_| RedisStreamsConfig::default().redis_url),
+        ..RedisStreamsConfig::default()
+    };
+    RedisStreamsAdapter::new(redis_config)
+}
+
+/// Drains the in-memory published-events buffer to Redis via `XADD`.
+///
+/// Publishes envelopes in order. On the first failure, the successfully
+/// published prefix is drained in one shot (`drain(..published_count)`) and
+/// the failed envelope is left at the front so the next cycle retries it.
+/// Failures are logged but never panic — the rebuild loop keeps running.
+///
+/// Returns the highest `graph_version` extracted from any successfully
+/// published `graph.rebuilt` envelope, or `None` if none were published.
+async fn drain_published_events(
+    redis_streams: &RedisStreamsAdapter,
+    published_events: &mut Vec<EventEnvelope>,
+) -> Option<i64> {
+    let mut published_count = 0;
+    let mut max_published_graph_version: Option<i64> = None;
+    for envelope in published_events.iter() {
+        match redis_streams.publish(envelope).await {
+            Ok(stream_id) => {
+                tracing::info!(
+                    event_type = %envelope.event_type,
+                    idempotency_key = %envelope.idempotency_key,
+                    %stream_id,
+                    "published graph event to redis stream"
+                );
+                if envelope.event_type == "graph.rebuilt"
+                    && let Some(version) = envelope
+                        .payload
+                        .get("graph_version")
+                        .and_then(|v| v.as_i64())
+                {
+                    max_published_graph_version =
+                        Some(max_published_graph_version.unwrap_or(0).max(version));
+                }
+                published_count += 1;
+            }
+            Err(error) => {
+                tracing::error!(
+                    event_type = %envelope.event_type,
+                    %error,
+                    "failed to publish graph event to redis; will retry next cycle"
+                );
+                break;
+            }
+        }
+    }
+    // Remove the successfully published prefix in one allocation-free drain.
+    published_events.drain(..published_count);
+    max_published_graph_version
+}
+
 #[derive(Debug, Clone, Default)]
 struct GraphBuilderHealthState {
     last_rebuild_error: Option<String>,
@@ -63,10 +137,86 @@ struct GraphBuilderHealthResponse {
     dependencies: HealthReport,
 }
 
+/// Replays a `graph.rebuilt` event to Redis if PG `graph_version` is ahead of
+/// the last version we published.
+///
+/// Addresses bug #156 replay-safety: if a previous cycle advanced PG
+/// `graph_state.graph_version` but failed before publishing `graph.rebuilt`
+/// (e.g. due to the outbox idempotency conflict), the mcp-server's snapshot
+/// freezes indefinitely. On the next cycle start, this function detects the
+/// gap and re-publishes the current version.
+///
+/// The mcp-server `graph_refresh_subscriber` and `swap_graph` are idempotent
+/// for same-or-older versions, so replaying is always safe.
+async fn maybe_replay_graph_rebuilt(
+    rebuild_coordinator: &PostgresRebuildCoordinator,
+    redis_streams: &RedisStreamsAdapter,
+    last_published_version: &mut i64,
+) {
+    let pg_version = match rebuild_coordinator.current_graph_version().await {
+        Ok(version) => version,
+        Err(error) => {
+            tracing::warn!(%error, "could not read PG graph_version for replay check; skipping");
+            return;
+        }
+    };
+
+    if pg_version <= *last_published_version {
+        return;
+    }
+
+    tracing::warn!(
+        pg_version,
+        last_published_version = *last_published_version,
+        "PG graph_version is ahead of last published version; replaying graph.rebuilt"
+    );
+
+    let envelope = EventEnvelope::new(
+        "graph.rebuilt",
+        format!("graph.rebuilt:{pg_version}"),
+        serde_json::json!({
+            "graph_version": pg_version,
+            "replayed": true,
+        }),
+    );
+    match redis_streams.publish(&envelope).await {
+        Ok(stream_id) => {
+            tracing::info!(
+                pg_version,
+                %stream_id,
+                "replayed graph.rebuilt to redis for frozen snapshot recovery"
+            );
+            *last_published_version = pg_version;
+        }
+        Err(error) => {
+            tracing::error!(
+                pg_version,
+                %error,
+                "failed to replay graph.rebuilt; will retry next cycle"
+            );
+        }
+    }
+}
+
+/// Builds a real Ollama embedding service from the `OLLAMA_URL` environment variable.
+///
+/// Fails loud when `OLLAMA_URL` is unset — there is no fallback embedder in production.
+fn build_embedding_service() -> Result<OllamaEmbeddingService, Box<dyn std::error::Error>> {
+    let base_url = std::env::var("OLLAMA_URL")
+        .map_err(|_| "OLLAMA_URL must be set to connect to the embedding service")?;
+    let config = OllamaEmbeddingConfig {
+        base_url,
+        model: "nomic-embed-text".to_owned(),
+        max_concurrency: 4,
+    };
+    OllamaEmbeddingService::from_config(config).map_err(|e| e.to_string().into())
+}
+
 async fn run_rebuild_cycle(
     watcher: &mut SkillWatcher,
     recovery: &mut WatcherRecovery,
     orchestrator: &mut GraphRebuildOrchestrator<'_, PostgresDurableGraphState<'_, QdrantAdapter>>,
+    hdbscan_config: &HdbscanConfig,
 ) -> Result<Option<i64>, String> {
     let first_scan = watcher
         .collect_file_changes()
@@ -84,7 +234,7 @@ async fn run_rebuild_cycle(
     }
 
     orchestrator
-        .rebuild_from_changes(&watcher.scopes(), &all_changes)
+        .rebuild_from_changes(&watcher.scopes(), &all_changes, hdbscan_config)
         .await
         .map_err(|error| error.to_string())
         .map(|outcome| {
@@ -125,11 +275,18 @@ async fn serve_health_endpoint(
 
         let dependencies = health_checker.check().await;
         let state = runtime_health_state.read().await.clone();
-        let circuit_state = state.circuit_state.map(|value| format!("{value:?}")).unwrap_or_else(|| "Closed".to_owned());
+        let circuit_state = state
+            .circuit_state
+            .map(|value| format!("{value:?}"))
+            .unwrap_or_else(|| "Closed".to_owned());
         let healthy = dependencies.healthy
             && state.last_rebuild_error.is_none()
             && state.circuit_state != Some(CircuitState::Open);
-        let detail = if healthy { "ok".to_owned() } else { "degraded (graph_builder_runtime)".to_owned() };
+        let detail = if healthy {
+            "ok".to_owned()
+        } else {
+            "degraded (graph_builder_runtime)".to_owned()
+        };
         let payload = serde_json::to_string(&GraphBuilderHealthResponse {
             healthy,
             detail,
@@ -138,7 +295,11 @@ async fn serve_health_endpoint(
             dependencies,
         })
         .map_err(std::io::Error::other)?;
-        let status_line = if healthy { "HTTP/1.1 200 OK" } else { "HTTP/1.1 503 Service Unavailable" };
+        let status_line = if healthy {
+            "HTTP/1.1 200 OK"
+        } else {
+            "HTTP/1.1 503 Service Unavailable"
+        };
         let response = format!(
             "{status_line}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
             payload.len(),
@@ -156,11 +317,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut watcher = SkillWatcher::new(scopes)?;
     let mut recovery = WatcherRecovery::default();
 
-    let db_url = std::env::var("DATABASE_URL")
-        .unwrap_or_else(|_| "postgres://skill_layer:skill_layer@localhost:15432/skill_layer".to_owned());
-    let qdrant_url = std::env::var("QDRANT_URL")
-        .unwrap_or_else(|_| "http://localhost:16333".to_owned());
+    let db_url = env_var("DATABASE_URL")?;
+    let qdrant_url = env_var("QDRANT_URL")?;
 
+    // Self-heal a missing application database before connecting (see
+    // `ensure_database_exists`): a stale/test-initialized volume otherwise
+    // crash-loops the service on `database "X" does not exist`.
+    infrastructure::ensure_database_exists(&db_url).await?;
     let pg_adapter = PostgresAdapter::connect(&PostgresConfig {
         database_url: db_url,
         ..PostgresConfig::default()
@@ -178,19 +341,55 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )
     .map_err(|error| error.to_string())?;
 
+    let embedding_service = build_embedding_service()?;
+
     let _ = pg_adapter.run_migrations().await;
     qdrant_adapter
-        .ensure_collection(&qdrant_adapter.config.collection_name, 8)
+        .ensure_collection(&qdrant_adapter.config.collection_name, 768)
         .await
         .map_err(|error| format!("qdrant collection setup: {error}"))?;
 
-    let mut durable_state = PostgresDurableGraphState::new(
-        &rebuild_coordinator,
-        &outbox_coordinator,
-        &qdrant_adapter,
-    );
+    let hdbscan_config = HdbscanConfig::default();
+
+    let mut durable_state =
+        PostgresDurableGraphState::new(&rebuild_coordinator, &outbox_coordinator, &qdrant_adapter);
     let mut published_events: Vec<EventEnvelope> = Vec::new();
-    let mut orchestrator = GraphRebuildOrchestrator::new(&mut durable_state, &mut published_events);
+    // Tracks the highest `graph_version` for which we have successfully published
+    // a `graph.rebuilt` event to Redis. Used by `maybe_replay_graph_rebuilt` to
+    // detect and recover from cycles that advanced PG version but failed before
+    // publishing (bug #156 replay-safety).
+    let mut last_published_graph_version: i64 = 0;
+
+    let redis_streams = build_redis_streams_adapter()?;
+    redis_streams.ensure_consumer_group().await?;
+
+    // Self-heal orphaned pending outbox events from any previously-failed rebuild.
+    //
+    // A rebuild that exceeded the old drain cap left up to N events in `pending`
+    // status, scoped to the failed rebuild's correlation_id. Subsequent rebuilds
+    // assign a fresh correlation_id and never pick up those orphaned rows, so
+    // they stay stuck in PG and never reach Qdrant. Draining all pending events
+    // here (before the first rebuild cycle runs) ensures Qdrant converges on any
+    // partially-vectorized corpus left by a prior crashed or capped rebuild.
+    //
+    // Drains to completion — no arbitrary cycle cap; it relays until a pass
+    // claims nothing (queue drained). A durable outbox must drain fully.
+    {
+        let startup_relay = OutboxRelay::new(&outbox_coordinator, &qdrant_adapter, 10, 0)
+            .map_err(|error| format!("startup outbox relay: {error}"))?;
+        match startup_relay.relay_all_pending_to_completion().await {
+            Ok(published) if published > 0 => {
+                tracing::info!(
+                    published,
+                    "startup drain: relayed orphaned pending outbox events to Qdrant"
+                );
+            }
+            Ok(_) => {}
+            Err(error) => {
+                tracing::error!(%error, "startup drain: orphaned pending events did not fully drain");
+            }
+        }
+    }
 
     let runtime_health_state = Arc::new(RwLock::new(GraphBuilderHealthState::default()));
     let health_server_state = Arc::clone(&runtime_health_state);
@@ -206,7 +405,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     loop {
-        match run_rebuild_cycle(&mut watcher, &mut recovery, &mut orchestrator).await {
+        // Replay-safety (bug #156): if PG graph_version is ahead of the last version
+        // we published to Redis, re-publish graph.rebuilt so the mcp-server snapshot
+        // can unfreeze even after a previous cycle that advanced PG but failed before
+        // publishing. Safe to call every cycle — it exits immediately when versions match.
+        maybe_replay_graph_rebuilt(
+            &rebuild_coordinator,
+            &redis_streams,
+            &mut last_published_graph_version,
+        )
+        .await;
+
+        // Scope the orchestrator so its borrow of `published_events` ends before
+        // the drain below. A fresh orchestrator per cycle is cheap (it only
+        // borrows the durable state and the buffer) and lets the loop own the
+        // buffer it must publish from.
+        let cycle_result = {
+            let mut orchestrator = GraphRebuildOrchestrator::new(
+                &mut durable_state,
+                &mut published_events,
+                &embedding_service,
+            );
+            run_rebuild_cycle(
+                &mut watcher,
+                &mut recovery,
+                &mut orchestrator,
+                &hdbscan_config,
+            )
+            .await
+        };
+        match cycle_result {
             Ok(Some(_version)) => {
                 tracing::info!("rebuild cycle completed successfully");
             }
@@ -215,7 +443,45 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 tracing::error!(error = %error, "rebuild cycle failed");
             }
         }
+        // Publish the freshly-pushed `graph.rebuilt` envelope(s) to Redis so the
+        // online server's subscriber can refresh without a restart (R-2 fix).
+        if let Some(version) = drain_published_events(&redis_streams, &mut published_events).await {
+            last_published_graph_version = last_published_graph_version.max(version);
+        }
 
         sleep(polling_interval()).await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn env_var_returns_err_with_must_be_set_message_when_unset() {
+        // Use a name that cannot exist in the environment during tests.
+        let result = env_var("GRAPH_BUILDER_TEST_DEFINITELY_UNSET_VAR_167");
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err(),
+            "GRAPH_BUILDER_TEST_DEFINITELY_UNSET_VAR_167 must be set"
+        );
+    }
+
+    #[test]
+    fn env_var_returns_value_when_set() {
+        // SAFETY: single-threaded test; no other thread reads this var concurrently.
+        unsafe {
+            std::env::set_var(
+                "GRAPH_BUILDER_TEST_SET_VAR_167",
+                "postgres://localhost/test",
+            );
+        }
+        let result = env_var("GRAPH_BUILDER_TEST_SET_VAR_167");
+        // SAFETY: single-threaded test; no other thread reads this var concurrently.
+        unsafe {
+            std::env::remove_var("GRAPH_BUILDER_TEST_SET_VAR_167");
+        }
+        assert_eq!(result.unwrap(), "postgres://localhost/test");
     }
 }

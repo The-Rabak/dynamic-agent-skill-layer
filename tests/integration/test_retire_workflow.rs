@@ -7,13 +7,11 @@ use std::{
 use chrono::{Duration, TimeZone, Utc};
 use domain::{ScopeType, ScopeType::Project};
 use graph_builder::{
-    ScopeRoot,
-    graph::{build::build_skills_from_scope_roots, embeddings::DeterministicEmbeddingGenerator},
-    watcher::build_snapshot,
+    ScopeRoot, graph::build::build_skills_from_scope_roots, watcher::build_snapshot,
 };
 use maintenance::{
-    MaintenanceAuditError, MaintenanceAuditEvent, MaintenanceAuditSink, RetirementConfig,
-    RetirementProposalWriter, SkillSnapshot, UsageSample,
+    MaintenanceAuditError, MaintenanceAuditEvent, MaintenanceAuditSink, NoopMaintenanceAuditSink,
+    RetirementConfig, RetirementProposalWriter, SkillSnapshot, UsageSample,
 };
 
 #[derive(Clone, Default)]
@@ -125,11 +123,14 @@ fn retirement_workflow_creates_non_destructive_retired_proposal_marker() {
         "retired artifacts remain filesystem-observable"
     );
 
-    let active_skills = build_skills_from_scope_roots(
-        std::slice::from_ref(&scope_root),
-        &DeterministicEmbeddingGenerator,
-    )
-    .expect("graph build should process active skills");
+    let embedder = graph_builder::graph::embeddings::DeterministicEmbeddingService;
+    let active_skills = tokio::runtime::Runtime::new()
+        .expect("tokio runtime should build")
+        .block_on(build_skills_from_scope_roots(
+            std::slice::from_ref(&scope_root),
+            &embedder,
+        ))
+        .expect("graph build should process active skills");
     let mut active_names = active_skills
         .iter()
         .map(|skill| skill.name.as_str())
@@ -160,7 +161,10 @@ fn retirement_workflow_rejects_non_skill_filename_paths() {
     let invalid_skill_path = sandbox.join("project/stale/not-a-skill.md");
     write_active_skill(&invalid_skill_path, "stale-skill");
     let stale_skill = skill_snapshot("stale-skill", invalid_skill_path);
-    let writer = RetirementProposalWriter::new(RetirementConfig::default());
+    let writer = RetirementProposalWriter::with_audit_sink(
+        RetirementConfig::default(),
+        &NoopMaintenanceAuditSink,
+    );
 
     let result = writer.propose(&[stale_skill], &[], Utc::now());
 
@@ -186,7 +190,10 @@ fn retirement_workflow_rejects_existing_retired_symlink_without_clobbering_targe
     std::os::unix::fs::symlink(&outside_target, &retired_marker_path)
         .expect("retired marker symlink should be created");
 
-    let writer = RetirementProposalWriter::new(RetirementConfig::default());
+    let writer = RetirementProposalWriter::with_audit_sink(
+        RetirementConfig::default(),
+        &NoopMaintenanceAuditSink,
+    );
     let result = writer.propose(
         &[skill_snapshot("stale-skill", stale_skill_path)],
         &[],

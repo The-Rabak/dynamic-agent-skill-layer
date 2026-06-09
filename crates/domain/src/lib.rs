@@ -5,7 +5,9 @@ pub mod lifecycle_policy;
 pub mod traits;
 pub mod types;
 
-pub use config::{CompilationConfig, DomainConfig, EmbeddingConfig, ExtractionConfig, ScopeConfig};
+pub use config::{
+    CompilationConfig, DomainConfig, EmbeddingConfig, ExtractionConfig, HdbscanConfig, ScopeConfig,
+};
 pub use errors::{
     CompilationError, ConfigError, DomainError, EmbeddingError, ExtractionError, ScopeError,
 };
@@ -22,8 +24,8 @@ pub use traits::{
 };
 pub use types::{
     Community, DomainId, ExtractedSkillCandidate, ExtractionResult, LifecycleStatus,
-    ScopeDescriptor, ScopeType, ScoredSkill, SessionTranscript, Skill, SkillStatus, Subunit,
-    SubunitType, TranscriptEntry,
+    ScopeDescriptor, ScopeRoot, ScopeType, ScoredSkill, SessionEvent, SessionTranscript, Skill,
+    SkillStatus, Subunit, SubunitType, TranscriptEntry, events_to_transcript,
 };
 
 #[cfg(test)]
@@ -78,6 +80,8 @@ mod tests {
             conventions: vec!["Keep domain pure".to_owned()],
             assets: vec!["docs/architecture/...".to_owned()],
             confidence: 0.91,
+            generality: None,
+            generality_rationale: None,
         };
 
         let result = ExtractionResult {

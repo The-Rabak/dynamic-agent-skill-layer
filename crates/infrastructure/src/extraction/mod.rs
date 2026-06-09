@@ -1,39 +1,38 @@
 pub mod claude;
+pub mod claude_code;
+pub mod generality_verifier;
 pub(crate) mod http;
 pub(crate) mod limits;
+pub mod merge_verifier;
 pub mod ollama;
 pub mod prompt_contract;
+pub mod text_llm;
 
-// # Extraction Prompt Strategy (T14 Hardening — 2026-05-29)
+// # Extraction Prompt Strategy (V1.5 — 2026-05-31; supersedes T14 Path A)
 //
-// ## Decision: Path A — Claude endpoint owns prompting, Ollama owns local prompt
+// ## Decision: both providers call the model directly with the same contract
+//
+// Ollama is the default local provider; Claude is a first-class opt-in. Both now
+// talk to a real model endpoint directly — there is no external `:8080/extract`
+// passthrough (that was the graph-builder admin port, a confused-deputy/SSRF
+// risk, removed in V1.5).
 //
 // ### Current Prompt Inventory
 //
 // | Provider | Prompt Ownership | Transport | Prompt Content |
 // |----------|-----------------|-----------|----------------|
-// | Claude   | External endpoint (`CLAUDE_EXTRACTION_ENDPOINT`, default `http://127.0.0.1:8080/extract`) | HTTP POST with `{model, session_id, transcript: [{speaker, content}]}` | No prompt string sent — just raw transcript data. The external endpoint applies its own prompt engineering (potentially Claude `strict: true` tool-calling). |
-// | Ollama   | Within `OllamaExtractor` (local prompt builder) | HTTP POST to Ollama `/api/generate` with `{model, stream: false, format: "json", prompt}` | A full natural-language prompt instructing the local model to produce structured JSON matching `ExtractedSkillCandidate`. |
+// | Claude (API) | `ClaudeExtractor` (this crate) | HTTPS POST to the Anthropic Messages API (`{ANTHROPIC_BASE_URL}/v1/messages`) with a forced `emit_candidates` `tool_use` | Static instruction block as the cacheable `system` prompt (`cache_control: ephemeral`) + transcript as the user message; tool `input_schema` is the candidate schema. Keyed by `ANTHROPIC_API_KEY`. Selected by `EXTRACT_SESSION_PROVIDER=claude` (or alias `=claude-api`). Fails loudly at construction when `ANTHROPIC_API_KEY` is absent (Constitution Principle 1). |
+// | Claude Code (CLI) | `ClaudeCodeExtractor` (this crate) | Local `claude -p --output-format json` subprocess; prompt fed via stdin | Full text→JSON prompt from `build_text_json_extraction_prompt` (same as Ollama). Subscription-based; no API key. **Host-only** (CLI must be on the host). Selected by `EXTRACT_SESSION_PROVIDER=claude-code` (or alias `=claude-cli`). CLI absence surfaces at first extraction via `ProviderUnavailable`. |
+// | Ollama   | `OllamaExtractor` (this crate) | HTTP POST to Ollama `/api/generate` with `{model, stream: false, format: "json", prompt}` | A full natural-language prompt instructing the local model to produce structured JSON matching `ExtractedSkillCandidate`. |
 //
-// ### Provider Asymmetry Analysis
+// ### Provider Symmetry
 //
-// The Claude endpoint is an external extraction service that OWNS its own prompt engineering.
-// This is architecturally intentional, not accidental:
-//
-// 1. The endpoint URL defaults to `http://127.0.0.1:8080/extract` — a standalone service,
-//    not a passthrough to the Anthropic API. The service is expected to apply Claude's
-//    `strict: true` tool-calling (per research doc Section 4) with a structured schema,
-//    providing schema conformance guarantees that Claude is uniquely positioned to deliver.
-//
-// 2. Sending raw transcript data (no prompt) is correct: the endpoint knows its model
-//    capabilities and can apply optimal prompt engineering. Embedding a prompt in the
-//    request body would risk conflicting with the endpoint's own strategy.
-//
-// 3. Ollama, conversely, has no external service between the extractor and the model.
-//    The OllamaExtractor MUST own its prompt because the `/api/generate` endpoint
-//    is a raw model interface — it doesn't apply any extraction-specific prompting.
-//    Ollama also lacks `tool_choice` support, so schema guidance must be in-prompt
-//    alongside `format: "json"`.
+// Both providers source their instructions from the shared semantic contract in
+// `prompt_contract.rs` (`build_extraction_system_prompt` for Claude,
+// `build_text_json_extraction_prompt` for Ollama). The text differs only because of
+// transport: Claude uses a forced tool-call for schema conformance, while Ollama
+// (which lacks `tool_choice`) keeps schema guidance in-prompt alongside
+// `format: "json"`. This preserves extraction parity (SC-3), not a redesign.
 //
 // ### Shared Prompt Contract
 //

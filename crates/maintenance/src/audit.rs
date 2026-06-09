@@ -10,10 +10,16 @@ pub trait MaintenanceAuditSink: Send + Sync {
     fn emit(&self, event: MaintenanceAuditEvent) -> Result<(), MaintenanceAuditError>;
 }
 
-/// No-op sink used when runtime audit adapters are not wired yet.
+/// No-op audit sink for tests that deliberately skip audit emission.
+///
+/// Test-support only (gated): production proposal writers must be constructed with a
+/// real sink via `with_audit_sink` — there is no Noop-default constructor, so a forgotten
+/// sink is a compile error, not a silent no-op. (#161 foot-gun closure.)
+#[cfg(any(test, feature = "test-utils"))]
 #[derive(Debug, Clone, Default)]
 pub struct NoopMaintenanceAuditSink;
 
+#[cfg(any(test, feature = "test-utils"))]
 impl MaintenanceAuditSink for NoopMaintenanceAuditSink {
     fn emit(&self, _event: MaintenanceAuditEvent) -> Result<(), MaintenanceAuditError> {
         Ok(())

@@ -1,22 +1,23 @@
 use async_trait::async_trait;
 use chrono::Utc;
 use infrastructure::{
-    EventEnvelope, GraphWriteCoordinator, LiveGraphCommunityRecord, LiveGraphSkillRecord,
-    LiveGraphSnapshotMutation, LiveGraphSubunitRecord, OutboxEvent, OutboxRelay,
-    OutboxVectorStore, PostgresGraphWriteCoordinator, PostgresRebuildCoordinator,
-    RebuildCoordinator, VECTOR_UPSERT_EVENT_TYPE,
+    EventEnvelope, LiveGraphCommunityRecord, LiveGraphSkillRecord, LiveGraphSnapshotMutation,
+    LiveGraphSubunitRecord, OutboxEvent, OutboxRelay, OutboxVectorStore,
+    PostgresGraphWriteCoordinator, PostgresRebuildCoordinator, RebuildCoordinator,
+    VECTOR_UPSERT_EVENT_TYPE,
 };
 use serde_json::json;
 use thiserror::Error;
 use uuid::Uuid;
 
+use domain::{EmbeddingService, HdbscanConfig, ScopeRoot};
+
 use crate::{
     graph::{
         build::{BuiltSkill, GraphBuildError, build_skills_from_scope_roots},
         communities::{CommunityAssignment, assign_communities},
-        embeddings::DeterministicEmbeddingGenerator,
     },
-    watcher::{ScopeRoot, SkillFileChange},
+    watcher::SkillFileChange,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -67,16 +68,22 @@ where
 {
     durable_state: &'a mut T,
     published_events: &'a mut Vec<EventEnvelope>,
+    embedding_service: &'a dyn EmbeddingService,
 }
 
 impl<'a, T> GraphRebuildOrchestrator<'a, T>
 where
     T: DurableGraphState,
 {
-    pub fn new(durable_state: &'a mut T, published_events: &'a mut Vec<EventEnvelope>) -> Self {
+    pub fn new(
+        durable_state: &'a mut T,
+        published_events: &'a mut Vec<EventEnvelope>,
+        embedding_service: &'a dyn EmbeddingService,
+    ) -> Self {
         Self {
             durable_state,
             published_events,
+            embedding_service,
         }
     }
 
@@ -84,9 +91,11 @@ where
         &mut self,
         scope_roots: &[ScopeRoot],
         file_changes: &[SkillFileChange],
+        hdbscan_config: &HdbscanConfig,
     ) -> Result<GraphRebuildOutcome, GraphRebuildError> {
-        let skills = build_skills_from_scope_roots(scope_roots, &DeterministicEmbeddingGenerator)?;
-        let communities = assign_communities(&skills);
+        let skills = build_skills_from_scope_roots(scope_roots, self.embedding_service).await?;
+        let communities =
+            assign_communities(&skills, hdbscan_config).map_err(GraphRebuildError::DurableWrite)?;
         let audits = file_changes
             .iter()
             .map(|change| AuditRecord {
@@ -108,9 +117,7 @@ where
             audits,
         };
 
-        self.durable_state
-            .persist_graph_mutation(mutation)
-            .await?;
+        self.durable_state.persist_graph_mutation(mutation).await?;
         self.durable_state.mark_outbox_drained().await?;
         let graph_version = self.durable_state.bump_graph_version().await?;
 
@@ -132,7 +139,8 @@ where
     }
 }
 
-#[derive(Debug)]
+#[cfg(any(test, feature = "test-utils"))]
+#[derive(Debug, Default)]
 pub struct InMemoryDurableGraphState {
     pub operation_log: Vec<String>,
     pub graph_version: i64,
@@ -140,17 +148,7 @@ pub struct InMemoryDurableGraphState {
     allow_synthetic_outbox_drain: bool,
 }
 
-impl Default for InMemoryDurableGraphState {
-    fn default() -> Self {
-        Self {
-            operation_log: Vec::new(),
-            graph_version: 0,
-            mutations: Vec::new(),
-            allow_synthetic_outbox_drain: false,
-        }
-    }
-}
-
+#[cfg(any(test, feature = "test-utils"))]
 impl InMemoryDurableGraphState {
     pub fn with_synthetic_outbox_drain() -> Self {
         Self {
@@ -160,6 +158,7 @@ impl InMemoryDurableGraphState {
     }
 }
 
+#[cfg(any(test, feature = "test-utils"))]
 #[async_trait]
 impl DurableGraphState for InMemoryDurableGraphState {
     async fn persist_graph_mutation(
@@ -235,6 +234,9 @@ where
                 description: skill.description.clone(),
                 scope: skill.scope_type,
                 tags: skill.tags.clone(),
+                // Persist the real SKILL.md path so the retrieval boot adapter
+                // can use true provenance instead of the scope-root stand-in.
+                source_paths: vec![skill.source_path.display().to_string()],
                 subunits: skill
                     .subunits
                     .iter()
@@ -255,6 +257,7 @@ where
                 name: community.community_name.clone(),
                 scope: community.scope,
                 member_skill_ids: community.skill_ids.clone(),
+                source: community.source.as_db_str().to_owned(),
             })
             .collect();
 
@@ -281,14 +284,19 @@ where
             let outbox_event = OutboxEvent {
                 event_id: Uuid::now_v7(),
                 event_type: VECTOR_UPSERT_EVENT_TYPE.to_owned(),
+                // The correlation_id on a skipped (already-published) event would
+                // not match this rebuild, so it only matters for newly-inserted rows.
                 correlation_id: self.rebuild_correlation_id,
+                // Content-addressed key: same skill content always produces the
+                // same key. A key that already exists means the vector is already
+                // enqueued/published — skipping is correct and safe.
                 idempotency_key: format!("graph.rebuild:vector:{}", skill.id),
                 schema_version: 1,
                 timestamp: Utc::now(),
                 payload: vector_payload,
             };
             self.outbox_coordinator
-                .append_outbox_event(&outbox_event)
+                .append_outbox_event_idempotent(&outbox_event)
                 .await
                 .map_err(|error| {
                     GraphRebuildError::DurableWrite(format!(
@@ -305,11 +313,10 @@ where
         let relay = OutboxRelay::new(self.outbox_coordinator, self.vector_store, 10, 0)
             .map_err(|error| GraphRebuildError::DurableWrite(error.to_string()))?;
         relay
-            .drain_correlation_outbox(
-                self.outbox_coordinator,
-                self.rebuild_correlation_id,
-                5,
-            )
+            // Drains to completion — no arbitrary poll cap. The whole corpus's
+            // vectors must reach Qdrant, however many cycles that takes; a genuine
+            // stall fails loud inside the drain rather than being cut off at a count.
+            .drain_correlation_outbox(self.outbox_coordinator, self.rebuild_correlation_id)
             .await
             .map_err(|error| GraphRebuildError::DurableWrite(error.to_string()))
     }
@@ -324,7 +331,12 @@ where
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
+    use domain::{HdbscanConfig, ScopeRoot, ScopeType};
+
     use super::*;
+    use crate::graph::embeddings::DeterministicEmbeddingService;
 
     #[tokio::test]
     async fn in_memory_durable_state_fails_closed_without_explicit_synthetic_drain_opt_in() {
@@ -343,6 +355,77 @@ mod tests {
         assert!(
             state.operation_log.is_empty(),
             "failed drain should not log synthetic completion"
+        );
+    }
+
+    /// Proves that `InMemoryDurableGraphState` can run multiple consecutive rebuilds
+    /// without erroring.
+    ///
+    /// The `InMemoryDurableGraphState` does not simulate outbox idempotency conflicts —
+    /// it is a boundary test proving the orchestrator flow completes correctly for
+    /// repeated rebuilds when the durable state layer is permissive (as it must be
+    /// after the idempotent-enqueue fix in `PostgresDurableGraphState`).
+    #[tokio::test]
+    async fn orchestrator_rebuild_is_idempotent_across_consecutive_cycles() {
+        let scope = ScopeRoot::new(
+            "project",
+            ScopeType::Project,
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")),
+        );
+        let scope_roots = vec![scope];
+        let changes: Vec<SkillFileChange> = vec![];
+        let embedder = DeterministicEmbeddingService;
+        let hdbscan_config = HdbscanConfig::default();
+
+        let mut state = InMemoryDurableGraphState::with_synthetic_outbox_drain();
+        let mut published_events: Vec<EventEnvelope> = Vec::new();
+
+        let first_outcome = {
+            let mut orchestrator =
+                GraphRebuildOrchestrator::new(&mut state, &mut published_events, &embedder);
+            orchestrator
+                .rebuild_from_changes(&scope_roots, &changes, &hdbscan_config)
+                .await
+        };
+        assert!(
+            first_outcome.is_ok(),
+            "first rebuild should succeed: {:?}",
+            first_outcome
+        );
+        assert_eq!(
+            published_events.len(),
+            1,
+            "first rebuild should push one graph.rebuilt envelope"
+        );
+
+        // Clear published_events to simulate the drain that follows in the real loop.
+        published_events.clear();
+
+        // Second rebuild with the same scope (simulates an unchanged skill set).
+        let second_outcome = {
+            let mut orchestrator =
+                GraphRebuildOrchestrator::new(&mut state, &mut published_events, &embedder);
+            orchestrator
+                .rebuild_from_changes(&scope_roots, &changes, &hdbscan_config)
+                .await
+        };
+        assert!(
+            second_outcome.is_ok(),
+            "second rebuild on same skill set must not error (idempotency contract): {:?}",
+            second_outcome
+        );
+        assert_eq!(
+            published_events.len(),
+            1,
+            "second rebuild should push one graph.rebuilt envelope"
+        );
+
+        // Version must advance on each successful rebuild.
+        let first_version = first_outcome.unwrap().graph_version;
+        let second_version = second_outcome.unwrap().graph_version;
+        assert!(
+            second_version > first_version,
+            "graph_version must advance on each rebuild: first={first_version}, second={second_version}"
         );
     }
 }

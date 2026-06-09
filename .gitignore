@@ -1,5 +1,13 @@
 /target
 /.env
-.github/
+# Ignore the locally-installed compound-engineering plugin under .github
+# (agents/, skills/, copilot configs) but DO track real CI workflows.
+.github/*
+!.github/workflows/
 docs/plans/
 todos/
+crates/tests/e2e/reports/
+# Live-suite run artifacts (per-test JSON, aggregate, judge, generated summary).
+# Tests now write to the repo-root reports dir; CI uploads these as artifacts.
+tests/e2e/reports/*.json
+tests/e2e/reports/latest-summary.md

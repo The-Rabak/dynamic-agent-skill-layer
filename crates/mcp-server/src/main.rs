@@ -2,8 +2,11 @@ use infrastructure::{
     DependencyFactory,
     logging::{ServiceLoggingConfig, init_service_logging},
 };
-use mcp_server::{build_seeded_server, protocol::serve_http};
-use retrieval::{RetrievalConfig, SeededGraph};
+use mcp_server::{
+    McpServerApp,
+    protocol::{DEFAULT_MCP_SERVER_ADDR, serve_http},
+};
+use retrieval::RetrievalConfig;
 use tracing::info;
 
 #[tokio::main]
@@ -18,14 +21,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "info",
     ))?;
 
-    let embedding_service = DependencyFactory::build_embedding_service_from_environment()?;
-    let graph = SeededGraph::new(Vec::new(), 0);
-    let redis_client = DependencyFactory::build_redis_client_from_environment();
-    let app = build_seeded_server(embedding_service, graph, RetrievalConfig::default(), redis_client);
     let health_checker = DependencyFactory::build_health_checker_from_environment();
     let address = std::env::var("MCP_SERVER_ADDR")
-        .unwrap_or_else(|_| "127.0.0.1:3001".to_owned())
+        .unwrap_or_else(|_| DEFAULT_MCP_SERVER_ADDR.to_owned())
         .parse()?;
+
+    // All ranking levers are env-overridable (fail-loud) for operational
+    // retuning without a redeploy and for the #210 retrieval-quality sweep,
+    // which measures each lever on the REAL running server by rebooting it per
+    // config. Absent variables fall back to the calibrated defaults.
+    let retrieval_config = RetrievalConfig::from_env();
+    let app = McpServerApp::from_environment(retrieval_config)
+        .await
+        .map_err(|error| -> Box<dyn std::error::Error> { error.to_string().into() })?
+        .app;
 
     info!(
         service = "mcp-server",

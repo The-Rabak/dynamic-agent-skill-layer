@@ -16,8 +16,7 @@ use admin::tools::{
 };
 use async_trait::async_trait;
 use chrono::Utc;
-use domain::ScopeType;
-use graph_builder::ScopeRoot;
+use domain::{EmbeddingService, ScopeRoot, ScopeType};
 use infrastructure::{
     LiveGraphSnapshotMutation, PostgresAdapter, PostgresConfig, RebuildCoordinator, RebuildError,
 };
@@ -59,7 +58,12 @@ fn build_admin_app(
     rebuild_trigger: Arc<dyn admin::tools::GraphRebuildTrigger>,
     graph_reader: Arc<dyn GraphSnapshotReader>,
 ) -> McpServerApp {
-    McpServerApp::new_with_admin(Arc::new(EmptyRetriever), rebuild_trigger, graph_reader, None)
+    McpServerApp::new_with_admin(
+        Arc::new(EmptyRetriever),
+        rebuild_trigger,
+        graph_reader,
+        None,
+    )
 }
 
 fn seeded_reader() -> StaticGraphSnapshotReader {
@@ -70,7 +74,7 @@ fn seeded_reader() -> StaticGraphSnapshotReader {
                 name: "skill-alpha".to_owned(),
                 description: "alpha skill".to_owned(),
                 tags: vec!["rust".to_owned(), "io".to_owned()],
-                community_id: Some("community-rust".to_owned()),
+                community_ids: vec!["community-rust".to_owned()],
                 subunits: vec![SubunitSnapshot {
                     kind: "procedure".to_owned(),
                     title: "Read files".to_owned(),
@@ -82,7 +86,7 @@ fn seeded_reader() -> StaticGraphSnapshotReader {
                 name: "skill-beta".to_owned(),
                 description: "beta skill".to_owned(),
                 tags: vec!["rust".to_owned()],
-                community_id: Some("community-rust".to_owned()),
+                community_ids: vec!["community-rust".to_owned()],
                 subunits: vec![SubunitSnapshot {
                     kind: "convention".to_owned(),
                     title: "Return Result".to_owned(),
@@ -109,7 +113,7 @@ fn fresh_sandbox(prefix: &str) -> PathBuf {
     sandbox
 }
 
-fn write_skill_file(root: &PathBuf, slug: &str, title: &str) {
+fn write_skill_file(root: &std::path::Path, slug: &str, title: &str) {
     let skill_dir = root.join(slug);
     std::fs::create_dir_all(&skill_dir).expect("skill dir should be creatable");
     std::fs::write(
@@ -344,12 +348,15 @@ async fn rebuild_graph_uses_graph_builder_full_rebuild_workflow() {
     write_skill_file(&global_root, "global-skill", "Global Skill");
 
     let coordinator = Arc::new(RecordingRebuildCoordinator::default());
+    let embedding_service: Arc<dyn EmbeddingService> =
+        Arc::new(graph_builder::graph::embeddings::DeterministicEmbeddingService);
     let rebuild_trigger = FilesystemGraphRebuildTrigger::with_rebuild_coordinator(
         vec![
             ScopeRoot::new("project", ScopeType::Project, project_root.clone()),
             ScopeRoot::new("global", ScopeType::Global, global_root.clone()),
         ],
         coordinator.clone(),
+        embedding_service,
     );
     let app = build_admin_app(
         Arc::new(rebuild_trigger),
@@ -448,11 +455,16 @@ async fn inspect_skill_and_list_communities_read_live_postgres_state_after_rebui
     write_skill_file(&global_root, "global-skill", "Global Skill");
     let project_skill_id = persisted_skill_id(project_root.join("project-skill/SKILL.md"));
 
+    let embedding_service: Arc<dyn EmbeddingService> =
+        Arc::new(graph_builder::graph::embeddings::DeterministicEmbeddingService);
     let app = build_admin_app(
-        Arc::new(FilesystemGraphRebuildTrigger::new(vec![
-            ScopeRoot::new("project", ScopeType::Project, project_root),
-            ScopeRoot::new("global", ScopeType::Global, global_root),
-        ])),
+        Arc::new(FilesystemGraphRebuildTrigger::new(
+            vec![
+                ScopeRoot::new("project", ScopeType::Project, project_root),
+                ScopeRoot::new("global", ScopeType::Global, global_root),
+            ],
+            embedding_service,
+        )),
         Arc::new(PostgresGraphSnapshotReader::with_default_database_env()),
     );
 
@@ -501,7 +513,7 @@ async fn inspect_skill_and_list_communities_read_live_postgres_state_after_rebui
         .expect("skill should be present from live state");
     assert_eq!(inspected.skill_id, project_skill_id);
     assert_eq!(inspected.name, "Project Skill");
-    assert!(inspected.subunits.len() >= 1);
+    assert!(!inspected.subunits.is_empty());
     assert!(inspected.community.is_some());
 }
 

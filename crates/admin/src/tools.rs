@@ -7,10 +7,10 @@ use std::{
 };
 
 use async_trait::async_trait;
-use domain::ScopeType;
+use domain::{EmbeddingService, HdbscanConfig, ScopeType};
 use graph_builder::{
-    ScopeRoot, graph::build::build_skills_from_scope_roots, graph::communities::assign_communities,
-    graph::embeddings::DeterministicEmbeddingGenerator,
+    ScopeRoot,
+    graph::{build::build_skills_from_scope_roots, communities::assign_communities},
 };
 use infrastructure::{
     LiveGraphCommunityRecord, LiveGraphSkillRecord, LiveGraphSnapshotMutation,
@@ -45,13 +45,19 @@ pub trait GraphRebuildTrigger: Send + Sync {
 }
 
 /// Skill-level read model for admin inspection tools.
+///
+/// `community_ids` holds all community memberships for this skill across both
+/// `hdbscan` and `tag` sources (dual membership introduced in migration 006).
+/// Empty when the skill has no memberships; callers must NOT treat an empty
+/// list as a single-membership field.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SkillSnapshot {
     pub skill_id: String,
     pub name: String,
     pub description: String,
     pub tags: Vec<String>,
-    pub community_id: Option<String>,
+    /// All community IDs this skill belongs to (any source). Empty when no memberships.
+    pub community_ids: Vec<String>,
     pub subunits: Vec<SubunitSnapshot>,
 }
 
@@ -80,12 +86,14 @@ pub trait GraphSnapshotReader: Send + Sync {
 }
 
 /// Deterministic static reader for seeded tests and in-memory graphs.
+#[cfg(any(test, feature = "test-utils"))]
 #[derive(Debug, Clone, Default)]
 pub struct StaticGraphSnapshotReader {
     skills: Vec<SkillSnapshot>,
     communities: Vec<CommunitySnapshot>,
 }
 
+#[cfg(any(test, feature = "test-utils"))]
 impl StaticGraphSnapshotReader {
     pub fn new(skills: Vec<SkillSnapshot>, communities: Vec<CommunitySnapshot>) -> Self {
         Self {
@@ -95,6 +103,7 @@ impl StaticGraphSnapshotReader {
     }
 }
 
+#[cfg(any(test, feature = "test-utils"))]
 #[async_trait]
 impl GraphSnapshotReader for StaticGraphSnapshotReader {
     async fn list_skills(&self) -> Result<Vec<SkillSnapshot>, AdminToolError> {
@@ -160,7 +169,7 @@ impl GraphSnapshotReader for PostgresGraphSnapshotReader {
                 name: record.name,
                 description: record.description,
                 tags: record.tags,
-                community_id: record.community_id,
+                community_ids: record.community_ids,
                 subunits: record
                     .subunits
                     .into_iter()
@@ -192,10 +201,12 @@ impl GraphSnapshotReader for PostgresGraphSnapshotReader {
     }
 }
 
-/// Fail-closed rebuild trigger for explicitly unavailable rebuild wiring.
+/// Fail-closed rebuild trigger for tests where rebuild wiring is not needed.
+#[cfg(any(test, feature = "test-utils"))]
 #[derive(Debug, Clone, Default)]
 pub struct NoopGraphRebuildTrigger;
 
+#[cfg(any(test, feature = "test-utils"))]
 #[async_trait]
 impl GraphRebuildTrigger for NoopGraphRebuildTrigger {
     async fn trigger_full_rebuild(&self) -> Result<GraphRebuildSnapshot, AdminToolError> {
@@ -211,36 +222,42 @@ pub struct FilesystemGraphRebuildTrigger {
     scope_roots: Vec<ScopeRoot>,
     database_url_env: String,
     rebuild_coordinator: Option<Arc<dyn RebuildCoordinator>>,
+    embedding_service: Arc<dyn EmbeddingService>,
 }
 
 impl FilesystemGraphRebuildTrigger {
-    pub fn new(scope_roots: Vec<ScopeRoot>) -> Self {
+    pub fn new(scope_roots: Vec<ScopeRoot>, embedding_service: Arc<dyn EmbeddingService>) -> Self {
         Self {
             scope_roots,
             database_url_env: "DATABASE_URL".to_owned(),
             rebuild_coordinator: None,
+            embedding_service,
         }
     }
 
     pub fn with_database_url_env(
         scope_roots: Vec<ScopeRoot>,
         database_url_env: impl Into<String>,
+        embedding_service: Arc<dyn EmbeddingService>,
     ) -> Self {
         Self {
             scope_roots,
             database_url_env: database_url_env.into(),
             rebuild_coordinator: None,
+            embedding_service,
         }
     }
 
     pub fn with_rebuild_coordinator(
         scope_roots: Vec<ScopeRoot>,
         rebuild_coordinator: Arc<dyn RebuildCoordinator>,
+        embedding_service: Arc<dyn EmbeddingService>,
     ) -> Self {
         Self {
             scope_roots,
             database_url_env: "DATABASE_URL".to_owned(),
             rebuild_coordinator: Some(rebuild_coordinator),
+            embedding_service,
         }
     }
 }
@@ -249,9 +266,14 @@ impl FilesystemGraphRebuildTrigger {
 impl GraphRebuildTrigger for FilesystemGraphRebuildTrigger {
     async fn trigger_full_rebuild(&self) -> Result<GraphRebuildSnapshot, AdminToolError> {
         let skills =
-            build_skills_from_scope_roots(&self.scope_roots, &DeterministicEmbeddingGenerator)
+            build_skills_from_scope_roots(&self.scope_roots, self.embedding_service.as_ref())
+                .await
                 .map_err(|error| AdminToolError::Failed(error.to_string()))?;
-        let communities = assign_communities(&skills);
+        // Use default HDBSCAN config. A future enhancement can expose this via the
+        // admin tool config surface — for now the defaults match the spec.
+        let hdbscan_config = HdbscanConfig::default();
+        let communities = assign_communities(&skills, &hdbscan_config)
+            .map_err(|error| AdminToolError::Failed(error.to_string()))?;
         let skills_count = skills.len();
         let communities_count = communities.len();
 
@@ -265,6 +287,9 @@ impl GraphRebuildTrigger for FilesystemGraphRebuildTrigger {
                     description: skill.description,
                     scope: skill.scope_type,
                     tags: skill.tags,
+                    // Persist the real SKILL.md path so the retrieval boot
+                    // adapter uses true provenance, not the scope-root stand-in.
+                    source_paths: vec![skill.source_path.display().to_string()],
                     subunits: skill
                         .subunits
                         .into_iter()
@@ -283,6 +308,7 @@ impl GraphRebuildTrigger for FilesystemGraphRebuildTrigger {
                     name: community.community_name,
                     scope: community.scope,
                     member_skill_ids: community.skill_ids,
+                    source: community.source.as_db_str().to_owned(),
                 })
                 .collect(),
         };
@@ -665,27 +691,34 @@ impl AdminTools {
             };
         };
 
-        let community = target_skill.community_id.as_ref().and_then(|community_id| {
-            communities
-                .iter()
-                .find(|candidate| candidate.community_id == *community_id)
-                .map(|candidate| CommunityContext {
-                    community_id: candidate.community_id.clone(),
-                    name: candidate.name.clone(),
-                    scope: candidate.scope,
-                    member_count: candidate.member_skill_ids.len(),
-                })
-        });
+        // For inspect, show the first community the skill belongs to (lowest ID for
+        // determinism).  A future iteration can surface all memberships, but the
+        // inspect response shape keeps a single optional `community` field for now.
+        let community = {
+            let mut matching_ids = target_skill.community_ids.clone();
+            matching_ids.sort();
+            matching_ids.first().and_then(|community_id| {
+                communities
+                    .iter()
+                    .find(|candidate| candidate.community_id == *community_id)
+                    .map(|candidate| CommunityContext {
+                        community_id: candidate.community_id.clone(),
+                        name: candidate.name.clone(),
+                        scope: candidate.scope,
+                        member_count: candidate.member_skill_ids.len(),
+                    })
+            })
+        };
 
         let mut neighborhood = skills
             .iter()
             .filter(|candidate| candidate.skill_id != target_skill.skill_id)
             .filter_map(|candidate| {
+                // Skills are in the same community if they share any community ID.
                 let same_community = target_skill
-                    .community_id
-                    .as_ref()
-                    .zip(candidate.community_id.as_ref())
-                    .is_some_and(|(left, right)| left == right);
+                    .community_ids
+                    .iter()
+                    .any(|id| candidate.community_ids.contains(id));
                 let shared_tags = intersect_tags(&target_skill.tags, &candidate.tags);
 
                 if !same_community && shared_tags.is_empty() {

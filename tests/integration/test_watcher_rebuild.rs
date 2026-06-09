@@ -5,7 +5,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use domain::ScopeType;
+use domain::{HdbscanConfig, ScopeType};
 use graph_builder::{
     GraphRebuildOrchestrator, InMemoryDurableGraphState, ScopeRoot, SkillFileChangeKind,
     SkillWatcher, WatcherRecovery, watcher::build_snapshot,
@@ -90,7 +90,7 @@ async fn watcher_detects_pending_approval_and_rebuild_respects_invalidation_orde
     .expect("approved skill directory should be creatable");
     fs::write(
         &pending_path,
-        "# approved-skill\n\ntags: approved\n\nCreated via pending approval.\n",
+        "---\nname: approved-skill\ndescription: Created via pending approval.\ntags:\n- approved\n---\n\n# approved-skill\n\nCreated via pending approval.\n",
     )
     .expect("pending skill should be writable");
     let _ = watcher
@@ -123,18 +123,25 @@ async fn watcher_detects_pending_approval_and_rebuild_respects_invalidation_orde
         "reconciliation should be idempotent for repeated snapshots"
     );
 
+    let embedder = graph_builder::graph::embeddings::DeterministicEmbeddingService;
     let mut durable_state = InMemoryDurableGraphState::with_synthetic_outbox_drain();
     let mut published_events: Vec<EventEnvelope> = Vec::new();
-    let mut orchestrator = GraphRebuildOrchestrator::new(&mut durable_state, &mut published_events);
+    let mut orchestrator =
+        GraphRebuildOrchestrator::new(&mut durable_state, &mut published_events, &embedder);
     let mut all_changes = rename_changes;
     all_changes.extend(recovered_first);
 
     let outcome = orchestrator
-        .rebuild_from_changes(&scopes, &all_changes)
+        .rebuild_from_changes(&scopes, &all_changes, &HdbscanConfig::default())
         .await
         .expect("rebuild should succeed");
     assert_eq!(outcome.graph_version, 1);
-    assert_eq!(outcome.skills_count, 2);
+    // `rebuild_from_changes` performs a FULL rebuild from the scope roots (the
+    // change set only feeds the audit trail), so the count is every active
+    // SKILL.md after the mutations, not just the changed files. Surviving skills:
+    // project/rust-file-io, project/approved-skill (renamed from .pending),
+    // global/auth-playbook, global/rust-file-io — global/async-tokio was deleted.
+    assert_eq!(outcome.skills_count, 4);
     assert!(outcome.communities_count > 0);
     assert_eq!(
         durable_state.operation_log,

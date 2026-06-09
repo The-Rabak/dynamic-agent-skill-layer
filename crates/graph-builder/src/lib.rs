@@ -3,11 +3,11 @@ pub mod graph;
 pub mod watcher;
 pub mod watcher_recovery;
 
+pub use domain::ScopeRoot;
+#[cfg(any(test, feature = "test-utils"))]
+pub use graph::rebuild::InMemoryDurableGraphState;
 pub use graph::rebuild::{
-    DurableGraphState, GraphRebuildOrchestrator, GraphRebuildOutcome, InMemoryDurableGraphState,
-    PostgresDurableGraphState,
+    DurableGraphState, GraphRebuildOrchestrator, GraphRebuildOutcome, PostgresDurableGraphState,
 };
-pub use watcher::{
-    FileChangeSource, ScopeRoot, SkillFileChange, SkillFileChangeKind, SkillWatcher,
-};
+pub use watcher::{FileChangeSource, SkillFileChange, SkillFileChangeKind, SkillWatcher};
 pub use watcher_recovery::WatcherRecovery;

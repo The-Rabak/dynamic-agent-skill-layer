@@ -14,14 +14,14 @@ use domain::{
     Subunit, SubunitType,
 };
 use mcp_server::{
-    build_seeded_server,
+    McpServerApp,
     protocol::{JsonRpcRequest, registered_tool_descriptors},
     tools::{
-        compile_context::{CompileContextRequest, CompileContextStatus},
+        compile_context::{CompileContextRequest, CompileContextStatus, TriggerKind},
         find_skill::FindSkillRequest,
     },
 };
-use retrieval::{RetrievalConfig, SeededGraph, SeededSkill};
+use retrieval::{RetrievalConfig, RetrievalSnapshot, SeededSkill};
 use serde_json::json;
 
 #[path = "env_guard.rs"]
@@ -119,7 +119,7 @@ impl EmbeddingService for DeterministicEmbeddingService {
     }
 }
 
-fn seeded_graph() -> SeededGraph {
+fn seeded_graph() -> RetrievalSnapshot {
     let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
         .canonicalize()
@@ -160,13 +160,14 @@ fn seeded_graph() -> SeededGraph {
         community_id: None,
     };
 
-    SeededGraph::new(
+    RetrievalSnapshot::new(
         vec![
             SeededSkill {
                 skill: rust_skill.clone(),
                 scope_id: "global".to_owned(),
                 source_paths: vec![docs_root.join("rust-file.md")],
                 embedding: vec![1.0, 1.0, 0.0, 0.0],
+                subunit_embeddings: vec![vec![1.0, 1.0, 0.0, 0.0]],
                 subunits: vec![Subunit {
                     id: DomainId::new_unchecked("sub-rust-file-read"),
                     skill_id: rust_skill.id.clone(),
@@ -183,6 +184,7 @@ fn seeded_graph() -> SeededGraph {
                 scope_id: "global".to_owned(),
                 source_paths: vec![docs_root.join("tokio-io.md")],
                 embedding: vec![0.9, 0.5, 1.0, 0.0],
+                subunit_embeddings: vec![vec![0.9, 0.5, 1.0, 0.0]],
                 subunits: vec![Subunit {
                     id: DomainId::new_unchecked("sub-tokio-file-read"),
                     skill_id: tokio_skill.id.clone(),
@@ -199,6 +201,7 @@ fn seeded_graph() -> SeededGraph {
                 scope_id: "global".to_owned(),
                 source_paths: vec![docs_root.join("python-http.md")],
                 embedding: vec![0.0, 0.0, 0.0, 1.0],
+                subunit_embeddings: vec![vec![0.0, 0.0, 0.0, 1.0]],
                 subunits: vec![Subunit {
                     id: DomainId::new_unchecked("sub-python-http"),
                     skill_id: python_skill.id.clone(),
@@ -246,7 +249,7 @@ fn fresh_sandbox(prefix: &str) -> PathBuf {
     sandbox
 }
 
-fn write_skill_file(root: &PathBuf, slug: &str, title: &str) {
+fn write_skill_file(root: &std::path::Path, slug: &str, title: &str) {
     let skill_dir = root.join(slug);
     std::fs::create_dir_all(&skill_dir).expect("skill dir should be creatable");
     std::fs::write(
@@ -273,7 +276,7 @@ Reusable capability for {title}.
 #[tokio::test]
 async fn registers_compile_context_find_skill_and_extract_session_tools() {
     let _env_guard = env_guard::configure_scope_env();
-    let server = build_seeded_server(
+    let server = McpServerApp::with_explicit_graph(
         Arc::new(DeterministicEmbeddingService::healthy()),
         seeded_graph(),
         retrieval_config(),
@@ -308,7 +311,7 @@ async fn rebuild_graph_requires_live_graph_database_for_seeded_server() {
         Some(project_root),
         Some(global_root),
     );
-    let server = build_seeded_server(
+    let server = McpServerApp::with_explicit_graph(
         Arc::new(DeterministicEmbeddingService::healthy()),
         seeded_graph(),
         retrieval_config(),
@@ -348,7 +351,7 @@ async fn rebuild_graph_requires_live_graph_database_for_seeded_server() {
 #[tokio::test]
 async fn compile_context_returns_ok_then_duplicate_suppressed_after_healthy_result() {
     let _env_guard = env_guard::configure_scope_env();
-    let server = build_seeded_server(
+    let server = McpServerApp::with_explicit_graph(
         Arc::new(DeterministicEmbeddingService::healthy()),
         seeded_graph(),
         retrieval_config(),
@@ -359,6 +362,7 @@ async fn compile_context_returns_ok_then_duplicate_suppressed_after_healthy_resu
         prompt: "how do i read a file in rust".to_owned(),
         session_id: "session-ok".to_owned(),
         repo_path: test_repo_path(),
+        trigger: None,
     };
 
     let first = server.compile_context(request.clone()).await;
@@ -380,7 +384,7 @@ async fn compile_context_returns_ok_then_duplicate_suppressed_after_healthy_resu
 #[tokio::test]
 async fn compile_context_returns_no_match_for_healthy_empty_and_suppresses_followups() {
     let _env_guard = env_guard::configure_scope_env();
-    let server = build_seeded_server(
+    let server = McpServerApp::with_explicit_graph(
         Arc::new(DeterministicEmbeddingService::healthy()),
         seeded_graph(),
         retrieval_config(),
@@ -391,6 +395,7 @@ async fn compile_context_returns_no_match_for_healthy_empty_and_suppresses_follo
         prompt: "quantum banana".to_owned(),
         session_id: "session-empty".to_owned(),
         repo_path: test_repo_path(),
+        trigger: None,
     };
 
     let first = server.compile_context(request.clone()).await;
@@ -400,7 +405,10 @@ async fn compile_context_returns_no_match_for_healthy_empty_and_suppresses_follo
 
     let second = server.compile_context(request).await;
     assert_eq!(second.status, CompileContextStatus::DuplicateSuppressed);
-    assert_eq!(second.reason_code.as_deref(), Some("already_compiled_for_session"));
+    assert_eq!(
+        second.reason_code.as_deref(),
+        Some("already_compiled_for_session")
+    );
     assert_eq!(second.graph_version, first.graph_version);
     assert_eq!(second.scopes_considered, first.scopes_considered);
 }
@@ -408,7 +416,7 @@ async fn compile_context_returns_no_match_for_healthy_empty_and_suppresses_follo
 #[tokio::test]
 async fn degraded_first_attempt_does_not_set_suppression_state() {
     let _env_guard = env_guard::configure_scope_env();
-    let server = build_seeded_server(
+    let server = McpServerApp::with_explicit_graph(
         Arc::new(DeterministicEmbeddingService::fail_first()),
         seeded_graph(),
         retrieval_config(),
@@ -419,6 +427,7 @@ async fn degraded_first_attempt_does_not_set_suppression_state() {
         prompt: "how do i read a file in rust".to_owned(),
         session_id: "session-degraded".to_owned(),
         repo_path: test_repo_path(),
+        trigger: None,
     };
 
     let degraded = server.compile_context(request.clone()).await;
@@ -435,7 +444,7 @@ async fn degraded_first_attempt_does_not_set_suppression_state() {
 #[tokio::test]
 async fn find_skill_reports_top_matches_from_seeded_graph() {
     let _env_guard = env_guard::configure_scope_env();
-    let server = build_seeded_server(
+    let server = McpServerApp::with_explicit_graph(
         Arc::new(DeterministicEmbeddingService::healthy()),
         seeded_graph(),
         retrieval_config(),
@@ -456,7 +465,7 @@ async fn find_skill_reports_top_matches_from_seeded_graph() {
 #[tokio::test]
 async fn json_rpc_tools_list_and_call_compile_context() {
     let _env_guard = env_guard::configure_scope_env();
-    let server = build_seeded_server(
+    let server = McpServerApp::with_explicit_graph(
         Arc::new(DeterministicEmbeddingService::healthy()),
         seeded_graph(),
         retrieval_config(),
@@ -596,4 +605,108 @@ async fn json_rpc_tools_list_and_call_compile_context() {
         .and_then(|result| result.get("status"))
         .and_then(|value| value.as_str());
     assert_eq!(status, Some("ok"));
+}
+
+/// Proves that a `compact`-triggered request bypasses session suppression and returns
+/// fresh context instead of `DuplicateSuppressed`. This enables compaction re-injection:
+/// the first prompt compiles and suppresses; the compaction hook re-invokes with
+/// `trigger: TriggerKind::Compact` and must receive `Ok` (not `DuplicateSuppressed`).
+#[tokio::test]
+async fn compact_trigger_bypasses_suppression_and_returns_fresh_context() {
+    let _env_guard = env_guard::configure_scope_env();
+    let server = McpServerApp::with_explicit_graph(
+        Arc::new(DeterministicEmbeddingService::healthy()),
+        seeded_graph(),
+        retrieval_config(),
+        None,
+    );
+
+    let session_id = "session-compact-bypass";
+    let prompt = "how do i read a file in rust";
+    let repo_path = test_repo_path();
+
+    // First call: establishes suppression state (Ok response + suppressed flag set).
+    let first = server
+        .compile_context(CompileContextRequest {
+            prompt: prompt.to_owned(),
+            session_id: session_id.to_owned(),
+            repo_path: repo_path.clone(),
+            trigger: None,
+        })
+        .await;
+    assert_eq!(first.status, CompileContextStatus::Ok);
+
+    // Second call: ordinary re-call is suppressed as expected.
+    let suppressed = server
+        .compile_context(CompileContextRequest {
+            prompt: prompt.to_owned(),
+            session_id: session_id.to_owned(),
+            repo_path: repo_path.clone(),
+            trigger: None,
+        })
+        .await;
+    assert_eq!(suppressed.status, CompileContextStatus::DuplicateSuppressed);
+
+    // Third call: compaction re-inject with `trigger: TriggerKind::Compact` must bypass
+    // suppression and return fresh context so post-compaction context injection works.
+    let compact_reinject = server
+        .compile_context(CompileContextRequest {
+            prompt: prompt.to_owned(),
+            session_id: session_id.to_owned(),
+            repo_path: repo_path.clone(),
+            trigger: Some(TriggerKind::Compact),
+        })
+        .await;
+    assert_ne!(
+        compact_reinject.status,
+        CompileContextStatus::DuplicateSuppressed,
+        "compact trigger must not return DuplicateSuppressed"
+    );
+    assert_eq!(
+        compact_reinject.status,
+        CompileContextStatus::Ok,
+        "compact trigger must return fresh context"
+    );
+    assert!(
+        compact_reinject.additional_context.is_some(),
+        "compact trigger must include compiled context"
+    );
+}
+
+/// Proves the two-state `usage_write` observability contract in `compile_context` responses.
+///
+/// States:
+///   "ok"     — writer healthy; key is ABSENT from the response (compact ok = no key)
+///   "failed" — last write or channel-post failed; key present with value "failed"
+///
+/// This test exercises the "ok" state: when no writer is wired (the default for
+/// `with_explicit_graph` test constructors), the health cell starts at `HEALTH_OK`.
+/// The response must NOT include `health["usage_write"]` since the key is only
+/// injected on failure (absent = ok).
+#[tokio::test]
+async fn compile_context_omits_usage_write_health_key_when_writer_is_ok() {
+    let _env_guard = env_guard::configure_scope_env();
+    // No `.with_usage_writer(...)` call — usage_sender is None; health cell starts ok.
+    let server = McpServerApp::with_explicit_graph(
+        Arc::new(DeterministicEmbeddingService::healthy()),
+        seeded_graph(),
+        retrieval_config(),
+        None,
+    );
+
+    let response = server
+        .compile_context(CompileContextRequest {
+            prompt: "how do i read a file in rust".to_owned(),
+            session_id: "session-usage-ok".to_owned(),
+            repo_path: test_repo_path(),
+            trigger: None,
+        })
+        .await;
+
+    let usage_write_status = response.health.get("usage_write").map(String::as_str);
+    assert_eq!(
+        usage_write_status, None,
+        "compile_context must omit health[\"usage_write\"] when health is ok; \
+         got: {usage_write_status:?}"
+    );
 }

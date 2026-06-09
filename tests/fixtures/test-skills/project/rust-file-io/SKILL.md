@@ -1,5 +1,12 @@
+---
+name: rust-file-io
+description: Read and write files in Rust safely.
+tags:
+- rust
+- io
+---
+
 # rust-file-io
-tags: rust, io
 
 Read and write files in Rust safely.
 
