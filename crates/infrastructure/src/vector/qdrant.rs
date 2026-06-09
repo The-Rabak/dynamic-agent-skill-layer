@@ -58,6 +58,64 @@ pub fn model_keyed_collection_name(model: &str) -> Result<String, QdrantError> {
     Ok(format!("skills__{slug}"))
 }
 
+/// Sparse vector representation for hybrid search.
+///
+/// A sparse vector has a small number of non-zero components relative to its
+/// nominal vocabulary size. In BM25-style retrieval, `indices` are term IDs and
+/// `values` are the corresponding TF-IDF or BM25 weights. Qdrant accepts this
+/// format in the `sparse` named-vector slot for IDF-modified sparse collections.
+#[derive(Debug, Clone)]
+pub struct SparseVector {
+    /// Positions of non-zero components. Must be the same length as `values`.
+    pub indices: Vec<u32>,
+    /// Non-zero component weights corresponding to each index in `indices`.
+    pub values: Vec<f32>,
+}
+
+/// A single result point from a hybrid Query-API call.
+///
+/// Qdrant's `fusion: rrf` step reciprocal-rank-fuses the dense and sparse
+/// result lists, then returns at most `limit` points ordered by descending RRF
+/// score. The `score` here is the RRF-fused value (not a raw cosine or dot
+/// product), so it is comparable only within a single query result set.
+#[derive(Debug, Clone)]
+pub struct HybridHit {
+    /// The numeric point ID stored in Qdrant.
+    pub point_id: u64,
+    /// RRF-fused relevance score (higher is better within this result set).
+    pub score: f32,
+    /// The full payload JSON attached to this point when it was upserted.
+    pub payload: Value,
+}
+
+/// Derives the Qdrant collection name for the hybrid arm scoped to a model.
+///
+/// The hybrid arm stores both a named dense vector (`"dense"`) and a sparse
+/// vector with an IDF modifier (`"sparse"`) in the same Qdrant collection.
+/// Qdrant's named-vector schema is INCOMPATIBLE with the unnamed-vector schema
+/// used by the existing dense-only collection (`skills__<model>`), so the
+/// hybrid arm uses a distinct collection name to prevent schema collisions:
+///
+///   `skills__<slug>__hybrid`
+///
+/// The `__hybrid` suffix is composed entirely of ASCII lowercase letters and
+/// underscores, which keeps the full name within the `^[A-Za-z0-9_-]+$` charset
+/// enforced by `QdrantAdapter::new`. The base slug is derived by the same
+/// algorithm as [`model_keyed_collection_name`].
+///
+/// # Errors
+///
+/// Propagates any error from `model_keyed_collection_name` (empty or all-symbol
+/// model name).
+///
+/// Examples:
+///   `"nomic-embed-text"`   → `Ok("skills__nomic-embed-text__hybrid")`
+///   `"qwen3-embedding:4b"` → `Ok("skills__qwen3-embedding-4b__hybrid")`
+pub fn model_keyed_hybrid_collection_name(model: &str) -> Result<String, QdrantError> {
+    let base = model_keyed_collection_name(model)?;
+    Ok(format!("{base}__hybrid"))
+}
+
 /// Configuration for the Qdrant REST HTTP adapter.
 ///
 /// Qdrant exposes two interfaces on separate ports:
@@ -311,6 +369,215 @@ impl QdrantAdapter {
         Ok(())
     }
 
+    /// Creates a hybrid Qdrant collection with a named dense vector and a sparse
+    /// IDF-modified vector slot.
+    ///
+    /// # Named-vector vs unnamed-vector shape
+    ///
+    /// The existing dense-only collection uses Qdrant's *unnamed* vector shape:
+    /// `{"vectors":{"size":N,"distance":"Cosine"}}`. A hybrid collection requires
+    /// the *named* shape — `{"vectors":{"dense":{…}},"sparse_vectors":{"sparse":{…}}}` —
+    /// which Qdrant treats as a different schema. The two shapes are incompatible
+    /// under the same collection name; this method creates a *distinct* collection
+    /// (use `model_keyed_hybrid_collection_name` for the name) so the dense-only
+    /// path is never touched.
+    ///
+    /// The `"modifier":"idf"` on the sparse slot enables Qdrant's server-side
+    /// IDF re-weighting, which improves BM25-style scoring without shipping raw
+    /// term frequencies from the client.
+    ///
+    /// # Idempotency
+    ///
+    /// Like `ensure_collection`, this method treats HTTP 200 (collection exists)
+    /// and HTTP 409 Conflict (concurrent create) as success — the collection
+    /// existing is the postcondition. It does NOT re-check vector dimensions on
+    /// 200 because the hybrid schema uses named vectors whose config JSON path
+    /// differs from the unnamed-vector path; dimension checking for hybrid
+    /// collections is left to C3.
+    pub async fn ensure_hybrid_collection(
+        &self,
+        collection_name: &str,
+        dense_vector_size: u64,
+    ) -> Result<(), QdrantError> {
+        let base_url = self.config.endpoint.trim_end_matches('/');
+        let probe_endpoint = format!("{base_url}/collections/{collection_name}");
+
+        let probe_response = self.client.get(&probe_endpoint).send().await?;
+        if probe_response.status() == StatusCode::OK {
+            // Collection already exists with some schema — treat as success.
+            // Dimension re-checking for named vectors is left to the C3 query arm.
+            return Ok(());
+        }
+
+        let create_endpoint = format!("{base_url}/collections/{collection_name}");
+        let body = json!({
+            "vectors": {
+                "dense": {
+                    "size": dense_vector_size,
+                    "distance": "Cosine"
+                }
+            },
+            "sparse_vectors": {
+                "sparse": {
+                    "modifier": "idf"
+                }
+            }
+        });
+        let create_response = self
+            .send_with_timeout(self.client.put(create_endpoint).json(&body))
+            .await?;
+
+        // 409 Conflict means a concurrent caller already created the collection.
+        if create_response.status() == StatusCode::CONFLICT {
+            tracing::info!(
+                collection_name,
+                "hybrid collection already created by a concurrent caller (409 Conflict); \
+                 treating as success"
+            );
+            return Ok(());
+        }
+
+        self.expect_ok_status(create_response).await?;
+        Ok(())
+    }
+
+    /// Upserts a single point with both a dense and a sparse vector into a
+    /// hybrid collection.
+    ///
+    /// The point body uses Qdrant's named-vector form, which is required for
+    /// collections created with `ensure_hybrid_collection`:
+    ///
+    /// ```json
+    /// {"points":[{"id":<id>,
+    ///   "vector":{"dense":[…],"sparse":{"indices":[…],"values":[…]}},
+    ///   "payload":{…}}]}
+    /// ```
+    ///
+    /// This method is a complement to `upsert_vector` (which uses the unnamed
+    /// form for the existing dense-only collection). It does NOT modify
+    /// `upsert_vector` or any caller of that method.
+    ///
+    /// `?wait=true` ensures the point is visible to subsequent reads by the
+    /// same process, matching the existing upsert contract.
+    pub async fn upsert_hybrid_point(
+        &self,
+        collection_name: &str,
+        point_id: u64,
+        dense: &[f32],
+        sparse: &SparseVector,
+        payload: &Value,
+    ) -> Result<(), QdrantError> {
+        let endpoint = format!(
+            "{}/collections/{collection_name}/points?wait=true",
+            self.config.endpoint.trim_end_matches('/')
+        );
+        let body = json!({
+            "points": [{
+                "id": point_id,
+                "vector": {
+                    "dense": dense,
+                    "sparse": {
+                        "indices": sparse.indices,
+                        "values": sparse.values
+                    }
+                },
+                "payload": payload
+            }]
+        });
+        let response = self
+            .send_with_timeout(self.client.put(endpoint).json(&body))
+            .await?;
+        self.expect_ok_status(response).await?;
+        Ok(())
+    }
+
+    /// Queries a hybrid collection using Qdrant's Query API with RRF fusion.
+    ///
+    /// Issues a `POST /collections/{collection}/points/query` request with a
+    /// two-arm prefetch (dense cosine + sparse IDF) and a reciprocal-rank-fusion
+    /// step. The request body shape is:
+    ///
+    /// ```json
+    /// {"prefetch":[
+    ///     {"query":<dense_vec>,"using":"dense","limit":<L>},
+    ///     {"query":{"indices":[…],"values":[…]},"using":"sparse","limit":<L>}],
+    ///  "query":{"fusion":"rrf"},
+    ///  "limit":<L>,"with_payload":true}
+    /// ```
+    ///
+    /// Results are returned in descending RRF-score order. The RRF score is an
+    /// artifact of rank fusion and is NOT a raw cosine similarity or dot product;
+    /// it is comparable only within a single query's result set.
+    ///
+    /// # Errors
+    ///
+    /// Returns `QdrantError::UnexpectedStatus` for non-200 responses, or
+    /// `QdrantError::Connectivity`/`QdrantError::Timeout` for transport errors.
+    pub async fn query_hybrid(
+        &self,
+        collection_name: &str,
+        dense_query: &[f32],
+        sparse_query: &SparseVector,
+        limit: u64,
+    ) -> Result<Vec<HybridHit>, QdrantError> {
+        let endpoint = format!(
+            "{}/collections/{collection_name}/points/query",
+            self.config.endpoint.trim_end_matches('/')
+        );
+        let body = json!({
+            "prefetch": [
+                {
+                    "query": dense_query,
+                    "using": "dense",
+                    "limit": limit
+                },
+                {
+                    "query": {
+                        "indices": sparse_query.indices,
+                        "values": sparse_query.values
+                    },
+                    "using": "sparse",
+                    "limit": limit
+                }
+            ],
+            "query": {"fusion": "rrf"},
+            "limit": limit,
+            "with_payload": true
+        });
+        let response = self
+            .send_with_timeout(self.client.post(endpoint).json(&body))
+            .await?;
+        let parsed = self.expect_ok_status(response).await?;
+
+        let points = parsed
+            .pointer("/result/points")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+
+        let hits = points
+            .into_iter()
+            .filter_map(|point| {
+                let point_id = point.get("id").and_then(Value::as_u64)?;
+                let score = point
+                    .get("score")
+                    .and_then(Value::as_f64)
+                    .map(|s| s as f32)?;
+                let payload = point
+                    .get("payload")
+                    .cloned()
+                    .unwrap_or(Value::Object(serde_json::Map::new()));
+                Some(HybridHit {
+                    point_id,
+                    score,
+                    payload,
+                })
+            })
+            .collect();
+
+        Ok(hits)
+    }
+
     async fn send_with_timeout(
         &self,
         request: reqwest::RequestBuilder,
@@ -479,6 +746,30 @@ impl OutboxVectorStore for QdrantAdapter {
                 }
             }
         }
+    }
+
+    /// Upserts a point with dense + sparse vectors into the named hybrid collection.
+    ///
+    /// Delegates to `QdrantAdapter::upsert_hybrid_point`, which uses Qdrant's
+    /// named-vector form required for hybrid collections. The `hybrid_collection`
+    /// argument overrides `self.config.collection_name` so the relay can target
+    /// the `skills__<model>__hybrid` collection directly.
+    async fn upsert_hybrid(
+        &self,
+        hybrid_collection: &str,
+        point_id: u64,
+        dense: &[f32],
+        sparse_indices: &[u32],
+        sparse_values: &[f32],
+        payload: &Value,
+    ) -> Result<(), String> {
+        let sparse = SparseVector {
+            indices: sparse_indices.to_vec(),
+            values: sparse_values.to_vec(),
+        };
+        self.upsert_hybrid_point(hybrid_collection, point_id, dense, &sparse, payload)
+            .await
+            .map_err(|e| e.to_string())
     }
 
     async fn delete_points(&self, point_ids: &[u64]) -> Result<(), String> {
@@ -1130,6 +1421,736 @@ mod tests {
             .expect("matching dimension must succeed");
 
         server.await.expect("mock server should complete");
+    }
+
+    // ---- Hybrid-adapter helpers and tests ----------------------------------------
+
+    /// A mock TCP server that captures the raw request bytes before responding.
+    ///
+    /// Returns the captured request as a `String` alongside the server handle so
+    /// tests can assert on the exact body the adapter sent.
+    async fn spawn_capturing_response_server(
+        status_line: &str,
+        response_body: &str,
+    ) -> (String, JoinHandle<String>) {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("test listener should bind");
+        let address = listener
+            .local_addr()
+            .expect("bound listener should have local addr");
+        let status_line = status_line.to_owned();
+        let response_body = response_body.to_owned();
+
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener
+                .accept()
+                .await
+                .expect("server should accept one connection");
+            // Use a larger buffer so we capture realistic JSON bodies.
+            let mut request_buffer = vec![0_u8; 16_384];
+            let bytes_read = socket
+                .read(&mut request_buffer)
+                .await
+                .expect("server should read request");
+            let captured = String::from_utf8_lossy(&request_buffer[..bytes_read]).into_owned();
+
+            let response = format!(
+                "HTTP/1.1 {status_line}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                response_body.len(),
+                response_body
+            );
+            socket
+                .write_all(response.as_bytes())
+                .await
+                .expect("server should write response");
+            captured
+        });
+
+        (format!("http://{address}"), server)
+    }
+
+    /// Like `spawn_sequence_response_server` but captures each request body.
+    async fn spawn_capturing_sequence_server(
+        responses: Vec<(String, String)>,
+    ) -> (String, JoinHandle<Vec<String>>) {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("test listener should bind");
+        let address = listener
+            .local_addr()
+            .expect("bound listener should have local addr");
+
+        let server = tokio::spawn(async move {
+            let mut captured_requests = Vec::new();
+            for (status_line, body) in responses {
+                let (mut socket, _) = listener
+                    .accept()
+                    .await
+                    .expect("server should accept one connection per response");
+                let mut request_buffer = vec![0_u8; 16_384];
+                let bytes_read = socket
+                    .read(&mut request_buffer)
+                    .await
+                    .expect("server should read request");
+                let captured = String::from_utf8_lossy(&request_buffer[..bytes_read]).into_owned();
+                captured_requests.push(captured);
+
+                let response = format!(
+                    "HTTP/1.1 {status_line}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                socket
+                    .write_all(response.as_bytes())
+                    .await
+                    .expect("server should write response");
+            }
+            captured_requests
+        });
+
+        (format!("http://{address}"), server)
+    }
+
+    // ---- model_keyed_hybrid_collection_name tests --------------------------------
+
+    /// Proves the hybrid name is the dense name with a `__hybrid` suffix.
+    #[test]
+    fn hybrid_collection_name_appends_hybrid_suffix() {
+        assert_eq!(
+            model_keyed_hybrid_collection_name("nomic-embed-text").unwrap(),
+            "skills__nomic-embed-text__hybrid"
+        );
+        assert_eq!(
+            model_keyed_hybrid_collection_name("qwen3-embedding:4b").unwrap(),
+            "skills__qwen3-embedding-4b__hybrid"
+        );
+    }
+
+    /// Proves the hybrid name stays within the `^[A-Za-z0-9_-]+$` charset so it
+    /// passes `QdrantAdapter::new`'s collection-name charset guard.
+    #[test]
+    fn hybrid_collection_name_passes_charset_guard() {
+        let name = model_keyed_hybrid_collection_name("nomic-embed-text")
+            .expect("nomic-embed-text must produce a valid hybrid name");
+        assert!(
+            name.chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-'),
+            "hybrid collection name must consist only of [A-Za-z0-9_-], got: {name}"
+        );
+    }
+
+    /// Proves that the hybrid name derivation propagates errors from the base
+    /// derivation (empty or all-symbol model names).
+    #[test]
+    fn hybrid_collection_name_fails_loud_on_empty_model() {
+        let err = model_keyed_hybrid_collection_name("")
+            .expect_err("empty model name must fail loud for hybrid derivation too");
+        assert!(
+            matches!(err, QdrantError::InvalidConfiguration(_)),
+            "error must be InvalidConfiguration, got: {err:?}"
+        );
+    }
+
+    /// Proves the dense and hybrid collections are distinct for each V1.7 arm
+    /// so they can coexist without schema collision.
+    #[test]
+    fn hybrid_and_dense_collection_names_are_distinct_per_arm() {
+        for model in &["nomic-embed-text", "qwen3-embedding:4b"] {
+            let dense = model_keyed_collection_name(model).unwrap();
+            let hybrid = model_keyed_hybrid_collection_name(model).unwrap();
+            assert_ne!(
+                dense, hybrid,
+                "dense and hybrid collections for {model} must be distinct; \
+                 they use incompatible named-vector schemas"
+            );
+            assert!(
+                hybrid.ends_with("__hybrid"),
+                "hybrid name must end with __hybrid, got: {hybrid}"
+            );
+        }
+    }
+
+    // ---- ensure_hybrid_collection mock tests -------------------------------------
+
+    /// Proves `ensure_hybrid_collection` sends the named dense+sparse(idf) body
+    /// on the PUT create request.
+    ///
+    /// The request JSON must contain `"sparse_vectors"` with `"modifier":"idf"`
+    /// and `"vectors"` with a named `"dense"` key — NOT the unnamed `"size"` form
+    /// used by `ensure_collection`.
+    #[tokio::test]
+    async fn ensure_hybrid_collection_sends_named_dense_and_sparse_idf_body() {
+        // GET probe → 404: collection does not exist.
+        // PUT create → 200 OK.
+        let (endpoint, server) = spawn_capturing_sequence_server(vec![
+            (
+                "404 Not Found".to_owned(),
+                r#"{"status":"not_found"}"#.to_owned(),
+            ),
+            (
+                "200 OK".to_owned(),
+                r#"{"status":"ok","result":true,"time":0.001}"#.to_owned(),
+            ),
+        ])
+        .await;
+
+        let adapter = QdrantAdapter::new(
+            reqwest::Client::new(),
+            QdrantConfig {
+                endpoint,
+                timeout_ms: 1_000,
+                ..QdrantConfig::default()
+            },
+        )
+        .expect("test config should be valid");
+
+        adapter
+            .ensure_hybrid_collection("skills__nomic-embed-text__hybrid", 768)
+            .await
+            .expect("ensure_hybrid_collection must succeed on 200 OK");
+
+        let captured_requests = server.await.expect("mock server should complete");
+        // The second captured request is the PUT create body.
+        let create_request = &captured_requests[1];
+
+        // Extract JSON body (everything after the double-CRLF header/body separator).
+        let body_start = create_request
+            .find("\r\n\r\n")
+            .expect("request must contain header/body separator")
+            + 4;
+        let body_json: Value = serde_json::from_str(&create_request[body_start..])
+            .expect("create body must be valid JSON");
+
+        assert!(
+            body_json.get("sparse_vectors").is_some(),
+            "create body must contain sparse_vectors key; got: {body_json}"
+        );
+        assert_eq!(
+            body_json.pointer("/sparse_vectors/sparse/modifier"),
+            Some(&Value::String("idf".to_owned())),
+            "sparse_vectors.sparse.modifier must be 'idf'; got: {body_json}"
+        );
+        assert!(
+            body_json.pointer("/vectors/dense").is_some(),
+            "create body must contain named vectors.dense key; got: {body_json}"
+        );
+        assert_eq!(
+            body_json.pointer("/vectors/dense/size"),
+            Some(&Value::Number(768.into())),
+            "vectors.dense.size must be 768; got: {body_json}"
+        );
+        assert_eq!(
+            body_json.pointer("/vectors/dense/distance"),
+            Some(&Value::String("Cosine".to_owned())),
+            "vectors.dense.distance must be Cosine; got: {body_json}"
+        );
+    }
+
+    /// Proves `ensure_hybrid_collection` is idempotent when the collection
+    /// already exists (GET probe → 200).
+    #[tokio::test]
+    async fn ensure_hybrid_collection_is_noop_when_collection_exists() {
+        // Only a GET probe is expected; if a second request arrives the server panics.
+        let (endpoint, server) = spawn_single_response_server(
+            "200 OK",
+            r#"{"status":"ok","result":{"name":"skills__nomic-embed-text__hybrid"}}"#,
+        )
+        .await;
+
+        let adapter = QdrantAdapter::new(
+            reqwest::Client::new(),
+            QdrantConfig {
+                endpoint,
+                timeout_ms: 1_000,
+                ..QdrantConfig::default()
+            },
+        )
+        .expect("test config should be valid");
+
+        adapter
+            .ensure_hybrid_collection("skills__nomic-embed-text__hybrid", 768)
+            .await
+            .expect("200 on probe must return Ok immediately without a create request");
+
+        server.await.expect("mock server should complete");
+    }
+
+    /// Proves `ensure_hybrid_collection` treats 409 Conflict on the PUT as success.
+    #[tokio::test]
+    async fn ensure_hybrid_collection_treats_409_as_success() {
+        let (endpoint, server) = spawn_sequence_response_server(vec![
+            (
+                "404 Not Found".to_owned(),
+                r#"{"status":"not_found"}"#.to_owned(),
+            ),
+            (
+                "409 Conflict".to_owned(),
+                r#"{"status":"conflict","description":"already exists"}"#.to_owned(),
+            ),
+        ])
+        .await;
+
+        let adapter = QdrantAdapter::new(
+            reqwest::Client::new(),
+            QdrantConfig {
+                endpoint,
+                timeout_ms: 1_000,
+                ..QdrantConfig::default()
+            },
+        )
+        .expect("test config should be valid");
+
+        adapter
+            .ensure_hybrid_collection("skills__nomic-embed-text__hybrid", 768)
+            .await
+            .expect("409 Conflict must be treated as success");
+
+        server.await.expect("mock server should complete");
+    }
+
+    // ---- upsert_hybrid_point mock tests -----------------------------------------
+
+    /// Proves `upsert_hybrid_point` sends a named-vector body with both `dense`
+    /// and `sparse` (indices/values) fields.
+    #[tokio::test]
+    async fn upsert_hybrid_point_sends_named_vector_body() {
+        let (endpoint, server) = spawn_capturing_response_server(
+            "200 OK",
+            r#"{"status":"ok","result":{"operation_id":0,"status":"completed"},"time":0.001}"#,
+        )
+        .await;
+
+        let adapter = QdrantAdapter::new(
+            reqwest::Client::new(),
+            QdrantConfig {
+                endpoint,
+                timeout_ms: 1_000,
+                ..QdrantConfig::default()
+            },
+        )
+        .expect("test config should be valid");
+
+        let sparse = SparseVector {
+            indices: vec![5, 42, 100],
+            values: vec![0.3, 0.7, 0.1],
+        };
+        adapter
+            .upsert_hybrid_point(
+                "skills__nomic-embed-text__hybrid",
+                7,
+                &[0.1_f32, 0.2, 0.3],
+                &sparse,
+                &json!({"name": "test-skill"}),
+            )
+            .await
+            .expect("upsert_hybrid_point must succeed on 200 OK");
+
+        let captured = server.await.expect("mock server should complete");
+        let body_start = captured
+            .find("\r\n\r\n")
+            .expect("request must contain header/body separator")
+            + 4;
+        let body_json: Value =
+            serde_json::from_str(&captured[body_start..]).expect("upsert body must be valid JSON");
+
+        let point = body_json
+            .pointer("/points/0")
+            .expect("body must contain points[0]");
+        assert_eq!(
+            point.get("id"),
+            Some(&Value::Number(7.into())),
+            "point id must be 7; got: {point}"
+        );
+        assert!(
+            point.pointer("/vector/dense").is_some(),
+            "point must have vector.dense; got: {point}"
+        );
+        assert_eq!(
+            point.pointer("/vector/sparse/indices"),
+            Some(&json!([5_u32, 42_u32, 100_u32])),
+            "point must have vector.sparse.indices [5,42,100]; got: {point}"
+        );
+        assert_eq!(
+            point.pointer("/vector/sparse/values"),
+            Some(&json!([0.3_f32, 0.7_f32, 0.1_f32])),
+            "point must have vector.sparse.values [0.3,0.7,0.1]; got: {point}"
+        );
+    }
+
+    // ---- query_hybrid mock tests -------------------------------------------------
+
+    /// Proves `query_hybrid` sends a prefetch+fusion body and parses the result
+    /// points into `HybridHit` structs.
+    #[tokio::test]
+    async fn query_hybrid_sends_prefetch_fusion_body_and_parses_hits() {
+        let response_body = r#"{"status":"ok","result":{"points":[
+            {"id":3,"score":0.95,"payload":{"name":"skill-c"}},
+            {"id":1,"score":0.80,"payload":{"name":"skill-a"}}
+        ]},"time":0.002}"#;
+        let (endpoint, server) = spawn_capturing_response_server("200 OK", response_body).await;
+
+        let adapter = QdrantAdapter::new(
+            reqwest::Client::new(),
+            QdrantConfig {
+                endpoint,
+                timeout_ms: 1_000,
+                ..QdrantConfig::default()
+            },
+        )
+        .expect("test config should be valid");
+
+        let sparse = SparseVector {
+            indices: vec![10, 20],
+            values: vec![0.5, 0.5],
+        };
+        let hits = adapter
+            .query_hybrid(
+                "skills__nomic-embed-text__hybrid",
+                &[0.1_f32, 0.2, 0.3],
+                &sparse,
+                5,
+            )
+            .await
+            .expect("query_hybrid must succeed on 200 OK");
+
+        assert_eq!(hits.len(), 2, "must return 2 hits; got: {hits:?}");
+        assert_eq!(
+            hits[0].point_id, 3,
+            "first hit must be point 3 (highest RRF score)"
+        );
+        assert_eq!(hits[1].point_id, 1, "second hit must be point 1");
+        assert!(
+            (hits[0].score - 0.95).abs() < 1e-5,
+            "first hit score must be ~0.95; got: {}",
+            hits[0].score
+        );
+
+        let captured = server.await.expect("mock server should complete");
+        let body_start = captured
+            .find("\r\n\r\n")
+            .expect("request must contain header/body separator")
+            + 4;
+        let body_json: Value =
+            serde_json::from_str(&captured[body_start..]).expect("query body must be valid JSON");
+
+        // Verify prefetch structure.
+        let prefetch = body_json
+            .get("prefetch")
+            .and_then(Value::as_array)
+            .expect("body must contain prefetch array");
+        assert_eq!(prefetch.len(), 2, "prefetch must have exactly 2 arms");
+
+        let dense_arm = &prefetch[0];
+        assert_eq!(
+            dense_arm.get("using"),
+            Some(&Value::String("dense".to_owned())),
+            "first prefetch arm must use 'dense'; got: {dense_arm}"
+        );
+        let sparse_arm = &prefetch[1];
+        assert_eq!(
+            sparse_arm.get("using"),
+            Some(&Value::String("sparse".to_owned())),
+            "second prefetch arm must use 'sparse'; got: {sparse_arm}"
+        );
+
+        // Verify fusion step.
+        assert_eq!(
+            body_json.pointer("/query/fusion"),
+            Some(&Value::String("rrf".to_owned())),
+            "query.fusion must be 'rrf'; got: {body_json}"
+        );
+        assert!(
+            body_json.get("with_payload") == Some(&Value::Bool(true)),
+            "body must include with_payload:true; got: {body_json}"
+        );
+    }
+
+    /// Proves `query_hybrid` returns an empty vec when the result contains no points.
+    #[tokio::test]
+    async fn query_hybrid_returns_empty_vec_on_no_results() {
+        let response_body = r#"{"status":"ok","result":{"points":[]},"time":0.001}"#;
+        let (endpoint, server) = spawn_single_response_server("200 OK", response_body).await;
+
+        let adapter = QdrantAdapter::new(
+            reqwest::Client::new(),
+            QdrantConfig {
+                endpoint,
+                timeout_ms: 1_000,
+                ..QdrantConfig::default()
+            },
+        )
+        .expect("test config should be valid");
+
+        let sparse = SparseVector {
+            indices: vec![],
+            values: vec![],
+        };
+        let hits = adapter
+            .query_hybrid("skills__nomic-embed-text__hybrid", &[0.0_f32], &sparse, 5)
+            .await
+            .expect("query_hybrid must succeed on empty result");
+
+        assert!(hits.is_empty(), "empty result must yield empty hit vec");
+        server.await.expect("mock server should complete");
+    }
+
+    // ---- live tests (require a running Qdrant at QDRANT_URL) ---------------------
+
+    fn live_qdrant_url() -> String {
+        std::env::var("QDRANT_URL").unwrap_or_else(|_| "http://127.0.0.1:6333".to_owned())
+    }
+
+    /// Creates an adapter pointed at the live Qdrant, using the provided
+    /// collection name so live tests do not interfere with production collections.
+    fn live_adapter(collection_name: &str) -> QdrantAdapter {
+        QdrantAdapter::new(
+            reqwest::Client::new(),
+            QdrantConfig {
+                endpoint: live_qdrant_url(),
+                timeout_ms: 5_000,
+                collection_name: collection_name.to_owned(),
+            },
+        )
+        .expect("live adapter config must be valid")
+    }
+
+    /// Live: proves `ensure_hybrid_collection` creates a named dense+sparse(idf)
+    /// collection and that a subsequent GET on the collection info shows both
+    /// vector config sections.
+    ///
+    /// Requires Qdrant at `QDRANT_URL` (default :6333). Run with:
+    /// ```
+    /// QDRANT_URL=http://127.0.0.1:16333 cargo test -p infrastructure \
+    ///   --features test-utils live_ensure_hybrid_collection_creates_named_collection \
+    ///   -- --ignored --nocapture
+    /// ```
+    #[tokio::test]
+    #[ignore = "requires live qdrant"]
+    async fn live_ensure_hybrid_collection_creates_named_collection() {
+        // Uses a test-specific name so this test does not collide with sibling
+        // live tests that may run in parallel under the same process.
+        let collection = "skills__test-ensure__hybrid";
+        let adapter = live_adapter(collection);
+
+        // Clean up from any previous run so we exercise the create path.
+        let _ = reqwest::Client::new()
+            .delete(format!(
+                "{}/collections/{collection}",
+                live_qdrant_url().trim_end_matches('/')
+            ))
+            .send()
+            .await;
+
+        adapter
+            .ensure_hybrid_collection(collection, 4)
+            .await
+            .expect("ensure_hybrid_collection must succeed against live Qdrant");
+
+        // Verify Qdrant shows both vector config sections.
+        let info: Value = reqwest::Client::new()
+            .get(format!(
+                "{}/collections/{collection}",
+                live_qdrant_url().trim_end_matches('/')
+            ))
+            .send()
+            .await
+            .expect("GET collection must succeed")
+            .json()
+            .await
+            .expect("collection info must parse as JSON");
+
+        assert!(
+            info.pointer("/result/config/params/vectors/dense")
+                .is_some()
+                || info.pointer("/result/config/params/vectors").is_some(),
+            "collection info must contain named dense vector config; got: {info}"
+        );
+        assert!(
+            info.pointer("/result/config/params/sparse_vectors/sparse")
+                .is_some(),
+            "collection info must contain sparse_vectors.sparse config; got: {info}"
+        );
+
+        // Idempotency: second call must also succeed (200 on probe).
+        adapter
+            .ensure_hybrid_collection(collection, 4)
+            .await
+            .expect("second ensure_hybrid_collection call must be idempotent");
+
+        // Clean up.
+        let _ = reqwest::Client::new()
+            .delete(format!(
+                "{}/collections/{collection}",
+                live_qdrant_url().trim_end_matches('/')
+            ))
+            .send()
+            .await;
+    }
+
+    /// Live: proves `upsert_hybrid_point` stores a dense+sparse point and that
+    /// the point is retrievable afterward.
+    ///
+    /// Requires Qdrant at `QDRANT_URL`. Run with:
+    /// ```
+    /// QDRANT_URL=http://127.0.0.1:16333 cargo test -p infrastructure \
+    ///   --features test-utils live_upsert_hybrid_point_stores_and_retrieves_point \
+    ///   -- --ignored --nocapture
+    /// ```
+    #[tokio::test]
+    #[ignore = "requires live qdrant"]
+    async fn live_upsert_hybrid_point_stores_and_retrieves_point() {
+        // Uses a test-specific name to avoid parallel-execution collisions.
+        let collection = "skills__test-upsert__hybrid";
+        let adapter = live_adapter(collection);
+        let http = reqwest::Client::new();
+        let base_url = live_qdrant_url();
+        let base_url = base_url.trim_end_matches('/');
+
+        // Ensure the collection exists.
+        let _ = http
+            .delete(format!("{base_url}/collections/{collection}"))
+            .send()
+            .await;
+        adapter
+            .ensure_hybrid_collection(collection, 4)
+            .await
+            .expect("collection must be created before upsert");
+
+        let sparse = SparseVector {
+            indices: vec![5, 42],
+            values: vec![0.8, 0.3],
+        };
+        adapter
+            .upsert_hybrid_point(
+                collection,
+                101,
+                &[0.1_f32, 0.2, 0.3, 0.4],
+                &sparse,
+                &json!({"name": "live-test-skill", "source": "c1-unit-test"}),
+            )
+            .await
+            .expect("upsert_hybrid_point must succeed against live Qdrant");
+
+        // Retrieve the point and verify it exists.
+        let point_info: Value = http
+            .get(format!("{base_url}/collections/{collection}/points/101"))
+            .send()
+            .await
+            .expect("GET point must succeed")
+            .json()
+            .await
+            .expect("point info must parse as JSON");
+
+        assert_eq!(
+            point_info.pointer("/result/id"),
+            Some(&Value::Number(101.into())),
+            "retrieved point must have id=101; got: {point_info}"
+        );
+        assert_eq!(
+            point_info.pointer("/result/payload/name"),
+            Some(&Value::String("live-test-skill".to_owned())),
+            "retrieved point must have payload.name='live-test-skill'; got: {point_info}"
+        );
+
+        println!("live upsert point info: {point_info:#}");
+
+        // Clean up.
+        let _ = http
+            .delete(format!("{base_url}/collections/{collection}"))
+            .send()
+            .await;
+    }
+
+    /// Live: proves `query_hybrid` returns fused hits from the Query API, with
+    /// correct ordering by RRF score.
+    ///
+    /// Upserts 3 points with known dense/sparse vectors, then issues a query
+    /// designed to favor point 2. Asserts point 2 appears first.
+    ///
+    /// Requires Qdrant at `QDRANT_URL`. Run with:
+    /// ```
+    /// QDRANT_URL=http://127.0.0.1:16333 cargo test -p infrastructure \
+    ///   --features test-utils live_query_hybrid_returns_fused_hits_ordered_by_rrf \
+    ///   -- --ignored --nocapture
+    /// ```
+    #[tokio::test]
+    #[ignore = "requires live qdrant"]
+    async fn live_query_hybrid_returns_fused_hits_ordered_by_rrf() {
+        // Uses a test-specific name to avoid parallel-execution collisions.
+        let collection = "skills__test-query__hybrid";
+        let adapter = live_adapter(collection);
+        let http = reqwest::Client::new();
+        let base_url = live_qdrant_url();
+        let base_url = base_url.trim_end_matches('/');
+
+        // Create fresh collection.
+        let _ = http
+            .delete(format!("{base_url}/collections/{collection}"))
+            .send()
+            .await;
+        adapter
+            .ensure_hybrid_collection(collection, 4)
+            .await
+            .expect("collection must be created before query");
+
+        // Upsert 3 points with different dense and sparse vectors.
+        // Point 2 is designed to score best under the test query.
+        #[allow(clippy::type_complexity)]
+        let point_configs: &[(u64, [f32; 4], Vec<u32>, Vec<f32>, &str)] = &[
+            (1, [0.1, 0.0, 0.0, 0.0], vec![1], vec![0.1], "skill-a"),
+            (
+                2,
+                [0.9, 0.9, 0.9, 0.9],
+                vec![5, 42],
+                vec![0.9, 0.9],
+                "skill-b",
+            ),
+            (3, [0.0, 0.1, 0.0, 0.0], vec![99], vec![0.1], "skill-c"),
+        ];
+        for (id, dense, indices, values, name) in point_configs {
+            let sparse = SparseVector {
+                indices: indices.clone(),
+                values: values.clone(),
+            };
+            adapter
+                .upsert_hybrid_point(collection, *id, dense, &sparse, &json!({"name": name}))
+                .await
+                .unwrap_or_else(|e| panic!("upsert point {id} failed: {e}"));
+        }
+
+        // Query with a vector strongly aligned to point 2.
+        let query_dense = [0.9_f32, 0.9, 0.9, 0.9];
+        let query_sparse = SparseVector {
+            indices: vec![5, 42],
+            values: vec![0.9, 0.9],
+        };
+        let hits = adapter
+            .query_hybrid(collection, &query_dense, &query_sparse, 3)
+            .await
+            .expect("query_hybrid must succeed against live Qdrant");
+
+        println!("live query_hybrid hits: {hits:?}");
+
+        assert!(
+            !hits.is_empty(),
+            "query must return at least one hit; got empty vec"
+        );
+        assert_eq!(
+            hits[0].point_id, 2,
+            "point 2 must rank first (highest alignment to query); got hits: {hits:?}"
+        );
+        assert!(
+            hits.len() <= 3,
+            "result count must not exceed limit=3; got {} hits",
+            hits.len()
+        );
+
+        // Clean up.
+        let _ = http
+            .delete(format!("{base_url}/collections/{collection}"))
+            .send()
+            .await;
     }
 
     /// Proves the `QdrantConfig` default endpoint uses the REST port (6333),

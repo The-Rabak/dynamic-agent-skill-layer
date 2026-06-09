@@ -57,10 +57,36 @@ pub enum OutboxRelayError {
     VectorStore(String),
 }
 
+/// Sparse vector carried in a `VectorUpsertRequest` for hybrid upserts.
+///
+/// When present, the relay routes the event to `upsert_hybrid` on the vector
+/// store (targeting the hybrid collection) instead of the plain `upsert_vector`
+/// path. Absent means dense-only — the existing path is unchanged.
+///
+/// `indices` and `values` must be the same length. Zero-length sparse vectors
+/// are rejected by `parse_vector_upsert_request` (an empty sparse component
+/// carries no information and indicates a construction bug in the writer).
+#[derive(Debug, Clone, PartialEq)]
+pub struct SparseVectorPayload {
+    /// FNV-1a term indices (same mapping as `retrieval::sparse::term_to_sparse_index`).
+    pub indices: Vec<u32>,
+    /// BM25 TF-saturation weights for each corresponding index.
+    pub values: Vec<f32>,
+}
+
+/// A parsed outbox event payload for a `vector.upsert` event.
+///
+/// `sparse` is present only for events emitted under `RETRIEVAL_BACKEND=qdrant_hybrid`.
+/// Absent `sparse` means the event targets the dense-only collection via
+/// `upsert_vector`; present `sparse` targets the hybrid collection via
+/// `upsert_hybrid`. This is backward-compatible: old events without a `sparse`
+/// field parse with `sparse: None` and follow the existing relay path unchanged.
 #[derive(Debug, Clone, PartialEq)]
 pub struct VectorUpsertRequest {
     pub content_hash: String,
     pub vector: Vec<f32>,
+    /// Optional sparse BM25 vector. Present only for `RETRIEVAL_BACKEND=qdrant_hybrid`.
+    pub sparse: Option<SparseVectorPayload>,
     pub payload: Value,
 }
 
@@ -121,6 +147,38 @@ pub trait OutboxVectorStore: Send + Sync {
     async fn has_vector(&self, point_id: u64) -> Result<bool, String>;
     async fn list_point_ids(&self) -> Result<VectorPointListing, String>;
     async fn delete_points(&self, point_ids: &[u64]) -> Result<(), String>;
+
+    /// Upserts a point with both dense and sparse vectors into the hybrid collection.
+    ///
+    /// Called by the relay when the outbox payload carries a `SparseVectorPayload`
+    /// and the relay is configured with a hybrid collection name (i.e.
+    /// `RETRIEVAL_BACKEND=qdrant_hybrid` at relay construction time).
+    ///
+    /// # Default implementation
+    ///
+    /// The default implementation fails loudly. Any `OutboxVectorStore` that is
+    /// wired in a `qdrant_hybrid` configuration MUST override this method with a
+    /// real implementation — a silent no-op would lose sparse vectors without any
+    /// indication of failure, violating the no-stubs mandate.
+    ///
+    /// Stores that only support the dense path (e.g. test doubles or the plain
+    /// `QdrantAdapter` in non-hybrid deployments) do not override this; the relay
+    /// will never call it when `hybrid_collection` is `None`.
+    async fn upsert_hybrid(
+        &self,
+        hybrid_collection: &str,
+        point_id: u64,
+        _dense: &[f32],
+        _sparse_indices: &[u32],
+        _sparse_values: &[f32],
+        _payload: &Value,
+    ) -> Result<(), String> {
+        Err(format!(
+            "upsert_hybrid called on a vector store that does not implement it \
+             (collection={hybrid_collection}, point_id={point_id}); \
+             configure RETRIEVAL_BACKEND=qdrant_hybrid only with a QdrantAdapter"
+        ))
+    }
 }
 
 /// Captures the visible point id set and whether the listing is complete.
@@ -138,7 +196,17 @@ pub fn qdrant_point_id_from_content_hash(content_hash: &str) -> u64 {
     u64::from_be_bytes(bytes)
 }
 
-/// Parses outbox payload into the minimal vector upsert contract.
+/// Parses outbox payload into the vector upsert contract.
+///
+/// The `sparse` field is optional and backward-compatible: payloads written
+/// before `RETRIEVAL_BACKEND=qdrant_hybrid` support was added (i.e. without a
+/// `sparse` key) parse cleanly with `sparse: None`, following the existing
+/// dense-only relay path unchanged.
+///
+/// When `sparse` is present it must be a well-formed object with non-empty
+/// `indices` and `values` arrays of equal length. An empty or malformed sparse
+/// field is rejected so a construction bug in the writer surfaces immediately
+/// rather than silently producing a point with no sparse component.
 pub fn parse_vector_upsert_request(
     payload: &Value,
 ) -> Result<VectorUpsertRequest, OutboxRelayError> {
@@ -179,15 +247,81 @@ pub fn parse_vector_upsert_request(
         vector.push(value as f32);
     }
 
+    // Parse the optional sparse component. Absent key → None (backward-compatible).
+    // Present key must be a well-formed object with matching-length arrays.
+    let sparse = if let Some(sparse_val) = payload.get("sparse") {
+        let indices_raw = sparse_val
+            .get("indices")
+            .and_then(Value::as_array)
+            .ok_or_else(|| {
+                OutboxRelayError::InvalidPayload(
+                    "payload.sparse.indices must be a numeric array".to_owned(),
+                )
+            })?;
+        let values_raw = sparse_val
+            .get("values")
+            .and_then(Value::as_array)
+            .ok_or_else(|| {
+                OutboxRelayError::InvalidPayload(
+                    "payload.sparse.values must be a numeric array".to_owned(),
+                )
+            })?;
+        if indices_raw.len() != values_raw.len() {
+            return Err(OutboxRelayError::InvalidPayload(format!(
+                "payload.sparse.indices length ({}) must equal payload.sparse.values length ({})",
+                indices_raw.len(),
+                values_raw.len(),
+            )));
+        }
+        if indices_raw.is_empty() {
+            return Err(OutboxRelayError::InvalidPayload(
+                "payload.sparse must not be empty; omit the key entirely for dense-only upserts"
+                    .to_owned(),
+            ));
+        }
+        let mut indices = Vec::with_capacity(indices_raw.len());
+        for item in indices_raw {
+            let idx = item.as_u64().ok_or_else(|| {
+                OutboxRelayError::InvalidPayload(
+                    "payload.sparse.indices must contain only non-negative integers".to_owned(),
+                )
+            })? as u32;
+            indices.push(idx);
+        }
+        let mut values = Vec::with_capacity(values_raw.len());
+        for item in values_raw {
+            let val = item.as_f64().ok_or_else(|| {
+                OutboxRelayError::InvalidPayload(
+                    "payload.sparse.values must contain only numeric values".to_owned(),
+                )
+            })? as f32;
+            values.push(val);
+        }
+        Some(SparseVectorPayload { indices, values })
+    } else {
+        None
+    };
+
     let payload_body = payload.get("payload").cloned().unwrap_or(Value::Null);
     Ok(VectorUpsertRequest {
         content_hash,
         vector,
+        sparse,
         payload: payload_body,
     })
 }
 
 /// Drives outbox -> Qdrant relay transitions for one polling cycle.
+///
+/// When `hybrid_collection` is `Some(name)`, events carrying a sparse vector
+/// component are routed to `vector_store.upsert_hybrid(name, …)` instead of
+/// `vector_store.upsert_vector`. This is activated by setting
+/// `RETRIEVAL_BACKEND=qdrant_hybrid` at relay construction time and passing
+/// the model-keyed hybrid collection name.
+///
+/// Events without a sparse component always follow the dense-only path via
+/// `upsert_vector`, even when `hybrid_collection` is set. This preserves
+/// backward compatibility for any legacy events in the outbox.
 pub struct OutboxRelay<'a, C, S>
 where
     C: GraphWriteCoordinator,
@@ -197,6 +331,9 @@ where
     vector_store: &'a S,
     claim_limit: i64,
     retry_after_seconds: u64,
+    /// When `Some`, sparse-carrying events are routed to `upsert_hybrid` on
+    /// this collection. `None` means dense-only relay for all events.
+    hybrid_collection: Option<String>,
 }
 
 impl<'a, C, S> OutboxRelay<'a, C, S>
@@ -221,7 +358,23 @@ where
             vector_store,
             claim_limit,
             retry_after_seconds,
+            hybrid_collection: None,
         })
+    }
+
+    /// Returns a new relay configured for the hybrid collection.
+    ///
+    /// When `hybrid_collection` is set, outbox events that carry a sparse vector
+    /// payload are forwarded to `OutboxVectorStore::upsert_hybrid` instead of
+    /// `upsert_vector`. The hybrid collection name must be the exact name passed
+    /// to `QdrantAdapter::ensure_hybrid_collection` at boot, typically derived via
+    /// `model_keyed_hybrid_collection_name`.
+    ///
+    /// Dense-only events (no sparse payload) are always forwarded via `upsert_vector`
+    /// regardless of this setting, preserving backward compatibility.
+    pub fn with_hybrid_collection(mut self, collection_name: String) -> Self {
+        self.hybrid_collection = Some(collection_name);
+        self
     }
 
     pub async fn relay_once(&self) -> Result<OutboxRelayRunReport, OutboxRelayError> {
@@ -286,10 +439,28 @@ where
             };
 
             let point_id = qdrant_point_id_from_content_hash(&upsert.content_hash);
-            let write_result = self
-                .vector_store
-                .upsert_vector(point_id, &upsert.vector, &upsert.payload)
-                .await;
+            // Route to hybrid upsert when the relay is configured for a hybrid
+            // collection AND this event carries a real sparse vector. Fall back to
+            // the dense path for events without a sparse component (backward compat).
+            let write_result = match (&self.hybrid_collection, &upsert.sparse) {
+                (Some(hybrid_col), Some(sparse)) => {
+                    self.vector_store
+                        .upsert_hybrid(
+                            hybrid_col,
+                            point_id,
+                            &upsert.vector,
+                            &sparse.indices,
+                            &sparse.values,
+                            &upsert.payload,
+                        )
+                        .await
+                }
+                _ => {
+                    self.vector_store
+                        .upsert_vector(point_id, &upsert.vector, &upsert.payload)
+                        .await
+                }
+            };
             match write_result {
                 Ok(()) => {
                     self.coordinator
@@ -858,5 +1029,87 @@ mod tests {
         let error = parse_vector_upsert_request(&json!({"vector":[1.0]}))
             .expect_err("missing content_hash should fail");
         assert!(error.to_string().contains("content_hash"));
+    }
+
+    /// Absent `sparse` key parses to `sparse: None` — backward-compatible with
+    /// dense-only outbox events written before hybrid support was added.
+    #[test]
+    fn parse_vector_upsert_request_absent_sparse_parses_to_none() {
+        let payload = json!({
+            "content_hash": "abc123",
+            "vector": [0.1_f32, 0.2_f32],
+            "payload": {}
+        });
+        let req = parse_vector_upsert_request(&payload)
+            .expect("dense-only payload must parse without error");
+        assert_eq!(req.content_hash, "abc123");
+        assert_eq!(req.vector.len(), 2);
+        assert!(
+            req.sparse.is_none(),
+            "absent 'sparse' key must parse to sparse: None"
+        );
+    }
+
+    /// A well-formed `sparse` field round-trips through `parse_vector_upsert_request`.
+    #[test]
+    fn parse_vector_upsert_request_sparse_round_trips_correctly() {
+        let payload = json!({
+            "content_hash": "def456",
+            "vector": [0.5_f32, 0.6_f32],
+            "sparse": {
+                "indices": [100_u32, 200_u32, 300_u32],
+                "values": [1.5_f32, 0.8_f32, 2.1_f32]
+            },
+            "payload": { "skill_id": "s1" }
+        });
+        let req = parse_vector_upsert_request(&payload)
+            .expect("payload with sparse must parse without error");
+        let sparse = req.sparse.expect("sparse must be Some for hybrid payload");
+        assert_eq!(sparse.indices, vec![100_u32, 200_u32, 300_u32]);
+        assert_eq!(sparse.values.len(), 3);
+        assert!(
+            (sparse.values[0] - 1.5_f32).abs() < 1e-5,
+            "sparse value[0] must round-trip: {}",
+            sparse.values[0]
+        );
+    }
+
+    /// An empty `sparse` object (indices=[], values=[]) is explicitly rejected —
+    /// it indicates a construction bug and must never silently produce a point
+    /// with an empty sparse component.
+    #[test]
+    fn parse_vector_upsert_request_rejects_empty_sparse() {
+        let payload = json!({
+            "content_hash": "gh789",
+            "vector": [0.1_f32],
+            "sparse": {
+                "indices": [],
+                "values": []
+            }
+        });
+        let err = parse_vector_upsert_request(&payload).expect_err("empty sparse must be rejected");
+        assert!(
+            err.to_string().contains("sparse"),
+            "error must mention 'sparse': {err}"
+        );
+    }
+
+    /// Mismatched indices/values lengths are explicitly rejected.
+    #[test]
+    fn parse_vector_upsert_request_rejects_sparse_length_mismatch() {
+        let payload = json!({
+            "content_hash": "ij012",
+            "vector": [0.1_f32],
+            "sparse": {
+                "indices": [1_u32, 2_u32],
+                "values": [0.5_f32]
+            }
+        });
+        let err = parse_vector_upsert_request(&payload)
+            .expect_err("mismatched sparse lengths must be rejected");
+        assert!(
+            err.to_string().contains("length"),
+            "error must mention 'length': {err}"
+        );
     }
 }

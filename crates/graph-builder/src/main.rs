@@ -11,8 +11,9 @@ use infrastructure::{
     PostgresAdapter, PostgresConfig, PostgresGraphWriteCoordinator, PostgresRebuildCoordinator,
     QdrantAdapter, QdrantConfig, QdrantError, RebuildCoordinator, RedisStreamError,
     RedisStreamsAdapter, RedisStreamsConfig, embedding_model_from_env, logging::init_logging,
-    model_keyed_collection_name,
+    model_keyed_collection_name, model_keyed_hybrid_collection_name,
 };
+use retrieval::{RetrievalBackend, RetrievalConfig};
 use serde::Serialize;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -385,10 +386,53 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             _ => format!("qdrant collection setup: {error}"),
         })?;
 
+    // When RETRIEVAL_BACKEND=qdrant_hybrid, also ensure the hybrid collection
+    // (named-vector schema with both dense + sparse slots) exists at boot.
+    // The backend is resolved once here so the loop and relay can share it.
+    let retrieval_backend = RetrievalConfig::from_env().backend;
+    let hybrid_collection_name: Option<String> =
+        if retrieval_backend == RetrievalBackend::QdrantHybrid {
+            let name = model_keyed_hybrid_collection_name(&model_info.model_name)
+                .map_err(|e| format!("invalid embedding model name for hybrid collection: {e}"))?;
+            // Ensure the hybrid collection exists at boot (idempotent; 409 = success).
+            // Failure is non-fatal per the same Option-A resilience contract as the
+            // dense collection: log loudly and proceed; the relay will retry on upsert.
+            match qdrant_adapter
+                .ensure_hybrid_collection(&name, vector_size)
+                .await
+            {
+                Ok(()) => {
+                    tracing::info!(
+                        collection = %name,
+                        dense_dim = vector_size,
+                        "qdrant hybrid collection ensured"
+                    );
+                }
+                Err(error) => {
+                    tracing::error!(
+                        %error,
+                        collection = %name,
+                        "ensure_hybrid_collection failed at boot; \
+                         hybrid upserts will fail until Qdrant is reachable"
+                    );
+                }
+            }
+            Some(name)
+        } else {
+            None
+        };
+
     let hdbscan_config = HdbscanConfig::default();
 
-    let mut durable_state =
+    let durable_state_base =
         PostgresDurableGraphState::new(&rebuild_coordinator, &outbox_coordinator, &qdrant_adapter);
+    // Wire the hybrid collection name into the durable state so the rebuild write
+    // path computes real sparse vectors and the relay routes to upsert_hybrid.
+    let mut durable_state = if let Some(ref hybrid_col) = hybrid_collection_name {
+        durable_state_base.with_hybrid_collection(hybrid_col.clone())
+    } else {
+        durable_state_base
+    };
     let mut published_events: Vec<EventEnvelope> = Vec::new();
     // Tracks the highest `graph_version` for which we have successfully published
     // a `graph.rebuilt` event to Redis. Used by `maybe_replay_graph_rebuilt` to
@@ -411,8 +455,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Drains to completion — no arbitrary cycle cap; it relays until a pass
     // claims nothing (queue drained). A durable outbox must drain fully.
     {
-        let startup_relay = OutboxRelay::new(&outbox_coordinator, &qdrant_adapter, 10, 0)
+        let startup_relay_base = OutboxRelay::new(&outbox_coordinator, &qdrant_adapter, 10, 0)
             .map_err(|error| format!("startup outbox relay: {error}"))?;
+        // Thread the hybrid collection through to the startup relay so any
+        // pre-existing orphaned hybrid events are correctly relayed.
+        let startup_relay = if let Some(ref hybrid_col) = hybrid_collection_name {
+            startup_relay_base.with_hybrid_collection(hybrid_col.clone())
+        } else {
+            startup_relay_base
+        };
         match startup_relay.relay_all_pending_to_completion().await {
             Ok(published) if published > 0 => {
                 tracing::info!(

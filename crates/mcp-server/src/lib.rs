@@ -43,11 +43,12 @@ use infrastructure::{
     PostgresUsageSampleStore, PostgresUsageWriter, QdrantAdapter, QdrantConfig, QdrantError,
     RedisClient, RedisStreamsAdapter, RedisStreamsConfig, SessionUsageRecord, SkillSelectionRecord,
     TranscriptIngestQueue, UsagePersistencePort, UsageSampleStore, model_keyed_collection_name,
+    model_keyed_hybrid_collection_name,
 };
 use maintenance::RetirementConfig;
 use retrieval::{
-    CircuitBreaker, DualScopeResolver, RetrievalConfig, RetrievalOrchestrator, RetrievalSnapshot,
-    SkillRetriever,
+    CircuitBreaker, DualScopeResolver, HybridCandidate, HybridCandidateSource, HybridQueryError,
+    RetrievalBackend, RetrievalConfig, RetrievalOrchestrator, RetrievalSnapshot, SkillRetriever,
 };
 use tokio::sync::mpsc;
 use tools::{
@@ -499,6 +500,85 @@ impl LiveServerComponents {
     }
 }
 
+/// Implements `HybridCandidateSource` for the `QdrantHybrid` retrieval arm.
+///
+/// Wraps a `QdrantAdapter` and a model-keyed hybrid collection name to provide
+/// real dense+sparse hybrid candidate lookups at request time. This is the only
+/// production implementation of the trait; it lives in `mcp-server` because
+/// `mcp-server` is the only crate that can depend on both `retrieval` and
+/// `infrastructure`.
+///
+/// # CQRS contract break
+///
+/// Under `QdrantHybrid`, Qdrant is queried at read time. This intentionally
+/// breaks the "Qdrant-down cannot degrade compile_context" invariant that holds
+/// for `SnapshotDense` and `SnapshotHybrid`. The trade-off is documented in the
+/// T08 ADR. Do NOT add a silent fallback to dense here.
+struct QdrantHybridCandidateSource {
+    adapter: Arc<QdrantAdapter>,
+    hybrid_collection: String,
+}
+
+#[async_trait]
+impl HybridCandidateSource for QdrantHybridCandidateSource {
+    /// Queries the hybrid Qdrant collection and maps hits to `HybridCandidate`s.
+    ///
+    /// The hybrid upsert payload (written by `graph-builder`) stores:
+    ///   `{ "content_hash": ..., "vector": [...], "payload": { "skill_id": ..., ... } }`
+    ///
+    /// The Qdrant point payload is the outer JSON object; `skill_id` is nested under
+    /// `payload["payload"]["skill_id"]`. This method extracts that field and returns
+    /// `HybridCandidate { skill_stable_id: ..., fused_score: ... }`.
+    ///
+    /// Returns `Err(HybridQueryError::Transport)` on any network failure or
+    /// `Err(HybridQueryError::Status)` on an unexpected Qdrant response. The
+    /// orchestrator MUST NOT silently fall back to dense on any error.
+    async fn query_hybrid(
+        &self,
+        dense: &[f32],
+        sparse_indices: &[u32],
+        sparse_values: &[f32],
+        limit: u64,
+    ) -> Result<Vec<HybridCandidate>, HybridQueryError> {
+        use infrastructure::SparseVector;
+
+        let sparse = SparseVector {
+            indices: sparse_indices.to_vec(),
+            values: sparse_values.to_vec(),
+        };
+
+        let hits = self
+            .adapter
+            .query_hybrid(&self.hybrid_collection, dense, &sparse, limit)
+            .await
+            .map_err(|e| HybridQueryError::Transport(e.to_string()))?;
+
+        let candidates = hits
+            .into_iter()
+            .filter_map(|hit| {
+                // The relay stores the inner payload object directly as the Qdrant point
+                // payload. Graph-builder constructs the outbox event as:
+                //   { "content_hash": ..., "vector": [...], "payload": { "skill_id": ..., ... } }
+                // `parse_vector_upsert_request` extracts `payload["payload"]` and passes
+                // THAT inner object to `upsert_hybrid_point`. Qdrant stores it verbatim,
+                // so the point's native payload is `{ "skill_id": ..., "name": ..., ... }`.
+                // `skill_id` is therefore at the top level, not nested under "payload".
+                let skill_id = hit
+                    .payload
+                    .get("skill_id")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_owned)?;
+                Some(HybridCandidate {
+                    skill_stable_id: skill_id,
+                    fused_score: hit.score,
+                })
+            })
+            .collect();
+
+        Ok(candidates)
+    }
+}
+
 /// Live-component assembly used exclusively by [`McpServerApp::from_environment`].
 /// Kept private so the public surface stays at exactly two constructors.
 async fn build_live_server(
@@ -536,6 +616,45 @@ async fn build_live_server(
         "embedding model and qdrant collection confirmed"
     );
 
+    // When RETRIEVAL_BACKEND=qdrant_hybrid, ensure the hybrid collection exists so
+    // the C3 query arm can read from it even before the first rebuild populates it.
+    // Non-fatal per the same Option-A resilience contract as the dense collection:
+    // the collection will be created on the next access if Qdrant is briefly down.
+    if config.backend == RetrievalBackend::QdrantHybrid {
+        match model_keyed_hybrid_collection_name(&embedding_model_info.model_name) {
+            Ok(hybrid_name) => {
+                let vector_size = embedding_model_info.dimension as u64;
+                match qdrant_adapter
+                    .ensure_hybrid_collection(&hybrid_name, vector_size)
+                    .await
+                {
+                    Ok(()) => {
+                        info!(
+                            collection = %hybrid_name,
+                            dense_dim = vector_size,
+                            "qdrant hybrid collection ensured at mcp-server boot"
+                        );
+                    }
+                    Err(error) => {
+                        warn!(
+                            %error,
+                            collection = %hybrid_name,
+                            "ensure_hybrid_collection failed at mcp-server boot; \
+                             C3 hybrid queries will fail until Qdrant is reachable"
+                        );
+                    }
+                }
+            }
+            Err(error) => {
+                warn!(
+                    %error,
+                    "could not derive hybrid collection name at mcp-server boot; \
+                     hybrid collection will not be ensured"
+                );
+            }
+        }
+    }
+
     let write_coordinator = PostgresGraphWriteCoordinator::new(pg_adapter.pool().clone());
     let rebuild_coordinator = PostgresRebuildCoordinator::new(pg_adapter.pool().clone());
 
@@ -559,13 +678,42 @@ async fn build_live_server(
     // sane defaults; panics loudly on malformed values (per no-stubs mandate).
     let embedding_breaker: CircuitBreaker =
         RetrievalOrchestrator::<OllamaEmbeddingService>::build_embedding_circuit_breaker_from_env();
-    let retriever = Arc::new(RetrievalOrchestrator::new_dual_scope(
-        embedding_service.clone(),
-        graph,
-        config,
-        scope_resolver,
-        embedding_breaker,
-    ));
+
+    // When QdrantHybrid is active, inject the real HybridCandidateSource so the
+    // C3 read arm can query Qdrant at request time. The collection name is derived
+    // from the live model identity (same algorithm as the write-side collection name).
+    // Fails loud if the hybrid collection name cannot be derived (degenerate model name).
+    let retriever = {
+        let base = RetrievalOrchestrator::new_dual_scope(
+            embedding_service.clone(),
+            graph,
+            config.clone(),
+            scope_resolver,
+            embedding_breaker,
+        );
+        if config.backend == RetrievalBackend::QdrantHybrid {
+            match model_keyed_hybrid_collection_name(&embedding_model_info.model_name) {
+                Ok(hybrid_collection) => {
+                    let source: Arc<dyn HybridCandidateSource> =
+                        Arc::new(QdrantHybridCandidateSource {
+                            adapter: qdrant_adapter.clone(),
+                            hybrid_collection,
+                        });
+                    Arc::new(base.with_hybrid_candidate_source(source))
+                }
+                Err(error) => {
+                    return Err(format!(
+                        "RETRIEVAL_BACKEND=qdrant_hybrid but cannot derive hybrid collection \
+                         name for model '{}': {error}",
+                        embedding_model_info.model_name
+                    )
+                    .into());
+                }
+            }
+        } else {
+            Arc::new(base)
+        }
+    };
 
     let usage_writer: Arc<dyn UsagePersistencePort> =
         Arc::new(PostgresUsageWriter::new(pg_adapter.pool().clone()));
@@ -1047,6 +1195,46 @@ async fn build_graph_from_pg(
             }
         };
 
+    // T04-B: Pre-build per-skill BM25 lexical documents from the full
+    // PersistedGraphSkillRecord (including migration-009 multi-view fields) BEFORE
+    // `skills` is consumed by `.into_iter()` below.
+    //
+    // Field set (see comment near the BM25 index build below for rationale):
+    //   name, description, tags — skill identity and semantic surface
+    //   tools, artifacts        — exact lexical identifiers (crate names, file types)
+    //   invariants              — constraint keywords
+    //   use_when, requires      — trigger and prerequisite terms
+    //   produces                — output artifact terms
+    //   subunit title+content   — extracted knowledge body
+    //
+    // avoid_when is intentionally EXCLUDED: its keywords describe anti-patterns and
+    // including them would surface this skill for queries describing exactly the
+    // situations where it must NOT apply.
+    let bm25_raw_docs: Vec<String> = skills
+        .iter()
+        .map(|record| {
+            let subunit_text: String = record
+                .subunits
+                .iter()
+                .map(|su| format!("{} {}", su.title, su.content))
+                .collect::<Vec<_>>()
+                .join(" ");
+            format!(
+                "{} {} {} {} {} {} {} {} {}",
+                record.name,
+                record.description,
+                record.tags.join(" "),
+                record.tools.join(" "),
+                record.artifacts.join(" "),
+                record.invariants.join(" "),
+                record.use_when.join(" "),
+                record.requires.join(" "),
+                record.produces.join(" "),
+            ) + " "
+                + &subunit_text
+        })
+        .collect();
+
     // Canonicalize every skill `source_path` OFF the async executor: at boot this
     // is one blocking filesystem syscall per path (O(skills)), which would
     // otherwise stall a runtime worker thread (#142). Precompute a raw→canonical
@@ -1204,6 +1392,14 @@ async fn build_graph_from_pg(
         })
         .collect();
 
+    // T04-B: Build the BM25 lexical index from the pre-built `bm25_raw_docs`
+    // (assembled above from PersistedGraphSkillRecord before `skills` was consumed).
+    // Built unconditionally — cheap (~ms for 5000 skills) — so `RETRIEVAL_BACKEND`
+    // can switch dense↔hybrid at request time without a graph rebuild. The index is
+    // Arc-wrapped so a clone on each ArcSwap is one atomic ref-count increment.
+    let bm25_docs: Vec<(usize, String)> = bm25_raw_docs.into_iter().enumerate().collect();
+    let bm25_index = Arc::new(retrieval::Bm25Index::build(&bm25_docs));
+
     // #208: per-community centroids for CommunityBoostMode::CentroidAffinity.
     // Centroid of community c = mean of the ℓ₁ embeddings of skills whose PRIMARY
     // community is c (matches the query-time lookup by skill.community_id).
@@ -1235,7 +1431,8 @@ async fn build_graph_from_pg(
         .collect();
 
     Ok(RetrievalSnapshot::new(seeded_skills, graph_version)
-        .with_community_centroids(community_centroids))
+        .with_community_centroids(community_centroids)
+        .with_bm25_index(bm25_index))
 }
 
 /// Computes the BLAKE3 hash of a raw prompt string for safe storage.

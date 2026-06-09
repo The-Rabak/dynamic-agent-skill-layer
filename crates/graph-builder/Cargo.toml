@@ -37,6 +37,7 @@ hdbscan = { version = "0.12", features = ["parallel"] }
 chrono = { version = "0.4.42", features = ["clock", "serde"] }
 domain = { path = "../domain" }
 infrastructure = { path = "../infrastructure" }
+retrieval = { path = "../retrieval" }
 notify = "8.2.0"
 notify-debouncer-full = "0.6.0"
 serde = { version = "1.0.228", features = ["derive"] }
@@ -52,4 +53,3 @@ walkdir = "2.5.0"
 
 [dev-dependencies]
 async-trait = "0.1.89"
-retrieval = { path = "../retrieval" }

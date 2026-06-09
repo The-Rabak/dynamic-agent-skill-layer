@@ -3,7 +3,7 @@ plan_ref: docs/plans/2026-06-08-feat-v1-7-local-hybrid-skilldag-retrieval-plan.m
 architecture_ref: "explicit-handoff: parent plan ## Architectural Context and ## Proposed V1.7 Architecture"
 execution_shape: vertical-slices
 ticket_set_status: in_progress
-last_completed_batch: 3
+last_completed_batch: 4
 total_batches: 8
 ---
 
@@ -31,7 +31,7 @@ Execution shape: `vertical-slices`
 - **Batch 1:** T01. Status: completed (session work-2026-06-09-070746; held-out MRR 0.767 / no-match 1.0, gate exit 0).
 - **Batch 2:** T02. Status: completed (session work-2026-06-09-084626; qwen 2560-dim arm live MRR 0.767/nDCG 0.709 vs nomic 0.767/0.749 — nomic stays default; model-keyed collections; migration 008 + orphaned 007 registered).
 - **Batch 3:** T03. Status: completed (session work-2026-06-09-T03; 7 optional multi-view fields wired LLM→writer→reader→skills row; migration 009 WRITE-AHEAD live-applied+skip-verified on real Postgres; real writer↔reader roundtrip green; owner-approved skills-row persistence — reader deferred to T04/T05).
-- **Batch 4:** T04. Status: pending.
+- **Batch 4:** T04. Status: completed (session work-2026-06-09-T04; owner chose FULL scope: snapshot_hybrid + qdrant_hybrid both real. Backend selector + fail-loud RETRIEVAL_BACKEND; in-memory Okapi BM25; Qdrant named dense+sparse(idf) collection + write-side sparse + Query-API read arm; reboot_arm + live sweep. MEASURED held-out: snapshot_dense/snapshot_hybrid/qdrant_hybrid all MRR 0.767, p95 114/128/119ms — NO uplift from hybrid on this corpus; snapshot_dense stays default; 0.80 unmet (embedding/scoring ceiling). Selected backend path = snapshot_dense default, qdrant_hybrid experimental real (CQRS break, ADR→T08). 2 qdrant_hybrid prod bugs caught by the live run.).
 - **Batch 5:** T05. Status: pending.
 - **Batch 6:** T06. Status: pending.
 - **Batch 7:** T07. Status: pending, optional enhancement.
@@ -54,7 +54,7 @@ File-overlap safety notes:
 | [T01](01-measurement-harness-arms.md) | V1.7 measurement harness arms | 1 | none | `tests/e2e` quality harness and `scripts/retrieval_quality_*` | completed |
 | [T02](02-qwen3-embedder-rebuild-safety.md) | Local Qwen3 embedder backend and rebuild safety | 2 | T01 | `crates/infrastructure/src/embeddings`, `crates/graph-builder`, `crates/mcp-server` | completed |
 | [T03](03-expanded-skill-format-multiview-fields.md) | Expanded skill format and multi-view extraction fields | 3 | T02 | `crates/session-extractor` and `crates/graph-builder/src/extraction` | completed |
-| [T04](04-hybrid-dense-bm25-candidate-generation.md) | Hybrid dense/BM25 candidate generation | 4 | T01, T02, T03 | `crates/retrieval` | ready |
+| [T04](04-hybrid-dense-bm25-candidate-generation.md) | Hybrid dense/BM25 candidate generation | 4 | T01, T02, T03 | `crates/retrieval` | completed |
 | [T05](05-typed-skill-graph-edge-storage.md) | Typed skill graph storage and cold-start edge proposals | 5 | T03 | `crates/graph-builder` and persistence graph schema | ready |
 | [T06](06-skilldag-style-agent-retrieval-tools.md) | SkillDAG-style agent retrieval tools | 6 | T04, T05 | `crates/mcp-server/src/tools` and `crates/retrieval` | ready |
 | [T07](07-optional-local-reranker-cheap-decomposition.md) | Optional local reranker and cheap query decomposition | 7 | T04 | `crates/retrieval` | ready |

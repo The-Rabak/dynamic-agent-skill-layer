@@ -12,7 +12,7 @@ use graph_builder::{
 use infrastructure::{
     EventEnvelope, OllamaEmbeddingConfig, OllamaEmbeddingService, OutboxRelay, OutboxVectorStore,
     PostgresAdapter, PostgresConfig, PostgresGraphWriteCoordinator, PostgresRebuildCoordinator,
-    QdrantAdapter, QdrantConfig, RebuildCoordinator,
+    QdrantAdapter, QdrantConfig, RebuildCoordinator, model_keyed_hybrid_collection_name,
 };
 
 fn fixture_root() -> PathBuf {
@@ -413,4 +413,182 @@ async fn drain_orphaned_outbox_pending_reaches_qdrant_point_parity() {
         "Qdrant must hold at least as many points as PG skills after full drain: \
          Qdrant={qdrant_count}, PG={pg_skill_count}"
     );
+}
+
+/// Live proof that the hybrid rebuild write path populates the Qdrant hybrid
+/// collection with REAL dense + sparse vectors.
+///
+/// This test drives the full write path end-to-end against real containers:
+///   1. Builds skills from fixture scope roots (real embeddings from Ollama).
+///   2. Runs a rebuild via `PostgresDurableGraphState::with_hybrid_collection`,
+///      which computes real BM25 sparse vectors and writes them to the outbox.
+///   3. The relay drains the outbox into Qdrant via `upsert_hybrid_point`.
+///   4. We scroll the hybrid collection and verify every point has BOTH a dense
+///      vector (non-empty `named_vectors.dense`) AND a sparse vector
+///      (non-empty `named_vectors.sparse.indices`).
+///
+/// Run with:
+/// `cargo test --test test_real_infrastructure_e2e \
+///   -- hybrid_rebuild_populates_hybrid_collection_with_dense_and_sparse_vectors \
+///   --ignored --nocapture`
+#[tokio::test]
+#[ignore = "requires live containers"]
+async fn hybrid_rebuild_populates_hybrid_collection_with_dense_and_sparse_vectors() {
+    let pg = setup_pg().await;
+    pg.run_migrations()
+        .await
+        .expect("migrations should run cleanly");
+
+    // Use nomic-embed-text (768-dim) — already loaded in the live Ollama container.
+    let model_name = "nomic-embed-text";
+    let hybrid_collection = model_keyed_hybrid_collection_name(model_name)
+        .expect("model name must produce a valid hybrid collection name");
+    println!("hybrid collection: {hybrid_collection}");
+
+    // Build a Qdrant adapter for the hybrid collection name (used for collection
+    // management; the relay targets the hybrid collection via `upsert_hybrid`).
+    let qdrant = QdrantAdapter::new(
+        reqwest::Client::new(),
+        QdrantConfig {
+            endpoint: qdrant_url(),
+            collection_name: hybrid_collection.clone(),
+            ..QdrantConfig::default()
+        },
+    )
+    .expect("QdrantAdapter should construct");
+
+    // Ensure the hybrid collection exists (idempotent).
+    qdrant
+        .ensure_hybrid_collection(&hybrid_collection, 768)
+        .await
+        .expect("ensure_hybrid_collection must succeed against live Qdrant");
+    println!("hybrid collection ensured");
+
+    let sandbox = fresh_sandbox("e2e-hybrid-rebuild");
+    let project_root = sandbox.join("project");
+    let global_root = sandbox.join("global");
+    copy_tree(&fixture_root().join("project"), &project_root);
+    copy_tree(&fixture_root().join("global"), &global_root);
+
+    let scopes = vec![
+        ScopeRoot::new("project", ScopeType::Project, project_root.clone()),
+        ScopeRoot::new("global", ScopeType::Global, global_root.clone()),
+    ];
+
+    let ollama_url = std::env::var("OLLAMA_URL").expect("OLLAMA_URL must be set");
+    let embedding_service = OllamaEmbeddingService::from_config(OllamaEmbeddingConfig {
+        base_url: ollama_url,
+        model: model_name.to_owned(),
+        max_concurrency: 4,
+    })
+    .expect("OllamaEmbeddingService should build");
+
+    let rebuild_coordinator = PostgresRebuildCoordinator::new(pg.pool().clone());
+    let outbox_coordinator = PostgresGraphWriteCoordinator::new(pg.pool().clone());
+
+    // Wire the hybrid collection so persist_graph_mutation computes real sparse vectors.
+    let durable_state_base =
+        PostgresDurableGraphState::new(&rebuild_coordinator, &outbox_coordinator, &qdrant);
+    let mut durable_state = durable_state_base.with_hybrid_collection(hybrid_collection.clone());
+    let mut published_events: Vec<EventEnvelope> = Vec::new();
+    let mut orchestrator = GraphRebuildOrchestrator::new(
+        &mut durable_state,
+        &mut published_events,
+        &embedding_service,
+    );
+
+    let outcome = orchestrator
+        .rebuild_from_changes(&scopes, &[], &HdbscanConfig::default())
+        .await
+        .expect("hybrid rebuild must succeed");
+
+    println!(
+        "rebuild outcome: version={}, skills={}, communities={}",
+        outcome.graph_version, outcome.skills_count, outcome.communities_count
+    );
+    assert!(
+        outcome.skills_count > 0,
+        "must discover at least one skill from fixture roots"
+    );
+
+    // Scroll the hybrid collection and verify every point has both dense + sparse.
+    // We use the raw REST API because `list_point_ids` does not return vectors.
+    let scroll_url = format!(
+        "{}/collections/{hybrid_collection}/points/scroll",
+        qdrant_url()
+    );
+    let scroll_body = serde_json::json!({
+        "limit": 256,
+        "with_vector": true,
+        "with_payload": false
+    });
+    let response = reqwest::Client::new()
+        .post(&scroll_url)
+        .json(&scroll_body)
+        .send()
+        .await
+        .expect("scroll request must succeed");
+    assert_eq!(response.status(), 200, "scroll must return 200");
+
+    let body: serde_json::Value = response
+        .json()
+        .await
+        .expect("scroll response must parse as JSON");
+    let points = body
+        .pointer("/result/points")
+        .and_then(serde_json::Value::as_array)
+        .expect("scroll must return a /result/points array");
+
+    println!("hybrid collection contains {} points", points.len());
+    assert!(
+        !points.is_empty(),
+        "hybrid collection must contain at least one point after rebuild"
+    );
+
+    // Every point must carry a non-empty dense vector AND a non-empty sparse vector.
+    for (i, point) in points.iter().enumerate() {
+        let point_id = point.get("id").and_then(serde_json::Value::as_u64);
+        let dense = point
+            .pointer("/vector/dense")
+            .and_then(serde_json::Value::as_array);
+        let sparse_indices = point
+            .pointer("/vector/sparse/indices")
+            .and_then(serde_json::Value::as_array);
+
+        assert!(
+            dense.is_some_and(|d| !d.is_empty()),
+            "point {} (index={i}) must have a non-empty dense vector; got: {point}",
+            point_id.unwrap_or(0)
+        );
+        assert!(
+            sparse_indices.is_some_and(|s| !s.is_empty()),
+            "point {} (index={i}) must have a non-empty sparse vector (indices); got: {point}",
+            point_id.unwrap_or(0)
+        );
+    }
+
+    println!(
+        "PASS: all {} hybrid-collection points have dense + sparse vectors",
+        points.len()
+    );
+
+    // Print one sample point so the evidence is visible in the test output.
+    if let Some(sample) = points.first() {
+        let dense_dim = sample
+            .pointer("/vector/dense")
+            .and_then(serde_json::Value::as_array)
+            .map(|d| d.len())
+            .unwrap_or(0);
+        let sparse_count = sample
+            .pointer("/vector/sparse/indices")
+            .and_then(serde_json::Value::as_array)
+            .map(|s| s.len())
+            .unwrap_or(0);
+        println!(
+            "sample point id={}, dense_dim={dense_dim}, sparse_term_count={sparse_count}",
+            sample.get("id").unwrap_or(&serde_json::Value::Null)
+        );
+    }
+
+    fs::remove_dir_all(&sandbox).expect("sandbox cleanup should succeed");
 }

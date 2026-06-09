@@ -55,8 +55,8 @@ pub use health::{DependencyFactory, HealthComponent, HealthReport, Infrastructur
 pub use persistence::outbox::{
     GraphWriteCoordinator, OutboxEvent, OutboxInspection, OutboxRecord, OutboxRelay,
     OutboxRelayError, OutboxRelayRunReport, OutboxVectorStore, PostgresGraphWriteCoordinator,
-    VECTOR_UPSERT_EVENT_TYPE, VectorPointListing, parse_vector_upsert_request,
-    qdrant_point_id_from_content_hash,
+    SparseVectorPayload, VECTOR_UPSERT_EVENT_TYPE, VectorPointListing, VectorUpsertRequest,
+    parse_vector_upsert_request, qdrant_point_id_from_content_hash,
 };
 pub use persistence::outbox_reconciler::{OutboxReconciler, OutboxReconciliationReport};
 pub use persistence::postgres::{
@@ -94,7 +94,10 @@ pub use streaming::redis::{
     EventEnvelope, RedisStreamError, RedisStreamsAdapter, RedisStreamsConfig,
     SKILL_LAYER_CONSUMER_GROUP, SKILL_LAYER_STREAM_KEY, StreamMessage,
 };
-pub use vector::qdrant::{QdrantAdapter, QdrantConfig, QdrantError, model_keyed_collection_name};
+pub use vector::qdrant::{
+    HybridHit, QdrantAdapter, QdrantConfig, QdrantError, SparseVector, model_keyed_collection_name,
+    model_keyed_hybrid_collection_name,
+};
 
 // Re-export infrastructure-bound types so service crates never import
 // reqwest, sqlx, or redis directly.

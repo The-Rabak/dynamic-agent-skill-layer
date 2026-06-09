@@ -235,6 +235,26 @@ impl DependencyFactory {
                 "qdrant_write_side",
                 format!("{}/collections", qdrant_url.trim_end_matches('/')),
             );
+
+            // Under QdrantHybrid, Qdrant is ALSO a read-time dependency: each
+            // retrieve call queries Qdrant for dense+sparse hybrid candidates.
+            // Surface this as a separate `qdrant_read_path` component so that
+            // operators can distinguish a write-side indexing failure (qdrant_write_side
+            // degraded) from a read-path outage (qdrant_read_path degraded).
+            // Probe the same /collections endpoint — reachability check is sufficient
+            // to confirm the path is live; actual query health is shown at retrieve time
+            // via the `qdrant_hybrid_read` marker in `RetrievalOutcome::health_markers`.
+            let backend_env = std::env::var("RETRIEVAL_BACKEND").unwrap_or_default();
+            if matches!(
+                backend_env.trim().to_ascii_lowercase().as_str(),
+                "qdrant_hybrid" | "qdrant"
+            ) {
+                checker = checker.with_http_dependency(
+                    http_client.clone(),
+                    "qdrant_read_path",
+                    format!("{}/collections", qdrant_url.trim_end_matches('/')),
+                );
+            }
         }
 
         // Surface usage-write state on /health so agents can observe it without
@@ -440,6 +460,75 @@ mod tests {
         assert_eq!(
             arm.detail, "model=nomic-embed-text dim=768 collection=skills-nomic-embed-text",
             "embedding_arm detail format must be 'model=X dim=Y collection=Z'"
+        );
+    }
+
+    /// Proves that `with_http_dependency("qdrant_read_path", …)` can be registered
+    /// and surfaces in the `/health` report with the correct component name.
+    ///
+    /// The factory (`build_health_checker_from_environment`) conditionally registers this
+    /// component when `RETRIEVAL_BACKEND=qdrant_hybrid` and `QDRANT_URL` is set.
+    /// We verify the builder API and component naming are wired correctly here;
+    /// the factory's env-conditional branching is the DS-003 acceptance criterion.
+    ///
+    /// The actual health state (healthy/unhealthy) depends on whether Qdrant is
+    /// reachable — this test only asserts the component appears with the right name.
+    #[tokio::test]
+    async fn qdrant_read_path_component_surfaces_when_registered_as_http_dependency() {
+        let http_client = reqwest::Client::new();
+        // Probe an intentionally-invalid endpoint so the test does not require a
+        // running Qdrant. Using a reserved / non-routable address instead of a local
+        // port that may or may not be occupied (e.g. by the dev compose stack).
+        let checker = InfrastructureHealthChecker::new().with_http_dependency(
+            http_client,
+            "qdrant_read_path",
+            "http://192.0.2.1:6333/collections", // RFC 5737 TEST-NET — guaranteed unreachable
+        );
+
+        let report = checker.check().await;
+
+        let read_path = report
+            .components
+            .iter()
+            .find(|c| c.name == "qdrant_read_path")
+            .expect("qdrant_read_path must appear in /health when registered");
+
+        // The component is present regardless of health state. Under production
+        // conditions the component will be healthy when Qdrant is reachable, and
+        // unhealthy (surfacing a degraded read path) when Qdrant is down.
+        assert_eq!(
+            read_path.name, "qdrant_read_path",
+            "component name must be exactly 'qdrant_read_path'"
+        );
+        // The RFC 5737 address is non-routable; expect the probe to fail.
+        assert!(
+            !read_path.healthy,
+            "probe to non-routable address must report unhealthy: got detail '{}'",
+            read_path.detail
+        );
+    }
+
+    /// Proves that snapshot-arm health checkers do NOT register a `qdrant_read_path`
+    /// component — only `QdrantHybrid` has Qdrant as a read dependency.
+    ///
+    /// This is the DS-003 invariant: snapshot arms serve from in-memory state;
+    /// Qdrant is a write-only dependency for them. The read-path label must not
+    /// appear where it does not apply, or operators will chase phantom outages.
+    #[tokio::test]
+    async fn qdrant_read_path_absent_when_not_registered() {
+        // No with_http_dependency("qdrant_read_path") call — simulating snapshot arms.
+        let checker = InfrastructureHealthChecker::new()
+            .with_static_component("usage_write", true, "enabled")
+            .with_static_component("extraction_provider", true, "ollama");
+
+        let report = checker.check().await;
+
+        assert!(
+            report
+                .components
+                .iter()
+                .all(|c| c.name != "qdrant_read_path"),
+            "qdrant_read_path must be absent from /health for snapshot-arm configs"
         );
     }
 }

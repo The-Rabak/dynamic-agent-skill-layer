@@ -125,6 +125,13 @@ pub struct PersistedGraphSubunitRecord {
 /// all sources — `hdbscan` and `tag`).  Migration 006 introduced dual
 /// membership; pre-migration rows with a single membership still return a
 /// one-element vec.  Empty when the skill has no memberships.
+///
+/// Multi-view fields (`use_when`, `avoid_when`, `artifacts`, `tools`,
+/// `invariants`, `requires`, `produces`) are the migration-009 columns.
+/// NULL in the DB maps to an empty `Vec<String>` here so callers can treat
+/// absent and present-but-empty uniformly. These fields feed the BM25
+/// lexical corpus (T04-B) and are intentionally NOT added to dense embedding
+/// text (embedding stays name+description+tags per the T04-B scope fence).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PersistedGraphSkillRecord {
     pub skill_id: String,
@@ -139,6 +146,20 @@ pub struct PersistedGraphSkillRecord {
     /// skill has no community memberships.
     pub community_ids: Vec<String>,
     pub subunits: Vec<PersistedGraphSubunitRecord>,
+    /// Task triggers where this skill applies (migration 009). Empty when NULL or absent.
+    pub use_when: Vec<String>,
+    /// Situations where this skill must NOT be applied (migration 009). Empty when NULL.
+    pub avoid_when: Vec<String>,
+    /// File types, protocols, config names (migration 009). Empty when NULL.
+    pub artifacts: Vec<String>,
+    /// Commands, libraries, frameworks, services, APIs (migration 009). Empty when NULL.
+    pub tools: Vec<String>,
+    /// Verifier-critical constraints (migration 009). Empty when NULL.
+    pub invariants: Vec<String>,
+    /// Prerequisites assumed by this skill (migration 009). Empty when NULL.
+    pub requires: Vec<String>,
+    /// Outcomes or artifacts produced by following this skill (migration 009). Empty when NULL.
+    pub produces: Vec<String>,
 }
 
 /// Persisted community projection used by live graph read adapters.
@@ -165,16 +186,26 @@ impl PostgresGraphSnapshotStore {
         // source_paths was added in migration 005; pre-migration rows return '{}'.
         // community_ids aggregates ALL community memberships across sources (migration 006).
         // Pre-migration rows with a single membership return a one-element array.
+        // use_when…produces are the multi-view columns from migration 009; NULL in the
+        // DB is returned as NULL from PostgreSQL and mapped to an empty Vec here so the
+        // BM25 corpus builder can concatenate them without separate NULL checks.
         let skill_rows = sqlx::query_as::<
             _,
             (
-                String,
-                String,
-                String,
-                Vec<String>,
-                Vec<String>,
-                Vec<String>,
-                String,
+                String,              // id
+                String,              // name
+                String,              // description
+                Vec<String>,         // tags
+                Vec<String>,         // source_paths
+                Vec<String>,         // community_ids (aggregated)
+                String,              // scope
+                Option<Vec<String>>, // use_when (nullable TEXT[])
+                Option<Vec<String>>, // avoid_when
+                Option<Vec<String>>, // artifacts
+                Option<Vec<String>>, // tools
+                Option<Vec<String>>, // invariants
+                Option<Vec<String>>, // requires
+                Option<Vec<String>>, // produces
             ),
         >(
             r#"
@@ -189,7 +220,14 @@ impl PostgresGraphSnapshotStore {
                     FILTER (WHERE communities.id IS NOT NULL),
                     '{}'::TEXT[]
                 ),
-                skills.scope
+                skills.scope,
+                skills.use_when,
+                skills.avoid_when,
+                skills.artifacts,
+                skills.tools,
+                skills.invariants,
+                skills.requires,
+                skills.produces
             FROM skills
             LEFT JOIN community_skills
                 ON community_skills.skill_id = skills.id
@@ -197,7 +235,9 @@ impl PostgresGraphSnapshotStore {
                 ON communities.id = community_skills.community_id
             WHERE skills.lifecycle = 'active'
             GROUP BY skills.id, skills.name, skills.description,
-                     skills.tags, skills.source_paths, skills.scope
+                     skills.tags, skills.source_paths, skills.scope,
+                     skills.use_when, skills.avoid_when, skills.artifacts,
+                     skills.tools, skills.invariants, skills.requires, skills.produces
             ORDER BY skills.id
             "#,
         )
@@ -240,7 +280,22 @@ impl PostgresGraphSnapshotStore {
         Ok(skill_rows
             .into_iter()
             .map(
-                |(skill_id, name, description, tags, source_paths, community_ids, scope)| {
+                |(
+                    skill_id,
+                    name,
+                    description,
+                    tags,
+                    source_paths,
+                    community_ids,
+                    scope,
+                    use_when,
+                    avoid_when,
+                    artifacts,
+                    tools,
+                    invariants,
+                    requires,
+                    produces,
+                )| {
                     PersistedGraphSkillRecord {
                         subunits: subunits_by_skill.remove(&skill_id).unwrap_or_default(),
                         skill_id,
@@ -250,6 +305,15 @@ impl PostgresGraphSnapshotStore {
                         tags,
                         source_paths,
                         community_ids,
+                        // NULL in the DB (absent frontmatter fields) maps to empty Vec
+                        // so BM25 corpus builders can concatenate without NULL guards.
+                        use_when: use_when.unwrap_or_default(),
+                        avoid_when: avoid_when.unwrap_or_default(),
+                        artifacts: artifacts.unwrap_or_default(),
+                        tools: tools.unwrap_or_default(),
+                        invariants: invariants.unwrap_or_default(),
+                        requires: requires.unwrap_or_default(),
+                        produces: produces.unwrap_or_default(),
                     }
                 },
             )

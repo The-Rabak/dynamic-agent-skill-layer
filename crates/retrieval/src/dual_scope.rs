@@ -1,4 +1,9 @@
-use std::{collections::HashMap, future::Future, sync::Arc, time::Duration};
+use std::{
+    collections::{HashMap, HashSet},
+    future::Future,
+    sync::Arc,
+    time::Duration,
+};
 
 use domain::ScopeDescriptor;
 use tokio::time::timeout;
@@ -6,8 +11,8 @@ use tokio::time::timeout;
 use crate::{
     cosine_rank::{cosine_similarity, rank_by_cosine},
     fusion::{FusedCandidate, mmr_select},
-    graph_search::{GraphHit, search_graph},
-    orchestrator::{CommunityBoostMode, RetrievalConfig, RetrievalSnapshot},
+    graph_search::{GraphHit, search_graph, tokenize},
+    orchestrator::{CommunityBoostMode, RetrievalBackend, RetrievalConfig, RetrievalSnapshot},
     scoring::{ScoreComponents, score_eq3},
 };
 
@@ -102,6 +107,135 @@ pub async fn search_scopes_concurrently(
             split_results(results)
         }
     }
+}
+
+/// Searches scopes concurrently using pre-fetched Qdrant hybrid candidates.
+///
+/// Used exclusively by the `QdrantHybrid` arm. `fused_score_by_index` maps
+/// snapshot skill indices to the Qdrant RRF-fused score returned by
+/// `HybridCandidateSource::query_hybrid`. Skills absent from this map were not
+/// returned by Qdrant and are excluded from the candidate pool entirely.
+///
+/// Each scope search filters the Qdrant-returned candidates to skills that match
+/// that scope's descriptor, then runs them through `perform_scope_search_with_qdrant_candidates`
+/// (graph_search + eq.3 + relevance floor + MMR). The floor is authoritative:
+/// a Qdrant-ranked candidate with low eq.3 score is still gated out.
+pub async fn search_scopes_with_qdrant_candidates(
+    prompt: &str,
+    prompt_embedding: &[f32],
+    graph: Arc<RetrievalSnapshot>,
+    config: &RetrievalConfig,
+    scopes: &[ScopeDescriptor],
+    fused_score_by_index: &HashMap<usize, f32>,
+) -> (Vec<ScopedSearchResult>, Vec<ScopedSearchFailure>) {
+    match scopes {
+        [scope] => {
+            let result = search_scope_qdrant(
+                prompt,
+                prompt_embedding,
+                graph,
+                config,
+                scope.clone(),
+                fused_score_by_index,
+            )
+            .await;
+            split_results(vec![result])
+        }
+        [first, second] => {
+            let (first_result, second_result) = run_project_and_global_concurrently(
+                search_scope_qdrant(
+                    prompt,
+                    prompt_embedding,
+                    graph.clone(),
+                    config,
+                    first.clone(),
+                    fused_score_by_index,
+                ),
+                search_scope_qdrant(
+                    prompt,
+                    prompt_embedding,
+                    graph,
+                    config,
+                    second.clone(),
+                    fused_score_by_index,
+                ),
+            )
+            .await;
+            split_results(vec![first_result, second_result])
+        }
+        _ => {
+            let prompt = prompt.to_owned();
+            let prompt_embedding = prompt_embedding.to_vec();
+            let config = config.clone();
+            // Clone the fused scores map once for the multi-scope path.
+            let fused_score_by_index: HashMap<usize, f32> = fused_score_by_index.clone();
+            let mut tasks = Vec::new();
+
+            for scope in scopes {
+                let scope = scope.clone();
+                let scope_id = scope.scope_id.clone();
+                let scope_type_label = scope.scope_type_label().to_owned();
+                let graph = graph.clone();
+                let prompt = prompt.clone();
+                let prompt_embedding = prompt_embedding.clone();
+                let config = config.clone();
+                let fused_score_by_index = fused_score_by_index.clone();
+
+                let handle = tokio::spawn(async move {
+                    search_scope_qdrant(
+                        &prompt,
+                        &prompt_embedding,
+                        graph,
+                        &config,
+                        scope,
+                        &fused_score_by_index,
+                    )
+                    .await
+                });
+
+                tasks.push((scope_id, scope_type_label, handle));
+            }
+
+            let mut results = Vec::with_capacity(tasks.len());
+            for (scope_id, scope_type_label, handle) in tasks {
+                match handle.await {
+                    Ok(result) => results.push(result),
+                    Err(_) => results.push(Err(ScopedSearchFailure {
+                        scope_id,
+                        reason_code: format!("{scope_type_label}_qdrant_search_task_failed"),
+                    })),
+                }
+            }
+
+            split_results(results)
+        }
+    }
+}
+
+async fn search_scope_qdrant(
+    prompt: &str,
+    prompt_embedding: &[f32],
+    graph: Arc<RetrievalSnapshot>,
+    config: &RetrievalConfig,
+    scope: ScopeDescriptor,
+    fused_score_by_index: &HashMap<usize, f32>,
+) -> Result<ScopedSearchResult, ScopedSearchFailure> {
+    let prompt = prompt.to_owned();
+    let prompt_embedding = prompt_embedding.to_vec();
+    let config = config.clone();
+    let fused_score_by_index: HashMap<usize, f32> = fused_score_by_index.clone();
+
+    run_scope_search_with_timeout(scope.clone(), config.scope_timeout_ms, move || {
+        perform_scope_search_with_qdrant_candidates(
+            &prompt,
+            &prompt_embedding,
+            graph,
+            &config,
+            scope,
+            &fused_score_by_index,
+        )
+    })
+    .await
 }
 
 fn split_results(
@@ -225,9 +359,43 @@ fn perform_scope_search(
         .collect();
 
     let cosine_hits = rank_by_cosine(prompt_embedding, &scoped_embeddings, config.candidate_limit);
-    let candidate_indices: Vec<usize> = cosine_hits
+    let dense_candidate_indices: Vec<usize> = cosine_hits
         .iter()
         .filter_map(|hit| scoped_indices.get(hit.skill_index).copied())
+        .collect();
+
+    // Build the candidate pool. Under `SnapshotHybrid` the pool is the UNION of
+    // the dense top-K and the BM25 top-K, expanding recall for exact lexical matches
+    // (tool names, crate names, API identifiers) that dense cosine blurs.
+    //
+    // Floor authority: BM25 only expands the candidate pool fed into the existing
+    // `score_eq3` → `relevance_threshold` pipeline. Every candidate — dense or
+    // BM25-lifted — must clear the eq.3 floor before entering the final result set.
+    // A pure-lexical hit with zero semantic alignment scores eq.3≈0 and is gated out.
+    let candidate_indices: Vec<usize> = match config.backend {
+        RetrievalBackend::SnapshotHybrid => expand_candidates_with_bm25(
+            prompt,
+            &dense_candidate_indices,
+            &scoped_indices,
+            &graph,
+            config.candidate_limit,
+        ),
+        // SnapshotDense: unchanged candidate pool (current behavior).
+        RetrievalBackend::SnapshotDense => dense_candidate_indices.clone(),
+        // sub-unit C: QdrantHybrid is not yet implemented; route to dense so
+        // the binary stays runnable. Sub-unit C will replace this pass-through.
+        RetrievalBackend::QdrantHybrid => dense_candidate_indices.clone(), // sub-unit C
+    };
+
+    // Cosine scores keyed by global skill index, used below when assembling
+    // FusedCandidate for BM25-lifted skills that have no cosine_hit entry.
+    let dense_score_by_index: HashMap<usize, f32> = cosine_hits
+        .iter()
+        .filter_map(|hit| {
+            scoped_indices
+                .get(hit.skill_index)
+                .map(|&global_idx| (global_idx, hit.semantic_score))
+        })
         .collect();
 
     let skill_text: Vec<String> = graph
@@ -269,13 +437,56 @@ fn perform_scope_search(
         .map(|hit| (hit.skill_index, hit))
         .collect();
 
-    let mut fused_candidates: Vec<FusedCandidate> = cosine_hits
+    // Retrieve BM25 scores for the hybrid arm so they can be stored in
+    // `FusedCandidate.lexical_score` for observability/rationale output.
+    let bm25_scores_by_index: HashMap<usize, f32> =
+        if config.backend == RetrievalBackend::SnapshotHybrid {
+            let query_terms: Vec<String> = tokenize(prompt).into_iter().collect();
+            graph
+                .bm25_index
+                .as_ref()
+                .map(|idx| {
+                    idx.score(&query_terms, &candidate_indices)
+                        .into_iter()
+                        .collect()
+                })
+                .unwrap_or_default()
+        } else {
+            HashMap::new()
+        };
+
+    // Build FusedCandidate for every skill in the (potentially expanded) candidate pool.
+    // For dense-path skills: semantic_score comes from the cosine hit.
+    // For BM25-lifted skills: semantic_score is derived from the real cosine similarity
+    // (computed inline) so the eq.3 score is honest — BM25 is a recall expander, not
+    // a semantic score inflator.
+    let mut fused_candidates: Vec<FusedCandidate> = candidate_indices
         .iter()
-        .filter_map(|cosine_hit| {
-            let scoped_skill_index = *scoped_indices.get(cosine_hit.skill_index)?;
+        .filter_map(|&scoped_skill_index| {
             let seeded_skill = graph.skills.get(scoped_skill_index)?;
             let graph_hit = graph_hits_by_skill.get(&scoped_skill_index);
-            let lexical_score = graph_hit.map_or(0.0, |hit| hit.lexical_score);
+
+            // Semantic score: use the dense cosine if available; otherwise compute it
+            // directly. This ensures BM25-lifted candidates get an honest semantic score
+            // rather than defaulting to 0 (which would let the floor decision be dishonest).
+            let semantic_score = dense_score_by_index
+                .get(&scoped_skill_index)
+                .copied()
+                .unwrap_or_else(|| {
+                    cosine_similarity(prompt_embedding, &seeded_skill.embedding).max(0.0)
+                });
+
+            // lexical_score: for the hybrid arm, use the real BM25 score; for dense,
+            // fall back to the existing token-overlap score from graph_search (observability).
+            let lexical_score = if config.backend == RetrievalBackend::SnapshotHybrid {
+                bm25_scores_by_index
+                    .get(&scoped_skill_index)
+                    .copied()
+                    .unwrap_or(0.0)
+            } else {
+                graph_hit.map_or(0.0, |hit| hit.lexical_score)
+            };
+
             // β is the semantic subunit evidence (issue #172), NOT skill-name
             // lexical overlap. The skill-level lexical_score is retained only for
             // rationale/observability below.
@@ -295,9 +506,14 @@ fn perform_scope_search(
                     .map(|centroid| cosine_similarity(prompt_embedding, centroid).clamp(0.0, 1.0))
                     .unwrap_or(0.0),
             };
+            // The eq.3 score is the authoritative relevance gate — BM25 expands the
+            // candidate pool (recall) but does NOT bypass this score-based floor.
+            // A skill surfaced only by BM25 with zero semantic alignment scores eq.3≈0
+            // and is filtered out below at `relevance_threshold`. This is the scope fence
+            // that keeps the hybrid arm from fabricating semantically-irrelevant matches.
             let score = score_eq3(
                 ScoreComponents {
-                    l1_semantic: cosine_hit.semantic_score,
+                    l1_semantic: semantic_score,
                     subunit_evidence,
                     prior: seeded_skill.prior,
                     community_boost,
@@ -310,7 +526,7 @@ fn perform_scope_search(
                 skill_id: seeded_skill.skill.id.as_str().to_owned(),
                 matched_scope: scope.scope_type,
                 score,
-                semantic_score: cosine_hit.semantic_score,
+                semantic_score,
                 lexical_score,
                 subunit_evidence,
                 embedding: seeded_skill.embedding.clone(),
@@ -319,6 +535,10 @@ fn perform_scope_search(
                     .unwrap_or_default(),
             })
         })
+        // Relevance floor: authoritative over BOTH dense and BM25-lifted candidates.
+        // A BM25 hit with eq.3 < relevance_threshold is gated out here, regardless of
+        // how strong its lexical score was. BM25 only expands recall; it does not lower
+        // the semantic quality bar for the final result set.
         .filter(|candidate| candidate.score >= config.relevance_threshold)
         .collect();
 
@@ -330,6 +550,210 @@ fn perform_scope_search(
         scope_type: scope.scope_type,
         candidates: mmr_selected,
     }
+}
+
+/// Scores QdrantHybrid candidates for a single scope using eq.3 → floor → MMR.
+///
+/// `fused_score_by_index` contains the Qdrant RRF-fused score for each snapshot
+/// skill index that Qdrant returned. Skills absent from the map were not returned
+/// by Qdrant and are excluded entirely — this is the Qdrant-as-candidate-generator
+/// contract: Qdrant decides the candidate pool, the snapshot pipeline decides quality.
+///
+/// The relevance floor is authoritative: a Qdrant-surfaced candidate whose eq.3
+/// score falls below `relevance_threshold` is gated out, exactly as in the
+/// snapshot arms. Qdrant's fused score is stored in `FusedCandidate.lexical_score`
+/// for observability (rationale output) but does NOT override the eq.3 gate.
+fn perform_scope_search_with_qdrant_candidates(
+    prompt: &str,
+    prompt_embedding: &[f32],
+    graph: Arc<RetrievalSnapshot>,
+    config: &RetrievalConfig,
+    scope: ScopeDescriptor,
+    fused_score_by_index: &HashMap<usize, f32>,
+) -> ScopedSearchResult {
+    // Filter Qdrant-returned candidates to those matching this scope.
+    let candidate_indices: Vec<usize> = fused_score_by_index
+        .keys()
+        .copied()
+        .filter(|&idx| {
+            graph
+                .skills
+                .get(idx)
+                .map(|seeded| seeded_skill_matches_scope(seeded, &scope))
+                .unwrap_or(false)
+        })
+        .collect();
+
+    if candidate_indices.is_empty() {
+        return ScopedSearchResult {
+            scope_id: scope.scope_id,
+            scope_type: scope.scope_type,
+            candidates: Vec::new(),
+        };
+    }
+
+    let skill_text: Vec<String> = graph
+        .skills
+        .iter()
+        .map(|seeded_skill| {
+            format!(
+                "{} {} {}",
+                seeded_skill.skill.name,
+                seeded_skill.skill.description,
+                seeded_skill.skill.tags.join(" ")
+            )
+        })
+        .collect();
+
+    let skill_subunits: Vec<Vec<domain::Subunit>> = graph
+        .skills
+        .iter()
+        .map(|seeded_skill| seeded_skill.subunits.clone())
+        .collect();
+
+    let skill_subunit_embeddings: Vec<Vec<Vec<f32>>> = graph
+        .skills
+        .iter()
+        .map(|seeded_skill| seeded_skill.subunit_embeddings.clone())
+        .collect();
+
+    let graph_hits = search_graph(
+        prompt,
+        prompt_embedding,
+        &skill_text,
+        &skill_subunits,
+        &skill_subunit_embeddings,
+        &candidate_indices,
+        config.max_subunits_per_skill,
+    );
+    let graph_hits_by_skill: HashMap<usize, GraphHit> = graph_hits
+        .into_iter()
+        .map(|hit| (hit.skill_index, hit))
+        .collect();
+
+    let mut fused_candidates: Vec<FusedCandidate> = candidate_indices
+        .iter()
+        .filter_map(|&idx| {
+            let seeded_skill = graph.skills.get(idx)?;
+            let graph_hit = graph_hits_by_skill.get(&idx);
+
+            // Semantic score: real cosine similarity against the prompt embedding.
+            // Qdrant's fused score is not comparable to cosine and cannot substitute
+            // for the α term in eq.3 — compute it honestly from the snapshot embedding.
+            let semantic_score =
+                crate::cosine_rank::cosine_similarity(prompt_embedding, &seeded_skill.embedding)
+                    .max(0.0);
+
+            // lexical_score: use the Qdrant RRF-fused score for observability.
+            // This is stored in the rationale output but does NOT affect the eq.3 gate.
+            let lexical_score = fused_score_by_index.get(&idx).copied().unwrap_or(0.0);
+
+            let subunit_evidence = graph_hit.map_or(0.0, |hit| hit.subunit_evidence);
+            let community_boost = match config.community_boost_mode {
+                CommunityBoostMode::Binary => seeded_skill.community_boost,
+                CommunityBoostMode::Off => 0.0,
+                CommunityBoostMode::CentroidAffinity => seeded_skill
+                    .skill
+                    .community_id
+                    .as_ref()
+                    .and_then(|cid| graph.community_centroids.get(cid.as_str()))
+                    .map(|centroid| cosine_similarity(prompt_embedding, centroid).clamp(0.0, 1.0))
+                    .unwrap_or(0.0),
+            };
+
+            // eq.3 is the authoritative relevance gate — Qdrant's ranking expands the
+            // candidate pool but does NOT bypass this score-based floor.
+            let score = score_eq3(
+                ScoreComponents {
+                    l1_semantic: semantic_score,
+                    subunit_evidence,
+                    prior: seeded_skill.prior,
+                    community_boost,
+                },
+                config.scoring_weights,
+            );
+
+            Some(FusedCandidate {
+                skill_index: idx,
+                skill_id: seeded_skill.skill.id.as_str().to_owned(),
+                matched_scope: scope.scope_type,
+                score,
+                semantic_score,
+                lexical_score,
+                subunit_evidence,
+                embedding: seeded_skill.embedding.clone(),
+                highlights: graph_hit
+                    .map(|hit| hit.projections.clone())
+                    .unwrap_or_default(),
+            })
+        })
+        // Relevance floor: authoritative over all Qdrant-surfaced candidates.
+        .filter(|candidate| candidate.score >= config.relevance_threshold)
+        .collect();
+
+    fused_candidates.sort_by(|left, right| right.score.total_cmp(&left.score));
+    let mmr_selected = mmr_select(&fused_candidates, config.candidate_limit, config.mmr_lambda);
+
+    ScopedSearchResult {
+        scope_id: scope.scope_id,
+        scope_type: scope.scope_type,
+        candidates: mmr_selected,
+    }
+}
+
+/// Expands the dense candidate pool with BM25-scored scoped skills for the
+/// `SnapshotHybrid` arm.
+///
+/// Returns the UNION of the `dense_candidate_indices` and the top-`limit` BM25
+/// results over all `scoped_indices`. Skills already in the dense pool are not
+/// duplicated. The union is bounded by `2 × limit` to prevent unbounded memory
+/// growth while giving both signals fair representation.
+///
+/// If the snapshot has no BM25 index (cold-start or test snapshot), returns a
+/// clone of `dense_candidate_indices` unchanged so the hybrid arm degrades safely
+/// to dense behavior rather than panicking.
+fn expand_candidates_with_bm25(
+    prompt: &str,
+    dense_candidate_indices: &[usize],
+    scoped_indices: &[usize],
+    graph: &RetrievalSnapshot,
+    limit: usize,
+) -> Vec<usize> {
+    let bm25_index = match graph.bm25_index.as_ref() {
+        Some(idx) => idx,
+        // No BM25 index available — degrade safely to dense-only.
+        None => return dense_candidate_indices.to_vec(),
+    };
+
+    let query_terms: Vec<String> = tokenize(prompt).into_iter().collect();
+    if query_terms.is_empty() {
+        return dense_candidate_indices.to_vec();
+    }
+
+    // Score all scoped skills against the BM25 index, not just the dense pool.
+    // This is the core of the recall expansion: skills that dense missed may rank
+    // highly under BM25 if the query contains exact lexical terms they carry.
+    let bm25_hits = bm25_index.score(&query_terms, scoped_indices);
+
+    // Build the union: start from the dense set, then add BM25-only hits.
+    // The BM25 contribution is bounded by `limit` additional slots (at most
+    // 2×limit total) so the hybrid arm cannot grow the candidate pool unboundedly.
+    // A skill already in the dense pool is never duplicated.
+    let dense_set: HashSet<usize> = dense_candidate_indices.iter().copied().collect();
+    let mut expanded = dense_candidate_indices.to_vec();
+
+    let mut added = 0;
+    for (skill_index, _bm25_score) in bm25_hits {
+        if added >= limit {
+            break;
+        }
+        if !dense_set.contains(&skill_index) {
+            expanded.push(skill_index);
+            added += 1;
+        }
+    }
+
+    expanded
 }
 
 trait ScopeTypeLabel {
@@ -1100,6 +1524,315 @@ mod tests {
             admitted.score >= RetrievalConfig::default().relevance_threshold,
             "admitted candidate must have score >= floor (0.48); got {:.4}",
             admitted.score
+        );
+    }
+
+    // ── T04-B hybrid arm tests ────────────────────────────────────────────────
+
+    /// Builds a three-skill snapshot for hybrid arm testing:
+    ///
+    /// - `dominant-a` (index 0): strong dense match (cosine=1.0), no "qdrant" term.
+    /// - `dominant-b` (index 1): strong dense match (cosine=1.0), no "qdrant" term.
+    ///   Present to saturate `candidate_limit=2` so the lexical target is excluded
+    ///   from the dense top-2 by rank.
+    /// - `lexical-target` (index 2): orthogonal embedding (cosine=0), contains the
+    ///   rare term "qdrant" that the query carries. Dense ranks it 3rd (outside
+    ///   limit=2); BM25 ranks it 1st.
+    ///
+    /// MMR with `candidate_limit=2` and `lambda=0.6` over the expanded hybrid pool
+    /// picks dominant-a (highest score 0.45) then lexical-target (orthogonal to
+    /// dominant-a → high diversity reward beats dominant-b at mmr=-0.13 vs 0).
+    fn hybrid_snapshot() -> RetrievalSnapshot {
+        use std::sync::Arc;
+
+        let dominant_a = Skill {
+            id: DomainId::new_unchecked("dominant-a"),
+            name: "async runtime patterns alpha".to_owned(),
+            description: "tokio async patterns best practices".to_owned(),
+            scope: ScopeType::Global,
+            status: SkillStatus::Ready,
+            lifecycle: LifecycleStatus::Active,
+            tags: vec!["async".to_owned(), "runtime".to_owned()],
+            subunit_ids: vec![],
+            community_id: None,
+        };
+        let dominant_b = Skill {
+            id: DomainId::new_unchecked("dominant-b"),
+            name: "async runtime patterns beta".to_owned(),
+            description: "tokio async patterns advanced".to_owned(),
+            scope: ScopeType::Global,
+            status: SkillStatus::Ready,
+            lifecycle: LifecycleStatus::Active,
+            tags: vec!["async".to_owned(), "runtime".to_owned()],
+            subunit_ids: vec![],
+            community_id: None,
+        };
+        let lexical_target = Skill {
+            id: DomainId::new_unchecked("lexical-target-skill"),
+            name: "qdrant vector database integration".to_owned(),
+            description: "How to integrate qdrant for vector search".to_owned(),
+            scope: ScopeType::Global,
+            status: SkillStatus::Ready,
+            lifecycle: LifecycleStatus::Active,
+            tags: vec!["qdrant".to_owned(), "vector".to_owned()],
+            subunit_ids: vec![],
+            community_id: None,
+        };
+
+        // Query embedding: [1.0, 0.0]
+        // dominant-a:     [1.0, 0.0] cosine=1.0 (dense rank 1)
+        // dominant-b:     [1.0, 0.0] cosine=1.0 (dense rank 2)
+        // lexical-target: [0.0, 1.0] cosine=0.0 (dense rank 3; outside limit=2)
+        let snapshot = RetrievalSnapshot::new(
+            vec![
+                SeededSkill {
+                    skill: dominant_a,
+                    scope_id: "global".to_owned(),
+                    source_paths: vec![],
+                    embedding: vec![1.0, 0.0],
+                    subunits: vec![],
+                    subunit_embeddings: vec![],
+                    prior: 0.0,
+                    community_boost: 0.0,
+                },
+                SeededSkill {
+                    skill: dominant_b,
+                    scope_id: "global".to_owned(),
+                    source_paths: vec![],
+                    embedding: vec![1.0, 0.0],
+                    subunits: vec![],
+                    subunit_embeddings: vec![],
+                    prior: 0.0,
+                    community_boost: 0.0,
+                },
+                SeededSkill {
+                    skill: lexical_target,
+                    scope_id: "global".to_owned(),
+                    source_paths: vec![],
+                    embedding: vec![0.0, 1.0],
+                    subunits: vec![],
+                    subunit_embeddings: vec![],
+                    prior: 0.0,
+                    community_boost: 0.0,
+                },
+            ],
+            1,
+        );
+
+        let bm25_docs: Vec<(usize, String)> = snapshot
+            .skills
+            .iter()
+            .enumerate()
+            .map(|(idx, s)| {
+                (
+                    idx,
+                    format!(
+                        "{} {} {}",
+                        s.skill.name,
+                        s.skill.description,
+                        s.skill.tags.join(" ")
+                    ),
+                )
+            })
+            .collect();
+        snapshot.with_bm25_index(Arc::new(crate::bm25::Bm25Index::build(&bm25_docs)))
+    }
+
+    /// Under `SnapshotHybrid`, a skill with an exact lexical term match ("qdrant")
+    /// enters the final candidate set even when `candidate_limit=2` fills the dense
+    /// pool with two decoy skills that have higher cosine scores.
+    ///
+    /// MMR then selects [dominant-a, lexical-target] because lexical-target is
+    /// orthogonal to dominant-a and thus wins the diversity reward over dominant-b.
+    ///
+    /// `relevance_threshold=0.0` isolates the pool-expansion behavior; the floor
+    /// gate is tested separately in `snapshot_hybrid_relevance_floor_gates_*`.
+    #[tokio::test]
+    async fn snapshot_hybrid_surfaces_lexical_target_that_dense_excludes() {
+        let query = "qdrant vector database";
+        let query_embedding = [1.0_f32, 0.0];
+
+        let hybrid_config = RetrievalConfig {
+            candidate_limit: 2, // dense returns top-2 (dominant-a, dominant-b)
+            max_results: 5,
+            max_subunits_per_skill: 3,
+            rescue_threshold: 0.1,
+            relevance_threshold: 0.0, // zero floor: isolate pool-expansion behavior
+            mmr_lambda: 0.6,
+            backend: crate::orchestrator::RetrievalBackend::SnapshotHybrid,
+            ..RetrievalConfig::default()
+        };
+        let dense_config = RetrievalConfig {
+            backend: crate::orchestrator::RetrievalBackend::SnapshotDense,
+            ..hybrid_config.clone()
+        };
+
+        let snapshot = Arc::new(hybrid_snapshot());
+        let global_scope = ScopeDescriptor {
+            scope_id: "global".to_owned(),
+            scope_type: ScopeType::Global,
+            paths: vec![],
+            config: BTreeMap::new(),
+        };
+
+        let (dense_results, dense_failures) = search_scopes_concurrently(
+            query,
+            &query_embedding,
+            snapshot.clone(),
+            &dense_config,
+            std::slice::from_ref(&global_scope),
+        )
+        .await;
+        assert!(dense_failures.is_empty());
+        let dense_candidates = &dense_results[0].candidates;
+
+        let (hybrid_results, hybrid_failures) = search_scopes_concurrently(
+            query,
+            &query_embedding,
+            snapshot.clone(),
+            &hybrid_config,
+            std::slice::from_ref(&global_scope),
+        )
+        .await;
+        assert!(hybrid_failures.is_empty());
+        let hybrid_candidates = &hybrid_results[0].candidates;
+
+        // Dense with candidate_limit=2 must NOT surface the lexical-target (cosine rank 3).
+        let dense_has_lexical_target = dense_candidates
+            .iter()
+            .any(|c| c.skill_id == "lexical-target-skill");
+        assert!(
+            !dense_has_lexical_target,
+            "SnapshotDense with candidate_limit=2 must NOT surface the lexical-target skill \
+             (cosine rank 3, outside dense limit); dense ids: {:?}",
+            dense_candidates
+                .iter()
+                .map(|c| &c.skill_id)
+                .collect::<Vec<_>>()
+        );
+
+        // Hybrid must surface the lexical target via BM25 expansion.
+        let hybrid_has_lexical_target = hybrid_candidates
+            .iter()
+            .any(|c| c.skill_id == "lexical-target-skill");
+        assert!(
+            hybrid_has_lexical_target,
+            "SnapshotHybrid must surface the lexical-target skill ('qdrant') via BM25; \
+             hybrid ids: {:?}",
+            hybrid_candidates
+                .iter()
+                .map(|c| &c.skill_id)
+                .collect::<Vec<_>>()
+        );
+
+        // The lexical-target must carry a non-zero BM25 score in the hybrid arm.
+        let lexical = hybrid_candidates
+            .iter()
+            .find(|c| c.skill_id == "lexical-target-skill")
+            .expect("lexical-target-skill must be in hybrid candidates");
+        assert!(
+            lexical.lexical_score > 0.0,
+            "lexical-target-skill must have non-zero BM25 lexical_score; got {}",
+            lexical.lexical_score
+        );
+    }
+
+    /// Under `SnapshotHybrid`, a candidate that is purely lexically matched but
+    /// whose eq.3 score falls below the `relevance_threshold` must still be gated out.
+    ///
+    /// This proves the scope fence: BM25 expands the candidate POOL (recall), but
+    /// the final result set still passes through the existing `relevance_threshold`
+    /// floor on the eq.3 score. A pure-lexical hit with low semantic relevance is
+    /// gated out — the relevance floor is authoritative over the hybrid expansion.
+    #[tokio::test]
+    async fn snapshot_hybrid_relevance_floor_gates_lexical_only_hit_with_low_eq3_score() {
+        use std::sync::Arc;
+
+        let lexical_only = Skill {
+            id: DomainId::new_unchecked("lexical-only-skill"),
+            // "rustfmt" is in the query, so BM25 scores this non-zero.
+            name: "rustfmt code formatting".to_owned(),
+            description: "How to use rustfmt".to_owned(),
+            scope: ScopeType::Global,
+            status: SkillStatus::Ready,
+            lifecycle: LifecycleStatus::Active,
+            tags: vec!["rustfmt".to_owned()],
+            subunit_ids: vec![],
+            community_id: None,
+        };
+
+        // Orthogonal embedding: cosine similarity to query [1.0, 0.0] → 0.
+        // eq.3 score = 0.45*0 + 0.35*0 + 0.20*0 = 0 → below ANY positive threshold.
+        let snapshot = RetrievalSnapshot::new(
+            vec![SeededSkill {
+                skill: lexical_only,
+                scope_id: "global".to_owned(),
+                source_paths: vec![],
+                embedding: vec![0.0, 1.0], // orthogonal → cosine=0
+                subunits: vec![],
+                subunit_embeddings: vec![],
+                prior: 0.0,
+                community_boost: 0.0,
+            }],
+            1,
+        );
+        let bm25_docs: Vec<(usize, String)> = snapshot
+            .skills
+            .iter()
+            .enumerate()
+            .map(|(idx, s)| {
+                (
+                    idx,
+                    format!(
+                        "{} {} {}",
+                        s.skill.name,
+                        s.skill.description,
+                        s.skill.tags.join(" ")
+                    ),
+                )
+            })
+            .collect();
+        let snapshot =
+            snapshot.with_bm25_index(Arc::new(crate::bm25::Bm25Index::build(&bm25_docs)));
+
+        let high_floor_config = RetrievalConfig {
+            candidate_limit: 10,
+            max_results: 5,
+            max_subunits_per_skill: 3,
+            rescue_threshold: 0.15,
+            // High floor: eq.3 must be ≥ 0.48 to pass. The lexical-only skill
+            // has eq.3 = 0 (orthogonal embedding) so it must be gated out.
+            relevance_threshold: 0.48,
+            mmr_lambda: 0.65,
+            backend: crate::orchestrator::RetrievalBackend::SnapshotHybrid,
+            ..RetrievalConfig::default()
+        };
+
+        let global_scope = ScopeDescriptor {
+            scope_id: "global".to_owned(),
+            scope_type: ScopeType::Global,
+            paths: vec![],
+            config: BTreeMap::new(),
+        };
+
+        // "rustfmt" lexically matches the skill but eq.3 score = 0 → below 0.48 floor.
+        let (results, failures) = search_scopes_concurrently(
+            "rustfmt formatting",
+            &[1.0_f32, 0.0],
+            Arc::new(snapshot),
+            &high_floor_config,
+            &[global_scope],
+        )
+        .await;
+
+        assert!(failures.is_empty(), "search must not fail");
+        assert_eq!(results.len(), 1, "should have one scope result");
+        assert!(
+            results[0].candidates.is_empty(),
+            "SnapshotHybrid must NOT return a lexical-only hit whose eq.3 score \
+             is below the relevance_threshold floor (0.48); the floor is authoritative \
+             over BM25 expansion. Got {} candidates.",
+            results[0].candidates.len()
         );
     }
 }

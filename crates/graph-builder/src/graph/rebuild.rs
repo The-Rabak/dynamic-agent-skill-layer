@@ -4,8 +4,9 @@ use infrastructure::{
     EventEnvelope, LiveGraphCommunityRecord, LiveGraphSkillRecord, LiveGraphSnapshotMutation,
     LiveGraphSubunitRecord, OutboxEvent, OutboxRelay, OutboxVectorStore,
     PostgresGraphWriteCoordinator, PostgresRebuildCoordinator, RebuildCoordinator,
-    VECTOR_UPSERT_EVENT_TYPE,
+    VECTOR_UPSERT_EVENT_TYPE, stable_skill_uuid,
 };
+use retrieval::{Bm25Index, build_skill_sparse_vectors};
 use serde_json::json;
 use thiserror::Error;
 use uuid::Uuid;
@@ -187,6 +188,15 @@ impl DurableGraphState for InMemoryDurableGraphState {
     }
 }
 
+/// Durable graph state backed by Postgres and a Qdrant vector store.
+///
+/// When `hybrid_collection` is `Some(name)` (set by `with_hybrid_collection`),
+/// the rebuild write path computes real BM25 sparse vectors for each skill and
+/// includes them in the outbox payload. The relay then routes those events to
+/// `OutboxVectorStore::upsert_hybrid` targeting the named hybrid collection.
+///
+/// When `hybrid_collection` is `None` (the default), sparse vectors are never
+/// computed and the relay follows the existing dense-only path unchanged.
 #[derive(Debug)]
 pub struct PostgresDurableGraphState<'a, S>
 where
@@ -196,6 +206,9 @@ where
     pub outbox_coordinator: &'a PostgresGraphWriteCoordinator,
     pub vector_store: &'a S,
     rebuild_correlation_id: Uuid,
+    /// When set, sparse BM25 vectors are written into the outbox payload and
+    /// the relay routes to `upsert_hybrid` on this collection name.
+    hybrid_collection: Option<String>,
 }
 
 impl<'a, S> PostgresDurableGraphState<'a, S>
@@ -212,7 +225,22 @@ where
             outbox_coordinator,
             vector_store,
             rebuild_correlation_id: Uuid::now_v7(),
+            hybrid_collection: None,
         }
+    }
+
+    /// Configures this state for hybrid upserts.
+    ///
+    /// When called, subsequent calls to `persist_graph_mutation` will compute
+    /// real BM25 sparse vectors for each skill and include them in the outbox
+    /// payload. The relay will route those events to `upsert_hybrid` on the
+    /// supplied collection name.
+    ///
+    /// Must be called with the model-keyed hybrid collection name produced by
+    /// `model_keyed_hybrid_collection_name`.
+    pub fn with_hybrid_collection(mut self, collection_name: String) -> Self {
+        self.hybrid_collection = Some(collection_name);
+        self
     }
 }
 
@@ -278,17 +306,81 @@ where
             .await
             .map_err(|error| GraphRebuildError::DurableWrite(error.to_string()))?;
 
-        for skill in &mutation.skills {
-            let vector_payload = json!({
+        // When the qdrant_hybrid backend is active, build real BM25 sparse vectors
+        // for each skill and include them in the outbox payload. The relay reads these
+        // and routes to `upsert_hybrid_point` on the hybrid collection.
+        //
+        // The lexical document format mirrors `build_graph_from_pg` in mcp-server:
+        // name + description + tags + tools + artifacts + invariants + use_when +
+        // requires + produces + subunit titles/content.
+        // `avoid_when` is intentionally excluded — its keywords describe anti-patterns.
+        let sparse_vecs: Option<Vec<(Vec<u32>, Vec<f32>)>> = if self.hybrid_collection.is_some() {
+            let raw_docs: Vec<(usize, String)> = mutation
+                .skills
+                .iter()
+                .enumerate()
+                .map(|(idx, skill)| {
+                    let subunit_text: String = skill
+                        .subunits
+                        .iter()
+                        .map(|su| format!("{} {}", su.title, su.content))
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    let doc = format!(
+                        "{} {} {} {} {} {} {} {} {} {}",
+                        skill.name,
+                        skill.description,
+                        skill.tags.join(" "),
+                        skill.tools.join(" "),
+                        skill.artifacts.join(" "),
+                        skill.invariants.join(" "),
+                        skill.use_when.join(" "),
+                        skill.requires.join(" "),
+                        skill.produces.join(" "),
+                        subunit_text,
+                    );
+                    (idx, doc)
+                })
+                .collect();
+            let bm25_index = Bm25Index::build(&raw_docs);
+            Some(build_skill_sparse_vectors(&raw_docs, &bm25_index))
+        } else {
+            None
+        };
+
+        for (skill_idx, skill) in mutation.skills.iter().enumerate() {
+            // The Qdrant `skill_id` must match `skills.id` in Postgres (a UUID),
+            // so the qdrant_hybrid arm can join Qdrant query hits against the
+            // in-memory snapshot.  `stable_skill_uuid(skill.id)` applies the same
+            // blake3→UUID derivation that the PG persistence layer uses when
+            // INSERTing the skill row (see `stable_uuid("skill", stable_id)` in
+            // `infrastructure::persistence::rebuild`).
+            let skill_uuid = stable_skill_uuid(&skill.id).to_string();
+            let mut vector_payload = json!({
                 "content_hash": skill.id,
                 "vector": skill.embedding,
                 "payload": {
-                    "skill_id": skill.id,
+                    "skill_id": skill_uuid,
                     "name": skill.name,
                     "scope": format!("{:?}", skill.scope_type),
                     "tags": skill.tags,
                 }
             });
+
+            // Attach the sparse vector to the payload when operating in hybrid mode.
+            // An empty sparse vector (skill with no lexical tokens) is omitted — the
+            // relay must never upsert an empty sparse component into Qdrant, and the
+            // point will fall back to the dense path for that edge case.
+            if let Some(ref vecs) = sparse_vecs {
+                let (ref indices, ref values) = vecs[skill_idx];
+                if !indices.is_empty() {
+                    vector_payload["sparse"] = json!({
+                        "indices": indices,
+                        "values": values,
+                    });
+                }
+            }
+
             let outbox_event = OutboxEvent {
                 event_id: Uuid::now_v7(),
                 event_type: VECTOR_UPSERT_EVENT_TYPE.to_owned(),
@@ -318,8 +410,13 @@ where
     }
 
     async fn mark_outbox_drained(&mut self) -> Result<(), GraphRebuildError> {
-        let relay = OutboxRelay::new(self.outbox_coordinator, self.vector_store, 10, 0)
+        let mut relay = OutboxRelay::new(self.outbox_coordinator, self.vector_store, 10, 0)
             .map_err(|error| GraphRebuildError::DurableWrite(error.to_string()))?;
+        // Thread the hybrid collection name through to the relay so it routes
+        // sparse-carrying events to `upsert_hybrid` instead of `upsert_vector`.
+        if let Some(ref hybrid_col) = self.hybrid_collection {
+            relay = relay.with_hybrid_collection(hybrid_col.clone());
+        }
         relay
             // Drains to completion — no arbitrary poll cap. The whole corpus's
             // vectors must reach Qdrant, however many cycles that takes; a genuine

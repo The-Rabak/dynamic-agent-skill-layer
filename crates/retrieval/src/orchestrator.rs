@@ -5,6 +5,8 @@ use std::{
     time::{Duration, Instant},
 };
 
+use crate::bm25::Bm25Index;
+
 use arc_swap::ArcSwap;
 use async_trait::async_trait;
 use domain::{
@@ -14,8 +16,11 @@ use domain::{
 
 use crate::{
     CircuitBreaker,
-    dual_scope::search_scopes_concurrently,
+    dual_scope::{
+        ScopedSearchResult, search_scopes_concurrently, search_scopes_with_qdrant_candidates,
+    },
     fusion::{ScopeRanking, weighted_reciprocal_rank_fusion},
+    hybrid::{HybridCandidateSource, HybridQueryError},
     scope_resolution::DualScopeResolver,
     scoring::ScoringWeights,
 };
@@ -44,6 +49,14 @@ pub struct SeededSkill {
 ///
 /// T02 wraps this type as `GraphSnapshot { graph, version }` under `ArcSwap` to
 /// support refresh-without-restart; keep it free of swap/refresh concerns here.
+///
+/// `bm25_index` is an optional pre-built Okapi BM25 lexical index over the skill
+/// corpus (T04-B). It is built unconditionally at snapshot construction time by
+/// `build_graph_from_pg` so switching `RETRIEVAL_BACKEND` from dense to hybrid
+/// requires no graph rebuild — the index is always present when the corpus is
+/// non-empty. `None` only on cold-start snapshots (empty skill set) and in tests
+/// that do not exercise the hybrid arm.
+///
 /// How the eq.3 `community_boost` (the λ term) is computed at query time (#208).
 ///
 /// `Binary` is the historical behaviour (a uniform 0.2 for any community member,
@@ -76,6 +89,42 @@ impl std::str::FromStr for CommunityBoostMode {
     }
 }
 
+/// Selects the candidate-generation backend for the retrieval read path.
+///
+/// `SnapshotDense` is the current default: cosine search over the in-memory
+/// `RetrievalSnapshot`. `SnapshotHybrid` (T04-B) is the measured default hybrid
+/// arm: it expands the dense candidate pool with BM25-scored skills so exact lexical
+/// terms (tool names, crate names, API identifiers, file formats, invariants) surface
+/// even when dense cosine blurs them. `QdrantHybrid` is implemented in sub-unit C.
+///
+/// Configurable via `RETRIEVAL_BACKEND` on the real server (parsed fail-loud by
+/// `env_or` — a present-but-unparseable value panics rather than silently
+/// defaulting, per the #243 requirement).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum RetrievalBackend {
+    /// In-memory cosine search over the `RetrievalSnapshot` (current default).
+    #[default]
+    SnapshotDense,
+    /// In-memory BM25 + dense RRF over the `RetrievalSnapshot` (sub-unit B).
+    SnapshotHybrid,
+    /// Qdrant request-time dense + sparse fusion (sub-unit C, experimental).
+    QdrantHybrid,
+}
+
+impl std::str::FromStr for RetrievalBackend {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "snapshot_dense" | "dense" => Ok(Self::SnapshotDense),
+            "snapshot_hybrid" | "hybrid" => Ok(Self::SnapshotHybrid),
+            "qdrant_hybrid" | "qdrant" => Ok(Self::QdrantHybrid),
+            other => Err(format!(
+                "invalid RetrievalBackend {other:?} (expected snapshot_dense|snapshot_hybrid|qdrant_hybrid)"
+            )),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct RetrievalSnapshot {
     pub graph_version: i64,
@@ -86,6 +135,12 @@ pub struct RetrievalSnapshot {
     /// binary/off modes and for test snapshots, which is harmless (lookup misses
     /// → boost 0.0).
     pub community_centroids: HashMap<String, Vec<f32>>,
+    /// Pre-built Okapi BM25 index over the skill corpus for the `SnapshotHybrid`
+    /// arm (T04-B). Built unconditionally at snapshot construction by
+    /// `build_graph_from_pg` so the backend can switch dense↔hybrid at request
+    /// time without a graph rebuild. `None` for cold-start (empty corpus) and
+    /// test snapshots that do not exercise the hybrid arm.
+    pub bm25_index: Option<Arc<Bm25Index>>,
 }
 
 impl RetrievalSnapshot {
@@ -94,6 +149,7 @@ impl RetrievalSnapshot {
             graph_version,
             skills,
             community_centroids: HashMap::new(),
+            bm25_index: None,
         }
     }
 
@@ -101,6 +157,18 @@ impl RetrievalSnapshot {
     /// community-boost arm (#208).
     pub fn with_community_centroids(mut self, centroids: HashMap<String, Vec<f32>>) -> Self {
         self.community_centroids = centroids;
+        self
+    }
+
+    /// Attaches a pre-built BM25 index (builder style) for the `SnapshotHybrid`
+    /// retrieval arm (T04-B). The index is `Arc`-wrapped so the snapshot clone cost
+    /// is a single atomic reference count increment — no corpus copy on each refresh.
+    ///
+    /// Called by `build_graph_from_pg` after the skill corpus is assembled so the
+    /// snapshot carries the BM25 index from its first use. Tests that do not exercise
+    /// the hybrid arm can skip this call; `bm25_index` defaults to `None`.
+    pub fn with_bm25_index(mut self, index: Arc<Bm25Index>) -> Self {
+        self.bm25_index = Some(index);
         self
     }
 }
@@ -193,6 +261,10 @@ pub struct RetrievalConfig {
     /// measured keep-or-cut decision; `Binary` preserves the historical,
     /// ranking-inert behaviour and `CentroidAffinity` remains for re-evaluation.
     pub community_boost_mode: CommunityBoostMode,
+    /// Candidate-generation backend. Default `SnapshotDense` (current behavior).
+    /// `SnapshotHybrid` and `QdrantHybrid` are wired in sub-units B and C.
+    /// Set via `RETRIEVAL_BACKEND`; a present-but-unparseable value panics (#243).
+    pub backend: RetrievalBackend,
 }
 
 impl Default for RetrievalConfig {
@@ -256,6 +328,7 @@ impl Default for RetrievalConfig {
             // (e.g. under a stronger embedding model). See
             // docs/assessments/2026-06-07-retrieval-quality-234-corpus-measured.md.
             community_boost_mode: CommunityBoostMode::Off,
+            backend: RetrievalBackend::SnapshotDense,
         }
     }
 }
@@ -297,7 +370,8 @@ impl RetrievalConfig {
     /// `RETRIEVAL_MAX_SUBUNITS_PER_SKILL`, `RETRIEVAL_RESCUE_THRESHOLD`,
     /// `RETRIEVAL_RELEVANCE_THRESHOLD`, `RETRIEVAL_PROJECT_SCOPE_WEIGHT`,
     /// `RETRIEVAL_GLOBAL_SCOPE_WEIGHT`, `RETRIEVAL_RRF_K`,
-    /// `RETRIEVAL_COMMUNITY_BOOST_MODE` (`binary`|`centroid_affinity`|`off`).
+    /// `RETRIEVAL_COMMUNITY_BOOST_MODE` (`binary`|`centroid_affinity`|`off`),
+    /// `RETRIEVAL_BACKEND` (`snapshot_dense`|`snapshot_hybrid`|`qdrant_hybrid`).
     pub fn from_env() -> Self {
         let d = RetrievalConfig::default();
         Self {
@@ -320,6 +394,7 @@ impl RetrievalConfig {
             global_scope_weight: env_or("RETRIEVAL_GLOBAL_SCOPE_WEIGHT", d.global_scope_weight),
             rrf_k: env_or("RETRIEVAL_RRF_K", d.rrf_k),
             community_boost_mode: env_or("RETRIEVAL_COMMUNITY_BOOST_MODE", d.community_boost_mode),
+            backend: env_or("RETRIEVAL_BACKEND", d.backend),
             ..d
         }
     }
@@ -378,6 +453,16 @@ where
     /// Closed = normal; Open = return degraded immediately without calling the
     /// provider; HalfOpen = allow one probe to test recovery.
     embedding_breaker: CircuitBreaker,
+    /// Source for dense+sparse hybrid candidates from Qdrant at request time.
+    ///
+    /// `Some` only when `config.backend == RetrievalBackend::QdrantHybrid`.
+    /// Injected by `mcp-server` at construction so the `retrieval` crate stays
+    /// free of any direct `infrastructure` dependency.
+    ///
+    /// Absence under `QdrantHybrid` is treated as a fatal configuration error:
+    /// `retrieve()` returns a loud degraded outcome with reason
+    /// `qdrant_hybrid_source_absent` instead of silently falling back to dense.
+    hybrid_candidate_source: Option<Arc<dyn HybridCandidateSource>>,
 }
 
 impl<E> RetrievalOrchestrator<E>
@@ -429,6 +514,7 @@ where
             config,
             scope_resolver: None,
             embedding_breaker: Self::build_embedding_circuit_breaker_from_env(),
+            hybrid_candidate_source: None,
         }
     }
 
@@ -452,6 +538,7 @@ where
             config,
             scope_resolver: Some(scope_resolver),
             embedding_breaker,
+            hybrid_candidate_source: None,
         }
     }
 
@@ -472,7 +559,20 @@ where
             config,
             scope_resolver: None,
             embedding_breaker,
+            hybrid_candidate_source: None,
         }
+    }
+
+    /// Attaches a `HybridCandidateSource` for the `QdrantHybrid` arm.
+    ///
+    /// Builder method: call after one of the standard constructors to wire the
+    /// Qdrant read-path source when `RETRIEVAL_BACKEND=qdrant_hybrid`. When
+    /// `backend != QdrantHybrid`, this method is a no-op (the source is set but
+    /// never consulted). The production wiring site in `mcp-server` calls this
+    /// only when the backend is `QdrantHybrid`.
+    pub fn with_hybrid_candidate_source(mut self, source: Arc<dyn HybridCandidateSource>) -> Self {
+        self.hybrid_candidate_source = Some(source);
+        self
     }
 
     /// Atomically replaces the in-memory read model with a freshly-loaded snapshot.
@@ -517,32 +617,64 @@ where
     ///   retrieval results are only as fresh as the last snapshot rebuild.
     /// - `filesystem_index`: lexical graph derived from the snapshot.
     ///
-    /// Qdrant and Postgres are intentionally absent: Qdrant is a durable write-side
-    /// store (graph-builder → outbox → Qdrant); it is NOT consulted at read time.
-    /// Postgres is a write-side persistence layer. Listing either here would imply
-    /// Qdrant/Postgres down ⇒ retrieval degraded, which is false under Option A.
-    fn healthy_markers() -> BTreeMap<String, String> {
-        BTreeMap::from([
+    /// Under `QdrantHybrid`, an additional `qdrant_hybrid_read` marker is included
+    /// to make the Qdrant read-path dependency explicit. This intentionally breaks
+    /// the CQRS "Qdrant-down cannot degrade compile_context" invariant for the
+    /// `qdrant_hybrid` arm — T08 carries the ADR documenting this trade-off.
+    ///
+    /// Qdrant markers are ABSENT under `SnapshotDense` and `SnapshotHybrid`:
+    /// those arms serve entirely from the in-memory snapshot and stopping Qdrant
+    /// must NOT change their health output (DS-003 contract).
+    fn healthy_markers_for_backend(backend: RetrievalBackend) -> BTreeMap<String, String> {
+        let mut markers = BTreeMap::from([
             ("ollama".to_owned(), "ok".to_owned()),
             ("skill_snapshot_sync".to_owned(), "ok".to_owned()),
             ("filesystem_index".to_owned(), "ok".to_owned()),
-        ])
+        ]);
+        if backend == RetrievalBackend::QdrantHybrid {
+            markers.insert("qdrant_hybrid_read".to_owned(), "ok".to_owned());
+        }
+        markers
     }
 
     /// Returns health markers for a degraded read path (e.g. embedding failure).
     ///
     /// Only the embedding provider is marked degraded; the CQRS read model
-    /// (`skill_snapshot_sync`) and filesystem index remain independent. Qdrant and
-    /// Postgres are excluded for the same reason as `healthy_markers`: they are
-    /// write-side concerns invisible to the read path under Option A (ADR-0001).
-    fn degraded_marker(reason: &str) -> BTreeMap<String, String> {
-        BTreeMap::from([
+    /// (`skill_snapshot_sync`) and filesystem index remain independent. Under
+    /// `QdrantHybrid`, `qdrant_hybrid_read` is also included to reflect the
+    /// degraded state of the live Qdrant read dependency.
+    ///
+    /// Qdrant markers are ABSENT for snapshot backends (same reasoning as
+    /// `healthy_markers_for_backend`).
+    fn degraded_marker_for_backend(
+        backend: RetrievalBackend,
+        reason: &str,
+    ) -> BTreeMap<String, String> {
+        let mut markers = BTreeMap::from([
             ("ollama".to_owned(), "degraded".to_owned()),
             ("skill_snapshot_sync".to_owned(), "ok".to_owned()),
             ("filesystem_index".to_owned(), "ok".to_owned()),
             ("reason".to_owned(), reason.to_owned()),
-        ])
+        ]);
+        if backend == RetrievalBackend::QdrantHybrid {
+            markers.insert("qdrant_hybrid_read".to_owned(), "degraded".to_owned());
+        }
+        markers
     }
+
+    /// Reason code emitted when Qdrant is unreachable under the `QdrantHybrid` arm.
+    ///
+    /// Flows through `RetrievalOutcome.health["reason"]` so callers can
+    /// distinguish Qdrant-down from embedding failure. No silent dense fallback.
+    const REASON_QDRANT_HYBRID_UNAVAILABLE: &'static str = "qdrant_hybrid_unavailable";
+
+    /// Reason code emitted when `QdrantHybrid` is configured but no
+    /// `HybridCandidateSource` was injected at construction.
+    ///
+    /// This indicates a configuration/wiring error: the backend was set to
+    /// `QdrantHybrid` but no Qdrant adapter was wired in. The operator must
+    /// restart the server with a properly-wired `HybridCandidateSource`.
+    const REASON_QDRANT_HYBRID_SOURCE_ABSENT: &'static str = "qdrant_hybrid_source_absent";
 
     /// Reason code emitted when the embedding circuit breaker is open.
     ///
@@ -600,6 +732,80 @@ where
         values.retain(|value| seen.insert(value.clone()));
     }
 
+    /// Executes the `QdrantHybrid` candidate-generation path.
+    ///
+    /// Queries Qdrant with the dense prompt embedding and a BM25 sparse query
+    /// vector, maps the returned `HybridHit`s to snapshot skill indices via
+    /// `skill_stable_id`, and returns per-scope `ScopedSearchResult`s ready for
+    /// the existing eq.3 → floor → MMR pipeline.
+    ///
+    /// Returns `Err(HybridQueryError)` when the source is absent (configuration
+    /// error) or when Qdrant returns an error (transport/status). The caller MUST
+    /// fail loud and MUST NOT fall back to the snapshot-dense path.
+    async fn search_scopes_qdrant_hybrid(
+        &self,
+        prompt: &str,
+        prompt_embedding: &[f32],
+        graph: Arc<RetrievalSnapshot>,
+        scopes: &[domain::ScopeDescriptor],
+    ) -> Result<
+        (
+            Vec<ScopedSearchResult>,
+            Vec<crate::dual_scope::ScopedSearchFailure>,
+        ),
+        HybridQueryError,
+    > {
+        use crate::sparse::query_sparse_vector;
+
+        let source = self.hybrid_candidate_source.as_ref().ok_or_else(|| {
+            HybridQueryError::Transport(Self::REASON_QDRANT_HYBRID_SOURCE_ABSENT.to_owned())
+        })?;
+
+        // Build the sparse query vector from the prompt text.
+        let (sparse_indices, sparse_values) = query_sparse_vector(prompt);
+
+        // Query Qdrant for the top candidates (use candidate_limit as the Qdrant
+        // limit; the snapshot-side eq.3 scoring and floor may further reduce this).
+        let limit = self.config.candidate_limit as u64;
+        let qdrant_candidates = source
+            .query_hybrid(prompt_embedding, &sparse_indices, &sparse_values, limit)
+            .await?;
+
+        // Build a stable_id → (snapshot_index, fused_score) lookup from the snapshot.
+        // This is O(skills) at most; the snapshot is already in memory.
+        let mut stable_id_to_index: HashMap<&str, (usize, f32)> =
+            HashMap::with_capacity(qdrant_candidates.len());
+        for candidate in &qdrant_candidates {
+            // Find the first snapshot skill whose stable id matches.
+            if let Some((idx, _)) =
+                graph.skills.iter().enumerate().find(|(_, seeded)| {
+                    seeded.skill.id.as_str() == candidate.skill_stable_id.as_str()
+                })
+            {
+                stable_id_to_index.insert(
+                    candidate.skill_stable_id.as_str(),
+                    (idx, candidate.fused_score),
+                );
+            }
+        }
+
+        // Build a fused_score_by_index map for lexical_score population below.
+        let fused_score_by_index: HashMap<usize, f32> = stable_id_to_index
+            .values()
+            .map(|&(idx, score)| (idx, score))
+            .collect();
+
+        Ok(search_scopes_with_qdrant_candidates(
+            prompt,
+            prompt_embedding,
+            graph,
+            &self.config,
+            scopes,
+            &fused_score_by_index,
+        )
+        .await)
+    }
+
     fn build_degraded_outcome(
         &self,
         started: Instant,
@@ -625,7 +831,7 @@ where
             rescue_pool: Vec::new(),
             degraded_scopes,
             reason_codes,
-            health: Self::degraded_marker(&reason),
+            health: Self::degraded_marker_for_backend(self.config.backend, &reason),
             scopes_considered,
             graph_version,
             latency_ms: started.elapsed().as_millis(),
@@ -698,14 +904,51 @@ where
             }
         };
 
-        let (scope_results, scope_failures) = search_scopes_concurrently(
-            prompt,
-            &prompt_embedding,
-            graph.clone(),
-            &self.config,
-            &scopes,
-        )
-        .await;
+        // Dispatch to the configured candidate-generation backend.
+        //
+        // - `SnapshotDense`: cosine search over the in-memory snapshot (current default).
+        // - `SnapshotHybrid`: dense cosine + BM25 pool expansion + eq.3 scoring (T04-B).
+        //   The hybrid arm expands the candidate pool with BM25-scored skills, then
+        //   all candidates pass through the existing eq.3 scoring and relevance floor.
+        // - `QdrantHybrid`: async Qdrant dense+sparse query; hits are mapped to snapshot
+        //   skill indices via `skill_stable_id`, then run through eq.3 → floor → MMR
+        //   exactly like the snapshot arms. Fail loud on Qdrant down — NO silent fallback
+        //   to dense. The CQRS "Qdrant-down cannot degrade compile_context" contract is
+        //   intentionally broken for this arm (T08 ADR).
+        let (scope_results, scope_failures) = match self.config.backend {
+            RetrievalBackend::SnapshotDense | RetrievalBackend::SnapshotHybrid => {
+                search_scopes_concurrently(
+                    prompt,
+                    &prompt_embedding,
+                    graph.clone(),
+                    &self.config,
+                    &scopes,
+                )
+                .await
+            }
+            RetrievalBackend::QdrantHybrid => {
+                match self
+                    .search_scopes_qdrant_hybrid(prompt, &prompt_embedding, graph.clone(), &scopes)
+                    .await
+                {
+                    Ok(results) => results,
+                    Err(qdrant_error) => {
+                        // Qdrant-down or query error: fail loud.
+                        // Do NOT silently fall back to snapshot_dense — that would
+                        // mislabel the arm and violate the no-fakes mandate (#243).
+                        reason_codes.push(Self::REASON_QDRANT_HYBRID_UNAVAILABLE.to_owned());
+                        reason_codes.push(qdrant_error.to_string());
+                        return self.build_degraded_outcome(
+                            started,
+                            graph_version,
+                            scopes_considered.clone(),
+                            reason_codes,
+                            scopes_considered,
+                        );
+                    }
+                }
+            }
+        };
 
         for failure in scope_failures {
             degraded_scopes.push(failure.scope_id);
@@ -811,13 +1054,13 @@ where
         Self::dedupe(&mut reason_codes);
 
         let health = if degraded_scopes.is_empty() {
-            Self::healthy_markers()
+            Self::healthy_markers_for_backend(self.config.backend)
         } else {
             let reason = reason_codes
                 .first()
                 .cloned()
                 .unwrap_or_else(|| "retrieval_degraded".to_owned());
-            Self::degraded_marker(&reason)
+            Self::degraded_marker_for_backend(self.config.backend, &reason)
         };
 
         RetrievalOutcome {
@@ -882,6 +1125,71 @@ mod tests {
         assert!(CommunityBoostMode::from_str("nonsense").is_err());
     }
 
+    /// T04-A guard: `RetrievalBackend` parses all canonical env values and
+    /// rejects unknown strings with `Err` (which `env_or` promotes to a panic
+    /// on the real server — the #243 fail-loud requirement).
+    ///
+    /// Aliases (`dense`, `hybrid`, `qdrant`) are also accepted so compose
+    /// overrides stay terse. Default (absent/empty env) must be `SnapshotDense`
+    /// so existing retrieval behavior is unchanged.
+    #[test]
+    fn retrieval_backend_parses_from_env_strings() {
+        use std::str::FromStr;
+        // Primary names.
+        assert_eq!(
+            "snapshot_dense".parse::<RetrievalBackend>().unwrap(),
+            RetrievalBackend::SnapshotDense
+        );
+        assert_eq!(
+            "snapshot_hybrid".parse::<RetrievalBackend>().unwrap(),
+            RetrievalBackend::SnapshotHybrid
+        );
+        assert_eq!(
+            "qdrant_hybrid".parse::<RetrievalBackend>().unwrap(),
+            RetrievalBackend::QdrantHybrid
+        );
+        // Short aliases.
+        assert_eq!(
+            "dense".parse::<RetrievalBackend>().unwrap(),
+            RetrievalBackend::SnapshotDense
+        );
+        assert_eq!(
+            "hybrid".parse::<RetrievalBackend>().unwrap(),
+            RetrievalBackend::SnapshotHybrid
+        );
+        assert_eq!(
+            "qdrant".parse::<RetrievalBackend>().unwrap(),
+            RetrievalBackend::QdrantHybrid
+        );
+        // Case-insensitive.
+        assert_eq!(
+            "SNAPSHOT_DENSE".parse::<RetrievalBackend>().unwrap(),
+            RetrievalBackend::SnapshotDense
+        );
+        // Default.
+        assert_eq!(
+            RetrievalBackend::default(),
+            RetrievalBackend::SnapshotDense,
+            "default must be SnapshotDense so existing retrieval behavior is unchanged"
+        );
+        // Unknown value → Err (env_or promotes to panic on the real server).
+        assert!(
+            RetrievalBackend::from_str("bogus").is_err(),
+            "unknown backend string must return Err, not silently default"
+        );
+    }
+
+    /// T04-A config guard: `RetrievalConfig::default()` must carry `SnapshotDense`
+    /// so absent-env deployments keep the current retrieval behavior unchanged.
+    #[test]
+    fn default_retrieval_backend_is_snapshot_dense() {
+        assert_eq!(
+            RetrievalConfig::default().backend,
+            RetrievalBackend::SnapshotDense,
+            "absent RETRIEVAL_BACKEND must default to SnapshotDense (no behavior change)"
+        );
+    }
+
     /// Minimal test-only embedding stub. Used only to satisfy the generic bound on
     /// `RetrievalOrchestrator<E>` so we can call its pure associated functions without
     /// constructing a real embedding provider.
@@ -899,48 +1207,120 @@ mod tests {
     }
 
     /// Asserts that read-path health markers do NOT claim Qdrant, Postgres, or Redis
-    /// as live read dependencies. Option A (ratified in ADR-0001): the read path
-    /// operates entirely on the in-memory `RetrievalSnapshot`; Qdrant is write-side
-    /// only; Postgres and Redis are not consulted at query time.
+    /// as live read dependencies for the snapshot backends. Option A (ratified in ADR-0001):
+    /// the read path for SnapshotDense/SnapshotHybrid operates entirely on the in-memory
+    /// `RetrievalSnapshot`; Qdrant is write-side only for those arms.
     ///
-    /// DS-003 contract: stopping Qdrant must NOT degrade `compile_context` — only the
-    /// `qdrant_write_side` marker in the infrastructure health checker may change.
-    /// This test is the deletion guard that prevents false write-side markers from
-    /// reappearing on the read path.
+    /// DS-003 contract: stopping Qdrant must NOT degrade `compile_context` for snapshot
+    /// backends — only the `qdrant_write_side` marker in the infrastructure health checker
+    /// may change. This test is the deletion guard that prevents false write-side markers
+    /// from reappearing on the snapshot read paths.
+    ///
+    /// Note: `QdrantHybrid` intentionally ADDS a `qdrant_hybrid_read` marker (tested
+    /// separately in `qdrant_hybrid_health_marker_present_only_for_qdrant_backend`).
     #[test]
     fn read_path_health_markers_do_not_claim_qdrant_postgres_or_redis_as_live_dependencies() {
-        let healthy = RetrievalOrchestrator::<NoOpEmbeddingService>::healthy_markers();
-        assert!(
-            !healthy.contains_key("qdrant"),
-            "healthy_markers must not include 'qdrant': Qdrant is write-side only (Option A, ADR-0001)"
+        // Snapshot arms must NOT include any Qdrant marker.
+        for backend in [
+            RetrievalBackend::SnapshotDense,
+            RetrievalBackend::SnapshotHybrid,
+        ] {
+            let healthy =
+                RetrievalOrchestrator::<NoOpEmbeddingService>::healthy_markers_for_backend(backend);
+            assert!(
+                !healthy.contains_key("qdrant"),
+                "{backend:?}: healthy_markers must not include 'qdrant': Qdrant is write-side only (Option A, ADR-0001)"
+            );
+            assert!(
+                !healthy.contains_key("qdrant_hybrid_read"),
+                "{backend:?}: healthy_markers must not include 'qdrant_hybrid_read' for snapshot arms"
+            );
+            assert!(
+                !healthy.contains_key("postgres"),
+                "{backend:?}: healthy_markers must not include 'postgres'"
+            );
+            assert!(
+                !healthy.contains_key("redis"),
+                "{backend:?}: healthy_markers must not include 'redis'"
+            );
+            assert!(
+                healthy.get("skill_snapshot_sync").map(String::as_str) == Some("ok"),
+                "{backend:?}: healthy_markers must report skill_snapshot_sync: ok"
+            );
+
+            let degraded =
+                RetrievalOrchestrator::<NoOpEmbeddingService>::degraded_marker_for_backend(
+                    backend,
+                    "embedding_timeout",
+                );
+            assert!(
+                !degraded.contains_key("qdrant"),
+                "{backend:?}: degraded_marker must not include 'qdrant'"
+            );
+            assert!(
+                !degraded.contains_key("qdrant_hybrid_read"),
+                "{backend:?}: degraded_marker must not include 'qdrant_hybrid_read' for snapshot arms"
+            );
+            assert!(
+                !degraded.contains_key("postgres"),
+                "{backend:?}: degraded_marker must not include 'postgres'"
+            );
+            assert!(
+                !degraded.contains_key("redis"),
+                "{backend:?}: degraded_marker must not include 'redis'"
+            );
+        }
+    }
+
+    /// Proves `qdrant_hybrid_read` marker is present ONLY under the `QdrantHybrid` backend.
+    ///
+    /// This is the companion to the snapshot-arm guard above: `qdrant_hybrid_read` MUST
+    /// appear in healthy/degraded markers when the backend is `QdrantHybrid` (makes the
+    /// Qdrant read-path dependency explicit), and MUST NOT appear for snapshot backends
+    /// (preserves DS-003: Qdrant-down cannot degrade compile_context for snapshot arms).
+    #[test]
+    fn qdrant_hybrid_health_marker_present_only_for_qdrant_backend() {
+        // QdrantHybrid: qdrant_hybrid_read must be present.
+        let healthy = RetrievalOrchestrator::<NoOpEmbeddingService>::healthy_markers_for_backend(
+            RetrievalBackend::QdrantHybrid,
         );
         assert!(
-            !healthy.contains_key("postgres"),
-            "healthy_markers must not include 'postgres': Postgres is not a read-path dependency"
+            healthy.contains_key("qdrant_hybrid_read"),
+            "QdrantHybrid healthy_markers must include 'qdrant_hybrid_read' to expose the read dependency"
         );
-        assert!(
-            !healthy.contains_key("redis"),
-            "healthy_markers must not include 'redis': Redis is not a read-path dependency"
-        );
-        assert!(
-            healthy.get("skill_snapshot_sync").map(String::as_str) == Some("ok"),
-            "healthy_markers must report skill_snapshot_sync: ok to represent the CQRS read model"
+        assert_eq!(
+            healthy.get("qdrant_hybrid_read").map(String::as_str),
+            Some("ok"),
+            "QdrantHybrid healthy_markers: qdrant_hybrid_read must be 'ok'"
         );
 
-        let degraded =
-            RetrievalOrchestrator::<NoOpEmbeddingService>::degraded_marker("embedding_timeout");
-        assert!(
-            !degraded.contains_key("qdrant"),
-            "degraded_marker must not include 'qdrant': Qdrant is write-side only (Option A, ADR-0001)"
+        let degraded = RetrievalOrchestrator::<NoOpEmbeddingService>::degraded_marker_for_backend(
+            RetrievalBackend::QdrantHybrid,
+            "qdrant_hybrid_unavailable",
         );
         assert!(
-            !degraded.contains_key("postgres"),
-            "degraded_marker must not include 'postgres': Postgres is not a read-path dependency"
+            degraded.contains_key("qdrant_hybrid_read"),
+            "QdrantHybrid degraded_marker must include 'qdrant_hybrid_read'"
         );
-        assert!(
-            !degraded.contains_key("redis"),
-            "degraded_marker must not include 'redis': Redis is not a read-path dependency"
+        assert_eq!(
+            degraded.get("qdrant_hybrid_read").map(String::as_str),
+            Some("degraded"),
+            "QdrantHybrid degraded_marker: qdrant_hybrid_read must be 'degraded'"
         );
+
+        // Snapshot arms must NOT have the qdrant_hybrid_read marker (tested above,
+        // but recheck here as belt-and-suspenders for the exact QdrantHybrid isolation).
+        for backend in [
+            RetrievalBackend::SnapshotDense,
+            RetrievalBackend::SnapshotHybrid,
+        ] {
+            let healthy =
+                RetrievalOrchestrator::<NoOpEmbeddingService>::healthy_markers_for_backend(backend);
+            assert!(
+                !healthy.contains_key("qdrant_hybrid_read"),
+                "{backend:?} must NOT have qdrant_hybrid_read in healthy_markers"
+            );
+        }
     }
 
     /// Always-succeeds embedding stub so `retrieve` exercises the full read path
@@ -1343,5 +1723,307 @@ mod tests {
                 None => unsafe { std::env::remove_var(self.name) },
             }
         }
+    }
+
+    // ── T04-C3: QdrantHybrid arm unit tests ─────────────────────────────────
+
+    use crate::hybrid::{HybridCandidate, HybridCandidateSource, HybridQueryError};
+
+    /// Mock `HybridCandidateSource` that returns a fixed list of candidates.
+    ///
+    /// Used only in unit tests to inject Qdrant-like responses without a live Qdrant.
+    struct FixedHybridSource {
+        candidates: Vec<HybridCandidate>,
+    }
+
+    #[async_trait::async_trait]
+    impl HybridCandidateSource for FixedHybridSource {
+        async fn query_hybrid(
+            &self,
+            _dense: &[f32],
+            _sparse_indices: &[u32],
+            _sparse_values: &[f32],
+            _limit: u64,
+        ) -> Result<Vec<HybridCandidate>, HybridQueryError> {
+            Ok(self.candidates.clone())
+        }
+    }
+
+    /// Mock `HybridCandidateSource` that always returns a transport error.
+    ///
+    /// Used to test the fail-loud behavior when Qdrant is unreachable.
+    struct FailingHybridSource;
+
+    #[async_trait::async_trait]
+    impl HybridCandidateSource for FailingHybridSource {
+        async fn query_hybrid(
+            &self,
+            _dense: &[f32],
+            _sparse_indices: &[u32],
+            _sparse_values: &[f32],
+            _limit: u64,
+        ) -> Result<Vec<HybridCandidate>, HybridQueryError> {
+            Err(HybridQueryError::Transport(
+                "connection refused: Qdrant is down".to_owned(),
+            ))
+        }
+    }
+
+    /// Builds a two-skill snapshot for QdrantHybrid arm tests.
+    ///
+    /// Skill A: `global-skill-a` — embedding `[1.0, 0.0]` — strong semantic alignment
+    ///   to a `[1.0, 0.0]` query.
+    /// Skill B: `global-skill-b` — embedding `[0.0, 1.0]` — zero cosine with the
+    ///   same query (used to test the relevance floor).
+    fn qdrant_hybrid_snapshot() -> RetrievalSnapshot {
+        use domain::{DomainId, LifecycleStatus, ScopeType, Skill, SkillStatus};
+
+        let skill_a = Skill {
+            id: DomainId::new_unchecked("global-skill-a"),
+            name: "skill alpha".to_owned(),
+            description: "alpha description with strong alignment".to_owned(),
+            scope: ScopeType::Global,
+            status: SkillStatus::Ready,
+            lifecycle: LifecycleStatus::Active,
+            tags: vec!["alpha".to_owned()],
+            subunit_ids: vec![],
+            community_id: None,
+        };
+        let skill_b = Skill {
+            id: DomainId::new_unchecked("global-skill-b"),
+            name: "skill beta orthogonal".to_owned(),
+            description: "beta with zero cosine to the query".to_owned(),
+            scope: ScopeType::Global,
+            status: SkillStatus::Ready,
+            lifecycle: LifecycleStatus::Active,
+            tags: vec!["beta".to_owned()],
+            subunit_ids: vec![],
+            community_id: None,
+        };
+        RetrievalSnapshot::new(
+            vec![
+                SeededSkill {
+                    skill: skill_a,
+                    scope_id: "global".to_owned(),
+                    source_paths: vec![],
+                    // Match ConstantEmbeddingService's 4D output [1.0, 0.0, 0.0, 0.0]
+                    embedding: vec![1.0, 0.0, 0.0, 0.0],
+                    subunits: vec![],
+                    subunit_embeddings: vec![],
+                    prior: 0.0,
+                    community_boost: 0.0,
+                },
+                SeededSkill {
+                    skill: skill_b,
+                    scope_id: "global".to_owned(),
+                    source_paths: vec![],
+                    // Orthogonal to [1.0, 0.0, 0.0, 0.0] → cosine = 0
+                    embedding: vec![0.0, 1.0, 0.0, 0.0],
+                    subunits: vec![],
+                    subunit_embeddings: vec![],
+                    prior: 0.0,
+                    community_boost: 0.0,
+                },
+            ],
+            1,
+        )
+    }
+
+    /// Proves the `QdrantHybrid` arm maps Qdrant hits (by `skill_stable_id`) to
+    /// snapshot skills and runs them through eq.3 → MMR, returning ranked results.
+    ///
+    /// Qdrant returns `global-skill-a` with a high fused score. The snapshot has
+    /// skill A with a strong embedding alignment (`[1.0,0.0]` vs query `[1.0,0.0]`).
+    /// eq.3 = α×1.0 + β×0 + γ×0 = 0.45 — above the low test floor of 0.1.
+    #[tokio::test]
+    async fn qdrant_hybrid_arm_maps_hits_to_snapshot_skills_and_ranks_via_eq3() {
+        let source = Arc::new(FixedHybridSource {
+            candidates: vec![HybridCandidate {
+                skill_stable_id: "global-skill-a".to_owned(),
+                fused_score: 0.85,
+            }],
+        });
+
+        let config = RetrievalConfig {
+            scope_id: "global".to_owned(),
+            scope_type: domain::ScopeType::Global,
+            candidate_limit: 10,
+            max_results: 3,
+            relevance_threshold: 0.1,
+            backend: RetrievalBackend::QdrantHybrid,
+            ..RetrievalConfig::default()
+        };
+
+        let orchestrator = RetrievalOrchestrator::new(
+            Arc::new(ConstantEmbeddingService),
+            qdrant_hybrid_snapshot(),
+            config,
+        )
+        .with_hybrid_candidate_source(source);
+
+        let outcome = orchestrator.retrieve("query alpha", None).await;
+
+        assert!(
+            !outcome.is_degraded(),
+            "QdrantHybrid arm must return a non-degraded outcome when Qdrant responds: {:?}",
+            outcome.health
+        );
+        assert_eq!(
+            outcome.skills.len(),
+            1,
+            "exactly one skill must be returned (global-skill-a mapped from Qdrant hit)"
+        );
+        assert_eq!(
+            outcome.skills[0].scored_skill.skill.id.as_str(),
+            "global-skill-a",
+            "the returned skill must be the one mapped from the Qdrant hit"
+        );
+        // qdrant_hybrid_read must be present in the healthy outcome.
+        assert!(
+            outcome.health.contains_key("qdrant_hybrid_read"),
+            "QdrantHybrid healthy outcome must include qdrant_hybrid_read marker; got: {:?}",
+            outcome.health
+        );
+        assert_eq!(
+            outcome.health.get("qdrant_hybrid_read").map(String::as_str),
+            Some("ok")
+        );
+    }
+
+    /// Proves the relevance floor is authoritative over Qdrant-surfaced candidates:
+    /// a skill returned by Qdrant whose eq.3 score falls below `relevance_threshold`
+    /// is gated out and does NOT appear in the final result set.
+    ///
+    /// Skill B has embedding `[0.0,1.0]` (orthogonal to query `[1.0,0.0]`), so
+    /// eq.3 = 0 — well below any positive floor. Even though Qdrant returned it,
+    /// the floor must gate it out.
+    #[tokio::test]
+    async fn qdrant_hybrid_arm_relevance_floor_gates_low_eq3_qdrant_hit() {
+        // Only return skill B (orthogonal embedding → eq.3 = 0).
+        let source = Arc::new(FixedHybridSource {
+            candidates: vec![HybridCandidate {
+                skill_stable_id: "global-skill-b".to_owned(),
+                fused_score: 0.99, // High Qdrant score but eq.3 will be 0
+            }],
+        });
+
+        let config = RetrievalConfig {
+            scope_id: "global".to_owned(),
+            scope_type: domain::ScopeType::Global,
+            candidate_limit: 10,
+            max_results: 3,
+            relevance_threshold: 0.48, // calibrated floor
+            backend: RetrievalBackend::QdrantHybrid,
+            ..RetrievalConfig::default()
+        };
+
+        let orchestrator = RetrievalOrchestrator::new(
+            Arc::new(ConstantEmbeddingService),
+            qdrant_hybrid_snapshot(),
+            config,
+        )
+        .with_hybrid_candidate_source(source);
+
+        let outcome = orchestrator.retrieve("query alpha", None).await;
+
+        assert!(
+            outcome.skills.is_empty(),
+            "Qdrant-surfaced skill with eq.3=0 must be gated by the 0.48 floor; \
+             got {} skills (floor is authoritative over Qdrant ranking)",
+            outcome.skills.len()
+        );
+    }
+
+    /// Proves that when Qdrant is unreachable under the `QdrantHybrid` arm, the
+    /// orchestrator returns a loud degraded outcome with the
+    /// `qdrant_hybrid_unavailable` reason — NOT a silent empty success or a
+    /// fallback to the snapshot-dense path.
+    #[tokio::test]
+    async fn qdrant_hybrid_arm_fails_loud_when_qdrant_is_down() {
+        let source = Arc::new(FailingHybridSource);
+
+        let config = RetrievalConfig {
+            scope_id: "global".to_owned(),
+            scope_type: domain::ScopeType::Global,
+            candidate_limit: 10,
+            max_results: 3,
+            relevance_threshold: 0.1,
+            backend: RetrievalBackend::QdrantHybrid,
+            ..RetrievalConfig::default()
+        };
+
+        let orchestrator = RetrievalOrchestrator::new(
+            Arc::new(ConstantEmbeddingService),
+            qdrant_hybrid_snapshot(),
+            config,
+        )
+        .with_hybrid_candidate_source(source);
+
+        let outcome = orchestrator.retrieve("query", None).await;
+
+        assert!(
+            outcome.is_degraded(),
+            "QdrantHybrid arm must return degraded outcome when Qdrant is down"
+        );
+        assert!(
+            outcome
+                .reason_codes
+                .contains(&"qdrant_hybrid_unavailable".to_owned()),
+            "degraded reason_codes must include 'qdrant_hybrid_unavailable'; \
+             got: {:?}",
+            outcome.reason_codes
+        );
+        assert!(
+            outcome.skills.is_empty(),
+            "no skills must be returned when Qdrant is down under QdrantHybrid arm"
+        );
+        // Must NOT silently fall back to dense: the degraded marker must include
+        // the qdrant_hybrid_read key to make the dependency visible.
+        assert!(
+            outcome.health.contains_key("qdrant_hybrid_read"),
+            "degraded outcome must expose qdrant_hybrid_read in health markers"
+        );
+        assert_eq!(
+            outcome.health.get("qdrant_hybrid_read").map(String::as_str),
+            Some("degraded"),
+            "qdrant_hybrid_read must be 'degraded' when Qdrant is down"
+        );
+    }
+
+    /// Proves that configuring `QdrantHybrid` without injecting a
+    /// `HybridCandidateSource` fails loud instead of panicking or silently
+    /// degrading to dense.
+    #[tokio::test]
+    async fn qdrant_hybrid_arm_fails_loud_when_source_is_absent() {
+        let config = RetrievalConfig {
+            scope_id: "global".to_owned(),
+            scope_type: domain::ScopeType::Global,
+            candidate_limit: 10,
+            max_results: 3,
+            relevance_threshold: 0.1,
+            backend: RetrievalBackend::QdrantHybrid,
+            ..RetrievalConfig::default()
+        };
+
+        // No `.with_hybrid_candidate_source(...)` call — source is absent.
+        let orchestrator = RetrievalOrchestrator::new(
+            Arc::new(ConstantEmbeddingService),
+            qdrant_hybrid_snapshot(),
+            config,
+        );
+
+        let outcome = orchestrator.retrieve("query", None).await;
+
+        assert!(
+            outcome.is_degraded(),
+            "QdrantHybrid without a source must return degraded, not empty success"
+        );
+        assert!(
+            outcome
+                .reason_codes
+                .contains(&"qdrant_hybrid_unavailable".to_owned()),
+            "absent source must produce qdrant_hybrid_unavailable reason code; got: {:?}",
+            outcome.reason_codes
+        );
     }
 }
