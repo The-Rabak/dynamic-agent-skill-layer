@@ -28,7 +28,9 @@ COMPOSE = ["docker", "compose", "-f", "docker-compose.test.yml"]
 MCP_URL = "http://127.0.0.1:3001/mcp"
 REPORT_DIR = Path("tests/e2e/reports/sweep")
 WARMUP_PROMPT = "conventional commits with co-authored-by trailer"  # a known corpus topic
-ENV_KEYS = [
+
+# Ranking levers already recognised by RetrievalConfig::from_env.
+_RETRIEVAL_ENV_KEYS = [
     "RETRIEVAL_ALPHA", "RETRIEVAL_BETA", "RETRIEVAL_GAMMA", "RETRIEVAL_LAMBDA",
     "RETRIEVAL_MMR_LAMBDA", "RETRIEVAL_CANDIDATE_LIMIT", "RETRIEVAL_MAX_RESULTS",
     "RETRIEVAL_MAX_SUBUNITS_PER_SKILL", "RETRIEVAL_RESCUE_THRESHOLD",
@@ -36,10 +38,32 @@ ENV_KEYS = [
     "RETRIEVAL_GLOBAL_SCOPE_WEIGHT", "RETRIEVAL_RRF_K",
 ]
 
+# V1.7 arm-selection env vars.  These mirror the env surface the real server
+# reads (or will read once T02/T04/T07 wire them):
+#   OLLAMA_EMBED_MODEL  — embedding model name (T02: qwen3-embedding:4b)
+#   RETRIEVAL_BACKEND   — candidate generation backend (T04: qdrant_hybrid)
+#   RETRIEVAL_SPARSE    — BM25/sparse flag (T04: true)
+#   RETRIEVAL_RERANK    — local reranker flag (T07: true)
+_ARM_ENV_KEYS = [
+    "OLLAMA_EMBED_MODEL",
+    "RETRIEVAL_BACKEND",
+    "RETRIEVAL_SPARSE",
+    "RETRIEVAL_RERANK",
+]
+
+ENV_KEYS = _RETRIEVAL_ENV_KEYS + _ARM_ENV_KEYS
+
 # Default α=0.45 β=0.35 γ=0.20 λ=0.25, mmr=0.65, cand=50, subunits=3, floor=0.450.
 # Each config overrides one or a few levers from default; "default" overrides nothing
 # (also the faithfulness check — must reproduce the pre-sweep baseline).
+#
+# V1.7 arm configs are included here so every sweep produces a labelled baseline
+# row alongside the parameter-tuning rows.  The v1.7-baseline arm overrides nothing
+# (it is identical to "default") but carries an explicit label that downstream T02/T04/T07
+# reports can compare against.  Experimental arms (qwen/hybrid/rerank) will add config
+# rows here once the server wires the corresponding env vars in T02/T04/T07.
 CONFIGS = [
+    # ── parameter-tuning configs (existing) ──────────────────────────────────
     ("default",            {}),
     ("lambda0",            {"RETRIEVAL_LAMBDA": "0.0"}),                                   # #208: graph off
     ("beta_heavy",         {"RETRIEVAL_ALPHA": "0.40", "RETRIEVAL_BETA": "0.45", "RETRIEVAL_GAMMA": "0.15"}),
@@ -48,6 +72,18 @@ CONFIGS = [
     ("subunit_deep",       {"RETRIEVAL_MAX_SUBUNITS_PER_SKILL": "5", "RETRIEVAL_BETA": "0.45", "RETRIEVAL_ALPHA": "0.40", "RETRIEVAL_GAMMA": "0.15"}),
     ("mmr_relevance",      {"RETRIEVAL_MMR_LAMBDA": "0.85"}),
     ("candidate_wide",     {"RETRIEVAL_CANDIDATE_LIMIT": "100"}),
+    # ── V1.7 arm baselines ────────────────────────────────────────────────────
+    # v1.7-baseline: current default arm; no env overrides.  This row is the
+    # "current production default" reference that all later V1.7 arm comparisons
+    # use.  backend=snapshot_dense, embedder=nomic-embed-text, sparse=off, rerank=off.
+    # (Arm metadata is automatically read from env / ARM_METADATA_DEFAULTS in the
+    # live script, so this row produces a fully-labelled arm block in its report.)
+    ("v1.7-baseline",      {}),
+    # Placeholder rows for arms that arrive in later tickets — uncomment + wire
+    # the env values once the server supports the corresponding env vars:
+    # ("v1.7-qwen4b",   {"OLLAMA_EMBED_MODEL": "qwen3-embedding:4b"}),            # T02
+    # ("v1.7-hybrid",   {"RETRIEVAL_BACKEND": "qdrant_hybrid", "RETRIEVAL_SPARSE": "true"}),  # T04
+    # ("v1.7-rerank",   {"RETRIEVAL_BACKEND": "qdrant_hybrid", "RETRIEVAL_SPARSE": "true", "RETRIEVAL_RERANK": "true"}),  # T07
 ]
 LIMIT = 5  # find_skill depth for MRR (top-k injection is K=3)
 
@@ -113,16 +149,29 @@ def main():
         wait_ready()
         rep = measure(label, "tuning")
         ja = rep["judge_augmented"]
-        results.append((label, overrides, ja["mrr"], ja["ndcg_at_3"], ja["p_at_1"], ja["hit_at_3"]))
+        arm = rep.get("arm", {})
+        lat = rep.get("latency_ms", {})
+        results.append((label, overrides, ja["mrr"], ja["ndcg_at_3"], ja["p_at_1"],
+                        ja["hit_at_3"], arm, lat))
+        print(f"  arm: backend={arm.get('backend')}  embedder={arm.get('embedder_model')}  "
+              f"sparse={arm.get('sparse')}  rerank={arm.get('rerank')}", flush=True)
+        print(f"  latency: mean={lat.get('mean')}ms  p95={lat.get('p95')}ms", flush=True)
         print(f"  tuning judge-aug: MRR={ja['mrr']:.3f} nDCG@3={ja['ndcg_at_3']:.3f} "
               f"P@1={ja['p_at_1']:.3f} hit@3={ja['hit_at_3']:.3f}", flush=True)
 
     print("\n=== TUNING SWEEP (judge-augmented) ===")
-    print(f"{'config':22s} {'MRR':>7s} {'nDCG@3':>7s} {'P@1':>7s} {'hit@3':>7s}")
-    for label, _, mrr, ndcg, p1, hit in results:
-        print(f"{label:22s} {mrr:>7.3f} {ndcg:>7.3f} {p1:>7.3f} {hit:>7.3f}")
+    print(f"{'config':22s} {'MRR':>7s} {'nDCG@3':>7s} {'P@1':>7s} {'hit@3':>7s} {'p95ms':>7s} {'backend'}")
+    for label, _, mrr, ndcg, p1, hit, arm, lat in results:
+        p95 = lat.get("p95", 0.0)
+        backend = arm.get("backend", "?")
+        print(f"{label:22s} {mrr:>7.3f} {ndcg:>7.3f} {p1:>7.3f} {hit:>7.3f} {p95:>7.1f} {backend}")
 
-    winner = max(results, key=lambda r: (r[2], r[3]))  # MRR, tie-break nDCG@3
+    # Winner selection excludes V1.7 arm rows — those are reference baselines,
+    # not parameter-tuning candidates.  The winner is the best-MRR config among
+    # non-arm rows (those whose labels don't start with "v1.7-").
+    tuning_results = [(l, o, m, n, p, h, a, lat) for l, o, m, n, p, h, a, lat in results
+                      if not l.startswith("v1.7-")]
+    winner = max(tuning_results, key=lambda r: (r[2], r[3]))  # MRR, tie-break nDCG@3
     w_label, w_overrides = winner[0], winner[1]
     print(f"\nWINNER (tuning): {w_label}  {w_overrides or '(default)'}  MRR={winner[2]:.3f}")
 
@@ -132,14 +181,26 @@ def main():
     wait_ready()
     held = measure(f"{w_label}-WINNER", "held_out", gate=True)
     hja = held["judge_augmented"]
+    held_arm = held.get("arm", {})
+    held_lat = held.get("latency_ms", {})
+    print(f"held-out arm: backend={held_arm.get('backend')}  embedder={held_arm.get('embedder_model')}  "
+          f"sparse={held_arm.get('sparse')}  rerank={held_arm.get('rerank')}")
+    print(f"held-out latency: mean={held_lat.get('mean')}ms  p95={held_lat.get('p95')}ms")
     print(f"held-out judge-aug: MRR={hja['mrr']:.3f} nDCG@3={hja['ndcg_at_3']:.3f} "
           f"P@1={hja['p_at_1']:.3f} hit@3={hja['hit_at_3']:.3f} "
           f"no_match_prec={held['no_match_precision']}")
 
-    summary = dict(configs=[dict(label=l, overrides=o, tuning_mrr=m, tuning_ndcg=n,
-                                 tuning_p1=p, tuning_hit3=h) for l, o, m, n, p, h in results],
-                   winner=dict(label=w_label, overrides=w_overrides),
-                   winner_held_out=held, target=held["target"])
+    summary = dict(
+        configs=[
+            dict(label=l, overrides=o, arm=a, tuning_mrr=m, tuning_ndcg=n,
+                 tuning_p1=p, tuning_hit3=h,
+                 latency_ms=lat)
+            for l, o, m, n, p, h, a, lat in results
+        ],
+        winner=dict(label=w_label, overrides=w_overrides),
+        winner_held_out=held,
+        target=held["target"],
+    )
     Path("tests/e2e/reports/retrieval_234_sweep_summary.json").write_text(json.dumps(summary, indent=1))
     print("\nsweep summary: tests/e2e/reports/retrieval_234_sweep_summary.json")
     print(f"gate exit for winner held-out: {held['_gate_exit']} (0=meets target, 1=below)")
