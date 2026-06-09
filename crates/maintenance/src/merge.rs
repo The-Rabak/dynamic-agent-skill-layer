@@ -255,12 +255,12 @@ where
                 if left.scope == right.scope {
                     continue;
                 }
-                let left_vector = merge_vectors
-                    .get(left.id.as_str())
-                    .expect("pre-computed merge vector must exist for every skill in the input slice");
-                let right_vector = merge_vectors
-                    .get(right.id.as_str())
-                    .expect("pre-computed merge vector must exist for every skill in the input slice");
+                let left_vector = merge_vectors.get(left.id.as_str()).expect(
+                    "pre-computed merge vector must exist for every skill in the input slice",
+                );
+                let right_vector = merge_vectors.get(right.id.as_str()).expect(
+                    "pre-computed merge vector must exist for every skill in the input slice",
+                );
                 let similarity = cosine_similarity(left_vector, right_vector)?;
                 if similarity < self.config.merge_candidate_threshold {
                     continue;
@@ -781,10 +781,8 @@ mod tests {
         use std::sync::Arc;
 
         // This simulates a skill fixture sandbox: source paths under temp dir.
-        let sandbox = std::env::temp_dir().join(format!(
-            "merge_body_inclusive_test_{}",
-            std::process::id()
-        ));
+        let sandbox =
+            std::env::temp_dir().join(format!("merge_body_inclusive_test_{}", std::process::id()));
         let project_path = sandbox.join("project/auth/SKILL.md");
         let global_path = sandbox.join("global/auth/SKILL.md");
         std::fs::create_dir_all(project_path.parent().unwrap()).unwrap();
@@ -833,9 +831,8 @@ mod tests {
         );
 
         // Verify: body-inclusive merge vector at 0.58 DOES catch this pair.
-        let embedder: Arc<dyn domain::EmbeddingService> = Arc::new(
-            graph_builder::graph::embeddings::DeterministicEmbeddingService,
-        );
+        let embedder: Arc<dyn domain::EmbeddingService> =
+            Arc::new(graph_builder::graph::embeddings::DeterministicEmbeddingService);
 
         // AlwaysEquivalentVerifier (test-only) ensures the pipeline reaches proposal output.
         #[derive(Clone)]
@@ -907,10 +904,8 @@ mod tests {
             )
         };
 
-        let sandbox = std::env::temp_dir().join(format!(
-            "merge_nomic_regression_{}",
-            std::process::id()
-        ));
+        let sandbox =
+            std::env::temp_dir().join(format!("merge_nomic_regression_{}", std::process::id()));
 
         // Helper that creates a SkillSnapshot with a source file on disk.
         let make_skill = |id: &str,

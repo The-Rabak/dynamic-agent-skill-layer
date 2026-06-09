@@ -738,6 +738,7 @@ fn preference_to_skill_candidate(preference: &DetectedPreference) -> ExtractedSk
             "Detected as a standing user directive; generality inferred from scope signals."
                 .to_owned(),
         ),
+        ..Default::default()
     }
 }
 

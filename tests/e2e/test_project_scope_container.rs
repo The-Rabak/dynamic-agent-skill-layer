@@ -118,6 +118,13 @@ async fn project_scoped_compile_context_returns_ok_with_fs_marker_resolver() {
                 content: "Verify that the fs-marker resolver returns a project scope in-container."
                     .to_owned(),
             }],
+            use_when: vec![],
+            avoid_when: vec![],
+            artifacts: vec![],
+            tools: vec![],
+            invariants: vec![],
+            requires: vec![],
+            produces: vec![],
         }],
         communities: vec![],
     };
@@ -297,6 +304,13 @@ async fn project_scope_resolves_via_skill_project_root_without_repo_path() {
                     content: "Resolve project scope from SKILL_PROJECT_ROOT with no repo_path."
                         .to_owned(),
                 }],
+                use_when: vec![],
+                avoid_when: vec![],
+                artifacts: vec![],
+                tools: vec![],
+                invariants: vec![],
+                requires: vec![],
+                produces: vec![],
             }],
             communities: vec![],
         })

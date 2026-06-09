@@ -336,7 +336,7 @@ pub fn events_to_transcript(session_id: DomainId, events: &[SessionEvent]) -> Se
 ///
 /// The valid string values are exactly: `"project"`, `"general"`, `"uncertain"`.
 /// `None` (absent from provider JSON) is treated as `"uncertain"` at mapping time.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct ExtractedSkillCandidate {
     pub name: String,
     pub description: String,
@@ -367,6 +367,42 @@ pub struct ExtractedSkillCandidate {
     /// One-line rationale for the `generality` judgement from the LLM.
     #[serde(default)]
     pub generality_rationale: Option<String>,
+    /// Short list of task triggers or situations where this skill applies.
+    ///
+    /// Advisory — feeds T04 multi-view dense/BM25 matching. Empty when the
+    /// provider did not emit this field (local models may truncate).
+    #[serde(default)]
+    pub use_when: Vec<String>,
+    /// Short list of situations where this skill should NOT be applied.
+    ///
+    /// Advisory — feeds T04 multi-view matching. Empty when absent.
+    #[serde(default)]
+    pub avoid_when: Vec<String>,
+    /// File types, protocols, config names, or repo objects the skill applies to.
+    ///
+    /// Advisory — feeds T05 typed-edge proposals. Empty when absent.
+    #[serde(default)]
+    pub artifacts: Vec<String>,
+    /// Commands, libraries, frameworks, services, models, or APIs used by this skill.
+    ///
+    /// Advisory — feeds T05 typed-edge proposals. Empty when absent.
+    #[serde(default)]
+    pub tools: Vec<String>,
+    /// Verifier-critical constraints that must hold for the skill to be correct.
+    ///
+    /// Advisory — feeds T04/T05. Empty when absent.
+    #[serde(default)]
+    pub invariants: Vec<String>,
+    /// Prerequisites the skill assumes are already in place.
+    ///
+    /// Advisory — feeds T05 typed-edge proposals. Empty when absent.
+    #[serde(default)]
+    pub requires: Vec<String>,
+    /// Outcome or artifact produced by following this skill.
+    ///
+    /// Advisory — feeds T05 typed-edge proposals. Empty when absent.
+    #[serde(default)]
+    pub produces: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

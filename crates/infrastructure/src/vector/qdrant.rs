@@ -243,18 +243,15 @@ impl QdrantAdapter {
             // error after headers), we log the real parse error so the operator
             // can distinguish a transient read failure from a genuinely missing
             // dimension field in an older Qdrant version.
-            let body: Value = response
-                .json()
-                .await
-                .unwrap_or_else(|parse_err| {
-                    tracing::warn!(
-                        error = %parse_err,
-                        collection_name,
-                        "could not parse Qdrant collection-info response body; \
-                         falling through to missing-dimension path"
-                    );
-                    Value::Null
-                });
+            let body: Value = response.json().await.unwrap_or_else(|parse_err| {
+                tracing::warn!(
+                    error = %parse_err,
+                    collection_name,
+                    "could not parse Qdrant collection-info response body; \
+                     falling through to missing-dimension path"
+                );
+                Value::Null
+            });
             let observed_size: Option<u64> = body
                 .pointer("/result/config/params/vectors/size")
                 .and_then(Value::as_u64);
@@ -622,9 +619,9 @@ mod tests {
                 collection_name: (*name).to_owned(),
                 ..QdrantConfig::default()
             };
-            let error = QdrantAdapter::new(reqwest::Client::new(), config).expect_err(
-                &format!("collection name {name:?} must be rejected by the charset guard"),
-            );
+            let error = QdrantAdapter::new(reqwest::Client::new(), config).expect_err(&format!(
+                "collection name {name:?} must be rejected by the charset guard"
+            ));
             assert!(
                 matches!(error, QdrantError::InvalidConfiguration(_)),
                 "error must be InvalidConfiguration for name {name:?}, got: {error:?}"
@@ -1072,11 +1069,10 @@ mod tests {
 
         // Caller expects 2560 — but no dimension check runs because the probe returned 404,
         // so there was no existing collection info to compare against.
-        adapter
-            .ensure_collection("skills", 2560)
-            .await
-            .expect("409 on PUT must be treated as success regardless of expected dimension; \
-                     dimension guard only runs on GET→200");
+        adapter.ensure_collection("skills", 2560).await.expect(
+            "409 on PUT must be treated as success regardless of expected dimension; \
+                     dimension guard only runs on GET→200",
+        );
 
         server.await.expect("mock server should complete");
     }

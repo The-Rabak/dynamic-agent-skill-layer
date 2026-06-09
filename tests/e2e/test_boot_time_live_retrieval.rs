@@ -78,6 +78,13 @@ async fn boot_time_live_retrieval() {
                 content: "Use tokio::fs::read_to_string for small files within async contexts"
                     .to_owned(),
             }],
+            use_when: vec![],
+            avoid_when: vec![],
+            artifacts: vec![],
+            tools: vec![],
+            invariants: vec![],
+            requires: vec![],
+            produces: vec![],
         }],
         communities: vec![],
     };

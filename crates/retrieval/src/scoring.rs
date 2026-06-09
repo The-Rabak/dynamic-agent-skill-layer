@@ -175,8 +175,8 @@ mod tests {
         );
         let stale_skill_score = score_eq3(
             ScoreComponents {
-                l1_semantic: 0.02,      // near-zero cosine: irrelevant to the query
-                subunit_evidence: 0.0,  // no subunit evidence
+                l1_semantic: 0.02,     // near-zero cosine: irrelevant to the query
+                subunit_evidence: 0.0, // no subunit evidence
                 prior: stale_skill_prior,
                 community_boost: 0.0,
             },

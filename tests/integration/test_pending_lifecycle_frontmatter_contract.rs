@@ -31,6 +31,7 @@ fn sample_candidate(name: &str) -> ExtractedSkillCandidate {
         confidence: 0.9,
         generality: None,
         generality_rationale: None,
+        ..Default::default()
     }
 }
 
@@ -147,6 +148,7 @@ fn pending_frontmatter_serializes_multiline_and_special_characters_safely() {
             confidence: 0.88,
             generality: None,
             generality_rationale: None,
+            ..Default::default()
         }],
         provider: "claude".to_owned(),
     };

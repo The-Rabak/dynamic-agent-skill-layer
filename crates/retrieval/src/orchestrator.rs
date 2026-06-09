@@ -338,9 +338,10 @@ where
         // `${VAR:-}` passthrough for an unset override falls back to the default
         // rather than tripping the fail-loud parse below.
         Ok(raw) if raw.trim().is_empty() => default,
-        Ok(raw) => raw.trim().parse().unwrap_or_else(|e| {
-            panic!("{name} is set but not a valid value ({e}): {raw:?}")
-        }),
+        Ok(raw) => raw
+            .trim()
+            .parse()
+            .unwrap_or_else(|e| panic!("{name} is set but not a valid value ({e}): {raw:?}")),
         Err(_) => default,
     }
 }

@@ -194,8 +194,9 @@ async fn watcher_churn_graph_rebuild_correctness_with_live_ollama() {
         return;
     }
 
-    let ollama_url = std::env::var("OLLAMA_URL")
-        .expect("OLLAMA_URL must be set for live watcher-rebuild e2e (e.g. http://127.0.0.1:11444)");
+    let ollama_url = std::env::var("OLLAMA_URL").expect(
+        "OLLAMA_URL must be set for live watcher-rebuild e2e (e.g. http://127.0.0.1:11444)",
+    );
 
     let sandbox = fresh_sandbox();
     let project_root = sandbox.join("project");
@@ -297,8 +298,11 @@ async fn watcher_churn_graph_rebuild_correctness_with_live_ollama() {
 
     let mut durable_state = InMemoryDurableGraphState::with_synthetic_outbox_drain();
     let mut published_events: Vec<EventEnvelope> = Vec::new();
-    let mut orchestrator =
-        GraphRebuildOrchestrator::new(&mut durable_state, &mut published_events, &embedding_service);
+    let mut orchestrator = GraphRebuildOrchestrator::new(
+        &mut durable_state,
+        &mut published_events,
+        &embedding_service,
+    );
     let outcome = orchestrator
         .rebuild_from_changes(&scopes, &observed_changes, &HdbscanConfig::default())
         .await
@@ -490,7 +494,7 @@ async fn watcher_churn_and_reconciliation_converges_to_correct_graph_state_under
     let communities =
         graph_builder::graph::communities::assign_communities(&skills, &HdbscanConfig::default())
             .expect("community assignment must succeed");
-    let audits = observed_changes
+    let _audits = observed_changes
         .iter()
         .map(|change| graph_builder::graph::rebuild::AuditRecord {
             action: "graph.rebuild.file_change".to_owned(),
@@ -524,6 +528,13 @@ async fn watcher_churn_and_reconciliation_converges_to_correct_graph_state_under
                         content: subunit.content.clone(),
                     })
                     .collect(),
+                use_when: skill.use_when.clone(),
+                avoid_when: skill.avoid_when.clone(),
+                artifacts: skill.artifacts.clone(),
+                tools: skill.tools.clone(),
+                invariants: skill.invariants.clone(),
+                requires: skill.requires.clone(),
+                produces: skill.produces.clone(),
             })
             .collect(),
         communities: communities

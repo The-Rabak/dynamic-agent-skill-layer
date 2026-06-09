@@ -12,6 +12,12 @@ use crate::{
     watcher::{is_active_skill_file, is_ignored_walk_dir},
 };
 
+/// A fully built skill artifact ready for persistence and vector indexing.
+///
+/// Multi-view fields (`use_when`, `avoid_when`, `artifacts`, `tools`,
+/// `invariants`, `requires`, `produces`) are WRITE-AHEAD source data from the
+/// SKILL.md frontmatter, persisted to the `skills` table for T04/T05 consumption.
+/// They do NOT affect the ℓ₁ embedding text or the subunit list.
 #[derive(Debug, Clone, PartialEq)]
 pub struct BuiltSkill {
     pub id: String,
@@ -23,6 +29,20 @@ pub struct BuiltSkill {
     pub tags: Vec<String>,
     pub subunits: Vec<ExtractedSubunit>,
     pub embedding: Vec<f32>,
+    /// Task triggers where this skill applies. Empty for body-only skills.
+    pub use_when: Vec<String>,
+    /// Situations where this skill should NOT be applied. Empty for body-only skills.
+    pub avoid_when: Vec<String>,
+    /// File types, protocols, config names the skill applies to. Empty for body-only skills.
+    pub artifacts: Vec<String>,
+    /// Commands, libraries, frameworks, services, models, or APIs. Empty for body-only skills.
+    pub tools: Vec<String>,
+    /// Verifier-critical constraints. Empty for body-only skills.
+    pub invariants: Vec<String>,
+    /// Prerequisites assumed by this skill. Empty for body-only skills.
+    pub requires: Vec<String>,
+    /// Outcomes or artifacts produced by following this skill. Empty for body-only skills.
+    pub produces: Vec<String>,
 }
 
 #[derive(Debug, Error)]
@@ -101,6 +121,13 @@ pub async fn build_skills_from_scope_roots(
                 subunits: extraction.subunits,
                 // Filled in by the single batch embed call below, by index.
                 embedding: Vec::new(),
+                use_when: extraction.use_when,
+                avoid_when: extraction.avoid_when,
+                artifacts: extraction.artifacts,
+                tools: extraction.tools,
+                invariants: extraction.invariants,
+                requires: extraction.requires,
+                produces: extraction.produces,
             });
             texts_owned.push(text_for_embedding);
         }

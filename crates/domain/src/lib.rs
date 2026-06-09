@@ -82,6 +82,7 @@ mod tests {
             confidence: 0.91,
             generality: None,
             generality_rationale: None,
+            ..Default::default()
         };
 
         let result = ExtractionResult {

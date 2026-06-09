@@ -290,6 +290,15 @@ impl GraphRebuildTrigger for FilesystemGraphRebuildTrigger {
                     // Persist the real SKILL.md path so the retrieval boot
                     // adapter uses true provenance, not the scope-root stand-in.
                     source_paths: vec![skill.source_path.display().to_string()],
+                    // Carry the WRITE-AHEAD multi-view source fields through to
+                    // persistence, mirroring the graph-builder rebuild mapping.
+                    use_when: skill.use_when,
+                    avoid_when: skill.avoid_when,
+                    artifacts: skill.artifacts,
+                    tools: skill.tools,
+                    invariants: skill.invariants,
+                    requires: skill.requires,
+                    produces: skill.produces,
                     subunits: skill
                         .subunits
                         .into_iter()

@@ -366,6 +366,15 @@ Return valid JSON with a top-level "candidates" array. Each candidate object mus
 - "assets": array of file paths, config snippets, or reference documents referenced
 - "confidence": float 0.0-1.0 indicating extraction confidence
 
+OPTIONAL structured fields (omit if you cannot fill them accurately; partial JSON is fine):
+- "use_when": array of short task triggers (situations where this skill applies)
+- "avoid_when": array of short negative triggers (when NOT to apply this skill)
+- "artifacts": array of file types, protocols, config names, or repo objects the skill applies to
+- "tools": array of commands, libraries, frameworks, services, models, or APIs used
+- "invariants": array of verifier-critical constraints that must hold
+- "requires": array of prerequisites assumed to be in place before applying the skill
+- "produces": array of outcomes or artifacts produced by following the skill
+
 Example candidate:
 {{
   "name": "reproduce-bug-from-logs",
@@ -382,7 +391,14 @@ Example candidate:
     "Log request payloads at DEBUG level, never at INFO for sensitive endpoints."
   ],
   "assets": ["scripts/replay-request.sh"],
-  "confidence": 0.92
+  "confidence": 0.92,
+  "use_when": ["Diagnosing a production incident from logs", "Reproducing a reported bug"],
+  "avoid_when": ["No structured logs available"],
+  "artifacts": ["application.log", "scripts/replay-request.sh"],
+  "tools": ["grep", "curl"],
+  "invariants": ["trace_id must be present in every ERROR log entry"],
+  "requires": ["Structured logging enabled at ERROR level"],
+  "produces": ["Reproducible local bug reproduction steps"]
 }}
 
 SCOPE JUDGEMENT (advisory — does NOT change where the skill is saved):
@@ -474,6 +490,15 @@ For each candidate also emit:
     guessing "general".
 - "generality_rationale": a single sentence explaining your judgement.
 
+OPTIONAL STRUCTURED FIELDS (emit when you can fill them accurately; omit rather than guess):
+- "use_when": array of short task triggers (situations where this skill applies)
+- "avoid_when": array of short negative triggers (when NOT to apply)
+- "artifacts": array of file types, protocols, config names, or repo objects
+- "tools": array of commands, libraries, frameworks, services, models, or APIs
+- "invariants": array of verifier-critical constraints that must hold
+- "requires": array of prerequisites assumed to be in place
+- "produces": array of outcomes or artifacts produced
+
 CRITICAL RULES:
 - Extract durable, reusable patterns from ANY speaker — project conventions, general engineering lessons, AND standing user preferences alike; tag each with `generality` but NEVER gate on it
 - A skill without procedures OR conventions is NOT a skill — do not emit it (exception: a pure user preference captured as a convention with zero procedures IS a valid skill)
@@ -512,6 +537,41 @@ pub fn extraction_candidate_schema() -> serde_json::Value {
                         "generality_rationale": {
                             "type": "string",
                             "description": "One sentence explaining the generality judgement."
+                        },
+                        "use_when": {
+                            "type": "array",
+                            "items": { "type": "string" },
+                            "description": "Short task triggers (situations where this skill applies). Optional."
+                        },
+                        "avoid_when": {
+                            "type": "array",
+                            "items": { "type": "string" },
+                            "description": "Short negative triggers (when NOT to apply). Optional."
+                        },
+                        "artifacts": {
+                            "type": "array",
+                            "items": { "type": "string" },
+                            "description": "File types, protocols, config names, or repo objects. Optional."
+                        },
+                        "tools": {
+                            "type": "array",
+                            "items": { "type": "string" },
+                            "description": "Commands, libraries, frameworks, services, models, or APIs. Optional."
+                        },
+                        "invariants": {
+                            "type": "array",
+                            "items": { "type": "string" },
+                            "description": "Verifier-critical constraints that must hold. Optional."
+                        },
+                        "requires": {
+                            "type": "array",
+                            "items": { "type": "string" },
+                            "description": "Prerequisites assumed to be in place. Optional."
+                        },
+                        "produces": {
+                            "type": "array",
+                            "items": { "type": "string" },
+                            "description": "Outcomes or artifacts produced by following this skill. Optional."
                         }
                     },
                     "required": [
@@ -542,6 +602,7 @@ mod tests {
             confidence: 0.85,
             generality: None,
             generality_rationale: None,
+            ..Default::default()
         };
         let violations =
             validate_candidate_against_contract(&candidate, &ExtractionQualityCriteria::default());
@@ -563,6 +624,7 @@ mod tests {
             confidence: 0.9,
             generality: None,
             generality_rationale: None,
+            ..Default::default()
         };
         let violations =
             validate_candidate_against_contract(&candidate, &ExtractionQualityCriteria::default());
@@ -581,6 +643,7 @@ mod tests {
             confidence: 0.3,
             generality: None,
             generality_rationale: None,
+            ..Default::default()
         };
         let violations =
             validate_candidate_against_contract(&candidate, &ExtractionQualityCriteria::default());
@@ -599,6 +662,7 @@ mod tests {
             confidence: 0.8,
             generality: None,
             generality_rationale: None,
+            ..Default::default()
         };
         let violations =
             validate_candidate_against_contract(&candidate, &ExtractionQualityCriteria::default());

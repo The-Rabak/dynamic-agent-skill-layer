@@ -525,6 +525,21 @@ struct SynthesisCandidate {
     generality: Option<String>,
     #[serde(default)]
     generality_rationale: Option<String>,
+    /// Multi-view fields forwarded from the synthesis LLM response when present.
+    #[serde(default)]
+    use_when: Vec<String>,
+    #[serde(default)]
+    avoid_when: Vec<String>,
+    #[serde(default)]
+    artifacts: Vec<String>,
+    #[serde(default)]
+    tools: Vec<String>,
+    #[serde(default)]
+    invariants: Vec<String>,
+    #[serde(default)]
+    requires: Vec<String>,
+    #[serde(default)]
+    produces: Vec<String>,
 }
 
 /// Returns `true` when a parsed synthesis candidate carries at least one piece of
@@ -595,6 +610,13 @@ pub fn parse_synthesis_response(
             confidence: c.confidence.clamp(0.0, 1.0),
             generality: c.generality,
             generality_rationale: c.generality_rationale,
+            use_when: c.use_when,
+            avoid_when: c.avoid_when,
+            artifacts: c.artifacts,
+            tools: c.tools,
+            invariants: c.invariants,
+            requires: c.requires,
+            produces: c.produces,
         })
         .collect();
 
@@ -672,6 +694,7 @@ pub mod tests {
             confidence: 0.85,
             generality: Some("general".to_owned()),
             generality_rationale: None,
+            ..Default::default()
         }
     }
 
@@ -967,7 +990,8 @@ pub mod tests {
     #[test]
     fn parse_synthesis_response_accepts_candidate_with_convention_only_payload() {
         let raw = r#"{"candidates":[{"name":"convention-skill","description":"Style guide.","procedures":[],"conventions":["always use snake_case"],"assets":[]}]}"#;
-        let candidates = parse_synthesis_response(raw).expect("convention-only candidate must be accepted");
+        let candidates =
+            parse_synthesis_response(raw).expect("convention-only candidate must be accepted");
         assert_eq!(candidates.len(), 1);
         assert_eq!(candidates[0].name, "convention-skill");
     }
@@ -976,7 +1000,8 @@ pub mod tests {
     #[test]
     fn parse_synthesis_response_accepts_candidate_with_asset_only_payload() {
         let raw = r#"{"candidates":[{"name":"asset-skill","description":"Template.","procedures":[],"conventions":[],"assets":["template.rs"]}]}"#;
-        let candidates = parse_synthesis_response(raw).expect("asset-only candidate must be accepted");
+        let candidates =
+            parse_synthesis_response(raw).expect("asset-only candidate must be accepted");
         assert_eq!(candidates.len(), 1);
         assert_eq!(candidates[0].name, "asset-skill");
     }
@@ -1005,8 +1030,8 @@ pub mod tests {
     #[test]
     fn parse_skeleton_label_response_fails_on_empty_description() {
         let raw = r#"{"name":"valid-name","description":"","generality":"general","keep":true,"confidence":0.8}"#;
-        let err = parse_skeleton_label_response(raw)
-            .expect_err("empty description must fail loudly");
+        let err =
+            parse_skeleton_label_response(raw).expect_err("empty description must fail loudly");
         assert!(
             matches!(err, SkeletonError::LabelerFailed { .. }),
             "expected LabelerFailed for empty description, got {err:?}"

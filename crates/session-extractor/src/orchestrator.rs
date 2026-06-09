@@ -550,7 +550,7 @@ async fn map_one_window(
                 name = %skeleton_candidate.name,
                 "orchestrator: window yielded skeleton candidate (additive to prose)"
             );
-            candidates.push(skeleton_candidate);
+            candidates.push(*skeleton_candidate);
         }
         MapOutcome::ProseFallback { reason } => {
             debug!(
@@ -1263,6 +1263,7 @@ mod tests {
             confidence: 0.85,
             generality: Some("general".to_owned()),
             generality_rationale: None,
+            ..Default::default()
         }
     }
 

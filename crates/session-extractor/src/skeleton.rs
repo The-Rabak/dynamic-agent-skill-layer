@@ -97,7 +97,10 @@ pub struct SkeletonLabel {
 #[derive(Debug, Clone, PartialEq)]
 pub enum MapOutcome {
     /// A grounded candidate assembled from a mined skeleton + LLM label.
-    Skeleton(ExtractedSkillCandidate),
+    ///
+    /// Boxed to avoid a large enum-variant disparity with `ProseFallback`:
+    /// `ExtractedSkillCandidate` carries multiple `Vec<String>` fields.
+    Skeleton(Box<ExtractedSkillCandidate>),
     /// The episode contained no actionable tool arc; use the prose extractor instead.
     ///
     /// Carries a brief reason for observability/debugging.
@@ -430,9 +433,10 @@ pub async fn map_episode(
         confidence: label.confidence,
         generality: label.generality,
         generality_rationale: None,
+        ..Default::default()
     };
 
-    Ok(MapOutcome::Skeleton(candidate))
+    Ok(MapOutcome::Skeleton(Box::new(candidate)))
 }
 
 // ──────────────────────────────────────────────────────────────────────────────

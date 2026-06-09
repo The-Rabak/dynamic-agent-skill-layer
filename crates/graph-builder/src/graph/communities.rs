@@ -500,6 +500,13 @@ mod tests {
                 content: content.to_owned(),
             }],
             embedding,
+            use_when: vec![],
+            avoid_when: vec![],
+            artifacts: vec![],
+            tools: vec![],
+            invariants: vec![],
+            requires: vec![],
+            produces: vec![],
         }
     }
 

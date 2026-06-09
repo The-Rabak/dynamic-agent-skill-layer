@@ -216,18 +216,15 @@ async fn merge_pass_detects_cross_scope_duplicate_skills_finds_merges_and_writes
             "pending file must exist on disk: {:?}",
             proposal.pending_path
         );
-        let body = fs::read_to_string(&proposal.pending_path)
-            .expect("pending file should be readable");
+        let body =
+            fs::read_to_string(&proposal.pending_path).expect("pending file should be readable");
         assert!(
             body.contains("origin: merge_proposal"),
             "pending file must contain 'origin: merge_proposal'; got:\n{body}"
         );
     }
 
-    println!(
-        "live merge e2e: {} proposal(s) produced",
-        proposals.len()
-    );
+    println!("live merge e2e: {} proposal(s) produced", proposals.len());
 
     fs::remove_dir_all(&sandbox).expect("sandbox cleanup should succeed");
 }

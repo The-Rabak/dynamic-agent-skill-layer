@@ -114,7 +114,11 @@ async fn orchestrated_extraction_live_produces_grounded_pending_drafts() {
     let endpoint = format!("{}/api/generate", ollama_url.trim_end_matches('/'));
     let provider = std::env::var("EXTRACT_SESSION_PROVIDER").unwrap_or_default();
     let use_claude_code = matches!(provider.trim(), "claude-code" | "claude-cli");
-    let provider_label = if use_claude_code { "claude-code" } else { "ollama" };
+    let provider_label = if use_claude_code {
+        "claude-code"
+    } else {
+        "ollama"
+    };
 
     // ONE provider-agnostic text-LLM transport shared by the labeler, synthesis, and
     // equivalence seams (same as `lib.rs`). claude-code → host `claude` CLI on Sonnet

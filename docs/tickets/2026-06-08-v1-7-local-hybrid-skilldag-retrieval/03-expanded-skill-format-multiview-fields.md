@@ -2,7 +2,7 @@
 ticket_id: T03
 title: Expanded skill format and multi-view extraction fields
 kind: expansion
-status: ready
+status: completed
 plan_ref: docs/plans/2026-06-08-feat-v1-7-local-hybrid-skilldag-retrieval-plan.md
 tickets_ref: docs/tickets/2026-06-08-v1-7-local-hybrid-skilldag-retrieval/index.md
 architecture_ref: "explicit-handoff: parent plan ## Architectural Context and ## Proposed V1.7 Architecture"

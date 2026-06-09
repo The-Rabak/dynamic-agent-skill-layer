@@ -104,6 +104,7 @@ impl TranscriptSkillExtractionService for SuccessfulExtractor {
                 confidence: 0.92,
                 generality: None,
                 generality_rationale: None,
+                ..Default::default()
             }],
         })
     }
@@ -387,6 +388,7 @@ fn providers_emit_same_contract_shape() {
             confidence: 0.9,
             generality: None,
             generality_rationale: None,
+            ..Default::default()
         }],
     };
     let ollama_result = ExtractionResult {

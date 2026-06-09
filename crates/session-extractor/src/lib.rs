@@ -423,64 +423,62 @@ impl SessionExtractor {
         // `active_run_path` bundles the run-path discriminant with its required seams so
         // "Orchestrated without seams" cannot be represented (no Option-unwrap panics at job time).
         let active_run_path: ActiveRunPath = if run_path == ExtractionRunPath::Orchestrated {
-                // Embeddings are ALWAYS local (nomic-embed-text via Ollama) — the one
-                // documented exception to provider selection. OLLAMA_URL is therefore
-                // required even when the seams run on claude-code.
-                let ollama_url = seams::require_ollama_base_url()?;
+            // Embeddings are ALWAYS local (nomic-embed-text via Ollama) — the one
+            // documented exception to provider selection. OLLAMA_URL is therefore
+            // required even when the seams run on claude-code.
+            let ollama_url = seams::require_ollama_base_url()?;
 
-                // Build ONE provider-agnostic text-LLM transport for ALL four LLM
-                // seams (skeleton / synthesis / preamble / equivalence), selected by
-                // `EXTRACT_SESSION_PROVIDER`. This is the seam analogue of the map-step
-                // provider selection above: with `claude-code`, the whole reduce-step
-                // LLM workload runs on Sonnet, not just the map step. With `ollama` (or
-                // the `claude` API provider, whose seam transport stays local) the
-                // behaviour is unchanged from before.
-                let seam_llm: Arc<dyn StructuredTextLlm> = match provider {
-                    ExtractionProvider::ClaudeCode => providers::claude_code::build_text_llm()
-                        .map_err(|e| SessionExtractorInitError::SeamInit(e.to_string()))?,
-                    ExtractionProvider::Ollama | ExtractionProvider::Claude => {
-                        seams::ollama_seam_llm()
-                            .map_err(|e| SessionExtractorInitError::SeamInit(e.to_string()))?
-                    }
-                };
-
-                tracing::info!(
-                    seam_provider = seam_llm.provider_label(),
-                    seam_model = seam_llm.model(),
-                    embedding = "ollama:nomic-embed-text (always local)",
-                    "orchestration seams built from environment"
-                );
-
-                // Skeleton labeler, synthesis pass, preamble normalizer, and the
-                // equivalence verifier all share the one transport.
-                let labeler = LlmSkeletonLabeler::new(seam_llm.clone());
-                let synthesis: Arc<dyn orchestrator::SynthesisPass> =
-                    LlmSynthesisPass::new(seam_llm.clone());
-                let preamble_normalizer = Some(LlmPreambleNormalizer::new(seam_llm.clone()));
-                let equivalence_verifier: Arc<dyn LlmEquivalenceVerifier> =
-                    Arc::new(TextLlmEquivalenceVerifier::new(seam_llm.clone()));
-
-                // Embedder: OllamaEmbeddingService (nomic-embed-text) from OLLAMA_URL.
-                let embed_config = OllamaEmbeddingConfig {
-                    base_url: ollama_url.clone(),
-                    model: "nomic-embed-text".to_owned(),
-                    max_concurrency: 4,
-                };
-                let embedder: Arc<dyn EmbeddingService> = Arc::new(
-                    OllamaEmbeddingService::from_config(embed_config)
-                        .map_err(|e| SessionExtractorInitError::SeamInit(e.to_string()))?,
-                );
-
-                ActiveRunPath::Orchestrated(OrchestrationSeams {
-                    skeleton_labeler: labeler as Arc<dyn SkeletonLabeler>,
-                    embedder,
-                    equivalence_verifier,
-                    synthesis,
-                    preamble_normalizer,
-                })
-            } else {
-                ActiveRunPath::SingleShot
+            // Build ONE provider-agnostic text-LLM transport for ALL four LLM
+            // seams (skeleton / synthesis / preamble / equivalence), selected by
+            // `EXTRACT_SESSION_PROVIDER`. This is the seam analogue of the map-step
+            // provider selection above: with `claude-code`, the whole reduce-step
+            // LLM workload runs on Sonnet, not just the map step. With `ollama` (or
+            // the `claude` API provider, whose seam transport stays local) the
+            // behaviour is unchanged from before.
+            let seam_llm: Arc<dyn StructuredTextLlm> = match provider {
+                ExtractionProvider::ClaudeCode => providers::claude_code::build_text_llm()
+                    .map_err(|e| SessionExtractorInitError::SeamInit(e.to_string()))?,
+                ExtractionProvider::Ollama | ExtractionProvider::Claude => seams::ollama_seam_llm()
+                    .map_err(|e| SessionExtractorInitError::SeamInit(e.to_string()))?,
             };
+
+            tracing::info!(
+                seam_provider = seam_llm.provider_label(),
+                seam_model = seam_llm.model(),
+                embedding = "ollama:nomic-embed-text (always local)",
+                "orchestration seams built from environment"
+            );
+
+            // Skeleton labeler, synthesis pass, preamble normalizer, and the
+            // equivalence verifier all share the one transport.
+            let labeler = LlmSkeletonLabeler::new(seam_llm.clone());
+            let synthesis: Arc<dyn orchestrator::SynthesisPass> =
+                LlmSynthesisPass::new(seam_llm.clone());
+            let preamble_normalizer = Some(LlmPreambleNormalizer::new(seam_llm.clone()));
+            let equivalence_verifier: Arc<dyn LlmEquivalenceVerifier> =
+                Arc::new(TextLlmEquivalenceVerifier::new(seam_llm.clone()));
+
+            // Embedder: OllamaEmbeddingService (nomic-embed-text) from OLLAMA_URL.
+            let embed_config = OllamaEmbeddingConfig {
+                base_url: ollama_url.clone(),
+                model: "nomic-embed-text".to_owned(),
+                max_concurrency: 4,
+            };
+            let embedder: Arc<dyn EmbeddingService> = Arc::new(
+                OllamaEmbeddingService::from_config(embed_config)
+                    .map_err(|e| SessionExtractorInitError::SeamInit(e.to_string()))?,
+            );
+
+            ActiveRunPath::Orchestrated(OrchestrationSeams {
+                skeleton_labeler: labeler as Arc<dyn SkeletonLabeler>,
+                embedder,
+                equivalence_verifier,
+                synthesis,
+                preamble_normalizer,
+            })
+        } else {
+            ActiveRunPath::SingleShot
+        };
 
         // OUTER per-job ceiling policy. The orchestrated path is a background worker
         // that constantly churns through many sequential LLM calls; per the standing
@@ -1464,6 +1462,7 @@ mod tests {
                     confidence: 0.9,
                     generality: None,
                     generality_rationale: None,
+                    ..Default::default()
                 }],
             })
         }
@@ -1859,9 +1858,7 @@ mod tests {
         let mut bad_request = request_for("placeholder");
         bad_request.session_id = "   ".to_owned(); // whitespace-only → DomainId::parse fails
 
-        let outcome = extractor
-            .execute_job("test-job", &bad_request)
-            .await;
+        let outcome = extractor.execute_job("test-job", &bad_request).await;
 
         assert!(
             matches!(outcome, ExtractionOutcome::Failed(_)),

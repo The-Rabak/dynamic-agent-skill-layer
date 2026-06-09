@@ -418,7 +418,10 @@ mod tests {
             .iter()
             .find(|c| c.name == "embedding_arm")
             .expect("embedding_arm must be present in /health output");
-        assert!(arm.healthy, "embedding_arm component must be marked healthy");
+        assert!(
+            arm.healthy,
+            "embedding_arm component must be marked healthy"
+        );
         assert!(
             arm.detail.contains("model="),
             "embedding_arm detail must contain 'model=': got '{}'",
@@ -435,8 +438,7 @@ mod tests {
             arm.detail
         );
         assert_eq!(
-            arm.detail,
-            "model=nomic-embed-text dim=768 collection=skills-nomic-embed-text",
+            arm.detail, "model=nomic-embed-text dim=768 collection=skills-nomic-embed-text",
             "embedding_arm detail format must be 'model=X dim=Y collection=Z'"
         );
     }

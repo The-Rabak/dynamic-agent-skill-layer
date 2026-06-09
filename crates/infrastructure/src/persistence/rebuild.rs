@@ -41,6 +41,11 @@ pub struct LiveGraphSubunitRecord {
 /// An empty `source_paths` is valid for skills seeded programmatically
 /// (e.g. E2E test fixtures); the retrieval boot adapter falls back to the
 /// configured scope root for those rows so scope matching still works.
+///
+/// Multi-view fields (`use_when`, `avoid_when`, `artifacts`, `tools`,
+/// `invariants`, `requires`, `produces`) are WRITE-AHEAD source data from the
+/// SKILL.md frontmatter.  They are persisted to nullable `skills` columns added
+/// in migration 009.  No production reader SELECTs them yet (T04/T05 will).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LiveGraphSkillRecord {
     pub stable_id: String,
@@ -52,6 +57,20 @@ pub struct LiveGraphSkillRecord {
     /// Empty for skills that were seeded without a filesystem origin.
     pub source_paths: Vec<String>,
     pub subunits: Vec<LiveGraphSubunitRecord>,
+    /// Task triggers where this skill applies. Empty when the skill has no frontmatter.
+    pub use_when: Vec<String>,
+    /// Situations where this skill should NOT be applied. Empty when absent.
+    pub avoid_when: Vec<String>,
+    /// File types, protocols, config names the skill applies to. Empty when absent.
+    pub artifacts: Vec<String>,
+    /// Commands, libraries, frameworks, services, models, or APIs. Empty when absent.
+    pub tools: Vec<String>,
+    /// Verifier-critical constraints. Empty when absent.
+    pub invariants: Vec<String>,
+    /// Prerequisites assumed by this skill. Empty when absent.
+    pub requires: Vec<String>,
+    /// Outcomes or artifacts produced by following this skill. Empty when absent.
+    pub produces: Vec<String>,
 }
 
 /// Write DTO for a single community membership source.
@@ -463,12 +482,54 @@ impl RebuildCoordinator for PostgresRebuildCoordinator {
 
         for skill in &mutation.skills {
             let skill_id = stable_uuid("skill", &skill.stable_id);
+            // Multi-view fields (use_when … produces) are WRITE-AHEAD columns added in
+            // migration 009. No production reader SELECTs them yet; T04/T05 will.
+            // NULL is stored when a field is empty (Vec is empty → bind as Option::None)
+            // to stay consistent with the nullable column definition.
+            let use_when_opt: Option<&[String]> = if skill.use_when.is_empty() {
+                None
+            } else {
+                Some(&skill.use_when)
+            };
+            let avoid_when_opt: Option<&[String]> = if skill.avoid_when.is_empty() {
+                None
+            } else {
+                Some(&skill.avoid_when)
+            };
+            let artifacts_opt: Option<&[String]> = if skill.artifacts.is_empty() {
+                None
+            } else {
+                Some(&skill.artifacts)
+            };
+            let tools_opt: Option<&[String]> = if skill.tools.is_empty() {
+                None
+            } else {
+                Some(&skill.tools)
+            };
+            let invariants_opt: Option<&[String]> = if skill.invariants.is_empty() {
+                None
+            } else {
+                Some(&skill.invariants)
+            };
+            let requires_opt: Option<&[String]> = if skill.requires.is_empty() {
+                None
+            } else {
+                Some(&skill.requires)
+            };
+            let produces_opt: Option<&[String]> = if skill.produces.is_empty() {
+                None
+            } else {
+                Some(&skill.produces)
+            };
             sqlx::query(
                 r#"
                 INSERT INTO skills (
-                    id, name, description, scope, status, lifecycle, tags, source_paths, merged_from_scopes, graph_version
+                    id, name, description, scope, status, lifecycle, tags, source_paths,
+                    merged_from_scopes, graph_version,
+                    use_when, avoid_when, artifacts, tools, invariants, requires, produces
                 ) VALUES (
-                    $1, $2, $3, $4, 'ready', 'active', $5, $6, '{}'::TEXT[], 0
+                    $1, $2, $3, $4, 'ready', 'active', $5, $6, '{}'::TEXT[], 0,
+                    $7, $8, $9, $10, $11, $12, $13
                 )
                 "#,
             )
@@ -478,6 +539,13 @@ impl RebuildCoordinator for PostgresRebuildCoordinator {
             .bind(scope_to_db_value(skill.scope))
             .bind(&skill.tags)
             .bind(&skill.source_paths)
+            .bind(use_when_opt)
+            .bind(avoid_when_opt)
+            .bind(artifacts_opt)
+            .bind(tools_opt)
+            .bind(invariants_opt)
+            .bind(requires_opt)
+            .bind(produces_opt)
             .execute(&mut *tx)
             .await?;
 

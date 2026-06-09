@@ -246,6 +246,14 @@ where
                         content: subunit.content.clone(),
                     })
                     .collect(),
+                // Multi-view WRITE-AHEAD fields: sourced from SKILL.md frontmatter.
+                use_when: skill.use_when.clone(),
+                avoid_when: skill.avoid_when.clone(),
+                artifacts: skill.artifacts.clone(),
+                tools: skill.tools.clone(),
+                invariants: skill.invariants.clone(),
+                requires: skill.requires.clone(),
+                produces: skill.produces.clone(),
             })
             .collect();
 

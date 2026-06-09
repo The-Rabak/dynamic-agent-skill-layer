@@ -116,6 +116,7 @@ impl TranscriptSkillExtractionService for InlineSuccessExtractor {
                 confidence: 0.95,
                 generality: None,
                 generality_rationale: None,
+                ..Default::default()
             }],
         })
     }
@@ -222,6 +223,13 @@ async fn roundtrip_compile_context_returns_context_then_duplicate_suppression() 
                     title: "Inspect auth middleware chain".to_owned(),
                     content: "Validate auth middleware ordering and file access guards.".to_owned(),
                 }],
+                use_when: vec![],
+                avoid_when: vec![],
+                artifacts: vec![],
+                tools: vec![],
+                invariants: vec![],
+                requires: vec![],
+                produces: vec![],
             }],
             communities: vec![],
         })
@@ -317,6 +325,13 @@ async fn invalid_repo_path_degrades_but_preserves_global_context_contract() {
                     content: "Prefer explicit Result propagation for filesystem boundaries."
                         .to_owned(),
                 }],
+                use_when: vec![],
+                avoid_when: vec![],
+                artifacts: vec![],
+                tools: vec![],
+                invariants: vec![],
+                requires: vec![],
+                produces: vec![],
             }],
             communities: vec![],
         })
@@ -502,6 +517,13 @@ async fn test_live_data_plane_roundtrip() {
                 content: "Use tokio::fs::read_to_string for small files within async contexts"
                     .to_owned(),
             }],
+            use_when: vec![],
+            avoid_when: vec![],
+            artifacts: vec![],
+            tools: vec![],
+            invariants: vec![],
+            requires: vec![],
+            produces: vec![],
         }],
         communities: vec![],
     };
@@ -1477,6 +1499,13 @@ async fn graph_rebuilt_event_refreshes_running_server_without_restart() {
                 content: "Use tokio::fs::read_to_string for small files within async contexts"
                     .to_owned(),
             }],
+            use_when: vec![],
+            avoid_when: vec![],
+            artifacts: vec![],
+            tools: vec![],
+            invariants: vec![],
+            requires: vec![],
+            produces: vec![],
         }],
         communities: vec![],
     };

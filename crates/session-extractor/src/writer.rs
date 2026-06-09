@@ -435,6 +435,13 @@ fn render_pending_markdown(
         expires_at: expires_at.to_rfc3339(),
         generality,
         generality_rationale,
+        use_when: &candidate.use_when,
+        avoid_when: &candidate.avoid_when,
+        artifacts: &candidate.artifacts,
+        tools: &candidate.tools,
+        invariants: &candidate.invariants,
+        requires: &candidate.requires,
+        produces: &candidate.produces,
     };
     let frontmatter_yaml = serialize_frontmatter(&frontmatter)?;
 
@@ -466,6 +473,12 @@ fn render_pending_markdown(
 /// `"uncertain"` — never absent. When the provider returned no hint the writer
 /// records `"uncertain"` explicitly so the maintenance promotion pass always has
 /// a concrete value to act on.
+///
+/// Multi-view fields (`use_when`, `avoid_when`, `artifacts`, `tools`,
+/// `invariants`, `requires`, `produces`) are OPTIONAL: only serialized when
+/// non-empty, so skills emitted by providers that do not yet emit these fields
+/// remain clean (no spurious empty-list YAML keys).  The graph-builder reader
+/// accepts these fields with `#[serde(default)]` so old-style files still parse.
 #[derive(Serialize)]
 struct PendingDraftFrontmatter<'a> {
     name: &'a str,
@@ -486,6 +499,27 @@ struct PendingDraftFrontmatter<'a> {
     /// Empty string when the provider supplied no rationale.
     #[serde(skip_serializing_if = "str::is_empty")]
     generality_rationale: &'a str,
+    /// Task triggers where this skill applies. Omitted when empty.
+    #[serde(skip_serializing_if = "<[String]>::is_empty")]
+    use_when: &'a [String],
+    /// Situations where this skill should NOT be applied. Omitted when empty.
+    #[serde(skip_serializing_if = "<[String]>::is_empty")]
+    avoid_when: &'a [String],
+    /// File types, protocols, config names the skill applies to. Omitted when empty.
+    #[serde(skip_serializing_if = "<[String]>::is_empty")]
+    artifacts: &'a [String],
+    /// Commands, libraries, frameworks, services, models, or APIs. Omitted when empty.
+    #[serde(skip_serializing_if = "<[String]>::is_empty")]
+    tools: &'a [String],
+    /// Verifier-critical constraints. Omitted when empty.
+    #[serde(skip_serializing_if = "<[String]>::is_empty")]
+    invariants: &'a [String],
+    /// Prerequisites assumed by this skill. Omitted when empty.
+    #[serde(skip_serializing_if = "<[String]>::is_empty")]
+    requires: &'a [String],
+    /// Outcomes or artifacts produced by following this skill. Omitted when empty.
+    #[serde(skip_serializing_if = "<[String]>::is_empty")]
+    produces: &'a [String],
 }
 
 #[derive(Debug, Clone)]
@@ -638,6 +672,7 @@ mod tests {
             confidence: 0.9,
             generality: None,
             generality_rationale: None,
+            ..Default::default()
         }
     }
 
@@ -1011,7 +1046,10 @@ mod tests {
             env::remove_var("SKILL_GLOBAL_PATHS");
             // Provide a valid write-roots entry so the test isolates only the
             // SKILL_GLOBAL_PATHS check and not the downstream write-roots check.
-            env::set_var("SKILL_GLOBAL_WRITE_ROOTS", env::temp_dir().display().to_string());
+            env::set_var(
+                "SKILL_GLOBAL_WRITE_ROOTS",
+                env::temp_dir().display().to_string(),
+            );
         }
 
         let result = PendingDraftWriter::from_environment();
@@ -1042,7 +1080,10 @@ mod tests {
 
         unsafe {
             env::set_var("SKILL_GLOBAL_PATHS", "");
-            env::set_var("SKILL_GLOBAL_WRITE_ROOTS", env::temp_dir().display().to_string());
+            env::set_var(
+                "SKILL_GLOBAL_WRITE_ROOTS",
+                env::temp_dir().display().to_string(),
+            );
         }
 
         let result = PendingDraftWriter::from_environment();
@@ -1052,9 +1093,8 @@ mod tests {
             env::remove_var("SKILL_GLOBAL_WRITE_ROOTS");
         }
 
-        let err = result.expect_err(
-            "from_environment must fail when SKILL_GLOBAL_PATHS is an empty string",
-        );
+        let err = result
+            .expect_err("from_environment must fail when SKILL_GLOBAL_PATHS is an empty string");
         assert!(
             matches!(err, WriterError::MissingConfig(_)),
             "expected MissingConfig, got {err:?}"

@@ -77,6 +77,13 @@ async fn dream_seed_skills(
                     title: "test procedure".to_string(),
                     content: "test content".to_string(),
                 }],
+                use_when: vec![],
+                avoid_when: vec![],
+                artifacts: vec![],
+                tools: vec![],
+                invariants: vec![],
+                requires: vec![],
+                produces: vec![],
             })
             .collect(),
         communities: vec![],

@@ -496,8 +496,7 @@ pub async fn run_maintenance_worker_from_environment() -> Result<(), Maintenance
     let config = MaintenanceWorkerConfig::from_environment()?;
     let mut cron = MaintenanceCron::new(config.cron_interval)?;
 
-    let db_url = env_var("DATABASE_URL")
-        .map_err(MaintenanceRuntimeError::InvalidConfiguration)?;
+    let db_url = env_var("DATABASE_URL").map_err(MaintenanceRuntimeError::InvalidConfiguration)?;
     // Self-heal a missing application database before connecting (see
     // `ensure_database_exists`): a stale/test-initialized volume otherwise
     // crash-loops the worker on `database "X" does not exist`.

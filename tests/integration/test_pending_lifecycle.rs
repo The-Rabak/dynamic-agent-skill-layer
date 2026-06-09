@@ -37,6 +37,7 @@ fn sample_candidate(name: &str) -> ExtractedSkillCandidate {
         confidence: 0.9,
         generality: None,
         generality_rationale: None,
+        ..Default::default()
     }
 }
 

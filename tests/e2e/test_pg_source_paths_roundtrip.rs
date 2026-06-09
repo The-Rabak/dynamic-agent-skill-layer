@@ -88,6 +88,13 @@ async fn pg_source_paths_round_trip_preserves_provenance_for_scope_matching() {
                 content: "Skills seeded via graph-builder carry real SKILL.md provenance paths."
                     .to_owned(),
             }],
+            use_when: vec![],
+            avoid_when: vec![],
+            artifacts: vec![],
+            tools: vec![],
+            invariants: vec![],
+            requires: vec![],
+            produces: vec![],
         }],
         communities: vec![],
     };

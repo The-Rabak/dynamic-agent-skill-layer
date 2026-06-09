@@ -19,6 +19,13 @@ pub struct ExtractedSubunit {
     pub content: String,
 }
 
+/// The result of extracting a single SKILL.md file.
+///
+/// Multi-view fields (`use_when`, `avoid_when`, `artifacts`, `tools`,
+/// `invariants`, `requires`, `produces`) carry WRITE-AHEAD source data for T04
+/// (multi-view dense/BM25 embedding) and T05 (typed-edge proposals).  They are
+/// always empty for body-only (no frontmatter) skills.  They never affect the
+/// ℓ₁ embedding text (`name + description + tags`) or the subunit list.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SkillExtraction {
     pub skill_name: String,
@@ -26,6 +33,20 @@ pub struct SkillExtraction {
     pub tags: Vec<String>,
     pub subunits: Vec<ExtractedSubunit>,
     pub used_ollama_fallback: bool,
+    /// Task triggers where this skill applies. Empty for body-only skills.
+    pub use_when: Vec<String>,
+    /// Situations where this skill should NOT be applied. Empty for body-only skills.
+    pub avoid_when: Vec<String>,
+    /// File types, protocols, config names the skill applies to. Empty for body-only skills.
+    pub artifacts: Vec<String>,
+    /// Commands, libraries, frameworks, services, models, or APIs. Empty for body-only skills.
+    pub tools: Vec<String>,
+    /// Verifier-critical constraints. Empty for body-only skills.
+    pub invariants: Vec<String>,
+    /// Prerequisites assumed by this skill. Empty for body-only skills.
+    pub requires: Vec<String>,
+    /// Outcomes or artifacts produced by following this skill. Empty for body-only skills.
+    pub produces: Vec<String>,
 }
 
 /// Extracts deterministic subunits first and only falls back when structural output is thin.
@@ -53,6 +74,13 @@ fn finalize_extraction(
         tags: structural.tags,
         subunits: deduplicate_subunits(&subunits),
         used_ollama_fallback,
+        use_when: structural.use_when,
+        avoid_when: structural.avoid_when,
+        artifacts: structural.artifacts,
+        tools: structural.tools,
+        invariants: structural.invariants,
+        requires: structural.requires,
+        produces: structural.produces,
     }
 }
 
@@ -71,6 +99,13 @@ mod tests {
                 title: "Existing summary".to_owned(),
                 content: "existing".to_owned(),
             }],
+            use_when: vec![],
+            avoid_when: vec![],
+            artifacts: vec![],
+            tools: vec![],
+            invariants: vec![],
+            requires: vec![],
+            produces: vec![],
         };
 
         let extraction = finalize_extraction(structural, "markdown", |_| {
@@ -104,6 +139,13 @@ mod tests {
                     content: "procedure".to_owned(),
                 },
             ],
+            use_when: vec![],
+            avoid_when: vec![],
+            artifacts: vec![],
+            tools: vec![],
+            invariants: vec![],
+            requires: vec![],
+            produces: vec![],
         };
 
         let extraction = finalize_extraction(structural, "markdown", |_| {

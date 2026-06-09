@@ -393,6 +393,7 @@ mod tests {
                     confidence: 0.9,
                     generality: None,
                     generality_rationale: None,
+                    ..Default::default()
                 }],
             })
         }
@@ -553,6 +554,7 @@ mod tests {
                         confidence: 0.9,
                         generality: None,
                         generality_rationale: None,
+                        ..Default::default()
                     }],
                 })
             }

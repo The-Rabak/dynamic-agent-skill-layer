@@ -213,6 +213,7 @@ mod tests {
                 confidence: 0.8,
                 generality: None,
                 generality_rationale: None,
+                ..Default::default()
             }]),
         };
 

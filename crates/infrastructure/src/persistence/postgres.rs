@@ -29,6 +29,11 @@ const MIGRATION_007: &str = include_str!("../../migrations/007_skill_generality.
 /// record which embedding model + dimension + collection produced the current
 /// Qdrant vectors (V1.7 multi-arm observability).
 const MIGRATION_008: &str = include_str!("../../migrations/008_embedding_model_metadata.sql");
+/// Migration 009: adds optional multi-view structured fields (`use_when`, `avoid_when`,
+/// `artifacts`, `tools`, `invariants`, `requires`, `produces`) to `skills` as nullable
+/// TEXT[] columns.  Populated by graph rebuild INSERT from SKILL.md frontmatter.
+/// WRITE-AHEAD: no production reader yet; T04/T05 will add the readers.
+const MIGRATION_009: &str = include_str!("../../migrations/009_skill_multiview_fields.sql");
 
 /// Ordered migration set: each entry is `(stable_id, sql)`.
 ///
@@ -40,7 +45,7 @@ const MIGRATION_008: &str = include_str!("../../migrations/008_embedding_model_m
 /// ones (002 reuses the trigger function from 001; 003 adds columns to tables from
 /// 001; 004 adds a constraint to session_logs; 005 adds a column to skills;
 /// 006 widens community_skills for dual membership; 007 adds generality columns;
-/// 008 adds embedding_model_metadata table).
+/// 008 adds embedding_model_metadata table; 009 adds multi-view skill fields).
 ///
 /// Individual migrations remain idempotent (`IF NOT EXISTS` / `ADD COLUMN IF NOT
 /// EXISTS`) as a belt-and-braces safety net, but the tracking table is the primary
@@ -54,6 +59,7 @@ const MIGRATIONS: &[(&str, &str)] = &[
     ("006_community_skills_source", MIGRATION_006),
     ("007_skill_generality", MIGRATION_007), // ratified alongside 008 on 2026-06-09 (owner triage #233): dormant write-ahead schema, no live reader
     ("008_embedding_model_metadata", MIGRATION_008),
+    ("009_skill_multiview_fields", MIGRATION_009), // WRITE-AHEAD: multi-view optional fields for T04/T05; no live reader yet
 ];
 
 /// SQL executed by `truncate_all_tables`.
@@ -66,8 +72,7 @@ const MIGRATIONS: &[(&str, &str)] = &[
 /// Must be kept in sync with every table created by the migration set.  Any table
 /// omitted here causes cross-suite contamination when the table has live data.
 #[cfg(any(test, feature = "test-utils"))]
-const TRUNCATE_ALL_TABLES_SQL: &str =
-    "TRUNCATE TABLE community_skills, skill_subunits, communities, subunits, skills, \
+const TRUNCATE_ALL_TABLES_SQL: &str = "TRUNCATE TABLE community_skills, skill_subunits, communities, subunits, skills, \
      outbox_events, rebuild_locks, transcript_ingest_queue, \
      session_logs, skill_usage, embedding_model_metadata CASCADE";
 
@@ -527,9 +532,9 @@ mod tests {
     }
 
     #[test]
-    fn migration_set_is_ordered_001_through_008() {
+    fn migration_set_is_ordered_001_through_009() {
         // MIGRATIONS is now &[(&str, &str)] — (stable_id, sql). Assert that
-        // the ids and sql content appear in the correct 001..008 order.
+        // the ids and sql content appear in the correct 001..009 order.
         let ids: Vec<&str> = MIGRATIONS.iter().map(|(id, _)| *id).collect();
         assert_eq!(
             ids,
@@ -542,8 +547,9 @@ mod tests {
                 "006_community_skills_source",
                 "007_skill_generality",
                 "008_embedding_model_metadata",
+                "009_skill_multiview_fields",
             ],
-            "migration ids must appear in 001..008 order"
+            "migration ids must appear in 001..009 order"
         );
 
         let sqls: Vec<&str> = MIGRATIONS.iter().map(|(_, sql)| *sql).collect();
@@ -558,14 +564,45 @@ mod tests {
                 MIGRATION_006,
                 MIGRATION_007,
                 MIGRATION_008,
+                MIGRATION_009,
             ],
-            "migration sql bodies must match the include_str! constants in 001..008 order"
+            "migration sql bodies must match the include_str! constants in 001..009 order"
         );
     }
 
-    /// Live Postgres: proves that `run_migrations` applies all eight migrations on
+    #[test]
+    fn migration_009_declares_multiview_columns_with_if_not_exists_guard() {
+        for column in &[
+            "use_when",
+            "avoid_when",
+            "artifacts",
+            "tools",
+            "invariants",
+            "requires",
+            "produces",
+        ] {
+            assert!(
+                MIGRATION_009.contains(column),
+                "migration 009 must declare column '{column}'"
+            );
+        }
+        assert!(
+            MIGRATION_009.contains("ADD COLUMN"),
+            "migration 009 must use ADD COLUMN"
+        );
+        assert!(
+            MIGRATION_009.contains("NOT EXISTS"),
+            "migration 009 must guard each ADD COLUMN with an IF NOT EXISTS check (idempotency)"
+        );
+        assert!(
+            MIGRATION_009.contains("WRITE-AHEAD"),
+            "migration 009 header must carry the WRITE-AHEAD label"
+        );
+    }
+
+    /// Live Postgres: proves that `run_migrations` applies all nine migrations on
     /// a fresh schema and records them in `schema_migrations`, then proves that a
-    /// second call skips all eight by asserting `applied_at` timestamps are UNCHANGED.
+    /// second call skips all nine by asserting `applied_at` timestamps are UNCHANGED.
     ///
     /// A re-applied migration would re-INSERT or UPDATE the row (changing the
     /// timestamp). A truly skipped migration leaves the row exactly as it was.
@@ -611,7 +648,7 @@ mod tests {
             .await
             .expect("scratch adapter connect");
 
-        // ---- First boot: all eight migrations must be applied ----
+        // ---- First boot: all nine migrations must be applied ----
         adapter
             .run_migrations()
             .await
@@ -635,14 +672,15 @@ mod tests {
                 "006_community_skills_source",
                 "007_skill_generality",
                 "008_embedding_model_metadata",
+                "009_skill_multiview_fields",
             ],
-            "first boot must record all eight migration ids"
+            "first boot must record all nine migration ids"
         );
 
         let first_applied_ats: Vec<chrono::DateTime<chrono::Utc>> =
             first_run_rows.iter().map(|(_, ts)| *ts).collect();
 
-        // ---- Second boot: all eight must be SKIPPED (applied_at unchanged) ----
+        // ---- Second boot: all nine must be SKIPPED (applied_at unchanged) ----
         adapter
             .run_migrations()
             .await
@@ -938,20 +976,29 @@ mod tests {
             .await
             .expect("first persist must succeed");
 
-        let row: (String, String, i32, String, Option<String>, chrono::DateTime<chrono::Utc>) =
-            sqlx::query_as(
-                "SELECT key, model_name, dimension, collection, model_digest, updated_at \
+        let row: (
+            String,
+            String,
+            i32,
+            String,
+            Option<String>,
+            chrono::DateTime<chrono::Utc>,
+        ) = sqlx::query_as(
+            "SELECT key, model_name, dimension, collection, model_digest, updated_at \
                  FROM embedding_model_metadata WHERE key = 'active'",
-            )
-            .fetch_one(adapter.pool())
-            .await
-            .expect("row must exist after first write");
+        )
+        .fetch_one(adapter.pool())
+        .await
+        .expect("row must exist after first write");
 
         assert_eq!(row.0, "active", "key must be 'active'");
         assert_eq!(row.1, "nomic-embed-text");
         assert_eq!(row.2, 768);
         assert_eq!(row.3, "skills__nomic_embed_text");
-        assert!(row.4.is_none(), "model_digest must be NULL when None passed");
+        assert!(
+            row.4.is_none(),
+            "model_digest must be NULL when None passed"
+        );
         let first_updated_at = row.5;
 
         // Advance wall clock enough that NOW() differs from first write.
@@ -971,25 +1018,36 @@ mod tests {
             .await
             .expect("second persist must succeed without PK violation");
 
-        let row2: (String, String, i32, String, Option<String>, chrono::DateTime<chrono::Utc>) =
-            sqlx::query_as(
-                "SELECT key, model_name, dimension, collection, model_digest, updated_at \
+        let row2: (
+            String,
+            String,
+            i32,
+            String,
+            Option<String>,
+            chrono::DateTime<chrono::Utc>,
+        ) = sqlx::query_as(
+            "SELECT key, model_name, dimension, collection, model_digest, updated_at \
                  FROM embedding_model_metadata WHERE key = 'active'",
-            )
+        )
+        .fetch_one(adapter.pool())
+        .await
+        .expect("row must still exist after second write");
+
+        let row_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM embedding_model_metadata")
             .fetch_one(adapter.pool())
             .await
-            .expect("row must still exist after second write");
+            .expect("count rows");
 
-        let row_count: i64 =
-            sqlx::query_scalar("SELECT COUNT(*) FROM embedding_model_metadata")
-                .fetch_one(adapter.pool())
-                .await
-                .expect("count rows");
-
-        assert_eq!(row_count, 1, "UPSERT must keep exactly one row in the table");
+        assert_eq!(
+            row_count, 1,
+            "UPSERT must keep exactly one row in the table"
+        );
         assert_eq!(row2.1, "qwen3-embedding:4b", "model_name must be updated");
         assert_eq!(row2.2, 2560, "dimension must be updated");
-        assert_eq!(row2.3, "skills__qwen3_embedding_4b", "collection must be updated");
+        assert_eq!(
+            row2.3, "skills__qwen3_embedding_4b",
+            "collection must be updated"
+        );
         assert_eq!(
             row2.4.as_deref(),
             Some("sha256:abc123"),

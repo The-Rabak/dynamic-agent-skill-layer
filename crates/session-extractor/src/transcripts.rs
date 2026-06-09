@@ -219,8 +219,7 @@ fn parse_claude_jsonl(
                 .unwrap_or("<no type>");
             debug!(
                 line = index + 1,
-                event_type,
-                "parse_claude_jsonl: skipping non-conversational meta line"
+                event_type, "parse_claude_jsonl: skipping non-conversational meta line"
             );
             continue;
         }
@@ -705,7 +704,9 @@ mod tests {
 
     use domain::{DomainId, SessionEvent, events_to_transcript};
 
-    use super::{ParsedEvents, TranscriptError, TranscriptLoader, parse_claude_jsonl, parse_session_events};
+    use super::{
+        ParsedEvents, TranscriptError, TranscriptLoader, parse_claude_jsonl, parse_session_events,
+    };
 
     static ENV_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 

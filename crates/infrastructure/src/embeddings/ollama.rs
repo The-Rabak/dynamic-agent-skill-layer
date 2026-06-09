@@ -400,7 +400,10 @@ mod tests {
             model_name: "nomic-embed-text".to_owned(),
             dimension: 768,
         };
-        assert_ne!(original, other, "instances with different fields must not be equal");
+        assert_ne!(
+            original, other,
+            "instances with different fields must not be equal"
+        );
     }
 
     /// Proves `resolve_embedding_model` returns the default when the raw value is None.

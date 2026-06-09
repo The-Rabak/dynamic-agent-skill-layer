@@ -1046,7 +1046,7 @@ mod tests {
             .find(|c| c.get("name").and_then(|n| n.as_str()) == Some("embedding_arm"))
             .expect(
                 "embedding_arm component must be present in /health output — \
-                 agents need this to discover which vector space produced find_skill results"
+                 agents need this to discover which vector space produced find_skill results",
             );
 
         assert_eq!(
@@ -1073,8 +1073,7 @@ mod tests {
             "embedding_arm detail must contain 'collection=': got '{detail}'"
         );
         assert_eq!(
-            detail,
-            "model=nomic-embed-text dim=768 collection=skills-nomic-embed-text",
+            detail, "model=nomic-embed-text dim=768 collection=skills-nomic-embed-text",
             "embedding_arm detail must be 'model=X dim=Y collection=Z'"
         );
     }

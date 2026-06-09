@@ -231,7 +231,10 @@ pub fn compute_routing_decision(
             true,
         ),
         ExtractionRoutingTier::Local => (
-            token_budget_from_env("EXTRACT_SESSION_LOCAL_TOKEN_BUDGET", LOCAL_TIER_TOKEN_BUDGET),
+            token_budget_from_env(
+                "EXTRACT_SESSION_LOCAL_TOKEN_BUDGET",
+                LOCAL_TIER_TOKEN_BUDGET,
+            ),
             false,
         ),
     };
