@@ -20,6 +20,23 @@
 /// document-length ratio. This is a standard dependency-free, hand-rolled Okapi BM25.
 use std::collections::HashMap;
 
+use tracing::warn;
+
+/// Upper bound on the number of distinct BM25 index tokens before emitting a
+/// defense-in-depth corpus-growth warning.
+///
+/// Override with `BM25_MAX_DISTINCT_TOKENS` (must parse as `usize`). The default
+/// is 1_000_000 — chosen to be unreachable under any realistic skill corpus, so
+/// this triggers only on genuine runaway index inflation (e.g., from unbounded
+/// LLM output slipping through the multi-view caps). Does NOT drop tokens or fail;
+/// it is a loud observability signal only.
+fn bm25_max_distinct_tokens() -> usize {
+    std::env::var("BM25_MAX_DISTINCT_TOKENS")
+        .ok()
+        .and_then(|v| v.trim().parse::<usize>().ok())
+        .unwrap_or(1_000_000)
+}
+
 /// Default BM25 term-frequency saturation constant.
 ///
 /// `pub(crate)` so the write side (`sparse.rs`, which computes the TF-saturation
@@ -97,6 +114,21 @@ impl Bm25Index {
         } else {
             doc_lengths.values().sum::<usize>() as f32 / corpus_size as f32
         };
+
+        // Defense-in-depth: warn when the distinct-token vocabulary grows beyond the
+        // configured cap. This indicates runaway corpus inflation (e.g., unbounded LLM
+        // output bypassing the multi-view caps). Does NOT drop tokens or fail — it is
+        // a loud observability signal only.
+        let distinct_token_count = doc_frequency.len();
+        let token_cap = bm25_max_distinct_tokens();
+        if distinct_token_count > token_cap {
+            warn!(
+                distinct_token_count,
+                token_cap,
+                "BM25 index distinct-token count exceeds cap: corpus may be inflated by \
+                 unbounded LLM output; check multi-view field size caps"
+            );
+        }
 
         Self {
             doc_frequency,

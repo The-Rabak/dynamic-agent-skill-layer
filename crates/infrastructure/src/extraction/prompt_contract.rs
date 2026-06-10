@@ -540,37 +540,44 @@ pub fn extraction_candidate_schema() -> serde_json::Value {
                         },
                         "use_when": {
                             "type": "array",
-                            "items": { "type": "string" },
+                            "items": { "type": "string", "maxLength": 2048 },
+                            "maxItems": 128,
                             "description": "Short task triggers (situations where this skill applies). Optional."
                         },
                         "avoid_when": {
                             "type": "array",
-                            "items": { "type": "string" },
+                            "items": { "type": "string", "maxLength": 2048 },
+                            "maxItems": 128,
                             "description": "Short negative triggers (when NOT to apply). Optional."
                         },
                         "artifacts": {
                             "type": "array",
-                            "items": { "type": "string" },
+                            "items": { "type": "string", "maxLength": 2048 },
+                            "maxItems": 128,
                             "description": "File types, protocols, config names, or repo objects. Optional."
                         },
                         "tools": {
                             "type": "array",
-                            "items": { "type": "string" },
+                            "items": { "type": "string", "maxLength": 2048 },
+                            "maxItems": 128,
                             "description": "Commands, libraries, frameworks, services, models, or APIs. Optional."
                         },
                         "invariants": {
                             "type": "array",
-                            "items": { "type": "string" },
+                            "items": { "type": "string", "maxLength": 2048 },
+                            "maxItems": 128,
                             "description": "Verifier-critical constraints that must hold. Optional."
                         },
                         "requires": {
                             "type": "array",
-                            "items": { "type": "string" },
+                            "items": { "type": "string", "maxLength": 2048 },
+                            "maxItems": 128,
                             "description": "Prerequisites assumed to be in place. Optional."
                         },
                         "produces": {
                             "type": "array",
-                            "items": { "type": "string" },
+                            "items": { "type": "string", "maxLength": 2048 },
+                            "maxItems": 128,
                             "description": "Outcomes or artifacts produced by following this skill. Optional."
                         }
                     },

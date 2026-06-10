@@ -11,7 +11,7 @@ use infrastructure::{
     PostgresAdapter, PostgresConfig, PostgresGraphWriteCoordinator, PostgresRebuildCoordinator,
     QdrantAdapter, QdrantConfig, QdrantError, RebuildCoordinator, RedisStreamError,
     RedisStreamsAdapter, RedisStreamsConfig, embedding_model_from_env, logging::init_logging,
-    model_keyed_collection_name, model_keyed_hybrid_collection_name,
+    model_keyed_collection_name, model_keyed_hybrid_collection_name, validate_qdrant_url,
 };
 use retrieval::{RetrievalBackend, RetrievalConfig};
 use serde::Serialize;
@@ -323,6 +323,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let db_url = env_var("DATABASE_URL")?;
     let qdrant_url = env_var("QDRANT_URL")?;
+    // Validate QDRANT_URL scheme (hard fail) and warn on non-local hosts before
+    // any network I/O is attempted. This surfaces misconfigured URLs at boot.
+    validate_qdrant_url(&qdrant_url).map_err(|e| e.to_string())?;
 
     // Self-heal a missing application database before connecting (see
     // `ensure_database_exists`): a stale/test-initialized volume otherwise

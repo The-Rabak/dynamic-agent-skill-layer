@@ -48,12 +48,13 @@ _RETRIEVAL_ENV_KEYS = [
 # reads (or will read once T02/T04/T07 wire them):
 #   OLLAMA_EMBED_MODEL  — embedding model name (T02: qwen3-embedding:4b)
 #   RETRIEVAL_BACKEND   — candidate generation backend (T04: qdrant_hybrid)
-#   RETRIEVAL_SPARSE    — BM25/sparse flag (T04: true)
 #   RETRIEVAL_RERANK    — local reranker flag (T07: true)
+# (BM25/sparse is NOT a separate env knob — it is gated solely by
+#  RETRIEVAL_BACKEND being a hybrid backend; the `sparse` arm label is derived
+#  from the backend value, never from a RETRIEVAL_SPARSE var.)
 _ARM_ENV_KEYS = [
     "OLLAMA_EMBED_MODEL",
     "RETRIEVAL_BACKEND",
-    "RETRIEVAL_SPARSE",
     "RETRIEVAL_RERANK",
 ]
 
@@ -112,8 +113,8 @@ CONFIGS = [
     # a separate collection (skills__qwen3-embedding-4b) that is currently empty (0 pts).
     # Populating it needs a full 234-skill rebuild with the qwen embedder (~minutes on GPU).
     # Include once T02 arm collection is confirmed non-empty; see #243 for tracking.
-    ("v1.7-snapshot-hybrid", {"RETRIEVAL_BACKEND": "snapshot_hybrid", "RETRIEVAL_SPARSE": "true"}),  # T04-D
-    ("v1.7-qdrant-hybrid",   {"RETRIEVAL_BACKEND": "qdrant_hybrid",   "RETRIEVAL_SPARSE": "true"}),  # T04-D
+    ("v1.7-snapshot-hybrid", {"RETRIEVAL_BACKEND": "snapshot_hybrid"}),  # T04-D (sparse derives from backend)
+    ("v1.7-qdrant-hybrid",   {"RETRIEVAL_BACKEND": "qdrant_hybrid"}),  # T04-D (sparse derives from backend)
     # TODO(T04): convert results tuple to a dataclass when arm grows beyond 8 fields;
     # currently destructured positionally in 3 places (results.append, tuning_results
     # filter, and the print/summary loops) — see #242 item 5.
@@ -457,9 +458,9 @@ def reboot_arm(overrides: dict) -> None:
     0 progress.
 
     Args:
-        overrides: env-override dict from CONFIGS (e.g. {"RETRIEVAL_BACKEND": "qdrant_hybrid",
-            "RETRIEVAL_SPARSE": "true"}).  Must already be applied to os.environ
-            before calling (set_env(overrides) should run first).
+        overrides: env-override dict from CONFIGS (e.g. {"RETRIEVAL_BACKEND": "qdrant_hybrid"}).
+            Must already be applied to os.environ before calling
+            (set_env(overrides) should run first).
     """
     backend = overrides.get("RETRIEVAL_BACKEND", "")
     is_qdrant_hybrid = backend == "qdrant_hybrid"
@@ -673,8 +674,8 @@ def main():
 
     v17_arm_configs = [
         ("snapshot_dense",   {}),
-        ("snapshot_hybrid",  {"RETRIEVAL_BACKEND": "snapshot_hybrid",  "RETRIEVAL_SPARSE": "true"}),
-        ("qdrant_hybrid",    {"RETRIEVAL_BACKEND": "qdrant_hybrid",     "RETRIEVAL_SPARSE": "true"}),
+        ("snapshot_hybrid",  {"RETRIEVAL_BACKEND": "snapshot_hybrid"}),
+        ("qdrant_hybrid",    {"RETRIEVAL_BACKEND": "qdrant_hybrid"}),
     ]
     arm_held_out_results = []
     BASELINE_MRR = 0.767  # mmr_relevance-WINNER held-out (prior measurement)

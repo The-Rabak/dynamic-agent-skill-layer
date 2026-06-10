@@ -31,8 +31,10 @@ use async_trait::async_trait;
 pub struct HybridCandidate {
     /// Stable skill ID (`skills.id` in Postgres), used to join against the
     /// in-memory `RetrievalSnapshot`. Must match exactly what was stored in the
-    /// Qdrant point payload at write time (graph-builder `persist_graph_mutation`
-    /// stores it as `payload["payload"]["skill_id"]`).
+    /// Qdrant point payload at write time. The Qdrant point's native payload is
+    /// the inner object (`{ "skill_id": ..., "name": ..., ... }`), so `skill_id`
+    /// is at the **top level** of the point payload (`payload["skill_id"]`), not
+    /// nested under a `"payload"` key.
     pub skill_stable_id: String,
     /// RRF-fused score from Qdrant's dense+sparse prefetch fusion step.
     /// Used as the `lexical_score` in `FusedCandidate` for observability.
@@ -72,7 +74,8 @@ impl std::fmt::Display for HybridQueryError {
 ///
 /// Implementations MUST:
 /// - Call the real Qdrant query API (no fakes, stubs, or mocks in production).
-/// - Extract `skill_stable_id` from the point payload field `payload["payload"]["skill_id"]`.
+/// - Extract `skill_stable_id` from the top-level point payload field `payload["skill_id"]`
+///   (NOT nested under a `"payload"` key — the stored payload IS the inner object).
 /// - Return an `Err(HybridQueryError)` on any transport or status failure.
 ///   The orchestrator will surface this as a loud degraded outcome.
 ///

@@ -96,7 +96,7 @@ pub use streaming::redis::{
 };
 pub use vector::qdrant::{
     HybridHit, QdrantAdapter, QdrantConfig, QdrantError, SparseVector, model_keyed_collection_name,
-    model_keyed_hybrid_collection_name,
+    model_keyed_hybrid_collection_name, validate_qdrant_url,
 };
 
 // Re-export infrastructure-bound types so service crates never import

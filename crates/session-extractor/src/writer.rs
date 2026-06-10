@@ -2,6 +2,7 @@ use std::{
     collections::HashSet,
     fs,
     path::{Path, PathBuf},
+    sync::LazyLock,
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -13,8 +14,75 @@ use domain::{
 use infrastructure::extraction::prompt_contract::normalize_generality;
 use serde::Serialize;
 use thiserror::Error;
+use tracing::warn;
 
 use crate::ExtractSessionRequest;
+
+/// Maximum number of items permitted in each multi-view array field (`use_when`,
+/// `avoid_when`, `artifacts`, `tools`, `invariants`, `requires`, `produces`).
+///
+/// Override with `SKILL_MULTIVIEW_MAX_ITEMS` (must parse as `usize`). Default
+/// is 128 — generous enough to never clip legitimate rich skills while stopping
+/// runaway LLM output from inflating SKILL.md files and the BM25 index.
+static MULTIVIEW_MAX_ITEMS: LazyLock<usize> = LazyLock::new(|| {
+    std::env::var("SKILL_MULTIVIEW_MAX_ITEMS")
+        .ok()
+        .and_then(|v| v.trim().parse::<usize>().ok())
+        .unwrap_or(128)
+});
+
+/// Maximum character length for each individual item in a multi-view array field.
+///
+/// Override with `SKILL_MULTIVIEW_MAX_ITEM_CHARS` (must parse as `usize`). Default
+/// is 2048 — aligned to the extraction window policy: generous, never a footgun.
+static MULTIVIEW_MAX_ITEM_CHARS: LazyLock<usize> = LazyLock::new(|| {
+    std::env::var("SKILL_MULTIVIEW_MAX_ITEM_CHARS")
+        .ok()
+        .and_then(|v| v.trim().parse::<usize>().ok())
+        .unwrap_or(2048)
+});
+
+/// Applies item-count and per-item character caps to a single multi-view field.
+///
+/// Truncates the slice to at most `MULTIVIEW_MAX_ITEMS` entries, and each entry
+/// to at most `MULTIVIEW_MAX_ITEM_CHARS` UTF-8 characters. Emits a loud `warn!`
+/// on any truncation so runaway LLM output is never silently written to disk.
+///
+/// Truncation always produces valid output — it never rejects or errors. The
+/// warning is the signal; callers must not treat silence as an invariant.
+fn cap_multiview_field(field_name: &str, items: &[String]) -> Vec<String> {
+    let max_items = *MULTIVIEW_MAX_ITEMS;
+    let max_chars = *MULTIVIEW_MAX_ITEM_CHARS;
+
+    let item_capped: Vec<String> = items
+        .iter()
+        .map(|item| {
+            if item.chars().count() > max_chars {
+                warn!(
+                    field = field_name,
+                    original_chars = item.chars().count(),
+                    capped_chars = max_chars,
+                    "multi-view field item truncated: LLM output exceeded per-item char cap"
+                );
+                item.chars().take(max_chars).collect()
+            } else {
+                item.clone()
+            }
+        })
+        .collect();
+
+    if item_capped.len() > max_items {
+        warn!(
+            field = field_name,
+            original_count = item_capped.len(),
+            capped_count = max_items,
+            "multi-view field array truncated: LLM output exceeded max-items cap"
+        );
+        item_capped.into_iter().take(max_items).collect()
+    } else {
+        item_capped
+    }
+}
 
 /// Validates write targets are within approved output roots and not inside
 /// protected skill source directories.
@@ -423,6 +491,18 @@ fn render_pending_markdown(
     // explicitly. "uncertain" is not a fallback — it is the asserted honest default.
     let generality = normalize_generality(candidate.generality.as_deref());
     let generality_rationale = candidate.generality_rationale.as_deref().unwrap_or("");
+
+    // Apply defense-in-depth size caps BEFORE writing. Schema-level maxItems/maxLength
+    // hints guide the LLM but are advisory; this enforcement is the hard gate.
+    // Any truncation emits a loud warn! so runaway output is never silently written.
+    let use_when = cap_multiview_field("use_when", &candidate.use_when);
+    let avoid_when = cap_multiview_field("avoid_when", &candidate.avoid_when);
+    let artifacts = cap_multiview_field("artifacts", &candidate.artifacts);
+    let tools = cap_multiview_field("tools", &candidate.tools);
+    let invariants = cap_multiview_field("invariants", &candidate.invariants);
+    let requires = cap_multiview_field("requires", &candidate.requires);
+    let produces = cap_multiview_field("produces", &candidate.produces);
+
     let frontmatter = PendingDraftFrontmatter {
         name: candidate.name.as_str(),
         description: candidate.description.as_str(),
@@ -435,13 +515,13 @@ fn render_pending_markdown(
         expires_at: expires_at.to_rfc3339(),
         generality,
         generality_rationale,
-        use_when: &candidate.use_when,
-        avoid_when: &candidate.avoid_when,
-        artifacts: &candidate.artifacts,
-        tools: &candidate.tools,
-        invariants: &candidate.invariants,
-        requires: &candidate.requires,
-        produces: &candidate.produces,
+        use_when: &use_when,
+        avoid_when: &avoid_when,
+        artifacts: &artifacts,
+        tools: &tools,
+        invariants: &invariants,
+        requires: &requires,
+        produces: &produces,
     };
     let frontmatter_yaml = serialize_frontmatter(&frontmatter)?;
 
@@ -913,6 +993,92 @@ mod tests {
     fn reason_code_write_denied_returns_stable_string() {
         let err = WriterError::WriteDenied("write denied: path `/skills/global/skills/foo/SKILL.md` is a skill source directory (read-only)".to_owned());
         assert_eq!(err.reason_code(), "write_denied");
+    }
+
+    // ── multi-view cap tests ─────────────────────────────────────────────────
+
+    /// Items beyond the default `SKILL_MULTIVIEW_MAX_ITEMS` cap must be dropped
+    /// and a warning emitted; the first `max_items` items must be preserved intact.
+    #[test]
+    fn cap_multiview_field_truncates_excess_items_and_preserves_prefix() {
+        let max = *MULTIVIEW_MAX_ITEMS;
+        // Build a list of (max + 5) items, each well within the char cap.
+        let overlong: Vec<String> = (0..max + 5).map(|i| format!("item-{i}")).collect();
+        let capped = cap_multiview_field("use_when", &overlong);
+        assert_eq!(
+            capped.len(),
+            max,
+            "capped length must equal max_items ({max})"
+        );
+        // First and last preserved items must be the original values.
+        assert_eq!(capped[0], "item-0");
+        assert_eq!(capped[max - 1], format!("item-{}", max - 1));
+    }
+
+    /// An item wider than `SKILL_MULTIVIEW_MAX_ITEM_CHARS` must be truncated to that
+    /// width (measured in Unicode scalar values, not bytes).
+    #[test]
+    fn cap_multiview_field_truncates_overlong_item_to_char_cap() {
+        let max_chars = *MULTIVIEW_MAX_ITEM_CHARS;
+        let overlong_item = "x".repeat(max_chars + 100);
+        let capped = cap_multiview_field("tools", &[overlong_item]);
+        assert_eq!(capped.len(), 1, "item count must be unchanged");
+        assert_eq!(
+            capped[0].chars().count(),
+            max_chars,
+            "item must be truncated to exactly max_chars ({max_chars}) characters"
+        );
+    }
+
+    /// Proves that a multi-view field value containing a literal `"\n---\n"` sequence
+    /// survives `render_pending_markdown` → YAML serialization → frontmatter split
+    /// WITHOUT prematurely closing the YAML frontmatter block.
+    ///
+    /// `serde_yaml` must quote or escape the value so that the `\n---\n` sequence
+    /// inside the YAML string does not act as a closing fence. The test replicates
+    /// the `split_frontmatter` logic from `graph-builder` inline (it is private
+    /// there) to prove the roundtrip contract without cross-crate coupling.
+    #[test]
+    fn frontmatter_roundtrip_field_containing_yaml_fence_sequence_is_safe() {
+        let mut candidate = minimal_candidate("yaml-injection-check");
+        // A value that, if unquoted by serde_yaml, would prematurely close the
+        // frontmatter block at the `\n---\n` boundary.
+        candidate.use_when = vec!["trigger\n---\nmalicious".to_owned()];
+
+        let markdown = render_pending_markdown(&candidate, "session-xyz", "test-provider")
+            .expect("render must succeed even with embedded YAML fence sequence");
+
+        // Replicate split_frontmatter logic (private in graph-builder) inline:
+        // The document must start with "---\n" and contain a closing "\n---\n".
+        let after_open = markdown
+            .strip_prefix("---\n")
+            .expect("rendered markdown must start with '---\\n'");
+
+        let (frontmatter_src, _body) = after_open
+            .split_once("\n---\n")
+            .expect("rendered markdown must contain a closing '\\n---\\n' fence");
+
+        // The frontmatter block (everything between the two fences) must NOT
+        // contain an unescaped `\n---` that would have terminated it early,
+        // AND it must contain the use_when field (proving the value was not lost).
+        assert!(
+            frontmatter_src.contains("use_when"),
+            "frontmatter must contain the 'use_when' key; got:\n{frontmatter_src}"
+        );
+
+        // Now parse the frontmatter back via serde_yaml to prove the value
+        // round-trips to the original string.
+        #[derive(serde::Deserialize)]
+        struct PartialFm {
+            use_when: Vec<String>,
+        }
+        let parsed: PartialFm = serde_yaml::from_str(frontmatter_src)
+            .expect("frontmatter must be valid YAML after the split");
+        assert_eq!(
+            parsed.use_when,
+            vec!["trigger\n---\nmalicious".to_owned()],
+            "use_when value must roundtrip intact through YAML serialization/deserialization"
+        );
     }
 
     // ── generality frontmatter tests ─────────────────────────────────────────

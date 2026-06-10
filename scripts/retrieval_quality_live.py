@@ -27,7 +27,9 @@ V1.7 arm metadata (T01):
 
     OLLAMA_EMBED_MODEL   — embedder model name (default: nomic-embed-text)
     RETRIEVAL_BACKEND    — candidate generation backend (default: snapshot_dense)
-    RETRIEVAL_SPARSE     — BM25/sparse enabled (default: false; arrives in T04)
+                           sparse/BM25 is gated solely by the backend value
+                           (snapshot_hybrid / qdrant_hybrid → sparse=True);
+                           there is no separate RETRIEVAL_SPARSE knob
     RETRIEVAL_RERANK     — local reranker enabled (default: false; arrives in T07)
 
   Where a variable is absent, the arm defaults to the current production value
@@ -59,7 +61,7 @@ ARM_METADATA_DEFAULTS = {
     "backend": "snapshot_dense",      # in-memory dense cosine over RetrievalSnapshot
     "embedder_model": "nomic-embed-text",  # hardcoded in mcp-server build_embedding_service()
     "dense": True,                    # always on; dense cosine is the only candidate path
-    "sparse": False,                  # BM25/sparse not yet implemented (arrives in T04)
+    "sparse": False,                  # false for snapshot_dense; hybrid backends set this True
     "rerank": False,                  # local reranker not yet implemented (arrives in T07)
 }
 
@@ -147,7 +149,9 @@ def build_arm_metadata(env_overrides: dict | None = None,
     Fields are read from environment variables that mirror the real server's
     configuration surface (RetrievalConfig::from_env + OLLAMA_EMBED_MODEL).
     When a variable is absent the current production default is used and is
-    honestly labelled — no invented values.
+    honestly labelled — no invented values. The `sparse` flag derives solely
+    from the backend value (hybrid backends → True); there is no RETRIEVAL_SPARSE
+    env var (no Rust code reads it).
 
     The `dimension` field is NOT probed here.  Callers that need the live
     dimension must call `_probe_ollama_dimension(embedder_model)` separately
@@ -170,15 +174,18 @@ def build_arm_metadata(env_overrides: dict | None = None,
                                     ARM_METADATA_DEFAULTS["embedder_model"])
     backend = merged_env.get("RETRIEVAL_BACKEND",
                              ARM_METADATA_DEFAULTS["backend"])
-    sparse_raw = merged_env.get("RETRIEVAL_SPARSE", "")
     rerank_raw = merged_env.get("RETRIEVAL_RERANK", "")
+    # `sparse` is gated solely by the backend: hybrid arms (snapshot_hybrid,
+    # qdrant_hybrid) run BM25 re-scoring; snapshot_dense does not.
+    # There is no separate RETRIEVAL_SPARSE env var — no Rust code reads it.
+    sparse = backend.strip().lower() in ("snapshot_hybrid", "hybrid", "qdrant_hybrid", "qdrant")
 
     return {
         "backend": backend,
         "embedder_model": embedder_model,
         "dimension": dimension,  # real discovered dimension; None if Ollama unreachable
         "dense": True,  # always on; sparse is additive, not a replacement
-        "sparse": _parse_bool_env(sparse_raw) if sparse_raw.strip() else False,
+        "sparse": sparse,
         "rerank": _parse_bool_env(rerank_raw) if rerank_raw.strip() else False,
     }
 
@@ -283,14 +290,16 @@ def mean(xs):
 
 
 def _latency_stats(latencies_ms: list[float]) -> dict:
-    """Compute mean, p50, p95 latency summary over a list of per-query latencies.
+    """Compute mean, p50, p95, and max latency summary over a list of per-query latencies.
 
-    Returns a dict with keys: mean, p50, p95, n (all in milliseconds).
+    Returns a dict with keys: mean, p50, p95, max, n (all in milliseconds).
+    ``max`` is the p100 / worst-case sample and is included so tail latency is
+    never hidden by the p95 alone (cold-start spikes show up here first).
     Returns zeros for all stats when the input list is empty (e.g. no positive
     queries in the split) so the report key is always present and well-formed.
     """
     if not latencies_ms:
-        return {"mean": 0.0, "p50": 0.0, "p95": 0.0, "n": 0}
+        return {"mean": 0.0, "p50": 0.0, "p95": 0.0, "max": 0.0, "n": 0}
     sorted_lat = sorted(latencies_ms)
     n = len(sorted_lat)
 
@@ -303,6 +312,7 @@ def _latency_stats(latencies_ms: list[float]) -> dict:
         "mean": round(sum(sorted_lat) / n, 1),
         "p50": percentile(50),
         "p95": percentile(95),
+        "max": round(sorted_lat[-1], 1),
         "n": n,
     }
 
@@ -480,7 +490,7 @@ def main():
     print(f"positives={len(per_query)} negatives={len(neg)} "
           f"judged={len(cache)} (relevant={report['judged_relevant']})")
     lat = report["latency_ms"]
-    print(f"latency (find_skill): mean={lat['mean']:.1f}ms  p50={lat['p50']:.1f}ms  p95={lat['p95']:.1f}ms  n={lat['n']}")
+    print(f"latency (find_skill): mean={lat['mean']:.1f}ms  p50={lat['p50']:.1f}ms  p95={lat['p95']:.1f}ms  max={lat['max']:.1f}ms  n={lat['n']}")
     print(f"{'metric':12s} {'anchor-only':>12s} {'judge-augmented':>16s}")
     for key in ("mrr", "ndcg_at_3", "p_at_1", "recall_at_3", "hit_at_3"):
         print(f"{key:12s} {agg_anchor[key]:>12.3f} {agg_judge[key]:>16.3f}")

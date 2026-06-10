@@ -181,6 +181,90 @@ pub enum QdrantError {
     },
 }
 
+/// Validates that a Qdrant collection name consists only of ASCII letters, digits,
+/// hyphens, and underscores (`^[A-Za-z0-9_-]+$`).
+///
+/// Collection names are interpolated directly into Qdrant REST path segments via
+/// `format!` (e.g. `/collections/{name}/points`). A name like `skills/../../admin`
+/// would silently traverse the Qdrant path hierarchy and target arbitrary endpoints.
+///
+/// Returns `Err(QdrantError::InvalidConfiguration)` on violation. Callers should
+/// invoke this at method entry on any `collection_name` argument that will be
+/// used in a URL segment, not just at adapter construction time.
+fn validate_collection_name(name: &str) -> Result<(), QdrantError> {
+    if !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-') {
+        return Err(QdrantError::InvalidConfiguration(format!(
+            "collection name {:?} contains characters outside [A-Za-z0-9_-]; \
+             collection names are used as Qdrant REST path segments and must not \
+             contain path traversal characters like '/', '.', or whitespace",
+            name
+        )));
+    }
+    Ok(())
+}
+
+/// Validates a QDRANT_URL value: requires an `http://` or `https://` scheme and
+/// emits a loud warning when the host is not in the local-only allowlist.
+///
+/// # Scheme check (hard fail)
+///
+/// The value must start with `http://` or `https://`. Any other prefix (e.g. a
+/// bare hostname, an empty string, or a gRPC `grpc://` address) returns
+/// `Err(QdrantError::InvalidConfiguration)` immediately. This prevents the adapter
+/// from silently making requests to unintended endpoints when the env var is wrong.
+///
+/// # Non-local host warning (loud warn, continue)
+///
+/// If the host extracted from the URL is not one of `localhost`, `127.0.0.1`,
+/// `::1`, or `qdrant`, a `warn!` is emitted so the operator is alerted that skill
+/// vectors will be sent to an external host. The function still returns `Ok(())` so
+/// intentional remote deployments are not blocked.
+///
+/// Host parsing is done with lightweight `str` operations — no new crate dependency.
+pub fn validate_qdrant_url(url: &str) -> Result<(), QdrantError> {
+    let after_scheme = if let Some(rest) = url.strip_prefix("https://") {
+        rest
+    } else if let Some(rest) = url.strip_prefix("http://") {
+        rest
+    } else {
+        return Err(QdrantError::InvalidConfiguration(format!(
+            "QDRANT_URL {:?} must start with http:// or https://; \
+             bare hostnames, grpc://, and other schemes are not supported",
+            url
+        )));
+    };
+
+    // Extract the host portion: everything before the first '/' or ':' that
+    // follows the scheme+authority. IPv6 addresses are wrapped in brackets, e.g.
+    // `[::1]:6333`, so we detect and strip brackets before the local-host check.
+    let host_and_port = after_scheme.split('/').next().unwrap_or("");
+    let host = if host_and_port.starts_with('[') {
+        // IPv6 literal: `[::1]` or `[::1]:6333` — take the part inside `[…]`.
+        host_and_port
+            .trim_start_matches('[')
+            .split(']')
+            .next()
+            .unwrap_or(host_and_port)
+    } else {
+        // IPv4 or hostname: strip optional port.
+        host_and_port.split(':').next().unwrap_or(host_and_port)
+    };
+
+    const LOCAL_HOSTS: &[&str] = &["localhost", "127.0.0.1", "::1", "qdrant"];
+    if !LOCAL_HOSTS.contains(&host) {
+        tracing::warn!(
+            qdrant_url = url,
+            host,
+            "QDRANT_URL points at non-local host {}; skill vectors will be sent externally \
+             — counter to local-first; set QDRANT_URL to a local address unless you intend \
+             a remote deployment",
+            host
+        );
+    }
+
+    Ok(())
+}
+
 #[derive(Debug, Clone)]
 pub struct QdrantAdapter {
     client: reqwest::Client,
@@ -199,6 +283,8 @@ impl QdrantAdapter {
             ));
         }
 
+        validate_qdrant_url(&config.endpoint)?;
+
         if config.timeout_ms == 0 {
             return Err(QdrantError::InvalidConfiguration(
                 "timeout_ms must be greater than zero".to_owned(),
@@ -213,18 +299,7 @@ impl QdrantAdapter {
         // This guard subsumes #234's empty-slug guard for the QDRANT_COLLECTION override path
         // (the model-keyed path already produces safe `[a-z0-9-]` slugs, but environment
         // overrides are operator-supplied and must be validated at construction).
-        if !config
-            .collection_name
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
-        {
-            return Err(QdrantError::InvalidConfiguration(format!(
-                "collection name {:?} contains characters outside [A-Za-z0-9_-]; \
-                 collection names are used as Qdrant REST path segments and must not \
-                 contain path traversal characters like '/', '.', or whitespace",
-                config.collection_name
-            )));
-        }
+        validate_collection_name(&config.collection_name)?;
 
         // An empty collection name passes the charset check (vacuously true) but is
         // also invalid — reject it explicitly so the error message is unambiguous.
@@ -399,6 +474,7 @@ impl QdrantAdapter {
         collection_name: &str,
         dense_vector_size: u64,
     ) -> Result<(), QdrantError> {
+        validate_collection_name(collection_name)?;
         let base_url = self.config.endpoint.trim_end_matches('/');
         let probe_endpoint = format!("{base_url}/collections/{collection_name}");
 
@@ -467,6 +543,7 @@ impl QdrantAdapter {
         sparse: &SparseVector,
         payload: &Value,
     ) -> Result<(), QdrantError> {
+        validate_collection_name(collection_name)?;
         let endpoint = format!(
             "{}/collections/{collection_name}/points?wait=true",
             self.config.endpoint.trim_end_matches('/')
@@ -520,6 +597,7 @@ impl QdrantAdapter {
         sparse_query: &SparseVector,
         limit: u64,
     ) -> Result<Vec<HybridHit>, QdrantError> {
+        validate_collection_name(collection_name)?;
         let endpoint = format!(
             "{}/collections/{collection_name}/points/query",
             self.config.endpoint.trim_end_matches('/')

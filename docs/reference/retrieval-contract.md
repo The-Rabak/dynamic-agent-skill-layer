@@ -239,6 +239,23 @@ The no-match relevance floor was recalibrated from 0.450 to **0.48** on the real
 calibration) was too low — it leaked off-topic fabrications (no_match precision 0.600) and admitted
 ranking noise. 0.48 achieves perfect no_match precision and higher positive quality. Resolved.
 
+### Multi-view structured fields (migration 009) — reader status update (T04, 2026-06)
+
+Migration `009_skill_multiview_fields.sql` added seven nullable `TEXT[]` columns to `skills`
+(`use_when`, `avoid_when`, `artifacts`, `tools`, `invariants`, `requires`, `produces`).
+Its header originally stated "No production code SELECTs these columns yet." That is no longer
+accurate as of T04 (2026-06). Current readers:
+
+- `rebuild.rs::list_skills` (`infrastructure/src/persistence/rebuild.rs`) — reads all seven fields
+  into `SkillRecord` to populate the in-memory `RetrievalSnapshot`.
+- `build_graph_from_pg` (`crates/mcp-server/src/lib.rs`) — reads them for snapshot construction
+  at boot and on each graph-version change.
+- `inspect_skill` (`crates/mcp-server/src/lib.rs`) — surfaces them in the MCP tool response.
+
+The migration DDL itself is unchanged (migrations are append-only); this note documents that the
+write-ahead schema is now fully live on both the write side (session-extractor/graph-builder) and
+the read side (retrieval snapshot + MCP tool responses).
+
 ### Capped prior means cold-start is mild, not fatal
 
 A relevant new skill (usage_count=0) competes purely on cosine and subunit evidence. Because

@@ -33,11 +33,11 @@ class TestBuildArmMetadata(unittest.TestCase):
 
     def setUp(self):
         # Clear any arm-related env vars so tests start from a clean state.
-        for key in ("OLLAMA_EMBED_MODEL", "RETRIEVAL_BACKEND", "RETRIEVAL_SPARSE", "RETRIEVAL_RERANK"):
+        for key in ("OLLAMA_EMBED_MODEL", "RETRIEVAL_BACKEND", "RETRIEVAL_RERANK"):
             os.environ.pop(key, None)
 
     def tearDown(self):
-        for key in ("OLLAMA_EMBED_MODEL", "RETRIEVAL_BACKEND", "RETRIEVAL_SPARSE", "RETRIEVAL_RERANK"):
+        for key in ("OLLAMA_EMBED_MODEL", "RETRIEVAL_BACKEND", "RETRIEVAL_RERANK"):
             os.environ.pop(key, None)
 
     def test_returns_all_required_arm_fields(self):
@@ -86,12 +86,23 @@ class TestBuildArmMetadata(unittest.TestCase):
         self.assertEqual(arm["backend"], "qdrant_hybrid",
                          "RETRIEVAL_BACKEND env override must flow through to arm metadata")
 
-    def test_sparse_flag_env_override_flows_through(self):
-        """RETRIEVAL_SPARSE=true must enable the sparse flag."""
-        os.environ["RETRIEVAL_SPARSE"] = "true"
+    def test_sparse_derives_from_hybrid_backend(self):
+        """sparse must be True when the backend is a hybrid variant (BM25 active)."""
+        for hybrid_backend in ("snapshot_hybrid", "qdrant_hybrid", "hybrid", "qdrant"):
+            with self.subTest(backend=hybrid_backend):
+                os.environ["RETRIEVAL_BACKEND"] = hybrid_backend
+                arm = build_arm_metadata()
+                self.assertTrue(arm["sparse"],
+                                f"sparse must be True when RETRIEVAL_BACKEND={hybrid_backend!r} "
+                                f"(BM25 re-scoring is active on hybrid arms)")
+                os.environ.pop("RETRIEVAL_BACKEND", None)
+
+    def test_sparse_false_for_snapshot_dense_backend(self):
+        """sparse must be False when the backend is snapshot_dense (dense-only path)."""
+        os.environ["RETRIEVAL_BACKEND"] = "snapshot_dense"
         arm = build_arm_metadata()
-        self.assertTrue(arm["sparse"],
-                        "RETRIEVAL_SPARSE=true must set sparse=True in arm metadata")
+        self.assertFalse(arm["sparse"],
+                         "sparse must be False for snapshot_dense — no BM25 re-scoring on dense-only arm")
 
     def test_rerank_flag_env_override_flows_through(self):
         """RETRIEVAL_RERANK=true must enable the rerank flag."""
@@ -125,11 +136,11 @@ class TestDimensionProbeIntegration(unittest.TestCase):
     """
 
     def setUp(self):
-        for key in ("OLLAMA_EMBED_MODEL", "RETRIEVAL_BACKEND", "RETRIEVAL_SPARSE", "RETRIEVAL_RERANK"):
+        for key in ("OLLAMA_EMBED_MODEL", "RETRIEVAL_BACKEND", "RETRIEVAL_RERANK"):
             os.environ.pop(key, None)
 
     def tearDown(self):
-        for key in ("OLLAMA_EMBED_MODEL", "RETRIEVAL_BACKEND", "RETRIEVAL_SPARSE", "RETRIEVAL_RERANK"):
+        for key in ("OLLAMA_EMBED_MODEL", "RETRIEVAL_BACKEND", "RETRIEVAL_RERANK"):
             os.environ.pop(key, None)
 
     def test_dimension_is_none_when_probe_unreachable(self):

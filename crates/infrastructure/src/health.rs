@@ -7,6 +7,7 @@ use serde::Serialize;
 use sqlx::PgPool;
 
 use crate::embeddings::ollama::{OllamaEmbeddingConfig, OllamaEmbeddingService};
+use crate::vector::qdrant::validate_qdrant_url;
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct HealthComponent {
@@ -227,33 +228,58 @@ impl DependencyFactory {
         if let Ok(qdrant_url) = std::env::var("QDRANT_URL")
             && !qdrant_url.trim().is_empty()
         {
-            // Label as "qdrant_write_side": Qdrant is the durable write-side vector
-            // store (outbox drain target). It is NOT queried at read time under
-            // Option A (ADR-0001). The label must not imply a read-path dependency.
-            checker = checker.with_http_dependency(
-                http_client.clone(),
-                "qdrant_write_side",
-                format!("{}/collections", qdrant_url.trim_end_matches('/')),
-            );
-
-            // Under QdrantHybrid, Qdrant is ALSO a read-time dependency: each
-            // retrieve call queries Qdrant for dense+sparse hybrid candidates.
-            // Surface this as a separate `qdrant_read_path` component so that
-            // operators can distinguish a write-side indexing failure (qdrant_write_side
-            // degraded) from a read-path outage (qdrant_read_path degraded).
-            // Probe the same /collections endpoint — reachability check is sufficient
-            // to confirm the path is live; actual query health is shown at retrieve time
-            // via the `qdrant_hybrid_read` marker in `RetrievalOutcome::health_markers`.
-            let backend_env = std::env::var("RETRIEVAL_BACKEND").unwrap_or_default();
-            if matches!(
-                backend_env.trim().to_ascii_lowercase().as_str(),
-                "qdrant_hybrid" | "qdrant"
-            ) {
+            // Validate the URL before registering any probes: a malformed URL is not
+            // worth probing and the error would be confusing rather than diagnostic.
+            // `validate_qdrant_url` also emits a loud warn for non-local hosts.
+            if let Err(err) = validate_qdrant_url(qdrant_url.trim()) {
+                tracing::warn!(
+                    qdrant_url = qdrant_url.trim(),
+                    error = %err,
+                    "QDRANT_URL failed validation; skipping qdrant_write_side and qdrant_read_path \
+                     probes — fix the URL and restart"
+                );
+            } else {
+                // Label as "qdrant_write_side": Qdrant is the durable write-side vector
+                // store (outbox drain target). It is NOT queried at read time under
+                // Option A (ADR-0001). The label must not imply a read-path dependency.
                 checker = checker.with_http_dependency(
                     http_client.clone(),
-                    "qdrant_read_path",
+                    "qdrant_write_side",
                     format!("{}/collections", qdrant_url.trim_end_matches('/')),
                 );
+
+                // Under QdrantHybrid, Qdrant is ALSO a read-time dependency: each
+                // retrieve call queries Qdrant for dense+sparse hybrid candidates.
+                // Surface this as a separate `qdrant_read_path` component so that
+                // operators can distinguish a write-side indexing failure (qdrant_write_side
+                // degraded) from a read-path outage (qdrant_read_path degraded).
+                // Probe the same /collections endpoint — reachability check is sufficient
+                // to confirm the path is live; actual query health is shown at retrieve time
+                // via the `qdrant_hybrid_read` marker in `RetrievalOutcome::health_markers`.
+                let backend_env = std::env::var("RETRIEVAL_BACKEND").unwrap_or_default();
+                let backend_normalized = backend_env.trim().to_ascii_lowercase();
+                match backend_normalized.as_str() {
+                    // Qdrant hybrid arms: Qdrant is a read-time dependency; add the probe.
+                    "qdrant_hybrid" | "qdrant" => {
+                        checker = checker.with_http_dependency(
+                            http_client.clone(),
+                            "qdrant_read_path",
+                            format!("{}/collections", qdrant_url.trim_end_matches('/')),
+                        );
+                    }
+                    // Snapshot arms: Qdrant is write-only; no read-path probe needed.
+                    "snapshot_dense" | "dense" | "snapshot_hybrid" | "hybrid" | "" => {}
+                    // Unrecognized value: the orchestrator will reject it at boot, but
+                    // surface a loud warning here so health-check logs also flag the problem.
+                    unrecognized => {
+                        tracing::warn!(
+                            retrieval_backend = unrecognized,
+                            "unrecognized RETRIEVAL_BACKEND {:?}; qdrant_read_path probe skipped \
+                             — the orchestrator will reject this value at boot",
+                            unrecognized
+                        );
+                    }
+                }
             }
         }
 

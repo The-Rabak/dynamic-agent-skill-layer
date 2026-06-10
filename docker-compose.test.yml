@@ -164,13 +164,13 @@ services:
       RETRIEVAL_GLOBAL_SCOPE_WEIGHT: ${RETRIEVAL_GLOBAL_SCOPE_WEIGHT:-}
       RETRIEVAL_RRF_K: ${RETRIEVAL_RRF_K:-}
       RETRIEVAL_COMMUNITY_BOOST_MODE: ${RETRIEVAL_COMMUNITY_BOOST_MODE:-}
-      # T04: arm-selection env vars — backend, sparse, and rerank flags.
+      # T04: arm-selection env vars — backend and rerank flags.
       # Unset (default) uses snapshot_dense (in-memory cosine over RetrievalSnapshot).
-      # Set RETRIEVAL_BACKEND=qdrant_hybrid to activate the Qdrant hybrid read path (T04).
-      # Set RETRIEVAL_SPARSE=true to enable BM25 sparse re-scoring in the hybrid arm (T04).
+      # Set RETRIEVAL_BACKEND=snapshot_hybrid or qdrant_hybrid to activate hybrid arms (T04).
+      # BM25 sparse re-scoring is gated solely by RETRIEVAL_BACKEND (snapshot_hybrid/qdrant_hybrid);
+      # there is no separate RETRIEVAL_SPARSE knob — no Rust code reads it.
       # Set RETRIEVAL_RERANK=true to activate the local reranker (T07, not yet wired).
       RETRIEVAL_BACKEND: ${RETRIEVAL_BACKEND:-}
-      RETRIEVAL_SPARSE: ${RETRIEVAL_SPARSE:-}
       RETRIEVAL_RERANK: ${RETRIEVAL_RERANK:-}
       # T02: selects the embedding arm (model-keyed Qdrant collection).
       # Unset (default) uses nomic-embed-text (768-dim, skills__nomic-embed-text).
@@ -216,8 +216,8 @@ services:
       GRAPH_BUILDER_POLL_INTERVAL_MS: "5000"
       # T04: arm-selection vars — must match the mcp-server values so graph-builder
       # writes sparse vectors to the hybrid collection when qdrant_hybrid is active.
+      # BM25 sparse gating is handled by RETRIEVAL_BACKEND alone; no RETRIEVAL_SPARSE knob.
       RETRIEVAL_BACKEND: ${RETRIEVAL_BACKEND:-}
-      RETRIEVAL_SPARSE: ${RETRIEVAL_SPARSE:-}
       RETRIEVAL_RERANK: ${RETRIEVAL_RERANK:-}
       # T02: selects the embedding arm; must match the mcp-server value.
       OLLAMA_EMBED_MODEL: ${OLLAMA_EMBED_MODEL:-}

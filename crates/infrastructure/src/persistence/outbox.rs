@@ -281,11 +281,17 @@ pub fn parse_vector_upsert_request(
         }
         let mut indices = Vec::with_capacity(indices_raw.len());
         for item in indices_raw {
-            let idx = item.as_u64().ok_or_else(|| {
+            let raw_u64 = item.as_u64().ok_or_else(|| {
                 OutboxRelayError::InvalidPayload(
                     "payload.sparse.indices must contain only non-negative integers".to_owned(),
                 )
-            })? as u32;
+            })?;
+            let idx = u32::try_from(raw_u64).map_err(|_| {
+                OutboxRelayError::InvalidPayload(format!(
+                    "payload.sparse.indices value {raw_u64} exceeds u32 range (max {})",
+                    u32::MAX
+                ))
+            })?;
             indices.push(idx);
         }
         let mut values = Vec::with_capacity(values_raw.len());

@@ -524,12 +524,13 @@ struct QdrantHybridCandidateSource {
 impl HybridCandidateSource for QdrantHybridCandidateSource {
     /// Queries the hybrid Qdrant collection and maps hits to `HybridCandidate`s.
     ///
-    /// The hybrid upsert payload (written by `graph-builder`) stores:
+    /// The graph-builder outbox event carries:
     ///   `{ "content_hash": ..., "vector": [...], "payload": { "skill_id": ..., ... } }`
-    ///
-    /// The Qdrant point payload is the outer JSON object; `skill_id` is nested under
-    /// `payload["payload"]["skill_id"]`. This method extracts that field and returns
-    /// `HybridCandidate { skill_stable_id: ..., fused_score: ... }`.
+    /// `parse_vector_upsert_request` extracts the inner `payload["payload"]` object and
+    /// passes THAT to `upsert_hybrid_point`. Qdrant stores it verbatim, so the point's
+    /// native payload is `{ "skill_id": ..., "name": ..., ... }`. `skill_id` is therefore
+    /// at the **top level** of the point payload (`payload["skill_id"]`), not nested.
+    /// This method extracts that field and returns `HybridCandidate { skill_stable_id: ..., fused_score: ... }`.
     ///
     /// Returns `Err(HybridQueryError::Transport)` on any network failure or
     /// `Err(HybridQueryError::Status)` on an unexpected Qdrant response. The
@@ -666,6 +667,22 @@ async fn build_live_server(
         usage_sample_store.as_ref(),
     )
     .await?;
+
+    // Pay the Ollama JIT model-load cost at boot rather than on the first real
+    // session.  build_graph_from_pg reads precomputed embeddings from Postgres
+    // without calling the embedder, so the model is not yet resident in Ollama
+    // memory after that call.  One warmup embed makes the model resident before
+    // the server signals ready, keeping first-request latency inside the <500ms
+    // budget.  A warmup failure does NOT abort boot — the embedder's own health
+    // endpoint and circuit-breaker already cover real runtime failures.
+    match embedding_service.embed_text("warmup").await {
+        Ok(_) => info!("embedding warmup succeeded — Ollama model now resident"),
+        Err(e) => warn!(
+            error = %e,
+            "embedding warmup failed — first request may exceed latency budget; \
+             check Ollama reachability and OLLAMA_EMBED_MODEL"
+        ),
+    }
 
     let admin_runtime_dependencies = admin_wiring::live_admin_runtime_dependencies();
     let start_dir = std::env::current_dir().unwrap_or_else(|_| ".".into());
@@ -1048,7 +1065,7 @@ async fn build_graph_from_pg(
         .current_graph_version()
         .await
         .map_err(|e| format!("failed to read graph_version from graph_state: {e}"))?;
-    let mut skills = store
+    let skills = store
         .list_skills()
         .await
         .map_err(|e| format!("failed to list skills from PG: {e}"))?;
@@ -1066,17 +1083,27 @@ async fn build_graph_from_pg(
         );
     }
 
-    // Safety guard against unbounded memory growth. Truncating (rather than
-    // erroring) keeps boot resilient: a degraded-but-serving graph beats a panic
-    // on startup.
-    const MAX_SKILLS_TO_LOAD: usize = 5000;
-    if skills.len() > MAX_SKILLS_TO_LOAD {
-        warn!(
-            skill_count = skills.len(),
-            max = MAX_SKILLS_TO_LOAD,
-            "too many skills for in-memory snapshot; truncating to cap"
-        );
-        skills.truncate(MAX_SKILLS_TO_LOAD);
+    // Fail loud when the corpus exceeds the configured cap. Silent truncation
+    // violates the no-arbitrary-limits-on-churners standing rule: a degraded,
+    // partially-loaded graph is worse than a clear boot failure that tells the
+    // operator exactly what to do. Raise the cap via MAX_SKILLS_TO_LOAD or
+    // prune the corpus.
+    const DEFAULT_MAX_SKILLS_TO_LOAD: usize = 100_000;
+    let max_skills_to_load: usize = match std::env::var("MAX_SKILLS_TO_LOAD") {
+        Ok(raw) => raw
+            .parse()
+            .map_err(|_| format!("MAX_SKILLS_TO_LOAD is set but not a valid usize: {raw:?}"))?,
+        Err(_) => DEFAULT_MAX_SKILLS_TO_LOAD,
+    };
+    if skills.len() > max_skills_to_load {
+        return Err(format!(
+            "corpus has {} skills which exceeds the MAX_SKILLS_TO_LOAD cap of {}; \
+             raise the cap by setting MAX_SKILLS_TO_LOAD=<n> in the environment, \
+             or prune the skill corpus to fit within the current limit",
+            skills.len(),
+            max_skills_to_load,
+        )
+        .into());
     }
 
     let texts: Vec<String> = skills
