@@ -588,7 +588,7 @@ async fn build_live_server(
 ) -> Result<LiveServerComponents, Box<dyn std::error::Error + Send + Sync>> {
     // Build the embedding service first (sync, no network) so we can discover
     // its real vector dimension before setting up the Qdrant collection.
-    // The model is read from OLLAMA_EMBED_MODEL (defaults to nomic-embed-text).
+    // The model is read from OLLAMA_EMBED_MODEL (defaults to qwen3-embedding:4b).
     let embedding_service = build_embedding_service()?;
 
     let (pg_adapter, (qdrant_adapter, embedding_model_info), redis_streams, redis_client) = tokio::try_join!(
@@ -1720,22 +1720,22 @@ mod embedding_model_env_tests {
     /// The exhaustive behavioral suite lives in `infrastructure`; these tests
     /// confirm the key contract from the mcp-server perspective.
     #[test]
-    fn resolve_embedding_model_returns_nomic_default_when_raw_is_none() {
+    fn resolve_embedding_model_returns_qwen3_default_when_raw_is_none() {
         assert_eq!(
             resolve_embedding_model(None),
-            "nomic-embed-text",
-            "None (env var unset) must yield the nomic-embed-text default"
+            "qwen3-embedding:4b",
+            "None (env var unset) must yield the qwen3-embedding:4b default"
         );
     }
 
     /// Proves blank raw values fall back to the default, matching docker-compose
     /// interpolation behaviour (`OLLAMA_EMBED_MODEL: ${OLLAMA_EMBED_MODEL:-}`).
     #[test]
-    fn resolve_embedding_model_returns_nomic_default_when_raw_is_blank() {
+    fn resolve_embedding_model_returns_qwen3_default_when_raw_is_blank() {
         assert_eq!(
             resolve_embedding_model(Some("")),
-            "nomic-embed-text",
-            "empty string must yield the nomic-embed-text default"
+            "qwen3-embedding:4b",
+            "empty string must yield the qwen3-embedding:4b default"
         );
     }
 

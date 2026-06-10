@@ -54,7 +54,9 @@ fn build_embedding_service() -> Arc<dyn EmbeddingService> {
         .expect("OLLAMA_URL must be set to connect to the embedding service");
     let config = OllamaEmbeddingConfig {
         base_url,
-        model: "nomic-embed-text".to_owned(),
+        // Honor OLLAMA_EMBED_MODEL (de-facto default qwen3-embedding:4b) so admin
+        // tooling embeds at the same dimension/arm as the live corpus.
+        model: infrastructure::embedding_model_from_env(),
         max_concurrency: 4,
     };
     let service = OllamaEmbeddingService::from_config(config)

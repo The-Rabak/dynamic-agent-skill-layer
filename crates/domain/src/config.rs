@@ -18,8 +18,8 @@ impl Default for EmbeddingConfig {
     fn default() -> Self {
         Self {
             provider: "ollama".to_owned(),
-            model: "nomic-embed-text".to_owned(),
-            dimension: 768,
+            model: "qwen3-embedding:4b".to_owned(),
+            dimension: 2560,
             timeout_ms: 500,
             batch_timeout_ms: 5_000,
             max_concurrency: 4,

@@ -11,14 +11,18 @@ use tokio::{sync::Semaphore, task::JoinSet};
 /// Appears exactly once on the Rust side; both `resolve_embedding_model` and
 /// `OllamaEmbeddingConfig::default` reference this constant so a future default
 /// change touches one location.
-const DEFAULT_EMBEDDING_MODEL: &str = "nomic-embed-text";
+///
+/// De-facto app default is `qwen3-embedding:4b` (2560-dim, model-keyed collection
+/// `skills__qwen3-embedding-4b`). The vector dimension is always discovered live
+/// via `discover_dimension()`, never hardcoded against this name.
+const DEFAULT_EMBEDDING_MODEL: &str = "qwen3-embedding:4b";
 
 /// Resolves the embedding model name from an optional raw env value.
 ///
 /// `None` (env var unset) or `Some("")` / `Some("  ")` (blank, emitted by
 /// docker-compose interpolation when the host var is unset, e.g.
 /// `OLLAMA_EMBED_MODEL: ${OLLAMA_EMBED_MODEL:-}`) both return the default
-/// `"nomic-embed-text"`. Any non-blank value is returned as-is after trimming
+/// `"qwen3-embedding:4b"`. Any non-blank value is returned as-is after trimming
 /// surrounding whitespace.
 ///
 /// This pure function exists so `#240` can test the resolution logic without
@@ -411,8 +415,8 @@ mod tests {
     fn resolve_embedding_model_returns_default_when_raw_is_none() {
         assert_eq!(
             resolve_embedding_model(None),
-            "nomic-embed-text",
-            "None (env var unset) must yield the nomic default"
+            "qwen3-embedding:4b",
+            "None (env var unset) must yield the qwen3 default"
         );
     }
 
@@ -421,13 +425,13 @@ mod tests {
     fn resolve_embedding_model_returns_default_when_raw_is_blank() {
         assert_eq!(
             resolve_embedding_model(Some("")),
-            "nomic-embed-text",
-            "empty string (docker-compose interpolation) must yield the nomic default"
+            "qwen3-embedding:4b",
+            "empty string (docker-compose interpolation) must yield the qwen3 default"
         );
         assert_eq!(
             resolve_embedding_model(Some("   ")),
-            "nomic-embed-text",
-            "whitespace-only string must yield the nomic default"
+            "qwen3-embedding:4b",
+            "whitespace-only string must yield the qwen3 default"
         );
     }
 

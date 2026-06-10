@@ -179,9 +179,9 @@ services:
       # is a pure mcp-server restart (reboot_mcp) — no graph-builder rebuild needed.
       RETRIEVAL_DENSE_VIEWS: ${RETRIEVAL_DENSE_VIEWS:-}
       # T02: selects the embedding arm (model-keyed Qdrant collection).
-      # Unset (default) uses nomic-embed-text (768-dim, skills__nomic-embed-text).
-      # Set to qwen3-embedding:4b to activate the qwen arm (2560-dim, skills__qwen3-embedding-4b).
-      OLLAMA_EMBED_MODEL: ${OLLAMA_EMBED_MODEL:-}
+      # De-facto app default is qwen3-embedding:4b (2560-dim, skills__qwen3-embedding-4b).
+      # Override to nomic-embed-text (768-dim, skills__nomic-embed-text) only for the legacy arm.
+      OLLAMA_EMBED_MODEL: ${OLLAMA_EMBED_MODEL:-qwen3-embedding:4b}
     volumes:
       - test-global-skills:/skills/global:ro
       # mcp-server must see the project skills root so SKILL_PROJECT_ROOT resolves
@@ -226,7 +226,8 @@ services:
       RETRIEVAL_BACKEND: ${RETRIEVAL_BACKEND:-}
       RETRIEVAL_RERANK: ${RETRIEVAL_RERANK:-}
       # T02: selects the embedding arm; must match the mcp-server value.
-      OLLAMA_EMBED_MODEL: ${OLLAMA_EMBED_MODEL:-}
+      # De-facto default qwen3-embedding:4b (2560-dim, skills__qwen3-embedding-4b).
+      OLLAMA_EMBED_MODEL: ${OLLAMA_EMBED_MODEL:-qwen3-embedding:4b}
       # LLM subunit-extraction fallback (rare) uses gemma4:12b for this run.
       OLLAMA_EXTRACTION_MODEL: gemma4:12b
       OLLAMA_EXTRACTION_TIMEOUT_MS: "300000"

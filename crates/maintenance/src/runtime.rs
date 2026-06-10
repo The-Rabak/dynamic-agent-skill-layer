@@ -596,7 +596,11 @@ fn build_embedding_service_from_environment() -> Result<Arc<dyn EmbeddingService
     let base_url = std::env::var("OLLAMA_URL").map_err(|_| "OLLAMA_URL must be set".to_owned())?;
     let config = OllamaEmbeddingConfig {
         base_url,
-        model: "nomic-embed-text".to_owned(),
+        // Honor OLLAMA_EMBED_MODEL (de-facto default qwen3-embedding:4b). A hardcoded
+        // model here would embed maintenance candidates at the WRONG dimension for a
+        // qwen3 corpus (768 vs 2560) and corrupt cosine/merge — must match the arm
+        // graph-builder + mcp-server use.
+        model: infrastructure::embedding_model_from_env(),
         max_concurrency: 4,
     };
     let service = OllamaEmbeddingService::from_config(config)
