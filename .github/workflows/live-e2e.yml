@@ -7,7 +7,8 @@
 # via `cargo tree`, and uploads the human-readable summary + JSON reports as a
 # build artifact on both success and failure.
 #
-# Model pull: `nomic-embed-text` (~274 MB) is always pulled.
+# Model pull: `qwen3-embedding:4b` (~2.5 GB, default arm) and
+# `nomic-embed-text` (~274 MB, legacy arm) are always pulled.
 # `granite4:3b` (~2 GB) is documented as the CI-omitted model: it is used only
 # by the Ollama extraction provider; extraction tests fall back to "unavailable"
 # gracefully when the model is absent.
@@ -121,10 +122,21 @@ jobs:
       - name: Create ollama_data Docker volume
         run: docker volume create ollama_data
 
-      # Pull the embedding model via a one-shot container before the test stack
-      # starts, so the first test that needs it does not time out waiting for
-      # the pull.  `nomic-embed-text` (~274 MB) is required by the retrieval
-      # round-trip.  `granite4:3b` (~2 GB) is omitted in CI.
+      # Pull embedding models via one-shot containers before the test stack
+      # starts, so the first test that needs them does not time out waiting for
+      # the pull.
+      # - `qwen3-embedding:4b` (~2.5 GB) is the de-facto default embedding arm
+      #   (OLLAMA_EMBED_MODEL=qwen3-embedding:4b in docker-compose.test.yml).
+      # - `nomic-embed-text` (~274 MB) is kept for legacy-arm tests that
+      #   override OLLAMA_EMBED_MODEL=nomic-embed-text.
+      # `granite4:3b` (~2 GB) is omitted in CI (extraction fallback only).
+      - name: Pull Ollama model (qwen3-embedding:4b)
+        run: |
+          docker run --rm \
+            -v ollama_data:/root/.ollama \
+            ollama/ollama:0.24.0 \
+            pull qwen3-embedding:4b
+
       - name: Pull Ollama model (nomic-embed-text)
         run: |
           docker run --rm \

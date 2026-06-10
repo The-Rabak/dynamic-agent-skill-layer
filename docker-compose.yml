@@ -59,7 +59,11 @@ services:
       # Parallel request slots so concurrent compile_context embed calls are served
       # in parallel rather than serialized — keeps the warm read path p95 under the
       # 500ms SLA under concurrent sessions (DS-007). Pair with EMBED_MAX_CONCURRENCY
-      # on the clients. nomic-embed-text is small, so the extra loaded copies are cheap.
+      # on the clients.
+      # Default embedding arm is qwen3-embedding:4b (2560-dim). Operators must
+      # pre-pull it before starting the stack:
+      #   docker run --rm -v ollama_data:/root/.ollama ollama/ollama pull qwen3-embedding:4b
+      # The extra loaded copies of the model are cheap relative to the serving benefit.
       OLLAMA_NUM_PARALLEL: ${OLLAMA_NUM_PARALLEL:-4}
       # Keep every model resident for 24h after last use. We impose NO request
       # timeouts on model calls (a slow cold load must never cut a call off), so

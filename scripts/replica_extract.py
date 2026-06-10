@@ -4,7 +4,7 @@
 Adapts the proven scripts/measure_214_extraction.py corpus-drain recipe for the
 v1.7 multi-view prompt redesign + replica isolation:
 
-  1. Read the FROZEN source manifest (tests/e2e/reports/replica-run/source_manifest.txt)
+  1. Read the FROZEN source manifest (tests/e2e/reports/replica-run/genuine_manifest.txt)
      so claude-code's own subprocess sessions (which land in ~/.claude/projects/-tmp)
      cannot pollute the run's input mid-flight.
   2. Neutralize the shared transcript_ingest_queue (mark spent rows processed) so the
@@ -27,6 +27,8 @@ import sys
 import time
 import urllib.request
 from pathlib import Path
+
+import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
 RDIR = ROOT / "tests/e2e/reports/replica-run"
@@ -95,19 +97,35 @@ def run_worker(logpath):
 
 
 def parse_draft(path: Path):
+    """Parse a .pending draft file and return its frontmatter fields.
+
+    Extracts YAML frontmatter (between the opening ``---`` fence and the
+    closing ``---`` fence) using a real YAML parser so that multi-line lists,
+    descriptions containing colons, and other valid YAML constructs are handled
+    correctly.  A missing or unparseable frontmatter block is treated as an
+    empty dict (no fields populated) rather than raising.
+
+    Returns a dict with keys:
+      name         -- value of the ``name`` frontmatter key, or the parent
+                      directory name when absent.
+      description  -- value of the ``description`` frontmatter key.
+      skill_type   -- value of the ``type`` frontmatter key.
+      populated    -- dict mapping each key in MULTIVIEW_KEYS to a bool
+                      indicating whether the parsed value is non-empty/truthy.
+      path         -- absolute path to the draft file as a string.
+    """
     text = path.read_text(errors="replace")
     fm = {}
     if text.startswith("---\n") and "\n---\n" in text[4:]:
         raw_fm, _ = text[4:].split("\n---\n", 1)
-        cur = None
-        for line in raw_fm.splitlines():
-            if line and not line.startswith(" ") and not line.startswith("-") and ":" in line:
-                k, _, v = line.partition(":")
-                cur = k.strip()
-                fm[cur] = v.strip()
-            elif line.strip().startswith("-") and cur:
-                fm[cur] = (fm.get(cur, "") + " " + line.strip()).strip()
-    populated = {k: bool(fm.get(k, "").strip()) for k in MULTIVIEW_KEYS}
+        try:
+            parsed = yaml.safe_load(raw_fm)
+            if isinstance(parsed, dict):
+                fm = parsed
+        except yaml.YAMLError:
+            # Malformed frontmatter — treat as no fields populated.
+            pass
+    populated = {k: bool(fm.get(k)) for k in MULTIVIEW_KEYS}
     return dict(name=fm.get("name", path.parent.name),
                 description=fm.get("description", ""),
                 skill_type=fm.get("type", ""),

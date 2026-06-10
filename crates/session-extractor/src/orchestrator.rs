@@ -484,25 +484,34 @@ pub async fn run_orchestration(
     // candidate whose cited evidence is wholly absent from the real session
     // transcript (a fabrication guard) — loudly, never silently. Candidates that
     // cite no evidence are kept (recall-first); see `crate::grounding` docs.
-    let session_transcript_text: String = events
+    //
+    // Haystack scope (#259): includes ALL event types — UserMessage, AssistantMessage,
+    // ToolCall (name + input_json), ToolResult (output), FileEdit (path + operation).
+    // Evidence anchors are most commonly exact commands, error strings, or file paths
+    // that live in tool events; a prose-only haystack silently drops the highest-value
+    // concrete skills. `SessionEvent::grounding_text` provides the per-variant projection.
+    //
+    // Normalize once (#264): `GroundingContext::new` normalizes the full haystack once
+    // and builds the word-token set once; both the retain predicate and the warn path
+    // share the same `ctx` without re-normalizing per candidate or per dropped candidate.
+    let session_grounding_text: String = events
         .iter()
-        .filter_map(|ev| ev.as_transcript_entry())
-        .map(|entry| entry.content)
+        .filter_map(|ev| ev.grounding_text())
         .collect::<Vec<_>>()
         .join("\n");
+    let grounding_ctx = crate::grounding::GroundingContext::new(&session_grounding_text);
     let pre_grounding_count = final_candidates.len();
     final_candidates.retain(|candidate| {
-        let grounded =
-            crate::grounding::candidate_is_grounded(candidate, &session_transcript_text);
+        let grounded = crate::grounding::candidate_is_grounded(candidate, &grounding_ctx);
         if !grounded {
             warn!(
                 name = %candidate.name,
                 ungrounded = ?crate::grounding::ungrounded_evidence_anchors(
                     candidate,
-                    &session_transcript_text,
+                    &grounding_ctx,
                 ),
                 "orchestrator: dropping candidate with fabricated evidence \
-                 (no cited anchor found in the transcript)"
+                 (no cited anchor found in the session transcript or tool events)"
             );
         }
         grounded

@@ -19,7 +19,7 @@ files:
   - scripts/retrieval_quality_live.py
   - scripts/retrieval_quality_sweep.py
   - scripts/compare_arms_top10.py
-  - tests/fixtures/retrieval_quality_234_corpus_labeled.json
+  - tests/fixtures/retrieval_quality_234_corpus_labeled.json  # INVALID for the 262-skill corpus — see Local Context
   - tests/e2e/reports/
 test_command: "real-server dense vs snapshot_hybrid vs qdrant_hybrid sweep on the T10 corpus + top-10 diff"
 tdd_mode: ralph
@@ -57,6 +57,25 @@ On the current corpus, dense ≡ hybrid exactly (top-10 byte-identical, 0/30 dif
 - WHY source: plan `## Success Criteria` + the measurement standing rule (drive the real server).
 - Depends on T10 (rich corpus), T09 (dense multi-view views), and the T06-folded #260 score-exposure fix (so uplift is readable).
 - This is the gate the plan sets before any final "lexical retrieval isn't worth pursuing" verdict feeds T14 (#205) / T15 (#218).
+
+### T10→T11 Handoff: eval-set is INVALID for the new corpus (owner action required before authoring)
+
+`tests/fixtures/retrieval_quality_234_corpus_labeled.json` **cannot be used as-is for T11.**
+Every anchor skill ID in that fixture pointed at the old 234-skill corpus, which was wiped in full
+when T10 rebuilt the corpus from genuine dev sessions (262 skills, new UUIDs throughout). Running
+the sweep against the cold 262 corpus with the old fixture will silently yield 0 recall on every
+query — the anchors resolve to nothing — producing a fabricated zero, not a real measurement.
+
+**T11's first deliverable is therefore to regenerate a corpus-matched held-out fixture against
+the live 262-skill corpus before running any sweep.**
+
+The method for generating that eval set is an **open owner decision** (flagged in
+`tests/e2e/reports/replica-run/VALIDATION-REPORT.md`, T10 follow-up #3). The leading candidate
+is: derive held-out queries from each skill's `use_when` field, measure the source-skill's rank
+when the dense-views flag is ON vs OFF, and record that as the gold label. This approach is
+self-contained (no external labels needed) and directly exercises the multi-view population T10
+delivered. **The owner must confirm or replace this method before T11 authors the fixture.**
+Until that decision is recorded here, do not run the sweep against a stale or fabricated set.
 
 ## Source
 

@@ -26,6 +26,9 @@ pub struct ExtractedSubunit {
 /// (multi-view dense/BM25 embedding) and T05 (typed-edge proposals).  They are
 /// always empty for body-only (no frontmatter) skills.  They never affect the
 /// ℓ₁ embedding text (`name + description + tags`) or the subunit list.
+///
+/// `skill_type` and `evidence` are WRITE-AHEAD for T05 (typed-edge proposals).
+/// `None`/empty when the frontmatter contains no `type`/`evidence` key.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SkillExtraction {
     pub skill_name: String,
@@ -47,6 +50,12 @@ pub struct SkillExtraction {
     pub requires: Vec<String>,
     /// Outcomes or artifacts produced by following this skill. Empty for body-only skills.
     pub produces: Vec<String>,
+    /// Taxonomy tag from the `type:` frontmatter key. `None` for body-only skills.
+    /// WRITE-AHEAD for T05 typed-edge proposals.
+    // TODO(T05): forward skill_type to typed-edge proposals / PersistedGraphSkillRecord
+    pub skill_type: Option<String>,
+    /// Provenance anchors from the `evidence:` frontmatter key. Empty for body-only skills.
+    pub evidence: Vec<String>,
 }
 
 /// Extracts deterministic subunits first and only falls back when structural output is thin.
@@ -81,6 +90,9 @@ fn finalize_extraction(
         invariants: structural.invariants,
         requires: structural.requires,
         produces: structural.produces,
+        // Taxonomy tag and provenance anchors — WRITE-AHEAD for T05.
+        skill_type: structural.skill_type,
+        evidence: structural.evidence,
     }
 }
 
@@ -106,6 +118,8 @@ mod tests {
             invariants: vec![],
             requires: vec![],
             produces: vec![],
+            skill_type: None,
+            evidence: vec![],
         };
 
         let extraction = finalize_extraction(structural, "markdown", |_| {
@@ -146,6 +160,8 @@ mod tests {
             invariants: vec![],
             requires: vec![],
             produces: vec![],
+            skill_type: None,
+            evidence: vec![],
         };
 
         let extraction = finalize_extraction(structural, "markdown", |_| {

@@ -449,7 +449,7 @@ mod tests {
         let checker = InfrastructureHealthChecker::new().with_static_component(
             "embedding_arm",
             true,
-            "model=nomic-embed-text dim=768 collection=skills-nomic-embed-text",
+            "model=qwen3-embedding:4b dim=2560 collection=skills-qwen3-embedding-4b",
         );
 
         let report = checker.check().await;
@@ -484,7 +484,7 @@ mod tests {
             arm.detail
         );
         assert_eq!(
-            arm.detail, "model=nomic-embed-text dim=768 collection=skills-nomic-embed-text",
+            arm.detail, "model=qwen3-embedding:4b dim=2560 collection=skills-qwen3-embedding-4b",
             "embedding_arm detail format must be 'model=X dim=Y collection=Z'"
         );
     }

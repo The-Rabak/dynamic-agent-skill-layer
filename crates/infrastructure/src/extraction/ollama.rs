@@ -7,7 +7,10 @@ use serde::{Deserialize, Serialize};
 use crate::extraction::{
     http::{extraction_ollama_num_ctx, post_json},
     limits::{validate_extraction_config, validate_transcript_limits},
-    prompt_contract::{build_text_json_extraction_prompt, render_sanitized_transcript_lines},
+    prompt_contract::{
+        build_text_json_extraction_prompt, log_extraction_assessment,
+        render_sanitized_transcript_lines,
+    },
 };
 
 // # OllamaExtractor — Local Prompt Ownership
@@ -138,9 +141,9 @@ struct StructuredExtraction {
     /// classified as retryable by the orchestrator's `classify_prose_attempt`. A
     /// present-but-empty `"candidates": []` still deserializes to an honest empty.
     candidates: Vec<domain::ExtractedSkillCandidate>,
-    /// The model's Step-1 chain-of-thought judgement on whether the transcript held
-    /// anything durable worth extracting. Optional (older responses lack it). Logged
-    /// for observability — explains WHY a window yielded zero candidates.
+    /// The model's Step-1 chain-of-thought judgement on extractable value.
+    /// Required in the LLM-facing schema; optional in Rust deserialization for
+    /// backward-compat (absence = no assessment). Logged for observability.
     #[serde(default)]
     assessment: Option<String>,
 }
@@ -183,16 +186,12 @@ impl TranscriptSkillExtractionService for OllamaExtractor {
         let parsed: StructuredExtraction = serde_json::from_str(&raw.response)
             .map_err(|error| ExtractionError::Unexpected(error.to_string()))?;
 
-        // Keep the model's assess-first judgement in the run log so a zero-candidate
-        // window is explainable (throwaway session vs. extraction miss).
-        if let Some(assessment) = parsed.assessment.as_deref() {
-            tracing::info!(
-                session_id = transcript.session_id.as_str(),
-                candidate_count = parsed.candidates.len(),
-                assessment,
-                "ollama extraction assessment"
-            );
-        }
+        log_extraction_assessment(
+            "ollama",
+            Some(transcript.session_id.as_str()),
+            parsed.candidates.len(),
+            parsed.assessment.as_deref(),
+        );
 
         Ok(ExtractionResult {
             source_session_id: transcript.session_id.clone(),

@@ -5,7 +5,7 @@ These tests are pure / fast — no server required.  They prove:
   - `build_arm_metadata` populates all six required arm fields
     (backend, embedder_model, dimension, dense, sparse, rerank).
   - Default arm reflects the current production defaults (snapshot_dense,
-    nomic-embed-text, dense=True, sparse=False, rerank=False, dimension=None).
+    qwen3-embedding:4b, dense=True, sparse=False, rerank=False, dimension=None).
   - Env-var overrides flow through the arm metadata correctly.
   - The `dimension` field is None when the Ollama probe is unreachable and
     equals the discovered integer when the probe succeeds.
@@ -51,8 +51,8 @@ class TestBuildArmMetadata(unittest.TestCase):
         arm = build_arm_metadata()
         self.assertEqual(arm["backend"], "snapshot_dense",
                          "default backend must be snapshot_dense (in-memory dense cosine)")
-        self.assertEqual(arm["embedder_model"], "nomic-embed-text",
-                         "default embedder must be nomic-embed-text (current production model)")
+        self.assertEqual(arm["embedder_model"], os.environ.get("OLLAMA_EMBED_MODEL", "qwen3-embedding:4b"),
+                         "default embedder must be qwen3-embedding:4b (current production model), overridable via OLLAMA_EMBED_MODEL")
         self.assertTrue(arm["dense"],
                         "dense retrieval must be on by default")
         self.assertFalse(arm["sparse"],
@@ -114,7 +114,8 @@ class TestBuildArmMetadata(unittest.TestCase):
     def test_arm_metadata_defaults_constant_matches_production_defaults(self):
         """ARM_METADATA_DEFAULTS must document the current production arm identity."""
         self.assertEqual(ARM_METADATA_DEFAULTS["backend"], "snapshot_dense")
-        self.assertEqual(ARM_METADATA_DEFAULTS["embedder_model"], "nomic-embed-text")
+        self.assertEqual(ARM_METADATA_DEFAULTS["embedder_model"],
+                         os.environ.get("OLLAMA_EMBED_MODEL", "qwen3-embedding:4b"))
         self.assertTrue(ARM_METADATA_DEFAULTS["dense"])
         self.assertFalse(ARM_METADATA_DEFAULTS["sparse"])
         self.assertFalse(ARM_METADATA_DEFAULTS["rerank"])
@@ -152,7 +153,7 @@ class TestDimensionProbeIntegration(unittest.TestCase):
         """
         # Simulate: dimension = _probe_ollama_dimension(model)  →  None
         with patch("retrieval_quality_live._probe_ollama_dimension", return_value=None) as mock_probe:
-            mocked_dimension = mock_probe(os.environ.get("OLLAMA_EMBED_MODEL", "nomic-embed-text"))
+            mocked_dimension = mock_probe(os.environ.get("OLLAMA_EMBED_MODEL", "qwen3-embedding:4b"))
 
         arm = build_arm_metadata(dimension=mocked_dimension)
 
@@ -164,18 +165,18 @@ class TestDimensionProbeIntegration(unittest.TestCase):
     def test_dimension_equals_probed_value_when_ollama_reachable(self):
         """arm['dimension'] must equal the integer returned by the probe when Ollama is reachable.
 
-        Simulates the main() call path with a mocked probe returning 768
-        (nomic-embed-text's real dimension), as if Ollama responded successfully.
+        Simulates the main() call path with a mocked probe returning 2560
+        (qwen3-embedding:4b's real dimension), as if Ollama responded successfully.
         """
-        # Simulate: dimension = _probe_ollama_dimension(model)  →  768
-        with patch("retrieval_quality_live._probe_ollama_dimension", return_value=768) as mock_probe:
-            mocked_dimension = mock_probe(os.environ.get("OLLAMA_EMBED_MODEL", "nomic-embed-text"))
+        # Simulate: dimension = _probe_ollama_dimension(model)  →  2560
+        with patch("retrieval_quality_live._probe_ollama_dimension", return_value=2560) as mock_probe:
+            mocked_dimension = mock_probe(os.environ.get("OLLAMA_EMBED_MODEL", "qwen3-embedding:4b"))
 
         arm = build_arm_metadata(dimension=mocked_dimension)
 
         self.assertIn("dimension", arm,
                       "arm block must carry 'dimension' key when probe succeeded")
-        self.assertEqual(arm["dimension"], 768,
+        self.assertEqual(arm["dimension"], 2560,
                          "arm['dimension'] must equal the integer returned by the dimension probe")
 
     def test_dimension_probed_for_overridden_model(self):

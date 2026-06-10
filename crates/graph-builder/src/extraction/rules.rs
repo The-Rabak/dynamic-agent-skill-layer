@@ -12,6 +12,11 @@ use crate::extraction::ExtractedSubunit;
 /// T05 downstream.  They are WRITE-AHEAD: populated from frontmatter now,
 /// consumed by embedding-view construction (T04) and typed-edge proposals (T05)
 /// later.  They never influence subunit content or the ℓ₁ embedding text.
+///
+/// `skill_type` and `evidence` are WRITE-AHEAD for T05 (typed-edge proposals).
+/// `skill_type` carries the taxonomy tag (e.g. `failure_fix`, `anti_pattern`)
+/// written by the session-extractor; `evidence` carries provenance anchors.
+/// Both are `None`/empty when absent — backward compatible.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StructuralExtraction {
     pub skill_name: String,
@@ -32,6 +37,13 @@ pub struct StructuralExtraction {
     pub requires: Vec<String>,
     /// Outcomes or artifacts produced by following this skill. Empty when absent.
     pub produces: Vec<String>,
+    /// Taxonomy tag for this skill (e.g. `failure_fix`, `anti_pattern`, `workflow`).
+    /// `None` when absent from frontmatter. WRITE-AHEAD for T05 typed-edge proposals.
+    // TODO(T05): forward skill_type to typed-edge proposals / PersistedGraphSkillRecord
+    pub skill_type: Option<String>,
+    /// Provenance anchors referenced during extraction. Empty when absent from frontmatter.
+    /// Advisory — also partially recoverable via the `## Evidence` body subunit path.
+    pub evidence: Vec<String>,
 }
 
 /// Authoritative metadata carried in a SKILL.md YAML frontmatter block.
@@ -82,6 +94,14 @@ struct SkillFrontmatter {
     /// Outcomes or artifacts produced by following this skill (T05 edge source).
     #[serde(default)]
     produces: Vec<String>,
+    /// Taxonomy tag written by the session-extractor (e.g. `failure_fix`, `anti_pattern`).
+    /// The YAML key is `type` (a reserved word in Rust, hence the rename).
+    /// `None` when absent — backward compatible. WRITE-AHEAD for T05.
+    #[serde(rename = "type", default)]
+    skill_type: Option<String>,
+    /// Provenance anchors from the extraction pass. Empty when absent — backward compatible.
+    #[serde(default)]
+    evidence: Vec<String>,
 }
 
 impl SkillFrontmatter {
@@ -199,6 +219,8 @@ pub fn extract_structural_subunits(path: &Path, markdown: &str) -> StructuralExt
     let mut invariants = Vec::new();
     let mut requires = Vec::new();
     let mut produces = Vec::new();
+    let mut skill_type: Option<String> = None;
+    let mut evidence = Vec::new();
 
     if let Some(frontmatter) = &frontmatter {
         if let Some(name) = frontmatter
@@ -229,6 +251,9 @@ pub fn extract_structural_subunits(path: &Path, markdown: &str) -> StructuralExt
         invariants = frontmatter.invariants.clone();
         requires = frontmatter.requires.clone();
         produces = frontmatter.produces.clone();
+        // Taxonomy tag and provenance anchors — WRITE-AHEAD for T05.
+        skill_type = frontmatter.skill_type.clone();
+        evidence = frontmatter.evidence.clone();
     }
 
     if description.is_empty() {
@@ -247,6 +272,8 @@ pub fn extract_structural_subunits(path: &Path, markdown: &str) -> StructuralExt
         invariants,
         requires,
         produces,
+        skill_type,
+        evidence,
     }
 }
 
@@ -514,6 +541,97 @@ Run tests with cargo.\n\
         assert!(
             extraction.produces.is_empty(),
             "absent produces must default to empty Vec"
+        );
+        // New fields must also default to absent/empty when not in the frontmatter.
+        assert!(
+            extraction.skill_type.is_none(),
+            "absent skill_type must default to None"
+        );
+        assert!(
+            extraction.evidence.is_empty(),
+            "absent evidence must default to empty Vec"
+        );
+    }
+
+    /// `type` and `evidence` frontmatter keys survive a full read round-trip into
+    /// `StructuralExtraction`.  This is the regression test for the silent-drop bug
+    /// fixed in #263: serde_yaml previously discarded both keys because
+    /// `SkillFrontmatter` had no matching fields.
+    ///
+    /// Also proves backward compatibility: a frontmatter block WITHOUT `type`/`evidence`
+    /// still deserializes to `skill_type: None` and `evidence: []` (see
+    /// `absent_multi_view_fields_default_to_empty_vecs` above).
+    #[test]
+    fn type_and_evidence_frontmatter_round_trip_into_structural_extraction() {
+        let markdown = "---\n\
+name: cargo-test-workflow\n\
+description: Run and interpret cargo test output.\n\
+tags:\n\
+- rust\n\
+- testing\n\
+type: failure_fix\n\
+evidence:\n\
+- Observed repeated test failures masked by a missing --nocapture flag\n\
+- Confirmed fix by re-running with RUST_BACKTRACE=1\n\
+---\n\
+\n\
+# cargo-test-workflow\n\
+\n\
+Run and interpret cargo test output.\n\
+\n\
+## Procedures\n\
+- Run cargo test --workspace\n\
+- Check FAILED lines in output\n";
+
+        let extraction =
+            extract_structural_subunits(Path::new("cargo-test-workflow/SKILL.md"), markdown);
+
+        assert_eq!(
+            extraction.skill_type.as_deref(),
+            Some("failure_fix"),
+            "skill_type must deserialize from the `type` frontmatter key"
+        );
+        assert_eq!(
+            extraction.evidence,
+            vec![
+                "Observed repeated test failures masked by a missing --nocapture flag",
+                "Confirmed fix by re-running with RUST_BACKTRACE=1",
+            ],
+            "evidence must round-trip from frontmatter"
+        );
+        // Core fields must be unaffected.
+        assert_eq!(extraction.skill_name, "cargo-test-workflow");
+        assert_eq!(extraction.tags, vec!["rust", "testing"]);
+        assert_eq!(extraction.subunits.len(), 2);
+    }
+
+    /// A frontmatter block with `type` but no `evidence` still parses without error,
+    /// and `evidence` defaults to an empty Vec.
+    #[test]
+    fn type_present_evidence_absent_is_backward_compatible() {
+        let markdown = "---\n\
+name: redis-key-expiry\n\
+description: Set TTLs on Redis keys to prevent unbounded growth.\n\
+tags:\n\
+- redis\n\
+type: anti_pattern\n\
+---\n\
+\n\
+# redis-key-expiry\n\
+\n\
+Set TTLs on Redis keys to prevent unbounded growth.\n";
+
+        let extraction =
+            extract_structural_subunits(Path::new("redis-key-expiry/SKILL.md"), markdown);
+
+        assert_eq!(
+            extraction.skill_type.as_deref(),
+            Some("anti_pattern"),
+            "skill_type must deserialize when evidence is absent"
+        );
+        assert!(
+            extraction.evidence.is_empty(),
+            "absent evidence must default to empty Vec even when skill_type is present"
         );
     }
 }

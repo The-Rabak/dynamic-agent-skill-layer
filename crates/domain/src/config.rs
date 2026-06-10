@@ -82,9 +82,9 @@ impl Default for CompilationConfig {
 
 /// Hyper-parameters for HDBSCAN community detection run during graph rebuild.
 ///
-/// HDBSCAN is executed per scope against the in-memory 768-dim nomic-embed-text
-/// embeddings produced by the embedding step.  These parameters control cluster
-/// granularity and the noise floor.
+/// HDBSCAN is executed per scope against the in-memory embeddings produced by
+/// the configured embedding arm (default qwen3-embedding:4b, 2560-dim).
+/// These parameters control cluster granularity and the noise floor.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HdbscanConfig {
     /// Minimum number of skills required to form a semantic cluster.

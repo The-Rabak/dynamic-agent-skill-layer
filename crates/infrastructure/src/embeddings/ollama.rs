@@ -37,9 +37,8 @@ pub fn resolve_embedding_model(raw: Option<&str>) -> String {
 /// Reads the configured embedding model name from the process environment.
 ///
 /// Delegates to [`resolve_embedding_model`] with the current value of
-/// `OLLAMA_EMBED_MODEL`. Unset or blank returns `"nomic-embed-text"` so existing
-/// deployments are unaffected. Set to `"qwen3-embedding:4b"` to activate the
-/// qwen local-dense-retrieval arm.
+/// `OLLAMA_EMBED_MODEL`. Unset or blank returns `"qwen3-embedding:4b"` (the
+/// current production default). Set `OLLAMA_EMBED_MODEL` explicitly to override.
 ///
 /// Blank is treated as absent — docker-compose interpolation emits an empty string
 /// when the host env var is unset (e.g. `OLLAMA_EMBED_MODEL: ${OLLAMA_EMBED_MODEL:-}`).

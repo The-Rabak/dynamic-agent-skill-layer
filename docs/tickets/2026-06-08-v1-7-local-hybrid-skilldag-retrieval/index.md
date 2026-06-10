@@ -55,7 +55,7 @@ Independent hardening (slot anywhere — non-retrieval feature homes, parallel-s
 
 **Phase B — corpus, validation, efficacy:**
 - **Batch 10:** T13 convert-integration-fakes-to-live. Status: ready. (Hygiene gate before efficacy; parallel-safe — may run any time in Phase A too.)
-- **Batch 11:** T10 seed-corpus-self-ingestion-foundation. Status: ready.
+- **Batch 11:** T10 seed-corpus-self-ingestion-foundation. Status: completed (session work-2026-06-10-T10; 24 genuine dev sessions → 262 skills via real pipeline, 71% multi-view, 60 communities; `skill_layer_test` + `skills__qwen3-embedding-4b`; report: `tests/e2e/reports/replica-run/VALIDATION-REPORT.md`).
 - **Batch 12:** T11 corpus-multiview-resweep-hybrid-validation. Status: blocked (T10, T09, T06).
 - **Batch 13:** T12 trigger-aware-retrieval-priming-mode. Status: blocked (T10).
 - **Batch 14:** T14 efficacy-task-outcome-ab-harness. Status: blocked (T10, T13).
@@ -89,7 +89,7 @@ File-overlap safety notes:
 | [T07](07-optional-local-reranker-cheap-decomposition.md) | Optional local reranker and cheap query decomposition | 8 | T04 | `crates/retrieval` | ready |
 | [T08](08-retrieval-contract-docs-efficacy-handoff.md) | Retrieval contract docs and efficacy handoff | 9 | T01-T06 hard (+T09); T07 optional | `docs/reference` and `docs/assessments` | ready |
 | [T13](13-convert-integration-fakes-to-live.md) | Convert integration fakes → live (drain allowlist) | 10 | none | `tests/integration` and no-fakes guard | ready |
-| [T10](10-seed-corpus-self-ingestion-foundation.md) | Seed ≥200-skill corpus by dogfooding ingestion (was #216) | 11 | T03 | ingestion pipeline end-to-end | ready |
+| [T10](10-seed-corpus-self-ingestion-foundation.md) | Seed ≥200-skill corpus by dogfooding ingestion (was #216) | 11 | T03 | ingestion pipeline end-to-end | completed |
 | [T11](11-corpus-multiview-resweep-hybrid-validation.md) | Multi-view re-sweep — validate the hybrid bet (was #259) | 12 | T10, T09, T06 | `tests/e2e` quality harness, `scripts/retrieval_quality_*` | blocked |
 | [T12](12-trigger-aware-retrieval-priming-mode.md) | Trigger-aware retrieval — priming mode (was #220) | 13 | T10 | `crates/retrieval`, `crates/compiler` | blocked |
 | [T14](14-efficacy-task-outcome-ab-harness.md) | Efficacy A/B harness — layer ON vs OFF (was #205) | 14 | T10, T13 | efficacy harness over live stack | blocked |

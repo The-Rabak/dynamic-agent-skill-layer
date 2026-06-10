@@ -1275,13 +1275,17 @@ async fn build_graph_from_pg(
         // string sent to the provider (which would fail loud and crash the boot
         // build). `fuse_dense_views` treats an empty view embedding as absent and
         // falls back to e_summary, so flag-ON on a sparse corpus is safe.
-        let e_task_flat =
-            embed_dense_view_skipping_blank(embedding_service, &e_task_texts, "e_task").await?;
-        let e_needs_flat =
-            embed_dense_view_skipping_blank(embedding_service, &e_needs_texts, "e_needs").await?;
-        let e_negative_flat =
-            embed_dense_view_skipping_blank(embedding_service, &e_negative_texts, "e_negative")
-                .await?;
+        //
+        // The three views are independent: each receives its own text slice and
+        // produces its own output. Running them concurrently lets their batch
+        // supervisors interleave under the existing max_concurrency semaphore
+        // inside the embedding service, reducing sequential blocking on the
+        // hot boot path.
+        let (e_task_flat, e_needs_flat, e_negative_flat) = tokio::try_join!(
+            embed_dense_view_skipping_blank(embedding_service, &e_task_texts, "e_task"),
+            embed_dense_view_skipping_blank(embedding_service, &e_needs_texts, "e_needs"),
+            embed_dense_view_skipping_blank(embedding_service, &e_negative_texts, "e_negative"),
+        )?;
 
         // Capture the embedding dimensionality from the first non-empty vector
         // across all three views (any single view may be entirely empty on a

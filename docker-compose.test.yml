@@ -98,6 +98,15 @@ services:
       - -c
       - |
         apk add --no-cache curl >/dev/null
+        echo "==> Checking qwen3-embedding:4b model availability"
+        MODEL_PRESENT=$$(curl -s http://ollama:11434/api/tags | grep -c '"name":"qwen3-embedding:4b"')
+        if [ "$$MODEL_PRESENT" -eq 0 ]; then
+          echo "qwen3-embedding:4b not found, pulling..."
+          curl -s http://ollama:11434/api/pull -d '{"name":"qwen3-embedding:4b"}' >/dev/null
+          echo "qwen3-embedding:4b pull completed"
+        else
+          echo "qwen3-embedding:4b already present"
+        fi
         echo "==> Checking nomic-embed-text model availability"
         MODEL_PRESENT=$$(curl -s http://ollama:11434/api/tags | grep -c '"name":"nomic-embed-text"')
         if [ "$$MODEL_PRESENT" -eq 0 ]; then

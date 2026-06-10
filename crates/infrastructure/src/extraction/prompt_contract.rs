@@ -141,6 +141,40 @@ pub fn canonical_extraction_contract() -> &'static ExtractionPromptContract {
     &CANONICAL_CONTRACT
 }
 
+/// Logs the model's assess-first judgement so a zero-candidate result is
+/// explainable in the extraction run log.
+///
+/// All three extraction providers (claude, claude-code, ollama) share this
+/// single log site so the field names (`candidate_count`, `assessment`,
+/// `session_id`) and the message format are stable across providers.
+///
+/// `session_id` is `Some` when the call site has the session id readily in
+/// scope (ollama path); `None` when it is not (claude API and claude-code
+/// paths, where the session id is not threaded to the inner parse function).
+/// The field is omitted from the log record when `None`.
+pub(crate) fn log_extraction_assessment(
+    provider: &str,
+    session_id: Option<&str>,
+    candidate_count: usize,
+    assessment: Option<&str>,
+) {
+    if let Some(assessment) = assessment {
+        match session_id {
+            Some(sid) => tracing::info!(
+                session_id = sid,
+                candidate_count,
+                assessment,
+                "{provider} extraction assessment"
+            ),
+            None => tracing::info!(
+                candidate_count,
+                assessment,
+                "{provider} extraction assessment"
+            ),
+        }
+    }
+}
+
 /// Normalises a raw provider-supplied generality string to one of the three
 /// canonical values: `"project"`, `"general"`, or `"uncertain"`.
 ///
@@ -783,7 +817,10 @@ mod tests {
             "artifacts",
             "evidence",
         ] {
-            assert!(prompt.contains(view), "prompt must request the `{view}` view");
+            assert!(
+                prompt.contains(view),
+                "prompt must request the `{view}` view"
+            );
         }
         // The refinement-capture instruction (dead-ends -> avoid_when) and literal-token
         // trigger guidance are the heart of the redesign.
@@ -851,7 +888,10 @@ mod tests {
     fn schema_includes_type_and_evidence_fields() {
         let schema = extraction_candidate_schema();
         let props = &schema["properties"]["candidates"]["items"]["properties"];
-        assert!(!props["type"].is_null(), "schema must include the `type` taxonomy field");
+        assert!(
+            !props["type"].is_null(),
+            "schema must include the `type` taxonomy field"
+        );
         assert!(
             !props["evidence"].is_null(),
             "schema must include the `evidence` grounding field"
@@ -883,7 +923,10 @@ mod tests {
         let c: ExtractedSkillCandidate =
             serde_json::from_str(json).expect("must deserialise type + evidence");
         assert_eq!(c.skill_type.as_deref(), Some("failure_fix"));
-        assert_eq!(c.evidence, vec!["error[E0277]: cannot be held across await".to_owned()]);
+        assert_eq!(
+            c.evidence,
+            vec!["error[E0277]: cannot be held across await".to_owned()]
+        );
     }
 
     #[test]

@@ -25,7 +25,7 @@ V1.7 arm metadata (T01):
   is read from environment variables that mirror the real server's
   RetrievalConfig::from_env surface:
 
-    OLLAMA_EMBED_MODEL   — embedder model name (default: nomic-embed-text)
+    OLLAMA_EMBED_MODEL   — embedder model name (default: qwen3-embedding:4b)
     RETRIEVAL_BACKEND    — candidate generation backend (default: snapshot_dense)
                            sparse/BM25 is gated solely by the backend value
                            (snapshot_hybrid / qdrant_hybrid → sparse=True);
@@ -59,7 +59,7 @@ K = 3  # the product injects/uses the top-k; metrics reported @K
 # what RetrievalConfig::default() + build_embedding_service() produce.
 ARM_METADATA_DEFAULTS = {
     "backend": "snapshot_dense",      # in-memory dense cosine over RetrievalSnapshot
-    "embedder_model": "nomic-embed-text",  # hardcoded in mcp-server build_embedding_service()
+    "embedder_model": os.environ.get("OLLAMA_EMBED_MODEL", "qwen3-embedding:4b"),  # current production default; override via OLLAMA_EMBED_MODEL
     "dense": True,                    # always on; dense cosine is the only candidate path
     "sparse": False,                  # false for snapshot_dense; hybrid backends set this True
     "rerank": False,                  # local reranker not yet implemented (arrives in T07)
@@ -105,7 +105,7 @@ def _probe_ollama_dimension(model: str) -> int | None:
     """Probe the live Ollama embed endpoint to discover the actual vector dimension.
 
     Sends a single embedding request with the given model name and returns the
-    integer dimension (e.g. 768 for nomic-embed-text, 2560 for qwen3-embedding:4b),
+    integer dimension (e.g. 2560 for qwen3-embedding:4b, 768 for nomic-embed-text),
     or None if the endpoint is unreachable, returns an empty vector, or errors.
 
     On any failure, a diagnostic line is printed to stderr that includes the endpoint

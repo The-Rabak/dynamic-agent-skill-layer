@@ -281,7 +281,7 @@ impl std::str::FromStr for ExtractionRunPath {
 pub struct OrchestrationSeams {
     /// Skeleton labeler for the map step (labels procedure skeletons before extraction).
     pub skeleton_labeler: Arc<dyn SkeletonLabeler>,
-    /// Embedding service for the reduce step (nomic-embed-text via Ollama, always local).
+    /// Embedding service for the reduce step (configured arm via Ollama, always local).
     pub embedder: Arc<dyn EmbeddingService>,
     /// LLM equivalence verifier for the reduce step (deduplication).
     pub equivalence_verifier: Arc<dyn LlmEquivalenceVerifier>,
@@ -424,9 +424,10 @@ impl SessionExtractor {
         // `active_run_path` bundles the run-path discriminant with its required seams so
         // "Orchestrated without seams" cannot be represented (no Option-unwrap panics at job time).
         let active_run_path: ActiveRunPath = if run_path == ExtractionRunPath::Orchestrated {
-            // Embeddings are ALWAYS local (nomic-embed-text via Ollama) — the one
-            // documented exception to provider selection. OLLAMA_URL is therefore
-            // required even when the seams run on claude-code.
+            // Embeddings are ALWAYS local via Ollama — the one documented exception
+            // to provider selection. The model is the configured arm (default
+            // qwen3-embedding:4b), read from OLLAMA_EMBED_MODEL. OLLAMA_URL is
+            // therefore required even when the seams run on claude-code.
             let ollama_url = seams::require_ollama_base_url()?;
 
             // Build ONE provider-agnostic text-LLM transport for ALL four LLM
@@ -443,10 +444,20 @@ impl SessionExtractor {
                     .map_err(|e| SessionExtractorInitError::SeamInit(e.to_string()))?,
             };
 
+            // Build the embed config before logging so we can report the
+            // resolved model name rather than a hardcoded literal.
+            // Embedder: OllamaEmbeddingService from OLLAMA_URL using the
+            // configured arm (default qwen3-embedding:4b).
+            let embed_config = OllamaEmbeddingConfig {
+                base_url: ollama_url.clone(),
+                model: infrastructure::embedding_model_from_env(),
+                max_concurrency: 4,
+            };
+
             tracing::info!(
                 seam_provider = seam_llm.provider_label(),
                 seam_model = seam_llm.model(),
-                embedding = "ollama:nomic-embed-text (always local)",
+                embedding = format!("ollama:{} (always local)", embed_config.model).as_str(),
                 "orchestration seams built from environment"
             );
 
@@ -459,12 +470,6 @@ impl SessionExtractor {
             let equivalence_verifier: Arc<dyn LlmEquivalenceVerifier> =
                 Arc::new(TextLlmEquivalenceVerifier::new(seam_llm.clone()));
 
-            // Embedder: OllamaEmbeddingService (nomic-embed-text) from OLLAMA_URL.
-            let embed_config = OllamaEmbeddingConfig {
-                base_url: ollama_url.clone(),
-                model: "nomic-embed-text".to_owned(),
-                max_concurrency: 4,
-            };
             let embedder: Arc<dyn EmbeddingService> = Arc::new(
                 OllamaEmbeddingService::from_config(embed_config)
                     .map_err(|e| SessionExtractorInitError::SeamInit(e.to_string()))?,

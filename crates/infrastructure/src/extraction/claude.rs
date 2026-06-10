@@ -12,7 +12,7 @@ use crate::extraction::{
     limits::{validate_extraction_config, validate_transcript_limits},
     prompt_contract::{
         DEFAULT_CLAUDE_MODEL, build_extraction_system_prompt, extraction_candidate_schema,
-        render_sanitized_transcript_lines,
+        log_extraction_assessment, render_sanitized_transcript_lines,
     },
 };
 
@@ -179,7 +179,8 @@ struct ToolInput {
     #[serde(default)]
     candidates: Vec<domain::ExtractedSkillCandidate>,
     /// The model's Step-1 chain-of-thought judgement on extractable value.
-    /// Required in the tool schema; logged for observability.
+    /// Required in the LLM-facing schema; optional in Rust deserialization for
+    /// backward-compat (absence = no assessment). Logged for observability.
     #[serde(default)]
     assessment: Option<String>,
 }
@@ -297,13 +298,12 @@ impl ClaudeExtractor {
                 )
             })?;
 
-        if let Some(assessment) = tool_input.assessment.as_deref() {
-            tracing::info!(
-                candidate_count = tool_input.candidates.len(),
-                assessment,
-                "claude extraction assessment"
-            );
-        }
+        log_extraction_assessment(
+            "claude",
+            None,
+            tool_input.candidates.len(),
+            tool_input.assessment.as_deref(),
+        );
 
         Ok(tool_input.candidates)
     }

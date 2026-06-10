@@ -11,7 +11,8 @@ use tokio::time::timeout;
 use crate::extraction::{
     limits::{validate_extraction_config, validate_transcript_limits},
     prompt_contract::{
-        DEFAULT_CLAUDE_MODEL, build_text_json_extraction_prompt, render_sanitized_transcript_lines,
+        DEFAULT_CLAUDE_MODEL, build_text_json_extraction_prompt, log_extraction_assessment,
+        render_sanitized_transcript_lines,
     },
 };
 
@@ -152,23 +153,10 @@ struct CandidatesBody {
     #[serde(default)]
     candidates: Vec<domain::ExtractedSkillCandidate>,
     /// The model's Step-1 chain-of-thought judgement on extractable value.
-    /// Optional; logged for observability (explains zero-candidate sessions).
+    /// Required in the LLM-facing schema; optional in Rust deserialization for
+    /// backward-compat (absence = no assessment). Logged for observability.
     #[serde(default)]
     assessment: Option<String>,
-}
-
-impl CandidatesBody {
-    /// Logs the model's assess-first judgement so a zero-candidate result is
-    /// explainable in the extraction run log.
-    fn log_assessment(&self) {
-        if let Some(assessment) = self.assessment.as_deref() {
-            tracing::info!(
-                candidate_count = self.candidates.len(),
-                assessment,
-                "claude-code extraction assessment"
-            );
-        }
-    }
 }
 
 #[async_trait]
@@ -478,7 +466,12 @@ pub(crate) fn parse_cli_output(
     // Fast path: `--output-format json` and the JSON-enforcer system prompt should
     // produce a bare JSON object with no surrounding prose. Try the direct parse first.
     if let Ok(body) = serde_json::from_str::<CandidatesBody>(&stripped) {
-        body.log_assessment();
+        log_extraction_assessment(
+            "claude-code",
+            None,
+            body.candidates.len(),
+            body.assessment.as_deref(),
+        );
         return Ok(body.candidates);
     }
 
@@ -506,7 +499,12 @@ pub(crate) fn parse_cli_output(
         ))
     })?;
 
-    body.log_assessment();
+    log_extraction_assessment(
+        "claude-code",
+        None,
+        body.candidates.len(),
+        body.assessment.as_deref(),
+    );
     Ok(body.candidates)
 }
 

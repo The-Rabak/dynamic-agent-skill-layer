@@ -430,6 +430,42 @@ impl SessionEvent {
             _ => None,
         }
     }
+
+    /// Projects an event to the text content relevant for grounding evidence checks.
+    ///
+    /// Returns `Some(text)` for every event type that carries extractable text, and
+    /// `None` only for `Metadata` events (which carry no searchable content).
+    ///
+    /// This wider projection is used by the grounding haystack so that evidence
+    /// anchors citing commands, error strings, or file paths — content that lives in
+    /// tool events rather than prose turns — can ground correctly:
+    ///
+    /// | Variant         | Included text                         |
+    /// |-----------------|---------------------------------------|
+    /// | UserMessage     | `content`                             |
+    /// | AssistantMessage| `content`                             |
+    /// | ToolCall        | `name` + `" "` + `input_json`         |
+    /// | ToolResult      | `output`                              |
+    /// | FileEdit        | `path` + `" "` + `operation`          |
+    /// | Metadata        | `None` (no searchable content)        |
+    ///
+    /// The extraction *input* is unchanged by this projection — only the grounding
+    /// haystack (a post-extraction check) uses it.
+    pub fn grounding_text(&self) -> Option<String> {
+        match self {
+            Self::UserMessage { content, .. } | Self::AssistantMessage { content, .. } => {
+                Some(content.clone())
+            }
+            Self::ToolCall {
+                name, input_json, ..
+            } => Some(format!("{} {}", name, input_json)),
+            Self::ToolResult { output, .. } => Some(output.clone()),
+            Self::FileEdit {
+                path, operation, ..
+            } => Some(format!("{} {}", path, operation)),
+            Self::Metadata { .. } => None,
+        }
+    }
 }
 
 /// Derives a flat `SessionTranscript` from an ordered slice of `SessionEvent`s.

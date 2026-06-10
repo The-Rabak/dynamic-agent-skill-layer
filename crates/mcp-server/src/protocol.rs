@@ -1004,7 +1004,7 @@ mod tests {
         let health_checker = InfrastructureHealthChecker::new().with_static_component(
             "embedding_arm",
             true,
-            "model=nomic-embed-text dim=768 collection=skills-nomic-embed-text",
+            "model=qwen3-embedding:4b dim=2560 collection=skills-qwen3-embedding-4b",
         );
         let app_router = router(app, health_checker);
 
@@ -1073,7 +1073,7 @@ mod tests {
             "embedding_arm detail must contain 'collection=': got '{detail}'"
         );
         assert_eq!(
-            detail, "model=nomic-embed-text dim=768 collection=skills-nomic-embed-text",
+            detail, "model=qwen3-embedding:4b dim=2560 collection=skills-qwen3-embedding-4b",
             "embedding_arm detail must be 'model=X dim=Y collection=Z'"
         );
     }
