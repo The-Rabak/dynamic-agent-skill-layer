@@ -1118,6 +1118,7 @@ where
                     scored_skill: ScoredSkill {
                         skill: seeded_skill.skill.clone(),
                         score: candidate.score,
+                        semantic_score: candidate.semantic_score,
                         matched_scope: candidate.matched_scope,
                         rationale: vec![
                             format!("rrf={:.6}", candidate.score),

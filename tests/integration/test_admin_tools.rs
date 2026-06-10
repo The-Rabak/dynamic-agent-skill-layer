@@ -80,6 +80,13 @@ fn seeded_reader() -> StaticGraphSnapshotReader {
                     title: "Read files".to_owned(),
                     content: "Use read_to_string".to_owned(),
                 }],
+                use_when: vec!["reading files in Rust".to_owned()],
+                avoid_when: Vec::new(),
+                artifacts: vec!["*.txt".to_owned()],
+                tools: vec!["std::fs".to_owned()],
+                invariants: Vec::new(),
+                requires: Vec::new(),
+                produces: Vec::new(),
             },
             SkillSnapshot {
                 skill_id: "skill-beta".to_owned(),
@@ -92,6 +99,13 @@ fn seeded_reader() -> StaticGraphSnapshotReader {
                     title: "Return Result".to_owned(),
                     content: "Never panic".to_owned(),
                 }],
+                use_when: Vec::new(),
+                avoid_when: Vec::new(),
+                artifacts: Vec::new(),
+                tools: Vec::new(),
+                invariants: vec!["always return Result, never panic".to_owned()],
+                requires: Vec::new(),
+                produces: Vec::new(),
             },
         ],
         vec![CommunitySnapshot {
@@ -286,6 +300,36 @@ async fn json_rpc_exposes_inspect_skill_and_list_communities_payloads() {
             .and_then(|result| result.pointer("/skill/neighborhood/0/skill_id"))
             .and_then(|id| id.as_str()),
         Some("skill-beta")
+    );
+    // #255 P1-A: the 7 T03 multi-view fields (migration 009) MUST be readable by an
+    // agent through the inspect_skill JSON surface, not just persisted. Assert the
+    // populated ones for skill-alpha round-trip through the real tool payload.
+    assert_eq!(
+        inspect
+            .result
+            .as_ref()
+            .and_then(|result| result.pointer("/skill/use_when/0"))
+            .and_then(|value| value.as_str()),
+        Some("reading files in Rust"),
+        "inspect_skill payload must expose the use_when multi-view field"
+    );
+    assert_eq!(
+        inspect
+            .result
+            .as_ref()
+            .and_then(|result| result.pointer("/skill/artifacts/0"))
+            .and_then(|value| value.as_str()),
+        Some("*.txt"),
+        "inspect_skill payload must expose the artifacts multi-view field"
+    );
+    assert_eq!(
+        inspect
+            .result
+            .as_ref()
+            .and_then(|result| result.pointer("/skill/tools/0"))
+            .and_then(|value| value.as_str()),
+        Some("std::fs"),
+        "inspect_skill payload must expose the tools multi-view field"
     );
 
     let communities = app

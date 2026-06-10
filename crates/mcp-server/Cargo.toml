@@ -152,6 +152,11 @@ path = "../../tests/integration/test_resilience.rs"
 name = "test_session_persistence"
 path = "../../tests/integration/test_session_persistence.rs"
 
+[[test]]
+name = "test_skill_graph_tools"
+path = "../../tests/e2e/test_skill_graph_tools.rs"
+required-features = ["test-utils"]
+
 [[bench]]
 name = "compile_context_bench"
 path = "../../tests/bench/compile_context_bench.rs"

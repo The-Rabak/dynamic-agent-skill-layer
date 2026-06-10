@@ -22,6 +22,7 @@ pub mod tools {
     pub mod compile_context;
     pub mod extract_session;
     pub mod find_skill;
+    pub mod search_skill_graph;
 }
 
 use std::sync::Arc;
@@ -58,6 +59,7 @@ use tools::{
     },
     extract_session::{ExtractSessionRequest, ExtractSessionTool},
     find_skill::{FindSkillRequest, FindSkillResponse, FindSkillTool},
+    search_skill_graph::{SearchSkillGraphRequest, SearchSkillGraphResponse, SearchSkillGraphTool},
 };
 use tracing::{debug, info, warn};
 
@@ -73,6 +75,8 @@ pub struct McpServerApp {
     compile_context: CompileContextTool,
     extract_session: ExtractSessionTool,
     find_skill: FindSkillTool,
+    /// SkillDAG-style graph surface: matches, neighbors, conflicts (#T06).
+    search_skill_graph: SearchSkillGraphTool,
     admin_tools: AdminTools,
     session_state: SessionSuppressionState,
     cache: CompiledContextCache,
@@ -106,7 +110,7 @@ impl McpServerApp {
         );
         let cache = CompiledContextCache::new(redis_client, CompiledContextCache::DEFAULT_TTL_SECS);
         let compiler = TemplateOnlyCompiler::default();
-        let admin_tools = AdminTools::new(rebuild_trigger, graph_reader);
+        let admin_tools = AdminTools::new(rebuild_trigger, graph_reader.clone());
 
         Self {
             compile_context: CompileContextTool::new(
@@ -116,7 +120,8 @@ impl McpServerApp {
                 cache.clone(),
             ),
             extract_session: ExtractSessionTool::from_environment(),
-            find_skill: FindSkillTool::new(retriever),
+            find_skill: FindSkillTool::new(retriever.clone()),
+            search_skill_graph: SearchSkillGraphTool::new(retriever, graph_reader.clone()),
             admin_tools,
             session_state: state,
             cache,
@@ -131,6 +136,27 @@ impl McpServerApp {
     /// constructors stay free of a Postgres dependency.
     pub fn with_transcript_ingest(mut self, queue: TranscriptIngestQueue) -> Self {
         self.transcript_ingest = Some(queue);
+        self
+    }
+
+    /// Wires `retrieval_context` provenance into both `find_skill` and
+    /// `search_skill_graph` tools (#243).
+    ///
+    /// Called from `build_live_server` once `embedding_model_info` and the
+    /// Qdrant collection name are known. Builder-style so test/in-memory
+    /// constructors stay free of live infrastructure knowledge.
+    pub fn with_find_skill_provenance(
+        mut self,
+        embedding_model: impl Into<String>,
+        collection: impl Into<String>,
+    ) -> Self {
+        let model = embedding_model.into();
+        let coll = collection.into();
+        let retriever = self.find_skill.retriever().clone();
+        self.find_skill = FindSkillTool::with_provenance(retriever.clone(), &model, &coll);
+        let graph_reader = self.search_skill_graph.graph_reader().clone();
+        self.search_skill_graph =
+            SearchSkillGraphTool::with_provenance(retriever, graph_reader, &model, &coll);
         self
     }
 
@@ -295,6 +321,15 @@ impl McpServerApp {
 
     pub async fn find_skill(&self, request: FindSkillRequest) -> FindSkillResponse {
         self.find_skill.invoke(request).await
+    }
+
+    /// Queries the SkillDAG graph surface: ranked matches, typed neighbors, and
+    /// conflict signals in separate sections.
+    pub async fn search_skill_graph(
+        &self,
+        request: SearchSkillGraphRequest,
+    ) -> SearchSkillGraphResponse {
+        self.search_skill_graph.invoke(request).await
     }
 
     pub async fn extract_session(
@@ -744,7 +779,14 @@ async fn build_live_server(
     )
     // Back the localhost `/ingest/transcript` endpoint with the live PG pool so
     // host capture hooks can push transcript content into the durable queue.
-    .with_transcript_ingest(TranscriptIngestQueue::new(pg_adapter.pool().clone()));
+    .with_transcript_ingest(TranscriptIngestQueue::new(pg_adapter.pool().clone()))
+    // Wire the retrieval_context provenance into find_skill (#243): surfaces which
+    // embedding model and Qdrant collection produced the results so agents can tell
+    // which vector space was active without reading logs.
+    .with_find_skill_provenance(
+        &embedding_model_info.model_name,
+        &qdrant_adapter.config.collection_name,
+    );
 
     // Wire the background usage writer so compile_context records usage (T06).
     // In test/test-utils builds the join handle is stashed on `LiveServerComponents`

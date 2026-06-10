@@ -6,7 +6,7 @@ use mcp_server::{
     McpServerApp,
     protocol::{DEFAULT_MCP_SERVER_ADDR, serve_http},
 };
-use retrieval::RetrievalConfig;
+use retrieval::{RetrievalBackend, RetrievalConfig};
 use tracing::info;
 
 #[tokio::main]
@@ -31,6 +31,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // which measures each lever on the REAL running server by rebooting it per
     // config. Absent variables fall back to the calibrated defaults.
     let retrieval_config = RetrievalConfig::from_env();
+    // Capture the backend label before moving retrieval_config into from_environment.
+    let backend_label = match retrieval_config.backend {
+        RetrievalBackend::SnapshotDense => "snapshot_dense",
+        RetrievalBackend::SnapshotHybrid => "snapshot_hybrid",
+        RetrievalBackend::QdrantHybrid => "qdrant_hybrid",
+    };
     let live = McpServerApp::from_environment(retrieval_config)
         .await
         .map_err(|error| -> Box<dyn std::error::Error> { error.to_string().into() })?;
@@ -52,6 +58,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             live.embedding_model_info.dimension,
             live.qdrant_adapter.config.collection_name,
         ),
+    );
+
+    // Surface the active retrieval backend on /health so agents can tell which
+    // candidate-generation path produced find_skill results (#255 P2-C/D).
+    // Parsed fail-loud at boot (RetrievalConfig::from_env()); the value here
+    // reflects what the real server is running, not a stale env snapshot.
+    health_checker = health_checker.with_static_component(
+        "retrieval_backend",
+        true,
+        format!("backend={backend_label}"),
     );
 
     let app = live.app;

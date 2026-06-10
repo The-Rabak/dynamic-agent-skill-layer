@@ -11,7 +11,10 @@ use infrastructure::{EnqueueOutcome, InfrastructureHealthChecker, TranscriptQueu
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
 
-use crate::tools::{extract_session::ExtractSessionRequest, find_skill::FindSkillRequest};
+use crate::tools::{
+    extract_session::ExtractSessionRequest, find_skill::FindSkillRequest,
+    search_skill_graph::SearchSkillGraphRequest,
+};
 use crate::{
     McpServerApp, TranscriptIngestHttpRequest, TranscriptIngestOutcome,
     tools::compile_context::CompileContextRequest,
@@ -38,7 +41,7 @@ struct RegisteredTool {
     handler: ToolCallHandler,
 }
 
-static REGISTERED_TOOLS: LazyLock<[RegisteredTool; 7]> = LazyLock::new(|| {
+static REGISTERED_TOOLS: LazyLock<[RegisteredTool; 8]> = LazyLock::new(|| {
     [
         RegisteredTool {
             descriptor: ToolDescriptor {
@@ -123,7 +126,9 @@ static REGISTERED_TOOLS: LazyLock<[RegisteredTool; 7]> = LazyLock::new(|| {
         RegisteredTool {
             descriptor: ToolDescriptor {
                 name: "inspect_skill",
-                description: "Inspect skill neighborhood, subunits, and community context",
+                description: "Inspect skill neighborhood, subunits, community context, and \
+                               multi-view fields (use_when, avoid_when, artifacts, tools, \
+                               invariants, requires, produces)",
                 required_arguments: &["skill_id"],
                 input_schema: json!({
                     "type": "object",
@@ -147,6 +152,33 @@ static REGISTERED_TOOLS: LazyLock<[RegisteredTool; 7]> = LazyLock::new(|| {
                 }),
             },
             handler: call_list_communities,
+        },
+        RegisteredTool {
+            descriptor: ToolDescriptor {
+                name: "search_skill_graph",
+                description: "Search the skill graph and return ranked matches with typed \
+                               graph neighbors (depends_on / composes_with / similar_to) and \
+                               conflict signals (conflicts_with) in separate sections. \
+                               Includes relevance scores, per-skill rationale, and \
+                               retrieval provenance. Conflict signals are never folded \
+                               into match scores — treat them as an avoid-list.",
+                required_arguments: &["prompt"],
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "prompt": {
+                            "type": "string",
+                            "description": "Natural-language query to match against the skill graph"
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "Maximum number of matches to return (default 5)"
+                        }
+                    },
+                    "required": ["prompt"]
+                }),
+            },
+            handler: call_search_skill_graph,
         },
     ]
 });
@@ -459,6 +491,22 @@ fn call_list_communities<'a>(
             arguments,
             "list_communities",
             |request: ListCommunitiesRequest| app.list_communities(request),
+        )
+        .await
+    })
+}
+
+fn call_search_skill_graph<'a>(
+    app: &'a McpServerApp,
+    id: Option<Value>,
+    arguments: Value,
+) -> ToolCallFuture<'a> {
+    Box::pin(async move {
+        app.invoke_typed_tool(
+            id,
+            arguments,
+            "search_skill_graph",
+            |request: SearchSkillGraphRequest| app.search_skill_graph(request),
         )
         .await
     })
@@ -1075,6 +1123,91 @@ mod tests {
         assert_eq!(
             detail, "model=qwen3-embedding:4b dim=2560 collection=skills-qwen3-embedding-4b",
             "embedding_arm detail must be 'model=X dim=Y collection=Z'"
+        );
+    }
+
+    /// Proves that `/health` exposes a `retrieval_backend` component when the
+    /// health checker is wired at boot with the active retrieval strategy.
+    ///
+    /// Agents need this to know which candidate-generation strategy produced
+    /// `find_skill` and `search_skill_graph` results — `snapshot_dense`,
+    /// `snapshot_hybrid`, or `qdrant_hybrid`. The format is `backend=<strategy>`.
+    #[tokio::test]
+    async fn health_endpoint_exposes_retrieval_backend_component() {
+        let app = McpServerApp::with_explicit_graph(
+            Arc::new(NoOpEmbeddingService),
+            RetrievalSnapshot::new(vec![], 0),
+            RetrievalConfig::default(),
+            None,
+        );
+        // Simulate the boot-time wiring performed by main.rs for the backend label.
+        let health_checker = InfrastructureHealthChecker::new().with_static_component(
+            "retrieval_backend",
+            true,
+            "backend=snapshot_dense",
+        );
+        let app_router = router(app, health_checker);
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("ephemeral port should bind");
+        let addr: SocketAddr = listener.local_addr().expect("listener has local addr");
+        tokio::spawn(async move {
+            axum::serve(listener, app_router)
+                .await
+                .expect("test server should serve");
+        });
+
+        let client = reqwest::Client::new();
+        let response = client
+            .get(format!("http://{addr}/health"))
+            .send()
+            .await
+            .expect("GET /health request should complete");
+
+        assert_eq!(
+            response.status(),
+            reqwest::StatusCode::OK,
+            "/health must return 200 when all components are healthy"
+        );
+
+        let body: serde_json::Value = response
+            .json()
+            .await
+            .expect("/health response must be valid JSON");
+
+        let components = body
+            .get("components")
+            .and_then(|v| v.as_array())
+            .expect("/health response must contain a 'components' array");
+
+        let backend = components
+            .iter()
+            .find(|c| c.get("name").and_then(|n| n.as_str()) == Some("retrieval_backend"))
+            .expect(
+                "retrieval_backend component must be present in /health output — \
+                 agents need this to discover which candidate-generation strategy \
+                 produced find_skill / search_skill_graph results",
+            );
+
+        assert_eq!(
+            backend.get("healthy").and_then(|v| v.as_bool()),
+            Some(true),
+            "retrieval_backend component must be marked healthy"
+        );
+
+        let detail = backend
+            .get("detail")
+            .and_then(|v| v.as_str())
+            .expect("retrieval_backend must have a detail field");
+
+        assert!(
+            detail.contains("backend="),
+            "retrieval_backend detail must contain 'backend=': got '{detail}'"
+        );
+        assert_eq!(
+            detail, "backend=snapshot_dense",
+            "retrieval_backend detail must be 'backend=<strategy>': got '{detail}'"
         );
     }
 }

@@ -50,6 +50,10 @@ pub trait GraphRebuildTrigger: Send + Sync {
 /// `hdbscan` and `tag` sources (dual membership introduced in migration 006).
 /// Empty when the skill has no memberships; callers must NOT treat an empty
 /// list as a single-membership field.
+///
+/// The 7 T03 multi-view fields (`use_when`, `avoid_when`, `artifacts`, `tools`,
+/// `invariants`, `requires`, `produces`) are projected from migration-009 DB
+/// columns. Empty when the columns are NULL (pre-T03 skills).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SkillSnapshot {
     pub skill_id: String,
@@ -59,6 +63,20 @@ pub struct SkillSnapshot {
     /// All community IDs this skill belongs to (any source). Empty when no memberships.
     pub community_ids: Vec<String>,
     pub subunits: Vec<SubunitSnapshot>,
+    /// Task triggers where this skill applies (migration 009). Empty when absent.
+    pub use_when: Vec<String>,
+    /// Situations where this skill must NOT be applied (migration 009). Empty when absent.
+    pub avoid_when: Vec<String>,
+    /// File types, protocols, config names (migration 009). Empty when absent.
+    pub artifacts: Vec<String>,
+    /// Commands, libraries, frameworks, services, APIs (migration 009). Empty when absent.
+    pub tools: Vec<String>,
+    /// Verifier-critical constraints (migration 009). Empty when absent.
+    pub invariants: Vec<String>,
+    /// Prerequisites assumed by this skill (migration 009). Empty when absent.
+    pub requires: Vec<String>,
+    /// Outcomes or artifacts produced by following this skill (migration 009). Empty when absent.
+    pub produces: Vec<String>,
 }
 
 /// Subunit-level read model for inspection payloads.
@@ -78,11 +96,36 @@ pub struct CommunitySnapshot {
     pub member_skill_ids: Vec<String>,
 }
 
+/// Typed skill graph edge for the agent inspection surface (T05 skill_edges table).
+///
+/// `edge_type` values:
+/// - `"depends_on"` / `"composes_with"` / `"similar_to"` → positive graph neighbors
+/// - `"conflicts_with"` → conflict signal (MUST stay separate from positive matches)
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SkillEdgeSnapshot {
+    pub source_skill_id: String,
+    pub target_skill_id: String,
+    /// One of: `depends_on`, `composes_with`, `similar_to`, `conflicts_with`.
+    pub edge_type: String,
+    /// Origin: `cold_start_proposal`, `human_approved`, `llm_proposed`, `community_derived`.
+    pub origin: String,
+    pub confidence: f32,
+    pub reason: String,
+}
+
 /// Read boundary that provides graph snapshots for inspection.
 #[async_trait]
 pub trait GraphSnapshotReader: Send + Sync {
     async fn list_skills(&self) -> Result<Vec<SkillSnapshot>, AdminToolError>;
     async fn list_communities(&self) -> Result<Vec<CommunitySnapshot>, AdminToolError>;
+    /// Lists all typed skill graph edges persisted in the `skill_edges` table.
+    ///
+    /// Returns an empty vec on cold start (no edges written yet). The default
+    /// implementation returns an empty vec so existing impls do not need to be
+    /// updated unless they need real edge data.
+    async fn list_skill_edges(&self) -> Result<Vec<SkillEdgeSnapshot>, AdminToolError> {
+        Ok(Vec::new())
+    }
 }
 
 /// Deterministic static reader for seeded tests and in-memory graphs.
@@ -179,6 +222,15 @@ impl GraphSnapshotReader for PostgresGraphSnapshotReader {
                         content: subunit.content,
                     })
                     .collect(),
+                // Project the T03 multi-view fields (migration 009) so agents
+                // can read them through the inspect surface without a SKILL.md fetch.
+                use_when: record.use_when,
+                avoid_when: record.avoid_when,
+                artifacts: record.artifacts,
+                tools: record.tools,
+                invariants: record.invariants,
+                requires: record.requires,
+                produces: record.produces,
             })
             .collect())
     }
@@ -196,6 +248,25 @@ impl GraphSnapshotReader for PostgresGraphSnapshotReader {
                 name: record.name,
                 scope: record.scope,
                 member_skill_ids: record.member_skill_ids,
+            })
+            .collect())
+    }
+
+    async fn list_skill_edges(&self) -> Result<Vec<SkillEdgeSnapshot>, AdminToolError> {
+        let store = self.load_store().await?;
+        let records = store
+            .list_skill_edges()
+            .await
+            .map_err(|error| AdminToolError::Failed(error.to_string()))?;
+        Ok(records
+            .into_iter()
+            .map(|record| SkillEdgeSnapshot {
+                source_skill_id: record.source_skill_id,
+                target_skill_id: record.target_skill_id,
+                edge_type: record.edge_type,
+                origin: record.origin,
+                confidence: record.confidence,
+                reason: record.reason,
             })
             .collect())
     }
@@ -406,6 +477,11 @@ pub struct InspectSkillResponse {
     pub skill: Option<InspectedSkill>,
 }
 
+/// Full skill inspection payload returned by `inspect_skill`.
+///
+/// Includes the 7 T03 multi-view fields (migration 009) so an agent can read
+/// `use_when`, `avoid_when`, `artifacts`, `tools`, `invariants`, `requires`,
+/// and `produces` without a separate SKILL.md fetch.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InspectedSkill {
     pub skill_id: String,
@@ -415,6 +491,20 @@ pub struct InspectedSkill {
     pub subunits: Vec<SubunitSnapshot>,
     pub community: Option<CommunityContext>,
     pub neighborhood: Vec<NeighborSkill>,
+    /// Task triggers where this skill applies (migration 009). Empty when absent.
+    pub use_when: Vec<String>,
+    /// Situations where this skill must NOT be applied (migration 009). Empty when absent.
+    pub avoid_when: Vec<String>,
+    /// File types, protocols, config names (migration 009). Empty when absent.
+    pub artifacts: Vec<String>,
+    /// Commands, libraries, frameworks, services, APIs (migration 009). Empty when absent.
+    pub tools: Vec<String>,
+    /// Verifier-critical constraints (migration 009). Empty when absent.
+    pub invariants: Vec<String>,
+    /// Prerequisites assumed by this skill (migration 009). Empty when absent.
+    pub requires: Vec<String>,
+    /// Outcomes or artifacts produced by following this skill (migration 009). Empty when absent.
+    pub produces: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -755,6 +845,15 @@ impl AdminTools {
                 subunits: target_skill.subunits,
                 community,
                 neighborhood,
+                // Thread the T03 multi-view fields (migration 009) through
+                // to the inspection payload so agents can read them directly.
+                use_when: target_skill.use_when,
+                avoid_when: target_skill.avoid_when,
+                artifacts: target_skill.artifacts,
+                tools: target_skill.tools,
+                invariants: target_skill.invariants,
+                requires: target_skill.requires,
+                produces: target_skill.produces,
             }),
         }
     }

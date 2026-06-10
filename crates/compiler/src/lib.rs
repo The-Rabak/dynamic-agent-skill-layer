@@ -110,6 +110,7 @@ mod tests {
                     community_id: None,
                 },
                 score: 0.4,
+                semantic_score: 0.4,
                 matched_scope: ScopeType::Global,
                 rationale: vec![],
             }],

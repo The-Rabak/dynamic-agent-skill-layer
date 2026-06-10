@@ -592,7 +592,10 @@ pub struct ExtractionResult {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ScoredSkill {
     pub skill: Skill,
+    /// RRF rank artifact after `finalize_aggregates`; use `semantic_score` for relevance signals.
     pub score: f32,
+    /// eq.3 semantic cosine similarity before fusion; the agent-facing relevance signal (#260).
+    pub semantic_score: f32,
     pub matched_scope: ScopeType,
     pub rationale: Vec<String>,
 }
