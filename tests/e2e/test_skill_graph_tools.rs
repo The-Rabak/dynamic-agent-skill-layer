@@ -51,47 +51,10 @@ use serde_json::Value;
 async fn find_skill_returns_t06_structural_contract() {
     let client = McpClient::new();
 
-    // A broadly-worded prompt to maximise the chance of hitting the corpus.
-    let result = client
-        .call_tool(
-            "find_skill",
-            serde_json::json!({
-                "prompt": "Rust async error handling patterns",
-                "limit": 5
-            }),
-        )
-        .await
-        .expect("find_skill RPC call should succeed");
-
-    assert!(
-        result.error.is_none(),
-        "find_skill must not return a JSON-RPC error, got: {:?}",
-        result.error
-    );
-
-    let body = result
-        .result
-        .expect("find_skill must return a result payload");
-
-    let status = body
-        .get("status")
-        .and_then(|v| v.as_str())
-        .expect("find_skill result must contain 'status'");
-
-    // When the corpus is empty the server legitimately returns no_match; skip
-    // the structural assertions so a cold server does not produce a false fail.
-    if status == "no_match" {
-        eprintln!(
-            "SKIP: find_skill returned no_match — corpus may be empty; \
-             structural assertions require at least one skill"
-        );
-        return;
-    }
-
-    assert_eq!(
-        status, "ok",
-        "find_skill must return 'ok' when the corpus is populated, got '{status}'"
-    );
+    // Probe the live (T10-seeded) corpus with project-domain prompts and use the
+    // first `ok` response. Fails loud if a populated corpus matches none — that is
+    // a retrieval regression, not a reason to skip the structural assertions.
+    let body = first_ok_payload(&client, "find_skill").await;
 
     // `retrieval_context` must be present and populated (#243).
     let ctx = body
@@ -179,44 +142,9 @@ async fn find_skill_returns_t06_structural_contract() {
 async fn search_skill_graph_returns_three_section_structural_contract() {
     let client = McpClient::new();
 
-    let result = client
-        .call_tool(
-            "search_skill_graph",
-            serde_json::json!({
-                "prompt": "Rust async error handling patterns",
-                "limit": 5
-            }),
-        )
-        .await
-        .expect("search_skill_graph RPC call should succeed");
-
-    assert!(
-        result.error.is_none(),
-        "search_skill_graph must not return a JSON-RPC error, got: {:?}",
-        result.error
-    );
-
-    let body = result
-        .result
-        .expect("search_skill_graph must return a result payload");
-
-    let status = body
-        .get("status")
-        .and_then(|v| v.as_str())
-        .expect("search_skill_graph result must contain 'status'");
-
-    if status == "no_match" || status == "degraded" {
-        eprintln!(
-            "SKIP: search_skill_graph returned '{status}' — corpus may be empty or \
-             embedder unavailable; structural assertions require ok"
-        );
-        return;
-    }
-
-    assert_eq!(
-        status, "ok",
-        "search_skill_graph must return 'ok' when corpus is populated, got '{status}'"
-    );
+    // Probe project-domain prompts; use the first `ok` response. Fails loud if a
+    // populated corpus matches none (retrieval/edge regression, not a skip).
+    let body = first_ok_payload(&client, "search_skill_graph").await;
 
     // All three sections must be present as arrays (#255 P2-E / T06 graph surface).
     let matches = body
@@ -391,6 +319,59 @@ async fn health_exposes_embedding_arm_and_retrieval_backend_components() {
 // ---------------------------------------------------------------------------
 // Shared assertion helpers
 // ---------------------------------------------------------------------------
+
+/// Project-domain probe prompts. The live corpus is the project's own dogfooded
+/// dev-session skills (T10 seeded 262 skills), so these topics reliably retrieve.
+/// Using several decouples the test from any single skill while still proving the
+/// surface against a real graph.
+const PROBE_PROMPTS: &[&str] = &[
+    "qdrant hybrid retrieval backend",
+    "clippy warnings gate with -D warnings",
+    "skill extraction from sessions",
+    "postgres migration write-ahead",
+];
+
+/// Calls `tool` with each project-domain probe prompt until one returns status
+/// `ok`, returning that response body.
+///
+/// Fails loud (panics) if EVERY probe returns a non-`ok` status. The live corpus
+/// is known-populated (T10 seeded 262 skills), so an all-miss means retrieval (or
+/// the edge surface, for `search_skill_graph`) is broken — which must fail the
+/// test, NOT skip it. This is the anti-vacuous-pass guard: a `no_match`/`degraded`
+/// across all probes is a real regression, not an empty corpus.
+async fn first_ok_payload(client: &McpClient, tool: &str) -> Value {
+    let mut last_status = String::from("<none>");
+    for prompt in PROBE_PROMPTS {
+        let result = client
+            .call_tool(tool, serde_json::json!({ "prompt": prompt, "limit": 5 }))
+            .await
+            .unwrap_or_else(|e| panic!("{tool} RPC call should succeed for {prompt:?}: {e:?}"));
+        assert!(
+            result.error.is_none(),
+            "{tool} must not return a JSON-RPC error for {prompt:?}, got: {:?}",
+            result.error
+        );
+        let body = result
+            .result
+            .unwrap_or_else(|| panic!("{tool} must return a result payload for {prompt:?}"));
+        let status = body
+            .get("status")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_owned();
+        if status == "ok" {
+            return body;
+        }
+        last_status = status;
+    }
+    panic!(
+        "{tool}: all {} project-domain probe prompts returned non-ok (last status '{}') against the \
+         T10-seeded 262-skill corpus — retrieval/edge surface is broken, not empty. Probes: {:?}",
+        PROBE_PROMPTS.len(),
+        last_status,
+        PROBE_PROMPTS
+    );
+}
 
 /// Asserts that a single `SkillMatch` value satisfies the T06 field contract.
 ///
