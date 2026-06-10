@@ -7,7 +7,7 @@ tickets_ref: docs/tickets/2026-06-08-v1-7-local-hybrid-skilldag-retrieval/index.
 source_packet_ref: "plan ## Execution Slices > Slice 6"
 brainstorm_ref: none
 started: 2026-06-11
-status: in_progress
+status: completed
 execution_shape: vertical-slices
 current_unit: 1
 total_units: 1
@@ -42,7 +42,7 @@ session_id: work-2026-06-11-T06
 ## Work Status
 | # | Unit | Kind | Serves / Unlocks | Status | Attempts | Session File |
 |---|------|------|------------------|--------|----------|--------------|
-| 1 | T06 SkillDAG-style agent retrieval tools | expansion | Agent-callable typed graph surface (matches/neighbors/conflicts/show-body) + honest scores/provenance; unblocks T11 | in_progress | -- | unit-01-skilldag-agent-retrieval-tools.md |
+| 1 | T06 SkillDAG-style agent retrieval tools | expansion | Agent-callable typed graph surface (matches/neighbors/conflicts/show-body) + honest scores/provenance; unblocks T11 | completed | 2 | unit-01-skilldag-agent-retrieval-tools.md |
 
 ## Learnings Brief
 - [retrieval/qwen3] Live mcp-server serves the T10 262-skill qwen3 corpus (skill_layer_test / skills__qwen3-embedding-4b, dim 2560). The committed 234-corpus eval fixture is 0/30 aligned with it — relevant for any live retrieval assertions (assert on structural/contract behavior, not on specific 234-corpus skill IDs).

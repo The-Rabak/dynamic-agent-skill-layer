@@ -58,5 +58,20 @@ All seven T06 sub-deliverables, delivered by a sonnet execution-agent + one orch
 - **Green:** 78 retrieval + 40 mcp-server lib + 6 admin-integration pass; e2e binary compiles.
 - **Post-Refactor Green:** after fix cycle + `cargo fmt`, all suites re-run green.
 
-## Live-Server Result
-_(filled in by orchestrator after container rebuild — see STATE.md / index.)_
+## Live-Server Result (orchestrator, 2026-06-11)
+
+mcp-server container rebuilt with T06 code + recreated; re-embedded the live 262-skill qwen3 corpus (`skill_layer_test` / `skills__qwen3-embedding-4b`, dim 2560). `/health` confirmed the new `retrieval_backend` component live (`backend=snapshot_dense`).
+
+`cargo test -p mcp-server --features test-utils --test test_skill_graph_tools -- --ignored` → **3/3 PASS** against the real server:
+- `find_skill_returns_t06_structural_contract` — rationale + fusion_rank_score + retrieval_context present; #260 score-distinctness assertion RAN (not skipped).
+- `search_skill_graph_returns_three_section_structural_contract` — matches/neighbors/conflicts separation, conflicts-never-in-neighbors, retrieval_context, latency_ms.
+- `health_exposes_embedding_arm_and_retrieval_backend_components`.
+
+**#260 validated live** — direct find_skill probes returned distinct eq.3 relevance scores with the RRF artifact correctly separated:
+- "qdrant hybrid retrieval backend" → score=0.836 / 0.740 / 0.748, fusion_rank_score=0.016393 / 0.016129 / 0.015873
+- "clippy warnings gate" → 0.794 / 0.711 / 0.655
+Before #260 all `score` values were the ~0.016 RRF constant. The relevance scores are now meaningful and distinct; RRF is preserved as `fusion_rank_score`.
+
+First live run exposed a test defect (hardcoded prompt "Rust async error handling patterns" → no_match → vacuous skip). Fixed: `first_ok_payload` probes project-domain prompts and fails loud if a populated corpus matches none. Re-run: 3/3 green.
+
+Note: the live test compiles alongside 45 pre-existing e2e-harness dead-code warnings ([[workspace-clippy-e2e-harness-deadcode-blocker]]) — not introduced by T06; tracked separately.

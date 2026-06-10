@@ -2,7 +2,8 @@
 ticket_id: T06
 title: SkillDAG-style agent retrieval tools
 kind: expansion
-status: ready
+status: completed
+status_note: "Completed 2026-06-11 (session work-2026-06-11-T06, commits 32cd968 + live-test hardening). All ACs met incl. live-server proof: 3/3 --ignored test_skill_graph_tools PASS against the real 262-skill qwen3 mcp-server. #260 validated live (relevance score 0.836/0.740/0.748 vs RRF 0.0164). Folded #255 (rationale, 7 multi-view fields via inspect_skill, /health backend) and #260 (relevance score) and #243 (retrieval_context) all delivered."
 plan_ref: docs/plans/2026-06-08-feat-v1-7-local-hybrid-skilldag-retrieval-plan.md
 tickets_ref: docs/tickets/2026-06-08-v1-7-local-hybrid-skilldag-retrieval/index.md
 architecture_ref: "explicit-handoff: parent plan ## Architectural Context and ## Proposed V1.7 Architecture"
