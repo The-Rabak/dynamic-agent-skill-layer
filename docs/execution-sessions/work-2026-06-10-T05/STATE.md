@@ -44,7 +44,7 @@ session_id: work-2026-06-10-T05
 ## Work Status
 | # | Unit | Kind | Serves / Unlocks | Status | Attempts | Session File |
 |---|------|------|------------------|--------|----------|--------------|
-| 1 | T05 Typed skill graph storage and cold-start edge proposals | expansion | Typed graph evidence for SkillDAG-style retrieval (unlocks T06) | completed (live tests env-blocked) | 2 | unit-01-typed-skill-graph-edge-storage.md |
+| 1 | T05 Typed skill graph storage and cold-start edge proposals | expansion | Typed graph evidence for SkillDAG-style retrieval (unlocks T06) | completed (unit + live PG green) | 2 | unit-01-typed-skill-graph-edge-storage.md |
 
 ## Resume Log
 - 2026-06-10: First execution-agent dispatch DIED before completing. On-disk salvage: `crates/infrastructure/migrations/010_skill_edges.sql` was written and is well-formed (keep it). Nothing else landed (no domain types, persistence, graph code, or tests).

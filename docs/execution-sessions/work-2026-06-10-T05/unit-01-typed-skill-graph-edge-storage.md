@@ -99,17 +99,16 @@ Typed inter-skill graph edge storage + deterministic cold-start edge proposals.
 - **Post-Refactor Green**: after cleaning the `let _` workaround in the mutual-overlap
   branch and finalizing exports, full re-run stayed green + clippy clean on touched crates.
 
-## Outstanding (environment-blocked, NOT faked)
-- Two live `#[ignore]` tests are written + compile + correctly gated:
-  `live_run_migrations_applies_then_skips_on_second_boot` (now asserts 10 ids) and
-  `live_replace_and_list_skill_edges_roundtrip` (proves type/origin/reason/evidence
-  persist + conflicts_with stored + replace semantics). They require Postgres on
-  `127.0.0.1:15432`, which needs Docker — **Docker Desktop WSL integration is inactive in
-  this environment**, so they could not be executed here. Run them with the test PG up:
-  `docker compose -f docker-compose.test.yml up -d postgres` then
-  `DATABASE_URL=postgres://skill_layer:skill_layer@127.0.0.1:15432/skill_layer_test \
-   cargo test -p infrastructure -- --ignored live_replace_and_list_skill_edges_roundtrip \
-   live_run_migrations_applies_then_skips_on_second_boot`
+## Live verification — PASSED against real Postgres (2026-06-10, docker now up)
+Run against `docker-compose.test.yml` postgres on `127.0.0.1:15432`:
+- `live_run_migrations_applies_then_skips_on_second_boot` (asserts all 10 ids apply then
+  skip) — **PASS**
+- `live_replace_and_list_skill_edges_roundtrip` (type/origin/reason/JSONB-evidence persist
+  + conflicts_with stored + replace-not-append semantics) — **PASS**
+- Full live persistence suite (4 tests incl. pre-existing rollback + embedding-metadata) —
+  **PASS, no regression**.
+Command: `DATABASE_URL=postgres://skill_layer:skill_layer@127.0.0.1:15432/skill_layer_test \
+  cargo test -p infrastructure --lib persistence -- --ignored --test-threads=1`
 
 ## Patterns Discovered
 - The rebuild write path fully DELETEs+re-INSERTs skills each cycle, and `skill_edges` FKs
