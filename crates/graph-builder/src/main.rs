@@ -359,8 +359,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // collections coexist without clobbering each other. The QdrantAdapter is
     // constructed WITH the model-keyed collection so upsert_vector targets the
     // correct collection at write time.
-    let collection_name = model_keyed_collection_name(&model_info.model_name)
-        .map_err(|e| format!("invalid embedding model name: {e}"))?;
+    //
+    // `QDRANT_COLLECTION` overrides the model-keyed default (parity with
+    // mcp-server's `build_qdrant_adapter_with_model`, #164). This is what lets a
+    // replica/isolated corpus write its vectors into a DEDICATED collection
+    // instead of contaminating the shared production collection — graph-builder
+    // and mcp-server MUST agree on the name, so both read the same env var.
+    // Production and live containers leave it unset → model-keyed default.
+    let collection_name = match std::env::var("QDRANT_COLLECTION") {
+        Ok(override_name) if !override_name.trim().is_empty() => override_name,
+        _ => model_keyed_collection_name(&model_info.model_name)
+            .map_err(|e| format!("invalid embedding model name: {e}"))?,
+    };
     let vector_size = model_info.dimension as u64;
 
     let qdrant_adapter = QdrantAdapter::new(
