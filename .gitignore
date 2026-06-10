@@ -11,3 +11,10 @@ crates/tests/e2e/reports/
 # Tests now write to the repo-root reports dir; CI uploads these as artifacts.
 tests/e2e/reports/*.json
 tests/e2e/reports/latest-summary.md
+
+# Bulky per-run replica artifacts (skill dumps, worker logs, raw extraction JSON).
+# The committed VALIDATION-REPORT.md (force-added) is the durable T10 evidence.
+tests/e2e/reports/replica-run/
+
+# Claude Code local state (per-machine memory + session transcripts; never committed).
+.claude/projects/
