@@ -135,9 +135,27 @@ def main():
         print(f"   [{i}] {f.name} ({f.stat().st_size//1024}KB) -> {status}")
 
     ts = subprocess.run(["date", "+%H%M%S"], capture_output=True, text=True).stdout.strip()
-    logpath = RDIR / "logs" / f"worker-{n_arg}-{ts}.log"
     t0 = time.time()
-    rc = run_worker(logpath)
+    # RUN_ONCE drains at most DEFAULT_TRANSCRIPT_DRAIN_BATCH (16) rows per invocation
+    # (runtime.rs hardcodes the batch). Loop the worker until the queue is fully
+    # drained — drain-until-done, no arbitrary cap. Guard: stop if a sweep makes no
+    # progress (pending unchanged) so failed/parked rows can't loop forever.
+    rc = 0
+    sweep = 0
+    logpath = RDIR / "logs" / f"worker-{n_arg}-{ts}-s1.log"
+    while True:
+        sweep += 1
+        pending_before = int(psql("SELECT count(*) FROM transcript_ingest_queue WHERE status='pending'") or 0)
+        if pending_before == 0:
+            print(f"[replica] queue drained (sweep {sweep}): 0 pending")
+            break
+        logpath = RDIR / "logs" / f"worker-{n_arg}-{ts}-s{sweep}.log"
+        print(f"[replica] sweep {sweep}: {pending_before} pending -> running worker")
+        rc = run_worker(logpath)
+        pending_after = int(psql("SELECT count(*) FROM transcript_ingest_queue WHERE status='pending'") or 0)
+        if pending_after >= pending_before:
+            print(f"[replica] no progress (pending {pending_before}->{pending_after}); stopping to avoid loop")
+            break
     elapsed = time.time() - t0
 
     drafts = [parse_draft(p) for p in SKILLS.rglob("*.pending")]

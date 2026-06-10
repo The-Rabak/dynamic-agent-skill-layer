@@ -2,7 +2,7 @@
 ticket_id: T10
 title: Seed a real ≥200-skill corpus by dogfooding the ingestion pipeline
 kind: foundation
-status: ready
+status: completed
 plan_ref: docs/plans/2026-06-08-feat-v1-7-local-hybrid-skilldag-retrieval-plan.md
 tickets_ref: docs/tickets/2026-06-08-v1-7-local-hybrid-skilldag-retrieval/index.md
 architecture_ref: "explicit-handoff: parent plan ## Architectural Context (extraction + graph flow)"
@@ -65,3 +65,40 @@ Promoted 2026-06-09 from todo #216 (P0, foundation for 205/208/209/210). Origina
 
 - Plan: `docs/plans/2026-06-08-feat-v1-7-local-hybrid-skilldag-retrieval-plan.md`
 - Ticket set: `docs/tickets/2026-06-08-v1-7-local-hybrid-skilldag-retrieval/index.md`
+
+## Execution result (2026-06-10) — COMPLETED
+
+Corpus built by dogfooding the REAL pipeline (no fakes): 24 genuine project dev sessions
+(`~/.claude/projects/-home-rabak-projects-dynamic-agent-skill-layer/`, 1–3 MB) →
+`/ingest/transcript` → real `maintenance-worker` (EXTRACT_SESSION_PROVIDER=claude-code,
+drain-until-empty) → 262 `.pending` → approve → seed `test-project-skills` volume → real
+graph-builder → `skill_layer_test` (262) + `skills__qwen3-embedding-4b` (262), graph_version=2,
+60 communities. Driver: `scripts/replica_extract.py`. Report:
+`tests/e2e/reports/replica-run/VALIDATION-REPORT.md`.
+
+- **≥200 target: MET (262).** **Multi-view population: 71%** (use_when/avoid_when/invariants/
+  produces/evidence ≈188 each; requires 171; tools 150) — vs the prior corpus's 0%. This is the
+  data T11/T12/#259 needed.
+- Types: failure_fix 45, best_practice 33, diagnostic 33, anti_pattern 30, rule 21 — only 2
+  preference (prior corpus was preference-dominated).
+- Live retrieval over the real qwen3 mcp-server is high-precision (top match correct on every
+  probe).
+
+**Source-set correction (important):** the prior 234 corpus came from `~/.claude/projects/-tmp`
+= the claude-code adapter's own extraction-subprocess transcripts (circular). Owner decision:
+forget the old corpus; source genuine dev sessions; qwen3-embedding:4b is now the de-facto
+default arm. Old corpus wiped from PG/fs/Qdrant.
+
+**Code shipped:** grounding token-overlap rescue (was deleting best skills) `8b36148`; qwen3
+default + hardcoded-nomic fixes `d911fdd`; graph-builder QDRANT_COLLECTION parity `8b36148`;
+T09 blank-view boot fix `87c0e11`.
+
+**Follow-ups (NOT blocking T10; for T11/ops):**
+1. qwen3 mcp-server boot ~7 min — re-embeds whole corpus at boot instead of reading Qdrant
+   vectors. Load precomputed vectors / cache dense-view embeds.
+2. qwen3 cosine scores compressed (~0.016) — RETRIEVAL_RELEVANCE_THRESHOLD / scaling needs
+   qwen3 recalibration.
+3. Dense-views ON/OFF MRR sweep deferred to T11 (needs a corpus-matched eval set; old held_out
+   labels point to deleted skills).
+4. Synthesis candidates citing sibling skill-names as evidence still drop under grounding
+   (recall-first acceptable; consider synthesis-prompt nudge to cite transcript anchors).
