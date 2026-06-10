@@ -86,6 +86,133 @@ pub enum SubunitType {
     Summary,
 }
 
+/// Typed relation between two skills in the skill graph (V1.7 SkillDAG-style edges).
+///
+/// This enum is the single source of truth for inter-skill relation semantics. The
+/// graph builder, persistence layer, and (later) the agent-facing retrieval tools must
+/// all derive walkability and acyclicity rules from here rather than re-encoding the
+/// vocabulary, so the meaning of an edge never diverges across crates.
+///
+/// Design Decision #4 (parent V1.7 plan): graph structure is SEPARATE evidence, never a
+/// scalar rank multiplier. `conflicts_with` is a one-hop prune signal and is deliberately
+/// NOT walkable — see [`EdgeType::is_walkable`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum EdgeType {
+    /// Source skill requires the target skill as a prerequisite. Backbone edge:
+    /// directed-acyclic. Walkable.
+    DependsOn,
+    /// Source skill is a specialisation of the (more general) target skill. Backbone
+    /// edge: directed-acyclic. Walkable.
+    Specializes,
+    /// The two skills naturally compose together. Walkable, not backbone (cycles allowed).
+    ComposesWith,
+    /// The two skills are semantically similar. Walkable, not backbone (cycles allowed).
+    SimilarTo,
+    /// The two skills should NOT be co-selected. Returned as a separate prune signal and
+    /// NEVER traversed as a positive neighbour. Not walkable, not backbone.
+    ConflictsWith,
+}
+
+impl EdgeType {
+    /// Canonical lowercase DB label. Single source of truth matching the
+    /// `skill_edges.edge_type` CHECK constraint in migration 010.
+    pub fn as_db_str(self) -> &'static str {
+        match self {
+            Self::DependsOn => "depends_on",
+            Self::Specializes => "specializes",
+            Self::ComposesWith => "composes_with",
+            Self::SimilarTo => "similar_to",
+            Self::ConflictsWith => "conflicts_with",
+        }
+    }
+
+    /// Parses a DB label back into an [`EdgeType`], failing loudly on any value
+    /// outside the closed vocabulary rather than defaulting to a placeholder.
+    pub fn from_db_str(value: &str) -> Result<Self, DomainError> {
+        match value {
+            "depends_on" => Ok(Self::DependsOn),
+            "specializes" => Ok(Self::Specializes),
+            "composes_with" => Ok(Self::ComposesWith),
+            "similar_to" => Ok(Self::SimilarTo),
+            "conflicts_with" => Ok(Self::ConflictsWith),
+            other => Err(DomainError::InvalidIdentifier(format!(
+                "unknown skill edge type: {other}"
+            ))),
+        }
+    }
+
+    /// Whether graph traversal may follow this edge as a positive neighbour.
+    ///
+    /// `conflicts_with` is the only non-walkable type: it is a do-not-co-select
+    /// signal surfaced separately, never expanded as a neighbour.
+    pub fn is_walkable(self) -> bool {
+        !matches!(self, Self::ConflictsWith)
+    }
+
+    /// Whether this edge participates in the directed-acyclic backbone.
+    ///
+    /// Backbone edges (`depends_on`, `specializes`) express hierarchy, so a cycle
+    /// among them is contradictory and must be rejected at validation time.
+    pub fn is_backbone(self) -> bool {
+        matches!(self, Self::DependsOn | Self::Specializes)
+    }
+}
+
+/// Provenance of a typed skill edge: how it entered the graph and how much it is trusted.
+///
+/// Origin drives the trust boundary. Deterministic cold-start edges above the
+/// auto-commit confidence threshold are committed as trusted graph state;
+/// lower-confidence ones stay as observable proposals until promoted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum EdgeOrigin {
+    /// Deterministic proposal from structured skill fields (requires/produces/tools/
+    /// artifacts) at or above the auto-commit confidence threshold. Trusted graph state.
+    ColdStartDeterministic,
+    /// Same structured-field source, but below the auto-commit threshold. Persisted as an
+    /// observable proposal, not yet a trusted walkable edge.
+    ColdStartProposal,
+    /// Operator-authored edge.
+    Manual,
+    /// Agent-classified edge (requires evidence). Reserved for T06+; not produced in T05.
+    AgentDerived,
+}
+
+impl EdgeOrigin {
+    /// Canonical DB label matching the `skill_edges.edge_origin` CHECK constraint.
+    pub fn as_db_str(self) -> &'static str {
+        match self {
+            Self::ColdStartDeterministic => "cold_start_deterministic",
+            Self::ColdStartProposal => "cold_start_proposal",
+            Self::Manual => "manual",
+            Self::AgentDerived => "agent_derived",
+        }
+    }
+
+    /// Parses a DB label back into an [`EdgeOrigin`], failing loudly on unknown values.
+    pub fn from_db_str(value: &str) -> Result<Self, DomainError> {
+        match value {
+            "cold_start_deterministic" => Ok(Self::ColdStartDeterministic),
+            "cold_start_proposal" => Ok(Self::ColdStartProposal),
+            "manual" => Ok(Self::Manual),
+            "agent_derived" => Ok(Self::AgentDerived),
+            other => Err(DomainError::InvalidIdentifier(format!(
+                "unknown skill edge origin: {other}"
+            ))),
+        }
+    }
+
+    /// Whether an edge of this origin is committed as trusted, walkable graph state.
+    ///
+    /// Proposals (`cold_start_proposal`) are observable but not yet trusted, so
+    /// traversal logic must exclude them until they are promoted.
+    pub fn is_trusted(self) -> bool {
+        matches!(
+            self,
+            Self::ColdStartDeterministic | Self::Manual | Self::AgentDerived
+        )
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Skill {
     pub id: DomainId,

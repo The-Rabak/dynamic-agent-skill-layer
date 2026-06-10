@@ -3,7 +3,7 @@ plan_ref: docs/plans/2026-06-08-feat-v1-7-local-hybrid-skilldag-retrieval-plan.m
 architecture_ref: "explicit-handoff: parent plan ## Architectural Context and ## Proposed V1.7 Architecture"
 execution_shape: vertical-slices
 ticket_set_status: in_progress
-last_completed_batch: 4
+last_completed_batch: 5
 total_batches: 16
 reorg_note: "2026-06-09 — consolidated open large todos into tickets T09-T16 and re-batched (owner decision). Remaining todos are chunkable T03/T04 fixes only (#251/#252/#253/#256/#257)."
 ---
@@ -47,7 +47,7 @@ Independent hardening (slot anywhere — non-retrieval feature homes, parallel-s
 - **Batch 3:** T03. Status: completed (session work-2026-06-09-T03; 7 optional multi-view fields wired LLM→writer→reader→skills row; migration 009 WRITE-AHEAD live-applied+skip-verified on real Postgres; real writer↔reader roundtrip green; owner-approved skills-row persistence — reader deferred to T04/T05).
 - **Batch 4:** T04. Status: completed (session work-2026-06-09-T04; owner chose FULL scope: snapshot_hybrid + qdrant_hybrid both real. Backend selector + fail-loud RETRIEVAL_BACKEND; in-memory Okapi BM25; Qdrant named dense+sparse(idf) collection + write-side sparse + Query-API read arm; reboot_arm + live sweep. MEASURED held-out: snapshot_dense/snapshot_hybrid/qdrant_hybrid all MRR 0.767, p95 114/128/119ms — NO uplift from hybrid on this corpus; snapshot_dense stays default; 0.80 unmet (embedding/scoring ceiling). Selected backend path = snapshot_dense default, qdrant_hybrid experimental real (CQRS break, ADR→T08). 2 qdrant_hybrid prod bugs caught by the live run.).
 **Phase A — V1.7 retrieval core:**
-- **Batch 5:** T05 typed-skill-graph-edge-storage. Status: ready.
+- **Batch 5:** T05 typed-skill-graph-edge-storage. Status: completed (session work-2026-06-10-T05; `skill_edges` migration 010 + typed `EdgeType`/`EdgeOrigin` domain semantics + deterministic cold-start proposer (`depends_on` from requires↔produces auto-committed ≥0.9; mutual→composes_with; `similar_to` from tools/artifacts Jaccard) + backbone-acyclicity/self-loop fail-loud validation + `replace_skill_edges`/`list_skill_edges` persistence wired into the rebuild write path. Owner decisions: Postgres-only storage, auto-commit high-confidence. Unit suites green: graph-builder 28, infra persistence 36, domain 13; workspace compiles. Two live `#[ignore]` tests (migration-10 count gate + edge roundtrip) written + compile but env-blocked — Docker/WSL integration inactive; rerun command in session unit file. `specializes`/`conflicts_with` auto-proposal + edge mutation-history table deferred to T06.).
 - **Batch 6:** T09 dense-multiview-embedding-views. Status: ready. (NEW)
 - **Batch 7:** T06 skilldag-style-agent-retrieval-tools (owns folded #255 + #260). Status: ready.
 - **Batch 8:** T07 optional-local-reranker. Status: ready, optional.
@@ -83,7 +83,7 @@ File-overlap safety notes:
 | [T02](02-qwen3-embedder-rebuild-safety.md) | Local Qwen3 embedder backend and rebuild safety | 2 | T01 | `crates/infrastructure/src/embeddings`, `crates/graph-builder`, `crates/mcp-server` | completed |
 | [T03](03-expanded-skill-format-multiview-fields.md) | Expanded skill format and multi-view extraction fields | 3 | T02 | `crates/session-extractor` and `crates/graph-builder/src/extraction` | completed |
 | [T04](04-hybrid-dense-bm25-candidate-generation.md) | Hybrid dense/BM25 candidate generation | 4 | T01, T02, T03 | `crates/retrieval` | completed |
-| [T05](05-typed-skill-graph-edge-storage.md) | Typed skill graph storage and cold-start edge proposals | 5 | T03 | `crates/graph-builder` and persistence graph schema | ready |
+| [T05](05-typed-skill-graph-edge-storage.md) | Typed skill graph storage and cold-start edge proposals | 5 | T03 | `crates/graph-builder` and persistence graph schema | completed |
 | [T09](09-dense-multiview-embedding-views.md) | Dense multi-view embedding views (e_task/e_needs/e_negative) | 6 | T03 | `crates/graph-builder`, `crates/mcp-server`, `crates/retrieval` | ready |
 | [T06](06-skilldag-style-agent-retrieval-tools.md) | SkillDAG-style agent retrieval tools (owns folded #255, #260) | 7 | T04, T05 | `crates/mcp-server/src/tools` and `crates/retrieval` | ready |
 | [T07](07-optional-local-reranker-cheap-decomposition.md) | Optional local reranker and cheap query decomposition | 8 | T04 | `crates/retrieval` | ready |

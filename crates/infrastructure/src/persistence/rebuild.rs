@@ -3,6 +3,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use domain::{ScopeType, SubunitType};
+use serde_json::Value;
 use sqlx::PgPool;
 use thiserror::Error;
 use uuid::Uuid;
@@ -98,6 +99,28 @@ pub struct LiveGraphSnapshotMutation {
     pub communities: Vec<LiveGraphCommunityRecord>,
 }
 
+/// Write DTO for a single typed skill edge (V1.7 T05).
+///
+/// `source_stable_id` / `target_stable_id` are the graph builder's stable skill ids
+/// (blake3 hex of the source path); [`PostgresRebuildCoordinator::replace_skill_edges`]
+/// maps them to the durable `skills.id` UUIDs via the same derivation skills use, so an
+/// edge always references the row written for that skill in the same rebuild.
+///
+/// `edge_type` and `origin` carry the canonical DB labels produced by
+/// [`domain::EdgeType::as_db_str`] / [`domain::EdgeOrigin::as_db_str`] and are enforced
+/// by CHECK constraints in migration 010. `evidence` is the structured justification
+/// stored as JSONB; `None` for edges with no structured evidence (e.g. manual edges).
+#[derive(Debug, Clone, PartialEq)]
+pub struct LiveGraphEdgeRecord {
+    pub source_stable_id: String,
+    pub target_stable_id: String,
+    pub edge_type: String,
+    pub origin: String,
+    pub confidence: f32,
+    pub reason: String,
+    pub evidence: Option<Value>,
+}
+
 /// Persisted subunit projection used by live graph read adapters.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PersistedGraphSubunitRecord {
@@ -169,6 +192,23 @@ pub struct PersistedGraphCommunityRecord {
     pub name: String,
     pub scope: ScopeType,
     pub member_skill_ids: Vec<String>,
+}
+
+/// Read projection for a persisted typed skill edge (V1.7 T05).
+///
+/// `source_skill_id` / `target_skill_id` are the durable `skills.id` UUIDs as text.
+/// `edge_type` and `origin` are raw DB labels; callers parse them back into the typed
+/// [`domain::EdgeType`] / [`domain::EdgeOrigin`] via `from_db_str`. This projection makes
+/// cold-start proposals observable (acceptance criterion) without re-deriving them.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PersistedGraphEdgeRecord {
+    pub source_skill_id: String,
+    pub target_skill_id: String,
+    pub edge_type: String,
+    pub origin: String,
+    pub confidence: f32,
+    pub reason: String,
+    pub evidence: Option<Value>,
 }
 
 /// Postgres reader for live graph projections consumed by admin read tools.
@@ -357,6 +397,57 @@ impl PostgresGraphSnapshotStore {
             .collect()
     }
 
+    /// Lists all persisted typed skill edges, ordered deterministically.
+    ///
+    /// Returns every edge regardless of origin so proposals (`cold_start_proposal`)
+    /// are observable alongside trusted edges; callers filter by origin/walkability.
+    pub async fn list_skill_edges(&self) -> Result<Vec<PersistedGraphEdgeRecord>, RebuildError> {
+        let rows = sqlx::query_as::<
+            _,
+            (
+                String,                       // source_skill_id
+                String,                       // target_skill_id
+                String,                       // edge_type
+                String,                       // edge_origin
+                f32,                          // confidence
+                String,                       // reason
+                Option<sqlx::types::Json<Value>>, // evidence (nullable JSONB)
+            ),
+        >(
+            r#"
+            SELECT
+                source_skill_id::TEXT,
+                target_skill_id::TEXT,
+                edge_type,
+                edge_origin,
+                confidence,
+                reason,
+                evidence
+            FROM skill_edges
+            ORDER BY source_skill_id, target_skill_id, edge_type
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows
+            .into_iter()
+            .map(
+                |(source_skill_id, target_skill_id, edge_type, origin, confidence, reason, evidence)| {
+                    PersistedGraphEdgeRecord {
+                        source_skill_id,
+                        target_skill_id,
+                        edge_type,
+                        origin,
+                        confidence,
+                        reason,
+                        evidence: evidence.map(|json| json.0),
+                    }
+                },
+            )
+            .collect())
+    }
+
     /// Reads the durable `graph_state.graph_version`.
     ///
     /// Returns `0` on cold start (before any rebuild has written the singleton
@@ -408,6 +499,70 @@ pub struct PostgresRebuildCoordinator {
 impl PostgresRebuildCoordinator {
     pub fn new(pool: PgPool) -> Self {
         Self { pool }
+    }
+
+    /// Replaces the entire typed-edge set in a single transaction (V1.7 T05).
+    ///
+    /// Cold-start edges are derived deterministically from the structured skill fields
+    /// on every rebuild, so the durable set is fully rebuilt rather than merged: the
+    /// method deletes all existing edges, then inserts the supplied set. It must be
+    /// called AFTER [`Self::replace_snapshot_and_bump_version`] has committed the skills
+    /// for this rebuild, because each edge's `source`/`target` foreign-keys reference
+    /// `skills.id` (with `ON DELETE CASCADE`). The same `stable_uuid("skill", …)`
+    /// derivation used for the skill rows resolves each edge endpoint.
+    ///
+    /// The `ON CONFLICT` clause keeps a single edge set idempotent if the same typed
+    /// directed pair appears twice; `confidence`, `origin`, `reason`, and `evidence` are
+    /// refreshed and `updated_at` is bumped on conflict.
+    pub async fn replace_skill_edges(
+        &self,
+        edges: &[LiveGraphEdgeRecord],
+    ) -> Result<(), RebuildError> {
+        let mut tx = self.pool.begin().await?;
+        sqlx::query("DELETE FROM skill_edges")
+            .execute(&mut *tx)
+            .await?;
+
+        for edge in edges {
+            let source_id = stable_uuid("skill", &edge.source_stable_id);
+            let target_id = stable_uuid("skill", &edge.target_stable_id);
+            // Deterministic PK so replays of the same edge map to the same row; the
+            // UNIQUE(source, target, edge_type) constraint is the real dedup key.
+            let edge_id = stable_uuid(
+                "skill_edge",
+                &format!(
+                    "{}:{}:{}",
+                    edge.source_stable_id, edge.target_stable_id, edge.edge_type
+                ),
+            );
+            sqlx::query(
+                r#"
+                INSERT INTO skill_edges (
+                    id, source_skill_id, target_skill_id, edge_type, edge_origin,
+                    confidence, reason, evidence, created_at, updated_at
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
+                ON CONFLICT (source_skill_id, target_skill_id, edge_type) DO UPDATE
+                SET edge_origin = EXCLUDED.edge_origin,
+                    confidence = EXCLUDED.confidence,
+                    reason = EXCLUDED.reason,
+                    evidence = EXCLUDED.evidence,
+                    updated_at = NOW()
+                "#,
+            )
+            .bind(edge_id)
+            .bind(source_id)
+            .bind(target_id)
+            .bind(&edge.edge_type)
+            .bind(&edge.origin)
+            .bind(edge.confidence)
+            .bind(&edge.reason)
+            .bind(edge.evidence.as_ref().map(sqlx::types::Json))
+            .execute(&mut *tx)
+            .await?;
+        }
+
+        tx.commit().await?;
+        Ok(())
     }
 }
 
@@ -767,5 +922,148 @@ mod tests {
 
         assert!(!positives.is_empty(), "positive_fixtures must not be empty");
         assert!(!negatives.is_empty(), "negative_fixtures must not be empty");
+    }
+
+    /// Live Postgres: proves typed skill edges persist with type, origin, reason, and
+    /// evidence (T05 acceptance), that `conflicts_with` is stored (its non-walkability is
+    /// a read-side concern enforced by `domain::EdgeType::is_walkable`), and that
+    /// `replace_skill_edges` has replace (not append) semantics.
+    ///
+    /// Isolation: dedicated scratch schema dropped on completion.
+    #[tokio::test]
+    #[ignore = "requires live postgres"]
+    async fn live_replace_and_list_skill_edges_roundtrip() {
+        use chrono::Utc;
+        use domain::ScopeType;
+
+        use super::{
+            LiveGraphEdgeRecord, LiveGraphSkillRecord, LiveGraphSnapshotMutation,
+            PostgresGraphSnapshotStore, PostgresRebuildCoordinator, RebuildCoordinator,
+        };
+        use crate::persistence::postgres::{PostgresAdapter, PostgresConfig};
+
+        let db_url = std::env::var("DATABASE_URL")
+            .expect("DATABASE_URL must be set for live postgres tests");
+
+        let admin_pool = sqlx::PgPool::connect(&db_url)
+            .await
+            .expect("admin pool connect");
+        let scratch_schema = format!(
+            "test_skill_edges_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        );
+        sqlx::query(&format!("CREATE SCHEMA {scratch_schema}"))
+            .execute(&admin_pool)
+            .await
+            .expect("create scratch schema");
+
+        let scratch_url = format!("{db_url}?options=-csearch_path%3D{scratch_schema}");
+        let config = PostgresConfig {
+            database_url: scratch_url,
+            max_connections: 2,
+            min_connections: 1,
+            connect_timeout_secs: 5,
+            acquire_timeout_secs: 5,
+        };
+        let adapter = PostgresAdapter::connect(&config)
+            .await
+            .expect("scratch adapter connect");
+        adapter.run_migrations().await.expect("migrations apply");
+
+        let coordinator = PostgresRebuildCoordinator::new(adapter.pool().clone());
+        let store = PostgresGraphSnapshotStore::new(adapter.pool().clone());
+
+        // Write two skills so the edges have real FK targets.
+        let make_skill = |stable_id: &str, name: &str| LiveGraphSkillRecord {
+            stable_id: stable_id.to_owned(),
+            name: name.to_owned(),
+            description: String::new(),
+            scope: ScopeType::Project,
+            tags: Vec::new(),
+            source_paths: Vec::new(),
+            subunits: Vec::new(),
+            use_when: Vec::new(),
+            avoid_when: Vec::new(),
+            artifacts: Vec::new(),
+            tools: Vec::new(),
+            invariants: Vec::new(),
+            requires: Vec::new(),
+            produces: Vec::new(),
+        };
+        coordinator
+            .replace_snapshot_and_bump_version(LiveGraphSnapshotMutation {
+                rebuilt_at: Utc::now(),
+                skills: vec![make_skill("a", "deploy"), make_skill("b", "build")],
+                communities: Vec::new(),
+            })
+            .await
+            .expect("write skills");
+
+        // One trusted deterministic depends_on edge with structured evidence, and one
+        // non-walkable conflicts_with edge with no evidence.
+        coordinator
+            .replace_skill_edges(&[
+                LiveGraphEdgeRecord {
+                    source_stable_id: "a".to_owned(),
+                    target_stable_id: "b".to_owned(),
+                    edge_type: "depends_on".to_owned(),
+                    origin: "cold_start_deterministic".to_owned(),
+                    confidence: 0.95,
+                    reason: "deploy requires what build produces: binary".to_owned(),
+                    evidence: Some(serde_json::json!({ "overlap": ["binary"] })),
+                },
+                LiveGraphEdgeRecord {
+                    source_stable_id: "a".to_owned(),
+                    target_stable_id: "b".to_owned(),
+                    edge_type: "conflicts_with".to_owned(),
+                    origin: "manual".to_owned(),
+                    confidence: 0.0,
+                    reason: "do not co-select".to_owned(),
+                    evidence: None,
+                },
+            ])
+            .await
+            .expect("persist edges");
+
+        let edges = store.list_skill_edges().await.expect("read edges");
+        assert_eq!(edges.len(), 2, "both edges must persist");
+
+        let depends = edges
+            .iter()
+            .find(|edge| edge.edge_type == "depends_on")
+            .expect("depends_on edge persisted");
+        assert_eq!(depends.origin, "cold_start_deterministic");
+        assert!((depends.confidence - 0.95).abs() < 1e-5);
+        assert!(!depends.reason.is_empty(), "reason must persist");
+        assert_eq!(
+            depends.evidence.as_ref().expect("evidence must persist")["overlap"][0],
+            "binary"
+        );
+
+        let conflicts = edges
+            .iter()
+            .find(|edge| edge.edge_type == "conflicts_with")
+            .expect("conflicts_with edge persisted (stored but not walkable)");
+        assert!(
+            conflicts.evidence.is_none(),
+            "absent evidence must round-trip as NULL"
+        );
+
+        // Replace (not append) semantics: a second call with no edges clears the set.
+        coordinator
+            .replace_skill_edges(&[])
+            .await
+            .expect("replace with empty set");
+        let after = store.list_skill_edges().await.expect("read edges again");
+        assert!(after.is_empty(), "replace_skill_edges must replace, not append");
+
+        sqlx::query(&format!("DROP SCHEMA {scratch_schema} CASCADE"))
+            .execute(&admin_pool)
+            .await
+            .expect("drop scratch schema");
+        admin_pool.close().await;
     }
 }

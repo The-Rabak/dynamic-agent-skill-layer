@@ -1,8 +1,8 @@
 use async_trait::async_trait;
 use chrono::Utc;
 use infrastructure::{
-    EventEnvelope, LiveGraphCommunityRecord, LiveGraphSkillRecord, LiveGraphSnapshotMutation,
-    LiveGraphSubunitRecord, OutboxEvent, OutboxRelay, OutboxVectorStore,
+    EventEnvelope, LiveGraphCommunityRecord, LiveGraphEdgeRecord, LiveGraphSkillRecord,
+    LiveGraphSnapshotMutation, LiveGraphSubunitRecord, OutboxEvent, OutboxRelay, OutboxVectorStore,
     PostgresGraphWriteCoordinator, PostgresRebuildCoordinator, RebuildCoordinator,
     VECTOR_UPSERT_EVENT_TYPE, stable_skill_uuid,
 };
@@ -17,6 +17,7 @@ use crate::{
     graph::{
         build::{BuiltSkill, GraphBuildError, build_skills_from_scope_roots},
         communities::{CommunityAssignment, assign_communities},
+        edges::build_validated_cold_start_edges,
     },
     watcher::SkillFileChange,
 };
@@ -303,6 +304,31 @@ where
                 skills: live_skills,
                 communities: live_communities,
             })
+            .await
+            .map_err(|error| GraphRebuildError::DurableWrite(error.to_string()))?;
+
+        // Typed graph edges (V1.7 T05). Cold-start edges are derived deterministically
+        // from the structured skill fields and rebuilt every cycle. This runs AFTER the
+        // snapshot commit so each edge's source/target foreign-keys resolve against the
+        // skill rows just written. A backbone cycle or self-loop fails the rebuild loudly
+        // rather than committing a contradictory graph.
+        let proposed_edges = build_validated_cold_start_edges(&mutation.skills).map_err(|error| {
+            GraphRebuildError::DurableWrite(format!("cold-start edge validation failed: {error}"))
+        })?;
+        let edge_records: Vec<LiveGraphEdgeRecord> = proposed_edges
+            .iter()
+            .map(|edge| LiveGraphEdgeRecord {
+                source_stable_id: edge.source_skill_id.clone(),
+                target_stable_id: edge.target_skill_id.clone(),
+                edge_type: edge.edge_type.as_db_str().to_owned(),
+                origin: edge.origin.as_db_str().to_owned(),
+                confidence: edge.confidence,
+                reason: edge.reason.clone(),
+                evidence: Some(edge.evidence.clone()),
+            })
+            .collect();
+        self.rebuild_coordinator
+            .replace_skill_edges(&edge_records)
             .await
             .map_err(|error| GraphRebuildError::DurableWrite(error.to_string()))?;
 

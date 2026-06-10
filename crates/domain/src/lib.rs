@@ -23,9 +23,10 @@ pub use traits::{
     ContextCompiler, EmbeddingService, ScopeResolver, TranscriptSkillExtractionService,
 };
 pub use types::{
-    Community, DomainId, ExtractedSkillCandidate, ExtractionResult, LifecycleStatus,
-    ScopeDescriptor, ScopeRoot, ScopeType, ScoredSkill, SessionEvent, SessionTranscript, Skill,
-    SkillStatus, Subunit, SubunitType, TranscriptEntry, events_to_transcript,
+    Community, DomainId, EdgeOrigin, EdgeType, ExtractedSkillCandidate, ExtractionResult,
+    LifecycleStatus, ScopeDescriptor, ScopeRoot, ScopeType, ScoredSkill, SessionEvent,
+    SessionTranscript, Skill, SkillStatus, Subunit, SubunitType, TranscriptEntry,
+    events_to_transcript,
 };
 
 #[cfg(test)]
@@ -95,5 +96,74 @@ mod tests {
         assert_eq!(result.candidates[0].procedures.len(), 1);
         assert_eq!(result.candidates[0].conventions.len(), 1);
         assert_eq!(result.candidates[0].assets.len(), 1);
+    }
+
+    #[test]
+    fn edge_type_db_labels_round_trip() {
+        for edge_type in [
+            EdgeType::DependsOn,
+            EdgeType::Specializes,
+            EdgeType::ComposesWith,
+            EdgeType::SimilarTo,
+            EdgeType::ConflictsWith,
+        ] {
+            let label = edge_type.as_db_str();
+            let parsed = EdgeType::from_db_str(label).expect("known label must parse");
+            assert_eq!(parsed, edge_type, "round trip must preserve variant");
+        }
+    }
+
+    #[test]
+    fn edge_type_from_db_str_rejects_unknown_value() {
+        let err = EdgeType::from_db_str("boosts")
+            .expect_err("unknown edge type must fail loudly, not default");
+        assert!(matches!(err, DomainError::InvalidIdentifier(_)));
+    }
+
+    #[test]
+    fn conflicts_with_is_the_only_non_walkable_edge_type() {
+        assert!(!EdgeType::ConflictsWith.is_walkable());
+        for walkable in [
+            EdgeType::DependsOn,
+            EdgeType::Specializes,
+            EdgeType::ComposesWith,
+            EdgeType::SimilarTo,
+        ] {
+            assert!(
+                walkable.is_walkable(),
+                "{walkable:?} must be walkable as a positive neighbour"
+            );
+        }
+    }
+
+    #[test]
+    fn only_depends_on_and_specializes_are_backbone() {
+        assert!(EdgeType::DependsOn.is_backbone());
+        assert!(EdgeType::Specializes.is_backbone());
+        assert!(!EdgeType::ComposesWith.is_backbone());
+        assert!(!EdgeType::SimilarTo.is_backbone());
+        assert!(!EdgeType::ConflictsWith.is_backbone());
+    }
+
+    #[test]
+    fn edge_origin_db_labels_round_trip_and_reject_unknown() {
+        for origin in [
+            EdgeOrigin::ColdStartDeterministic,
+            EdgeOrigin::ColdStartProposal,
+            EdgeOrigin::Manual,
+            EdgeOrigin::AgentDerived,
+        ] {
+            let parsed = EdgeOrigin::from_db_str(origin.as_db_str()).expect("known label parses");
+            assert_eq!(parsed, origin);
+        }
+        assert!(EdgeOrigin::from_db_str("guessed").is_err());
+    }
+
+    #[test]
+    fn cold_start_proposal_origin_is_not_trusted() {
+        assert!(!EdgeOrigin::ColdStartProposal.is_trusted());
+        assert!(EdgeOrigin::ColdStartDeterministic.is_trusted());
+        assert!(EdgeOrigin::Manual.is_trusted());
+        assert!(EdgeOrigin::AgentDerived.is_trusted());
     }
 }

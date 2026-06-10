@@ -34,6 +34,12 @@ const MIGRATION_008: &str = include_str!("../../migrations/008_embedding_model_m
 /// TEXT[] columns.  Populated by graph rebuild INSERT from SKILL.md frontmatter.
 /// WRITE-AHEAD: no production reader yet; T04/T05 will add the readers.
 const MIGRATION_009: &str = include_str!("../../migrations/009_skill_multiview_fields.sql");
+/// Migration 010: creates the `skill_edges` table holding typed inter-skill graph edges
+/// (`depends_on`, `specializes`, `composes_with`, `similar_to`, `conflicts_with`) with
+/// origin, confidence, reason, JSONB evidence, and timestamps. Closed-vocabulary CHECK
+/// constraints guard `edge_type`/`edge_origin`. Edges are SEPARATE graph evidence, never
+/// a ranking multiplier (V1.7 T05 / parent plan Design Decision #4).
+const MIGRATION_010: &str = include_str!("../../migrations/010_skill_edges.sql");
 
 /// Ordered migration set: each entry is `(stable_id, sql)`.
 ///
@@ -45,7 +51,8 @@ const MIGRATION_009: &str = include_str!("../../migrations/009_skill_multiview_f
 /// ones (002 reuses the trigger function from 001; 003 adds columns to tables from
 /// 001; 004 adds a constraint to session_logs; 005 adds a column to skills;
 /// 006 widens community_skills for dual membership; 007 adds generality columns;
-/// 008 adds embedding_model_metadata table; 009 adds multi-view skill fields).
+/// 008 adds embedding_model_metadata table; 009 adds multi-view skill fields;
+/// 010 adds the skill_edges table, which FK-references skills created in 001).
 ///
 /// Individual migrations remain idempotent (`IF NOT EXISTS` / `ADD COLUMN IF NOT
 /// EXISTS`) as a belt-and-braces safety net, but the tracking table is the primary
@@ -60,6 +67,7 @@ const MIGRATIONS: &[(&str, &str)] = &[
     ("007_skill_generality", MIGRATION_007), // ratified alongside 008 on 2026-06-09 (owner triage #233): dormant write-ahead schema, no live reader
     ("008_embedding_model_metadata", MIGRATION_008),
     ("009_skill_multiview_fields", MIGRATION_009), // WRITE-AHEAD: multi-view optional fields for T04/T05; no live reader yet
+    ("010_skill_edges", MIGRATION_010), // V1.7 T05: typed inter-skill graph edges (depends_on/specializes/composes_with/similar_to/conflicts_with)
 ];
 
 /// SQL executed by `truncate_all_tables`.
@@ -72,7 +80,7 @@ const MIGRATIONS: &[(&str, &str)] = &[
 /// Must be kept in sync with every table created by the migration set.  Any table
 /// omitted here causes cross-suite contamination when the table has live data.
 #[cfg(any(test, feature = "test-utils"))]
-const TRUNCATE_ALL_TABLES_SQL: &str = "TRUNCATE TABLE community_skills, skill_subunits, communities, subunits, skills, \
+const TRUNCATE_ALL_TABLES_SQL: &str = "TRUNCATE TABLE skill_edges, community_skills, skill_subunits, communities, subunits, skills, \
      outbox_events, rebuild_locks, transcript_ingest_queue, \
      session_logs, skill_usage, embedding_model_metadata CASCADE";
 
@@ -532,9 +540,9 @@ mod tests {
     }
 
     #[test]
-    fn migration_set_is_ordered_001_through_009() {
+    fn migration_set_is_ordered_001_through_010() {
         // MIGRATIONS is now &[(&str, &str)] — (stable_id, sql). Assert that
-        // the ids and sql content appear in the correct 001..009 order.
+        // the ids and sql content appear in the correct 001..010 order.
         let ids: Vec<&str> = MIGRATIONS.iter().map(|(id, _)| *id).collect();
         assert_eq!(
             ids,
@@ -548,8 +556,9 @@ mod tests {
                 "007_skill_generality",
                 "008_embedding_model_metadata",
                 "009_skill_multiview_fields",
+                "010_skill_edges",
             ],
-            "migration ids must appear in 001..009 order"
+            "migration ids must appear in 001..010 order"
         );
 
         let sqls: Vec<&str> = MIGRATIONS.iter().map(|(_, sql)| *sql).collect();
@@ -565,8 +574,56 @@ mod tests {
                 MIGRATION_007,
                 MIGRATION_008,
                 MIGRATION_009,
+                MIGRATION_010,
             ],
-            "migration sql bodies must match the include_str! constants in 001..009 order"
+            "migration sql bodies must match the include_str! constants in 001..010 order"
+        );
+    }
+
+    #[test]
+    fn migration_010_declares_skill_edges_table_with_typed_constraints() {
+        assert!(
+            MIGRATION_010.contains("CREATE TABLE IF NOT EXISTS skill_edges"),
+            "migration 010 must create the skill_edges table idempotently"
+        );
+        for edge_type in &[
+            "depends_on",
+            "specializes",
+            "composes_with",
+            "similar_to",
+            "conflicts_with",
+        ] {
+            assert!(
+                MIGRATION_010.contains(edge_type),
+                "migration 010 must allow edge_type '{edge_type}'"
+            );
+        }
+        for origin in &[
+            "cold_start_deterministic",
+            "cold_start_proposal",
+            "manual",
+            "agent_derived",
+        ] {
+            assert!(
+                MIGRATION_010.contains(origin),
+                "migration 010 must allow edge_origin '{origin}'"
+            );
+        }
+        assert!(
+            MIGRATION_010.contains("CHECK"),
+            "migration 010 must enforce the closed edge_type/edge_origin vocabulary with CHECK"
+        );
+        assert!(
+            MIGRATION_010.contains("REFERENCES skills"),
+            "skill_edges must foreign-key to skills so edges are cleaned up on skill delete"
+        );
+        assert!(
+            MIGRATION_010.contains("ON DELETE CASCADE"),
+            "skill_edges FKs must cascade so a rebuild's skill replacement clears stale edges"
+        );
+        assert!(
+            MIGRATION_010.contains("UNIQUE"),
+            "skill_edges must enforce a UNIQUE (source, target, edge_type) triple"
         );
     }
 
@@ -600,9 +657,9 @@ mod tests {
         );
     }
 
-    /// Live Postgres: proves that `run_migrations` applies all nine migrations on
+    /// Live Postgres: proves that `run_migrations` applies all ten migrations on
     /// a fresh schema and records them in `schema_migrations`, then proves that a
-    /// second call skips all nine by asserting `applied_at` timestamps are UNCHANGED.
+    /// second call skips all ten by asserting `applied_at` timestamps are UNCHANGED.
     ///
     /// A re-applied migration would re-INSERT or UPDATE the row (changing the
     /// timestamp). A truly skipped migration leaves the row exactly as it was.
@@ -648,7 +705,7 @@ mod tests {
             .await
             .expect("scratch adapter connect");
 
-        // ---- First boot: all nine migrations must be applied ----
+        // ---- First boot: all ten migrations must be applied ----
         adapter
             .run_migrations()
             .await
@@ -673,14 +730,15 @@ mod tests {
                 "007_skill_generality",
                 "008_embedding_model_metadata",
                 "009_skill_multiview_fields",
+                "010_skill_edges",
             ],
-            "first boot must record all nine migration ids"
+            "first boot must record all ten migration ids"
         );
 
         let first_applied_ats: Vec<chrono::DateTime<chrono::Utc>> =
             first_run_rows.iter().map(|(_, ts)| *ts).collect();
 
-        // ---- Second boot: all nine must be SKIPPED (applied_at unchanged) ----
+        // ---- Second boot: all ten must be SKIPPED (applied_at unchanged) ----
         adapter
             .run_migrations()
             .await
@@ -747,6 +805,10 @@ mod tests {
         assert!(
             TRUNCATE_ALL_TABLES_SQL.contains("embedding_model_metadata"),
             "truncate SQL must include embedding_model_metadata to prevent stale active-model row leakage"
+        );
+        assert!(
+            TRUNCATE_ALL_TABLES_SQL.contains("skill_edges"),
+            "truncate SQL must include skill_edges to prevent typed-edge leakage across suites"
         );
     }
 

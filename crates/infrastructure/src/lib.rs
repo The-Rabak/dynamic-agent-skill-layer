@@ -67,10 +67,10 @@ pub use persistence::promotion_recurrence::{
     PromotionRecurrenceStore,
 };
 pub use persistence::rebuild::{
-    LiveGraphCommunityRecord, LiveGraphSkillRecord, LiveGraphSnapshotMutation,
-    LiveGraphSubunitRecord, PersistedGraphCommunityRecord, PersistedGraphSkillRecord,
-    PersistedGraphSubunitRecord, PostgresGraphSnapshotStore, PostgresRebuildCoordinator,
-    RebuildCoordinator, RebuildError, stable_skill_uuid,
+    LiveGraphCommunityRecord, LiveGraphEdgeRecord, LiveGraphSkillRecord, LiveGraphSnapshotMutation,
+    LiveGraphSubunitRecord, PersistedGraphCommunityRecord, PersistedGraphEdgeRecord,
+    PersistedGraphSkillRecord, PersistedGraphSubunitRecord, PostgresGraphSnapshotStore,
+    PostgresRebuildCoordinator, RebuildCoordinator, RebuildError, stable_skill_uuid,
 };
 pub use persistence::scope_demotion::{
     GlobalSkillRow, PostgresScopeDemotionStore, ScopeDemotionError, ScopeDemotionStore,
