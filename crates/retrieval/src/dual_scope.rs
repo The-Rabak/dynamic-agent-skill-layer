@@ -421,11 +421,13 @@ fn perform_scope_search(
     // e_negative is NEVER in the positive fusion regardless of the flag.
     let dense_views_enabled = config.dense_views_enabled;
     let candidates = score_and_select_candidates(
-        prompt,
-        prompt_embedding,
-        &graph,
-        config,
-        scope.scope_type,
+        ScoringTailContext {
+            prompt,
+            prompt_embedding,
+            graph: &graph,
+            config,
+            scope_type: scope.scope_type,
+        },
         &candidate_indices,
         |idx, seeded_skill, _graph_hit| {
             let e_summary_cosine = dense_score_by_index.get(&idx).copied().unwrap_or_else(|| {
@@ -458,6 +460,18 @@ fn perform_scope_search(
     }
 }
 
+/// Query + corpus + config context threaded into the shared scoring tail
+/// [`score_and_select_candidates`]. Groups the parameters that are identical
+/// across both candidate-generation arms (the arms differ only in the two
+/// scoring closures), keeping the tail under the argument budget.
+struct ScoringTailContext<'a> {
+    prompt: &'a str,
+    prompt_embedding: &'a [f32],
+    graph: &'a RetrievalSnapshot,
+    config: &'a RetrievalConfig,
+    scope_type: domain::ScopeType,
+}
+
 /// Shared scoring tail for both candidate-generation arms (#258(3)): runs
 /// `search_graph` over the candidate pool, assembles a `FusedCandidate` per
 /// candidate (eq.3 score from the per-candidate semantic score + the configured
@@ -468,15 +482,19 @@ fn perform_scope_search(
 /// - `lexical_score_for(index, graph_hit) -> f32` — stored for observability; does
 ///   NOT affect the eq.3 gate.
 fn score_and_select_candidates(
-    prompt: &str,
-    prompt_embedding: &[f32],
-    graph: &RetrievalSnapshot,
-    config: &RetrievalConfig,
-    scope_type: domain::ScopeType,
+    ctx: ScoringTailContext<'_>,
     candidate_indices: &[usize],
     semantic_score_for: impl Fn(usize, &SeededSkill, Option<&GraphHit>) -> f32,
     lexical_score_for: impl Fn(usize, Option<&GraphHit>) -> f32,
 ) -> Vec<FusedCandidate> {
+    // Destructure back to locals so the scoring body below is unchanged.
+    let ScoringTailContext {
+        prompt,
+        prompt_embedding,
+        graph,
+        config,
+        scope_type,
+    } = ctx;
     let graph_hits = search_graph(
         prompt,
         prompt_embedding,
@@ -603,11 +621,13 @@ fn perform_scope_search_with_qdrant_candidates(
     // T09: same multi-view fusion seam as the snapshot arm — when dense_views_enabled
     // is true, the α term is max over {e_summary, e_task, e_needs}.
     let candidates = score_and_select_candidates(
-        prompt,
-        prompt_embedding,
-        &graph,
-        config,
-        scope.scope_type,
+        ScoringTailContext {
+            prompt,
+            prompt_embedding,
+            graph: &graph,
+            config,
+            scope_type: scope.scope_type,
+        },
         &candidate_indices,
         |_idx, seeded_skill, _graph_hit| {
             let e_summary_cosine =
