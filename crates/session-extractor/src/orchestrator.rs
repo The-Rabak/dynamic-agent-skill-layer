@@ -477,11 +477,42 @@ pub async fn run_orchestration(
 
     let mut final_candidates = deduped_candidates;
     final_candidates.append(&mut synthesis_candidates);
+
+    // ── Step 5b: Grounding guard (multi-view prompt redesign, design §7) ──
+    // The redesigned extraction prompts let the LLM author/abstract procedures, so
+    // each skill is asked to cite `evidence` anchors from the transcript. Drop any
+    // candidate whose cited evidence is wholly absent from the real session
+    // transcript (a fabrication guard) — loudly, never silently. Candidates that
+    // cite no evidence are kept (recall-first); see `crate::grounding` docs.
+    let session_transcript_text: String = events
+        .iter()
+        .filter_map(|ev| ev.as_transcript_entry())
+        .map(|entry| entry.content)
+        .collect::<Vec<_>>()
+        .join("\n");
+    let pre_grounding_count = final_candidates.len();
+    final_candidates.retain(|candidate| {
+        let grounded =
+            crate::grounding::candidate_is_grounded(candidate, &session_transcript_text);
+        if !grounded {
+            warn!(
+                name = %candidate.name,
+                ungrounded = ?crate::grounding::ungrounded_evidence_anchors(
+                    candidate,
+                    &session_transcript_text,
+                ),
+                "orchestrator: dropping candidate with fabricated evidence \
+                 (no cited anchor found in the transcript)"
+            );
+        }
+        grounded
+    });
+    let grounding_dropped = pre_grounding_count - final_candidates.len();
     let final_count = final_candidates.len();
 
     info!(
         synthesis_added_count,
-        final_count, "orchestrator: synthesis step complete"
+        grounding_dropped, final_count, "orchestrator: synthesis + grounding step complete"
     );
 
     // ── Step 6: Write .pending drafts ─────────────────────────────────────

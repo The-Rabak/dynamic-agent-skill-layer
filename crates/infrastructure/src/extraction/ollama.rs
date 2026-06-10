@@ -138,6 +138,11 @@ struct StructuredExtraction {
     /// classified as retryable by the orchestrator's `classify_prose_attempt`. A
     /// present-but-empty `"candidates": []` still deserializes to an honest empty.
     candidates: Vec<domain::ExtractedSkillCandidate>,
+    /// The model's Step-1 chain-of-thought judgement on whether the transcript held
+    /// anything durable worth extracting. Optional (older responses lack it). Logged
+    /// for observability — explains WHY a window yielded zero candidates.
+    #[serde(default)]
+    assessment: Option<String>,
 }
 
 #[async_trait]
@@ -177,6 +182,17 @@ impl TranscriptSkillExtractionService for OllamaExtractor {
             post_json(&self.client, &self.config.endpoint, &request, "ollama").await?;
         let parsed: StructuredExtraction = serde_json::from_str(&raw.response)
             .map_err(|error| ExtractionError::Unexpected(error.to_string()))?;
+
+        // Keep the model's assess-first judgement in the run log so a zero-candidate
+        // window is explainable (throwaway session vs. extraction miss).
+        if let Some(assessment) = parsed.assessment.as_deref() {
+            tracing::info!(
+                session_id = transcript.session_id.as_str(),
+                candidate_count = parsed.candidates.len(),
+                assessment,
+                "ollama extraction assessment"
+            );
+        }
 
         Ok(ExtractionResult {
             source_session_id: transcript.session_id.clone(),

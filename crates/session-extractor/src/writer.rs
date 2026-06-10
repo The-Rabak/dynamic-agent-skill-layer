@@ -502,11 +502,14 @@ fn render_pending_markdown(
     let invariants = cap_multiview_field("invariants", &candidate.invariants);
     let requires = cap_multiview_field("requires", &candidate.requires);
     let produces = cap_multiview_field("produces", &candidate.produces);
+    let evidence = cap_multiview_field("evidence", &candidate.evidence);
+    let skill_type = candidate.skill_type.as_deref().unwrap_or("");
 
     let frontmatter = PendingDraftFrontmatter {
         name: candidate.name.as_str(),
         description: candidate.description.as_str(),
         tags: &candidate.tags,
+        skill_type,
         origin: "session_extraction",
         source_session_id,
         source_provider: provider_name,
@@ -522,6 +525,7 @@ fn render_pending_markdown(
         invariants: &invariants,
         requires: &requires,
         produces: &produces,
+        evidence: &evidence,
     };
     let frontmatter_yaml = serialize_frontmatter(&frontmatter)?;
 
@@ -567,6 +571,10 @@ struct PendingDraftFrontmatter<'a> {
     /// unified SKILL.md format — the markdown body no longer carries a `tags:`
     /// line. Read back by the graph-builder reader's frontmatter parse.
     tags: &'a [String],
+    /// Advisory knowledge-type taxonomy tag (e.g. "failure_fix", "refinement",
+    /// "preference"). JSON/YAML key is `type`. Omitted when the provider emitted none.
+    #[serde(rename = "type", skip_serializing_if = "str::is_empty")]
+    skill_type: &'a str,
     origin: &'a str,
     source_session_id: &'a str,
     source_provider: &'a str,
@@ -600,6 +608,11 @@ struct PendingDraftFrontmatter<'a> {
     /// Outcomes or artifacts produced by following this skill. Omitted when empty.
     #[serde(skip_serializing_if = "<[String]>::is_empty")]
     produces: &'a [String],
+    /// Transcript anchors that ground this skill (provenance: the exact command,
+    /// error, or file it was derived from). Omitted when empty. Advisory — read
+    /// back with `#[serde(default)]`, never indexed as a retrievable subunit.
+    #[serde(skip_serializing_if = "<[String]>::is_empty")]
+    evidence: &'a [String],
 }
 
 #[derive(Debug, Clone)]

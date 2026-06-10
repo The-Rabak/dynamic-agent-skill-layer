@@ -7,6 +7,7 @@ pub mod providers {
     pub mod claude_code;
     pub mod ollama;
 }
+pub mod grounding;
 pub mod orchestrator;
 pub mod preamble;
 pub mod routing;

@@ -151,6 +151,24 @@ struct ClaudeCliEnvelope {
 struct CandidatesBody {
     #[serde(default)]
     candidates: Vec<domain::ExtractedSkillCandidate>,
+    /// The model's Step-1 chain-of-thought judgement on extractable value.
+    /// Optional; logged for observability (explains zero-candidate sessions).
+    #[serde(default)]
+    assessment: Option<String>,
+}
+
+impl CandidatesBody {
+    /// Logs the model's assess-first judgement so a zero-candidate result is
+    /// explainable in the extraction run log.
+    fn log_assessment(&self) {
+        if let Some(assessment) = self.assessment.as_deref() {
+            tracing::info!(
+                candidate_count = self.candidates.len(),
+                assessment,
+                "claude-code extraction assessment"
+            );
+        }
+    }
 }
 
 #[async_trait]
@@ -460,6 +478,7 @@ pub(crate) fn parse_cli_output(
     // Fast path: `--output-format json` and the JSON-enforcer system prompt should
     // produce a bare JSON object with no surrounding prose. Try the direct parse first.
     if let Ok(body) = serde_json::from_str::<CandidatesBody>(&stripped) {
+        body.log_assessment();
         return Ok(body.candidates);
     }
 
@@ -487,6 +506,7 @@ pub(crate) fn parse_cli_output(
         ))
     })?;
 
+    body.log_assessment();
     Ok(body.candidates)
 }
 

@@ -530,6 +530,20 @@ pub struct ExtractedSkillCandidate {
     /// Advisory — feeds T05 typed-edge proposals. Empty when absent.
     #[serde(default)]
     pub produces: Vec<String>,
+    /// The knowledge type this skill encodes (advisory taxonomy tag): one of
+    /// `procedure`, `rule`, `anti_pattern`, `failure_fix`, `prerequisite`,
+    /// `preference`, `best_practice`, `principle`, `refinement`, `diagnostic`.
+    ///
+    /// JSON key is `type` (renamed to avoid the Rust keyword). `#[serde(default)]`
+    /// → absent provider responses deserialise to `None` (backward compatible).
+    #[serde(rename = "type", default)]
+    pub skill_type: Option<String>,
+    /// Transcript anchors that ground this skill — the exact command, error
+    /// string, or file it was derived from. Used by the extraction grounding
+    /// validator (rejects a candidate that cites content absent from the source
+    /// transcript) and written to the `## Evidence` body section. Empty when absent.
+    #[serde(default)]
+    pub evidence: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

@@ -178,6 +178,10 @@ struct ContentBlock {
 struct ToolInput {
     #[serde(default)]
     candidates: Vec<domain::ExtractedSkillCandidate>,
+    /// The model's Step-1 chain-of-thought judgement on extractable value.
+    /// Required in the tool schema; logged for observability.
+    #[serde(default)]
+    assessment: Option<String>,
 }
 
 #[async_trait]
@@ -292,6 +296,14 @@ impl ClaudeExtractor {
                         .to_owned(),
                 )
             })?;
+
+        if let Some(assessment) = tool_input.assessment.as_deref() {
+            tracing::info!(
+                candidate_count = tool_input.candidates.len(),
+                assessment,
+                "claude extraction assessment"
+            );
+        }
 
         Ok(tool_input.candidates)
     }

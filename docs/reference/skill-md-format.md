@@ -19,6 +19,7 @@ tags:
 - http
 generality: general            # optional: project | general | uncertain
 generality_rationale: ...       # optional
+type: failure_fix               # optional knowledge-type tag (see below)
 origin: session_extraction      # optional provenance
 source_session_id: ...          # optional
 source_provider: ...            # optional
@@ -40,6 +41,8 @@ requires:                        # optional: prerequisites before applying this 
 - An HTTP framework with middleware support
 produces:                        # optional: named outputs this skill guarantees
 - A hardened HTTP router with all security defaults set
+evidence:                        # optional: transcript anchors that ground this skill (provenance)
+- "error[E0277]: Mutex<T> cannot be held across await"
 ---
 
 # http-router-security-defaults
@@ -101,6 +104,8 @@ optional (`#[serde(default)]`): old SKILL.md files without them parse cleanly
 | `artifacts` | Notable outputs or deliverables the skill produces |
 | `tools` | Tools / CLIs / libraries the skill directly invokes |
 | `invariants` | Conditions that must remain true when skill applies |
+| `type` | Knowledge-type taxonomy tag emitted by extraction: one of `procedure`, `rule`, `anti_pattern`, `failure_fix`, `prerequisite`, `preference`, `best_practice`, `principle`, `refinement`, `diagnostic`. Advisory; enables type-aware retrieval/edges later. |
+| `evidence` | Transcript anchors (exact command / error / file) the skill was derived from. Provenance + the input to the extraction grounding validator (a candidate citing evidence absent from the source transcript is dropped at extraction time). Never indexed as a retrievable subunit. |
 
 Advisory-only fields are stored in the `skills` table but are not currently
 queried by any retrieval or ranking path. They exist as human-readable context

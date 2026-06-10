@@ -73,6 +73,8 @@ fn writer_output_is_read_back_with_description_tags_and_procedures_intact() {
         invariants: vec![],
         requires: vec![],
         produces: vec![],
+        skill_type: None,
+        evidence: vec![],
     };
     let extraction_result = ExtractionResult {
         source_session_id: DomainId::new_unchecked("session-roundtrip"),
@@ -204,6 +206,8 @@ fn multiview_fields_round_trip_through_real_writer_and_reader() {
         ],
         requires: vec!["Docker Desktop >= 4.x installed".to_owned()],
         produces: vec!["Running local service stack accessible on localhost ports".to_owned()],
+        skill_type: Some("procedure".to_owned()),
+        evidence: vec!["docker compose up -d".to_owned()],
     };
     let extraction_result = ExtractionResult {
         source_session_id: DomainId::new_unchecked("session-multiview"),
@@ -336,6 +340,8 @@ fn candidate_without_multiview_fields_round_trips_unchanged() {
         invariants: vec![],
         requires: vec![],
         produces: vec![],
+        skill_type: None,
+        evidence: vec![],
     };
     let extraction_result = ExtractionResult {
         source_session_id: DomainId::new_unchecked("session-no-multiview"),

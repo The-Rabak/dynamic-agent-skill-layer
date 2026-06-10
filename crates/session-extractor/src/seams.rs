@@ -475,27 +475,33 @@ pub fn build_synthesis_prompt(
     };
 
     format!(
-        "You are reviewing a list of skill candidates extracted from a coding session. \
-         Your task: identify any SESSION-SPANNING patterns — reusable knowledge that \
-         cuts across multiple skills but was not captured by any single one.\n\
+        "You are reviewing the skills extracted from ALL episodes of one coding session. \
+         Your task: surface SESSION-SPANNING knowledge that no single episode captured — \
+         high-altitude principles, best practices that recurred across multiple episodes, \
+         the converged result of a trial-and-error arc that spanned several episodes, and \
+         failure modes that showed up more than once.\n\
          {preamble_section}\n\
-         Already-extracted skills:\n\
+         Already-extracted skills (do NOT re-emit or rephrase these):\n\
          {candidate_summary}\n\
          \n\
          Rules:\n\
-         - Only emit NEW candidates not already represented above.\n\
-         - Do NOT re-emit or rephrase existing skills.\n\
-         - If no session-spanning pattern exists, return an empty list.\n\
-         - Each new candidate must encode genuine cross-episode knowledge.\n\
-         - Each candidate must include: `name` (kebab-case), `description` (one sentence), \
-           `procedures` (list of actionable steps), `confidence` (float 0.0–1.0).\n\
+         - Only emit NEW candidates MORE GENERAL than any single skill above; no overlap.\n\
+         - Favor `type` one of: principle, best_practice, refinement, anti_pattern.\n\
+         - A best_practice or principle must be corroborated by >= 2 of the skills above; \
+           if it appears only once, do NOT emit it.\n\
+         - When generalizing a trial-and-error arc, state the final approach as `procedures` \
+           AND the dead-ends it rules out as `avoid_when`.\n\
+         - Fill the views (`use_when` with literal triggers, `avoid_when`, `invariants`, \
+           `requires`, `produces`) when grounded; cite the source skills in `evidence`.\n\
+         - If no genuine session-spanning pattern exists, return an empty list.\n\
          \n\
          Respond with JSON: \
          {{\"candidates\": [\
-         {{\"name\":\"...\",\"description\":\"...\",\"tags\":[],\
-         \"procedures\":[\"...\"],\"conventions\":[],\"assets\":[],\
-         \"confidence\":0.8,\"generality\":\"general\",\
-         \"generality_rationale\":null}}]}}"
+         {{\"name\":\"...\",\"type\":\"principle\",\"description\":\"...\",\"tags\":[],\
+         \"procedures\":[\"...\"],\"conventions\":[],\"assets\":[],\"confidence\":0.8,\
+         \"use_when\":[\"...\"],\"avoid_when\":[\"...\"],\"invariants\":[],\"requires\":[],\
+         \"produces\":[],\"tools\":[],\"artifacts\":[],\"evidence\":[\"...\"],\
+         \"generality\":\"general\",\"generality_rationale\":null}}]}}"
     )
 }
 
@@ -540,6 +546,12 @@ struct SynthesisCandidate {
     requires: Vec<String>,
     #[serde(default)]
     produces: Vec<String>,
+    /// Knowledge-type taxonomy tag forwarded from the synthesis LLM when present.
+    #[serde(rename = "type", default)]
+    skill_type: Option<String>,
+    /// Transcript anchors grounding the candidate, forwarded when present.
+    #[serde(default)]
+    evidence: Vec<String>,
 }
 
 /// Returns `true` when a parsed synthesis candidate carries at least one piece of
@@ -617,6 +629,8 @@ pub fn parse_synthesis_response(
             invariants: c.invariants,
             requires: c.requires,
             produces: c.produces,
+            skill_type: c.skill_type,
+            evidence: c.evidence,
         })
         .collect();
 
