@@ -2,7 +2,7 @@
 ticket_id: T09
 title: Dense multi-view embedding views (e_task / e_needs / e_negative)
 kind: expansion
-status: ready
+status: in_progress
 plan_ref: docs/plans/2026-06-08-feat-v1-7-local-hybrid-skilldag-retrieval-plan.md
 tickets_ref: docs/tickets/2026-06-08-v1-7-local-hybrid-skilldag-retrieval/index.md
 architecture_ref: "explicit-handoff: parent plan ## Proposed V1.7 Architecture > Embedding views (lines 243-251)"

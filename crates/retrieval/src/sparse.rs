@@ -146,7 +146,9 @@ pub fn query_sparse_vector(query: &str) -> (Vec<u32>, Vec<f32>) {
         // Idempotent unit-weight insert: the first occurrence of any token (or any
         // token that hashes to this index) establishes weight 1.0; repeats are
         // no-ops. Do NOT accumulate — TF weighting belongs only on the document side.
-        index_weight.entry(term_to_sparse_index(&token)).or_insert(1.0);
+        index_weight
+            .entry(term_to_sparse_index(&token))
+            .or_insert(1.0);
     }
     let mut indices = Vec::with_capacity(index_weight.len());
     let mut values = Vec::with_capacity(index_weight.len());

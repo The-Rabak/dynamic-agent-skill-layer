@@ -9,6 +9,7 @@ use tokio::time::timeout;
 
 use crate::{
     cosine_rank::{cosine_similarity, rank_by_cosine},
+    dense_views::fuse_dense_views,
     fusion::{FusedCandidate, mmr_select},
     graph_search::{GraphHit, search_graph, tokenize},
     orchestrator::{
@@ -414,6 +415,11 @@ fn perform_scope_search(
     // cosine for BM25-lifted candidates so the eq.3 floor stays honest — and the
     // lexical score from the real BM25 score for the hybrid arm (token-overlap
     // otherwise, for observability only).
+    //
+    // T09: when `dense_views_enabled` is true, the α term is the max cosine over
+    // {e_summary, e_task, e_needs}. Flag OFF → unchanged (e_summary cosine only).
+    // e_negative is NEVER in the positive fusion regardless of the flag.
+    let dense_views_enabled = config.dense_views_enabled;
     let candidates = score_and_select_candidates(
         prompt,
         prompt_embedding,
@@ -422,9 +428,19 @@ fn perform_scope_search(
         scope.scope_type,
         &candidate_indices,
         |idx, seeded_skill, _graph_hit| {
-            dense_score_by_index.get(&idx).copied().unwrap_or_else(|| {
+            let e_summary_cosine = dense_score_by_index.get(&idx).copied().unwrap_or_else(|| {
                 cosine_similarity(prompt_embedding, &seeded_skill.embedding).max(0.0)
-            })
+            });
+            if dense_views_enabled {
+                fuse_dense_views(
+                    prompt_embedding,
+                    e_summary_cosine,
+                    &seeded_skill.e_task_embedding,
+                    &seeded_skill.e_needs_embedding,
+                )
+            } else {
+                e_summary_cosine
+            }
         },
         |idx, graph_hit| {
             if config.backend == RetrievalBackend::SnapshotHybrid {
@@ -583,6 +599,9 @@ fn perform_scope_search_with_qdrant_candidates(
     // Qdrant fused score is not comparable to cosine and cannot substitute for the
     // eq.3 α term), and stores the Qdrant RRF-fused score as the lexical score for
     // observability only — it does NOT affect the eq.3 gate.
+    //
+    // T09: same multi-view fusion seam as the snapshot arm — when dense_views_enabled
+    // is true, the α term is max over {e_summary, e_task, e_needs}.
     let candidates = score_and_select_candidates(
         prompt,
         prompt_embedding,
@@ -591,7 +610,18 @@ fn perform_scope_search_with_qdrant_candidates(
         scope.scope_type,
         &candidate_indices,
         |_idx, seeded_skill, _graph_hit| {
-            cosine_similarity(prompt_embedding, &seeded_skill.embedding).max(0.0)
+            let e_summary_cosine =
+                cosine_similarity(prompt_embedding, &seeded_skill.embedding).max(0.0);
+            if config.dense_views_enabled {
+                fuse_dense_views(
+                    prompt_embedding,
+                    e_summary_cosine,
+                    &seeded_skill.e_task_embedding,
+                    &seeded_skill.e_needs_embedding,
+                )
+            } else {
+                e_summary_cosine
+            }
         },
         |idx, _graph_hit| fused_score_by_index.get(&idx).copied().unwrap_or(0.0),
     );
@@ -760,6 +790,9 @@ mod tests {
                     // value `usage_prior(0, 0)` produces.
                     prior: 0.0,
                     community_boost: 0.2,
+                    e_task_embedding: Vec::new(),
+                    e_needs_embedding: Vec::new(),
+                    e_negative_embedding: Vec::new(),
                 },
                 SeededSkill {
                     skill: global.clone(),
@@ -781,6 +814,9 @@ mod tests {
                     // value `usage_prior(0, 0)` produces.
                     prior: 0.0,
                     community_boost: 0.2,
+                    e_task_embedding: Vec::new(),
+                    e_needs_embedding: Vec::new(),
+                    e_negative_embedding: Vec::new(),
                 },
             ],
             3,
@@ -832,6 +868,9 @@ mod tests {
                 }],
                 prior: 0.1,
                 community_boost: 0.2,
+                e_task_embedding: Vec::new(),
+                e_needs_embedding: Vec::new(),
+                e_negative_embedding: Vec::new(),
             });
 
             skills.push(SeededSkill {
@@ -852,6 +891,9 @@ mod tests {
                 }],
                 prior: 0.1,
                 community_boost: 0.2,
+                e_task_embedding: Vec::new(),
+                e_needs_embedding: Vec::new(),
+                e_negative_embedding: Vec::new(),
             });
         }
 
@@ -1093,6 +1135,9 @@ mod tests {
                     // value `usage_prior(0, 0)` produces.
                     prior: 0.0,
                     community_boost: 0.2,
+                    e_task_embedding: Vec::new(),
+                    e_needs_embedding: Vec::new(),
+                    e_negative_embedding: Vec::new(),
                 },
                 SeededSkill {
                     skill: project,
@@ -1114,6 +1159,9 @@ mod tests {
                     // value `usage_prior(0, 0)` produces.
                     prior: 0.0,
                     community_boost: 0.2,
+                    e_task_embedding: Vec::new(),
+                    e_needs_embedding: Vec::new(),
+                    e_negative_embedding: Vec::new(),
                 },
             ],
             7,
@@ -1177,6 +1225,9 @@ mod tests {
                     }],
                     prior: 0.0,
                     community_boost: 0.0,
+                    e_task_embedding: Vec::new(),
+                    e_needs_embedding: Vec::new(),
+                    e_negative_embedding: Vec::new(),
                 },
                 // Skill B: source_paths outside the queried scope root — MUST be excluded.
                 SeededSkill {
@@ -1195,6 +1246,9 @@ mod tests {
                     }],
                     prior: 0.0,
                     community_boost: 0.0,
+                    e_task_embedding: Vec::new(),
+                    e_needs_embedding: Vec::new(),
+                    e_negative_embedding: Vec::new(),
                 },
             ],
             1,
@@ -1318,6 +1372,9 @@ mod tests {
                 // No usage history: prior (γ) = 0.
                 prior: 0.0,
                 community_boost: 0.0,
+                e_task_embedding: Vec::new(),
+                e_needs_embedding: Vec::new(),
+                e_negative_embedding: Vec::new(),
             }],
             1,
         );
@@ -1402,6 +1459,9 @@ mod tests {
                 }],
                 prior: 0.0,
                 community_boost: 0.0,
+                e_task_embedding: Vec::new(),
+                e_needs_embedding: Vec::new(),
+                e_negative_embedding: Vec::new(),
             }],
             1,
         );
@@ -1506,6 +1566,9 @@ mod tests {
                     subunit_embeddings: vec![],
                     prior: 0.0,
                     community_boost: 0.0,
+                    e_task_embedding: Vec::new(),
+                    e_needs_embedding: Vec::new(),
+                    e_negative_embedding: Vec::new(),
                 },
                 SeededSkill {
                     skill: dominant_b,
@@ -1516,6 +1579,9 @@ mod tests {
                     subunit_embeddings: vec![],
                     prior: 0.0,
                     community_boost: 0.0,
+                    e_task_embedding: Vec::new(),
+                    e_needs_embedding: Vec::new(),
+                    e_negative_embedding: Vec::new(),
                 },
                 SeededSkill {
                     skill: lexical_target,
@@ -1526,6 +1592,9 @@ mod tests {
                     subunit_embeddings: vec![],
                     prior: 0.0,
                     community_boost: 0.0,
+                    e_task_embedding: Vec::new(),
+                    e_needs_embedding: Vec::new(),
+                    e_negative_embedding: Vec::new(),
                 },
             ],
             1,
@@ -1702,6 +1771,9 @@ mod tests {
                     subunit_embeddings: vec![],
                     prior: 0.0,
                     community_boost: 0.0,
+                    e_task_embedding: Vec::new(),
+                    e_needs_embedding: Vec::new(),
+                    e_negative_embedding: Vec::new(),
                 },
                 SeededSkill {
                     skill: dominant_b,
@@ -1712,6 +1784,9 @@ mod tests {
                     subunit_embeddings: vec![],
                     prior: 0.0,
                     community_boost: 0.0,
+                    e_task_embedding: Vec::new(),
+                    e_needs_embedding: Vec::new(),
+                    e_negative_embedding: Vec::new(),
                 },
                 SeededSkill {
                     skill: multiview_target,
@@ -1722,6 +1797,9 @@ mod tests {
                     subunit_embeddings: vec![],
                     prior: 0.0,
                     community_boost: 0.0,
+                    e_task_embedding: Vec::new(),
+                    e_needs_embedding: Vec::new(),
+                    e_negative_embedding: Vec::new(),
                 },
             ],
             1,
@@ -1733,8 +1811,8 @@ mod tests {
         let multiview_for = |idx: usize| -> (Vec<String>, Vec<String>, Vec<String>) {
             if idx == 2 {
                 (
-                    vec!["telemetryflush".to_owned()], // tools
-                    vec!["exporter-config.yaml".to_owned()], // artifacts
+                    vec!["telemetryflush".to_owned()],              // tools
+                    vec!["exporter-config.yaml".to_owned()],        // artifacts
                     vec!["collector must be reachable".to_owned()], // invariants
                 )
             } else {
@@ -1906,6 +1984,9 @@ mod tests {
                 subunit_embeddings: vec![],
                 prior: 0.0,
                 community_boost: 0.0,
+                e_task_embedding: Vec::new(),
+                e_needs_embedding: Vec::new(),
+                e_negative_embedding: Vec::new(),
             }],
             1,
         );

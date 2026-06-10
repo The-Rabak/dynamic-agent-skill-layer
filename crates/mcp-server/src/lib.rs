@@ -48,8 +48,8 @@ use infrastructure::{
 use maintenance::RetirementConfig;
 use retrieval::{
     CircuitBreaker, DualScopeResolver, HybridCandidate, HybridCandidateSource, HybridQueryError,
-    RetrievalBackend, RetrievalConfig, RetrievalOrchestrator, RetrievalSnapshot, SkillRetriever,
-    SkillLexicalFields, skill_lexical_document,
+    RetrievalBackend, RetrievalConfig, RetrievalOrchestrator, RetrievalSnapshot,
+    SkillLexicalFields, SkillRetriever, skill_lexical_document,
 };
 use tokio::sync::mpsc;
 use tools::{
@@ -1078,9 +1078,7 @@ async fn build_graph_from_pg(
         // expander can treat a missing index as a hard programming error (#247).
         // `Bm25Index::build(&[])` returns a valid empty index (empty query → no hits).
         let bm25_index = Arc::new(retrieval::Bm25Index::build(&[]));
-        return Ok(
-            RetrievalSnapshot::new(vec![], graph_version).with_bm25_index(bm25_index)
-        );
+        return Ok(RetrievalSnapshot::new(vec![], graph_version).with_bm25_index(bm25_index));
     }
 
     // Fail loud when the corpus exceeds the configured cap. Silent truncation
@@ -1168,6 +1166,101 @@ async fn build_graph_from_pg(
                     .collect()
             })
             .collect()
+    };
+
+    // ── T09: Dense multi-view embeddings ────────────────────────────────────
+    // Build e_task / e_needs / e_negative texts from the T03 multi-view fields
+    // and embed them as three flat batches. Built UNCONDITIONALLY at boot so
+    // RETRIEVAL_DENSE_VIEWS can be toggled at request time without a graph
+    // rebuild — the scoring path simply does not read these vectors when the flag
+    // is off. The single-source-of-truth field→text mapping lives in
+    // `retrieval::dense_views` (mirrors BM25's `skill_lexical_document`).
+    //
+    // Subunit procedure text for e_task uses short form (title only, not full
+    // body) to honour the embedding-window discipline (plan line 251):
+    //   subunit_title_text = subunit headings joined with spaces.
+    //
+    // Three separate embed_batch calls are intentional: the provider may have
+    // a per-request token budget; keeping the per-batch size bounded (== corpus
+    // size per view) is safer than one mega-batch.
+    //
+    // Fail-loud guards: each batch length is checked against `skills.len()`
+    // before zipping (mirrors the e_summary and subunit batch guards above).
+    let dense_view_embedding_dim: usize;
+    let (
+        per_skill_e_task_embeddings,
+        per_skill_e_needs_embeddings,
+        per_skill_e_negative_embeddings,
+    ) = {
+        use retrieval::{SkillDenseViewFields, build_e_needs, build_e_negative, build_e_task};
+
+        // Build all three view texts in one pass over `skills` before it is
+        // consumed by `.into_iter()`. The subunit_procedure_text for e_task
+        // uses titles only — not full content — to stay bounded.
+        let (mut e_task_texts, mut e_needs_texts, mut e_negative_texts) = (
+            Vec::with_capacity(skills.len()),
+            Vec::with_capacity(skills.len()),
+            Vec::with_capacity(skills.len()),
+        );
+        for record in &skills {
+            let subunit_title_text: String = record
+                .subunits
+                .iter()
+                .map(|su| su.title.as_str())
+                .collect::<Vec<_>>()
+                .join(" ");
+            let fields = SkillDenseViewFields {
+                use_when: &record.use_when,
+                avoid_when: &record.avoid_when,
+                artifacts: &record.artifacts,
+                tools: &record.tools,
+                invariants: &record.invariants,
+                requires: &record.requires,
+                subunit_procedure_text: &subunit_title_text,
+            };
+            e_task_texts.push(build_e_task(&fields));
+            e_needs_texts.push(build_e_needs(&fields));
+            e_negative_texts.push(build_e_negative(&fields));
+        }
+
+        let e_task_refs: Vec<&str> = e_task_texts.iter().map(String::as_str).collect();
+        let e_task_flat = embedding_service.embed_batch(&e_task_refs).await?;
+        if e_task_flat.len() != skills.len() {
+            return Err(format!(
+                "embed_batch returned {} e_task vectors for {} skills",
+                e_task_flat.len(),
+                skills.len()
+            )
+            .into());
+        }
+
+        let e_needs_refs: Vec<&str> = e_needs_texts.iter().map(String::as_str).collect();
+        let e_needs_flat = embedding_service.embed_batch(&e_needs_refs).await?;
+        if e_needs_flat.len() != skills.len() {
+            return Err(format!(
+                "embed_batch returned {} e_needs vectors for {} skills",
+                e_needs_flat.len(),
+                skills.len()
+            )
+            .into());
+        }
+
+        let e_negative_refs: Vec<&str> = e_negative_texts.iter().map(String::as_str).collect();
+        let e_negative_flat = embedding_service.embed_batch(&e_negative_refs).await?;
+        if e_negative_flat.len() != skills.len() {
+            return Err(format!(
+                "embed_batch returned {} e_negative vectors for {} skills",
+                e_negative_flat.len(),
+                skills.len()
+            )
+            .into());
+        }
+
+        // Capture the embedding dimensionality from the first non-empty vector
+        // for the DenseViewsMetadata (observability only; all views share the same dim).
+        dense_view_embedding_dim = e_task_flat.first().map_or(0, |v| v.len());
+
+        (e_task_flat, e_needs_flat, e_negative_flat)
     };
 
     // Live-loaded skills have no per-file provenance (the `skills` table stores no
@@ -1291,133 +1384,147 @@ async fn build_graph_from_pg(
         .into_iter()
         .zip(embeddings.into_iter())
         .zip(per_skill_subunit_embeddings.into_iter())
-        .map(|((record, embedding), subunit_embeddings)| {
-            // Derive scope type, scope_id, and the fallback scope-root paths from
-            // the `skills.scope` column in one match so the two arms cannot drift.
-            let (scope, scope_id, fallback_scope_paths) = match record.scope.as_str() {
-                "global" => (
-                    domain::ScopeType::Global,
-                    "global".to_owned(),
-                    global_scope_paths.clone(),
-                ),
-                // "team" is reserved-but-unwired forward-compat: the scope column
-                // and DB CHECK constraint already allow it so future wiring is a
-                // pure addition. The DualScopeResolver currently emits only
-                // "project" and "global"; no team resolver exists yet.
-                //
-                // The fallback is intentionally empty (no team scope root is
-                // configured); skills that also have empty `source_paths` will
-                // receive zero paths and be invisible to all `starts_with` scope
-                // gates.  The warn! below makes that observable so the silent
-                // drop is not mistaken for a DB or retrieval bug.
-                "team" => (domain::ScopeType::Team, "team".to_owned(), Vec::new()),
-                _ => (
-                    domain::ScopeType::Project,
-                    "project".to_owned(),
-                    project_scope_paths.clone(),
-                ),
-            };
-            // Use the real per-skill SKILL.md provenance from the `source_paths`
-            // column (migration 005). Fall back to the configured scope root for
-            // pre-migration rows whose column value is empty — this matches T01's
-            // stand-in exactly and keeps old graphs scope-matching correctly.
-            let source_paths = if record.source_paths.is_empty() {
-                fallback_scope_paths
-            } else {
-                // Look up the canonical form precomputed off-executor above. Falls
-                // back to the raw path (parsed) when canonicalization failed — safer
-                // than silently substituting the scope root.
-                record
-                    .source_paths
-                    .iter()
-                    .map(|p| {
-                        canonical_source_paths
-                            .get(p)
-                            .cloned()
-                            .unwrap_or_else(|| std::path::PathBuf::from(p))
-                    })
-                    .collect()
-            };
-            // Team scope has no configured scope root (no team resolver is wired
-            // yet).  A team skill whose DB row also carries no `source_paths`
-            // ends up with zero paths and is invisible to every `starts_with`
-            // scope gate — it will be silently dropped from retrieval results.
-            // Log here so the gap is observable without a debugger.
-            if scope_id == "team" && source_paths.is_empty() {
-                warn!(
-                    skill_id = %record.skill_id,
-                    "team-scope skill has no source_paths and no configured team \
-                     scope root — it will be excluded from all scope-filtered \
-                     retrievals until a team scope root is wired or the skill \
-                     gains explicit source_paths"
+        .zip(per_skill_e_task_embeddings.into_iter())
+        .zip(per_skill_e_needs_embeddings.into_iter())
+        .zip(per_skill_e_negative_embeddings.into_iter())
+        .map(
+            |(
+                ((((record, embedding), subunit_embeddings), e_task_embedding), e_needs_embedding),
+                e_negative_embedding,
+            )| {
+                // Derive scope type, scope_id, and the fallback scope-root paths from
+                // the `skills.scope` column in one match so the two arms cannot drift.
+                let (scope, scope_id, fallback_scope_paths) = match record.scope.as_str() {
+                    "global" => (
+                        domain::ScopeType::Global,
+                        "global".to_owned(),
+                        global_scope_paths.clone(),
+                    ),
+                    // "team" is reserved-but-unwired forward-compat: the scope column
+                    // and DB CHECK constraint already allow it so future wiring is a
+                    // pure addition. The DualScopeResolver currently emits only
+                    // "project" and "global"; no team resolver exists yet.
+                    //
+                    // The fallback is intentionally empty (no team scope root is
+                    // configured); skills that also have empty `source_paths` will
+                    // receive zero paths and be invisible to all `starts_with` scope
+                    // gates.  The warn! below makes that observable so the silent
+                    // drop is not mistaken for a DB or retrieval bug.
+                    "team" => (domain::ScopeType::Team, "team".to_owned(), Vec::new()),
+                    _ => (
+                        domain::ScopeType::Project,
+                        "project".to_owned(),
+                        project_scope_paths.clone(),
+                    ),
+                };
+                // Use the real per-skill SKILL.md provenance from the `source_paths`
+                // column (migration 005). Fall back to the configured scope root for
+                // pre-migration rows whose column value is empty — this matches T01's
+                // stand-in exactly and keeps old graphs scope-matching correctly.
+                let source_paths = if record.source_paths.is_empty() {
+                    fallback_scope_paths
+                } else {
+                    // Look up the canonical form precomputed off-executor above. Falls
+                    // back to the raw path (parsed) when canonicalization failed — safer
+                    // than silently substituting the scope root.
+                    record
+                        .source_paths
+                        .iter()
+                        .map(|p| {
+                            canonical_source_paths
+                                .get(p)
+                                .cloned()
+                                .unwrap_or_else(|| std::path::PathBuf::from(p))
+                        })
+                        .collect()
+                };
+                // Team scope has no configured scope root (no team resolver is wired
+                // yet).  A team skill whose DB row also carries no `source_paths`
+                // ends up with zero paths and is invisible to every `starts_with`
+                // scope gate — it will be silently dropped from retrieval results.
+                // Log here so the gap is observable without a debugger.
+                if scope_id == "team" && source_paths.is_empty() {
+                    warn!(
+                        skill_id = %record.skill_id,
+                        "team-scope skill has no source_paths and no configured team \
+                         scope root — it will be excluded from all scope-filtered \
+                         retrievals until a team scope root is wired or the skill \
+                         gains explicit source_paths"
+                    );
+                }
+                // Deterministic prior from real usage: ln(1+count)·e^(-age/30),
+                // clamped at 0.15. Zero for cold-start (no usage rows) so unseen
+                // skills never receive a phantom boost. V1.5 fixed formula — see
+                // `retrieval::scoring::usage_prior` for the sealed constants.
+                let prior_inputs = usage_by_skill.get(&record.skill_id).copied().unwrap_or(
+                    retrieval::UsagePriorInputs {
+                        usage_count: 0,
+                        age_days: 0,
+                    },
                 );
-            }
-            // Deterministic prior from real usage: ln(1+count)·e^(-age/30),
-            // clamped at 0.15. Zero for cold-start (no usage rows) so unseen
-            // skills never receive a phantom boost. V1.5 fixed formula — see
-            // `retrieval::scoring::usage_prior` for the sealed constants.
-            let prior_inputs = usage_by_skill.get(&record.skill_id).copied().unwrap_or(
-                retrieval::UsagePriorInputs {
-                    usage_count: 0,
-                    age_days: 0,
-                },
-            );
-            let prior = retrieval::usage_prior(prior_inputs.usage_count, prior_inputs.age_days);
+                let prior = retrieval::usage_prior(prior_inputs.usage_count, prior_inputs.age_days);
 
-            // For the domain::Skill, expose the first (lowest-ID) community
-            // membership so callers that rely on a single community_id still work.
-            // The community_boost uses the full membership set: any membership earns
-            // the boost, consistent with the dual-membership spec.
-            let mut sorted_community_ids = record.community_ids.clone();
-            sorted_community_ids.sort();
-            let primary_community_id = sorted_community_ids.into_iter().next();
+                // For the domain::Skill, expose the first (lowest-ID) community
+                // membership so callers that rely on a single community_id still work.
+                // The community_boost uses the full membership set: any membership earns
+                // the boost, consistent with the dual-membership spec.
+                let mut sorted_community_ids = record.community_ids.clone();
+                sorted_community_ids.sort();
+                let primary_community_id = sorted_community_ids.into_iter().next();
 
-            let skill = domain::Skill {
-                id: domain::DomainId::new_unchecked(&record.skill_id),
-                name: record.name,
-                description: record.description,
-                scope,
-                status: domain::SkillStatus::Ready,
-                lifecycle: domain::LifecycleStatus::Active,
-                tags: record.tags,
-                subunit_ids: record
-                    .subunits
-                    .iter()
-                    .map(|s| domain::DomainId::new_unchecked(&s.subunit_id))
-                    .collect(),
-                community_id: primary_community_id.map(|id| domain::DomainId::new_unchecked(&id)),
-            };
-            // Community boost: applies whenever a skill belongs to any community
-            // (hdbscan OR tag) — matching the dual-membership spec.
-            let community_boost = if !record.community_ids.is_empty() {
-                0.2
-            } else {
-                0.0
-            };
-            let subunits: Vec<domain::Subunit> = record
-                .subunits
-                .into_iter()
-                .map(|s| domain::Subunit {
-                    id: domain::DomainId::new_unchecked(&s.subunit_id),
-                    skill_id: skill.id.clone(),
-                    kind: subunit_kind_from_db(&s.kind),
-                    title: s.title,
-                    content: s.content,
+                let skill = domain::Skill {
+                    id: domain::DomainId::new_unchecked(&record.skill_id),
+                    name: record.name,
+                    description: record.description,
+                    scope,
+                    status: domain::SkillStatus::Ready,
                     lifecycle: domain::LifecycleStatus::Active,
-                })
-                .collect();
+                    tags: record.tags,
+                    subunit_ids: record
+                        .subunits
+                        .iter()
+                        .map(|s| domain::DomainId::new_unchecked(&s.subunit_id))
+                        .collect(),
+                    community_id: primary_community_id
+                        .map(|id| domain::DomainId::new_unchecked(&id)),
+                };
+                // Community boost: applies whenever a skill belongs to any community
+                // (hdbscan OR tag) — matching the dual-membership spec.
+                let community_boost = if !record.community_ids.is_empty() {
+                    0.2
+                } else {
+                    0.0
+                };
+                let subunits: Vec<domain::Subunit> = record
+                    .subunits
+                    .into_iter()
+                    .map(|s| domain::Subunit {
+                        id: domain::DomainId::new_unchecked(&s.subunit_id),
+                        skill_id: skill.id.clone(),
+                        kind: subunit_kind_from_db(&s.kind),
+                        title: s.title,
+                        content: s.content,
+                        lifecycle: domain::LifecycleStatus::Active,
+                    })
+                    .collect();
 
-            retrieval::SeededSkill {
-                skill,
-                scope_id,
-                source_paths,
-                embedding,
-                subunits,
-                subunit_embeddings,
-                prior,
-                community_boost,
-            }
-        })
+                retrieval::SeededSkill {
+                    skill,
+                    scope_id,
+                    source_paths,
+                    embedding,
+                    subunits,
+                    subunit_embeddings,
+                    prior,
+                    community_boost,
+                    // T09 dense multi-view embeddings (unconditionally built; the
+                    // RETRIEVAL_DENSE_VIEWS flag gates whether the scoring path reads them).
+                    e_task_embedding,
+                    e_needs_embedding,
+                    e_negative_embedding,
+                }
+            },
+        )
         .collect();
 
     // T04-B: Build the BM25 lexical index from the pre-built `bm25_raw_docs`
@@ -1458,9 +1565,23 @@ async fn build_graph_from_pg(
         .map(|(cid, (sum, n))| (cid, sum.iter().map(|x| x / n as f32).collect::<Vec<f32>>()))
         .collect();
 
+    // T09: build DenseViewsMetadata for observability (health endpoint / snapshot
+    // metadata). Attached unconditionally — even when all view texts were empty —
+    // so the health endpoint always reports whether views were built.
+    let dense_views_metadata = retrieval::DenseViewsMetadata {
+        view_names: vec![
+            "e_task".to_owned(),
+            "e_needs".to_owned(),
+            "e_negative".to_owned(),
+        ],
+        embedding_dim: dense_view_embedding_dim,
+        skill_count_with_views: seeded_skills.len(),
+    };
+
     Ok(RetrievalSnapshot::new(seeded_skills, graph_version)
         .with_community_centroids(community_centroids)
-        .with_bm25_index(bm25_index))
+        .with_bm25_index(bm25_index)
+        .with_dense_views_metadata(dense_views_metadata))
 }
 
 /// Computes the BLAKE3 hash of a raw prompt string for safe storage.

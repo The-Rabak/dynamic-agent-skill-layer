@@ -46,9 +46,10 @@ _RETRIEVAL_ENV_KEYS = [
 
 # V1.7 arm-selection env vars.  These mirror the env surface the real server
 # reads (or will read once T02/T04/T07 wire them):
-#   OLLAMA_EMBED_MODEL  — embedding model name (T02: qwen3-embedding:4b)
-#   RETRIEVAL_BACKEND   — candidate generation backend (T04: qdrant_hybrid)
-#   RETRIEVAL_RERANK    — local reranker flag (T07: true)
+#   OLLAMA_EMBED_MODEL    — embedding model name (T02: qwen3-embedding:4b)
+#   RETRIEVAL_BACKEND     — candidate generation backend (T04: qdrant_hybrid)
+#   RETRIEVAL_RERANK      — local reranker flag (T07: true)
+#   RETRIEVAL_DENSE_VIEWS — dense multi-view fusion flag (T09: true)
 # (BM25/sparse is NOT a separate env knob — it is gated solely by
 #  RETRIEVAL_BACKEND being a hybrid backend; the `sparse` arm label is derived
 #  from the backend value, never from a RETRIEVAL_SPARSE var.)
@@ -56,6 +57,7 @@ _ARM_ENV_KEYS = [
     "OLLAMA_EMBED_MODEL",
     "RETRIEVAL_BACKEND",
     "RETRIEVAL_RERANK",
+    "RETRIEVAL_DENSE_VIEWS",
 ]
 
 ENV_KEYS = _RETRIEVAL_ENV_KEYS + _ARM_ENV_KEYS

@@ -159,7 +159,11 @@ mod tests {
     /// Builds a minimal `SeededSkill` for `search_graph` tests. `text` becomes the
     /// skill name (search_graph derives the lexical document from name+description+
     /// tags); `subunit_embeddings[i]` is the embedding of subunit `i`.
-    fn seeded(text: &str, subunits: Vec<Subunit>, subunit_embeddings: Vec<Vec<f32>>) -> SeededSkill {
+    fn seeded(
+        text: &str,
+        subunits: Vec<Subunit>,
+        subunit_embeddings: Vec<Vec<f32>>,
+    ) -> SeededSkill {
         SeededSkill {
             skill: Skill {
                 id: DomainId::new_unchecked("skill-1"),
@@ -179,6 +183,9 @@ mod tests {
             subunit_embeddings,
             prior: 0.0,
             community_boost: 0.0,
+            e_task_embedding: Vec::new(),
+            e_needs_embedding: Vec::new(),
+            e_negative_embedding: Vec::new(),
         }
     }
 
@@ -186,7 +193,11 @@ mod tests {
     fn search_graph_projects_relevant_subunits() {
         let sub = subunit("sub-1", "Read a file", "Use std::fs::read_to_string");
 
-        let skills = vec![seeded("read files in rust", vec![sub], vec![vec![1.0, 0.0]])];
+        let skills = vec![seeded(
+            "read files in rust",
+            vec![sub],
+            vec![vec![1.0, 0.0]],
+        )];
         let hits = search_graph("how to read file", &[1.0, 0.0], &skills, &[0], 3);
 
         assert_eq!(hits.len(), 1);

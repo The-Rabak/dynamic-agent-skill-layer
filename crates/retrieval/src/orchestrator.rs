@@ -30,6 +30,8 @@ pub struct SeededSkill {
     pub skill: Skill,
     pub scope_id: String,
     pub source_paths: Vec<PathBuf>,
+    /// `e_summary` embedding: `name + description + tags`. The only dense view used
+    /// before T09; kept as the primary dense view and the default α term.
     pub embedding: Vec<f32>,
     pub subunits: Vec<Subunit>,
     /// One embedding per entry in `subunits`, in the same order. Used to score the
@@ -38,6 +40,45 @@ pub struct SeededSkill {
     pub subunit_embeddings: Vec<Vec<f32>>,
     pub prior: f32,
     pub community_boost: f32,
+    // ── T09 dense multi-view embeddings ─────────────────────────────────────
+    // Built unconditionally at snapshot construction time (always present when the
+    // corpus is non-empty) so the `RETRIEVAL_DENSE_VIEWS` flag can be flipped at
+    // request time without a graph rebuild. Empty vecs on pre-T03 skills (NULL
+    // multi-view DB columns → empty field lists → short/empty view text → embedded
+    // to a near-zero-information vector; treated the same as absent by the fusion).
+    //
+    // DO NOT include `e_negative_embedding` in any positive-fusion path. It carries
+    // anti-pattern signal and must never boost a skill for queries that describe
+    // situations where the skill must not apply. The fusion reads only `embedding`
+    // (e_summary), `e_task_embedding`, and `e_needs_embedding`.
+    /// `e_task` embedding: `use_when + subunit_headings + artifacts + tools`.
+    /// When empty, the fusion falls back to `e_summary` (zero uplift).
+    pub e_task_embedding: Vec<f32>,
+    /// `e_needs` embedding: `requires + invariants`.
+    /// When empty, the fusion falls back to `e_summary` (zero uplift).
+    pub e_needs_embedding: Vec<f32>,
+    /// `e_negative` embedding: `avoid_when`.
+    /// Built for observability; NEVER used in the positive α fusion.
+    /// Deferred scoring use (e.g. penalise skills whose avoid_when matches the
+    /// query) is tracked under a future ticket.
+    pub e_negative_embedding: Vec<f32>,
+}
+
+/// Observability metadata for T09 dense multi-view embeddings.
+///
+/// Attached to `RetrievalSnapshot` at build time so the health endpoint can report
+/// which views were built and their dimensionality — without adding new DB columns.
+/// The `view_count` is the number of skills for which ALL three views were built
+/// (skills with entirely empty multi-view fields contribute empty embeddings but
+/// are still counted, as the text→embedding path ran successfully).
+#[derive(Debug, Clone, Default)]
+pub struct DenseViewsMetadata {
+    /// Names of the dense views built at this snapshot (e.g. `["e_task", "e_needs", "e_negative"]`).
+    pub view_names: Vec<String>,
+    /// Embedding dimensionality for these views (should equal the model's output dim).
+    pub embedding_dim: usize,
+    /// Number of skills for which all views were embedded (== skills.len() when non-empty).
+    pub skill_count_with_views: usize,
 }
 
 /// Immutable in-memory snapshot of the skill graph the read path retrieves from.
@@ -73,6 +114,27 @@ pub enum CommunityBoostMode {
     CentroidAffinity,
     /// No community boost (`0.0`), equivalent to λ=0. The graph does not touch ranking.
     Off,
+}
+
+/// Boolean flag that parses `0/false/off` → `false` and `1/true/on` → `true`.
+///
+/// Used by `env_or` for all `RETRIEVAL_*` boolean flags so they accept the same
+/// canonical forms as other boolean env-vars in the project. Lowercase and
+/// uppercase are both accepted. Anything else fails loud via the `env_or` panic.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct BoolFlag(pub bool);
+
+impl std::str::FromStr for BoolFlag {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "1" | "true" | "on" | "yes" | "enabled" => Ok(Self(true)),
+            "0" | "false" | "off" | "no" | "disabled" => Ok(Self(false)),
+            other => Err(format!(
+                "invalid boolean flag {other:?} (expected 1/true/on/yes or 0/false/off/no)"
+            )),
+        }
+    }
 }
 
 impl std::str::FromStr for CommunityBoostMode {
@@ -148,6 +210,11 @@ pub struct RetrievalSnapshot {
     /// in O(1) instead of an O(k×N) linear scan per request (#254). First index
     /// wins on a duplicate id, matching the prior `iter().find()` semantics.
     pub skill_id_to_index: HashMap<String, usize>,
+    /// T09 dense multi-view observability metadata. Populated by `build_graph_from_pg`
+    /// at snapshot construction time. Empty (default) for cold-start snapshots and
+    /// test snapshots that do not build the views. Consulted by the health endpoint to
+    /// surface view names, embedding dim, and skill count without new DB columns.
+    pub dense_views_metadata: DenseViewsMetadata,
 }
 
 impl RetrievalSnapshot {
@@ -166,6 +233,7 @@ impl RetrievalSnapshot {
             community_centroids: HashMap::new(),
             bm25_index: None,
             skill_id_to_index,
+            dense_views_metadata: DenseViewsMetadata::default(),
         }
     }
 
@@ -185,6 +253,16 @@ impl RetrievalSnapshot {
     /// the hybrid arm can skip this call; `bm25_index` defaults to `None`.
     pub fn with_bm25_index(mut self, index: Arc<Bm25Index>) -> Self {
         self.bm25_index = Some(index);
+        self
+    }
+
+    /// Attaches T09 dense multi-view observability metadata (builder style).
+    ///
+    /// Called by `build_graph_from_pg` after the multi-view embeddings are built
+    /// so the snapshot carries the metadata from first use. Tests that do not build
+    /// the dense views can skip this call; `dense_views_metadata` defaults to empty.
+    pub fn with_dense_views_metadata(mut self, metadata: DenseViewsMetadata) -> Self {
+        self.dense_views_metadata = metadata;
         self
     }
 }
@@ -281,6 +359,20 @@ pub struct RetrievalConfig {
     /// `SnapshotHybrid` and `QdrantHybrid` are wired in sub-units B and C.
     /// Set via `RETRIEVAL_BACKEND`; a present-but-unparseable value panics (#243).
     pub backend: RetrievalBackend,
+    /// When `true`, the α (`l1_semantic`) term fuses three dense views —
+    /// {`e_summary`, `e_task`, `e_needs`} — by taking the max cosine, instead of
+    /// using only `e_summary`. `e_negative` is built and observable but NEVER
+    /// enters the positive fusion regardless of this flag.
+    ///
+    /// **Default: `false`** (off). Enabled via `RETRIEVAL_DENSE_VIEWS=true/1/on`.
+    /// A present-but-unparseable value panics fail-loud (no silent fallback).
+    ///
+    /// With the flag off the α term equals `cosine(prompt, e_summary)` exactly —
+    /// byte-for-byte identical to the pre-T09 behaviour. The view embeddings are
+    /// always built at snapshot construction time (so a restart with the flag
+    /// toggled needs no graph rebuild), but they are only READ by the scoring path
+    /// when this flag is on.
+    pub dense_views_enabled: bool,
 }
 
 impl Default for RetrievalConfig {
@@ -345,6 +437,10 @@ impl Default for RetrievalConfig {
             // docs/assessments/2026-06-07-retrieval-quality-234-corpus-measured.md.
             community_boost_mode: CommunityBoostMode::Off,
             backend: RetrievalBackend::SnapshotDense,
+            // T09: multi-view dense fusion — default OFF until the T11 sweep shows
+            // non-negative MRR/nDCG delta on the live corpus. The view embeddings
+            // are built unconditionally; only the scoring read is gated here.
+            dense_views_enabled: false,
         }
     }
 }
@@ -387,7 +483,8 @@ impl RetrievalConfig {
     /// `RETRIEVAL_RELEVANCE_THRESHOLD`, `RETRIEVAL_PROJECT_SCOPE_WEIGHT`,
     /// `RETRIEVAL_GLOBAL_SCOPE_WEIGHT`, `RETRIEVAL_RRF_K`,
     /// `RETRIEVAL_COMMUNITY_BOOST_MODE` (`binary`|`centroid_affinity`|`off`),
-    /// `RETRIEVAL_BACKEND` (`snapshot_dense`|`snapshot_hybrid`|`qdrant_hybrid`).
+    /// `RETRIEVAL_BACKEND` (`snapshot_dense`|`snapshot_hybrid`|`qdrant_hybrid`),
+    /// `RETRIEVAL_DENSE_VIEWS` (`0/false/off` or `1/true/on`, default `false`).
     pub fn from_env() -> Self {
         let d = RetrievalConfig::default();
         Self {
@@ -411,6 +508,7 @@ impl RetrievalConfig {
             rrf_k: env_or("RETRIEVAL_RRF_K", d.rrf_k),
             community_boost_mode: env_or("RETRIEVAL_COMMUNITY_BOOST_MODE", d.community_boost_mode),
             backend: env_or("RETRIEVAL_BACKEND", d.backend),
+            dense_views_enabled: env_or("RETRIEVAL_DENSE_VIEWS", BoolFlag(d.dense_views_enabled)).0,
             ..d
         }
     }
@@ -1059,7 +1157,7 @@ where
         Self::dedupe(&mut degraded_scopes);
         Self::dedupe(&mut reason_codes);
 
-        let health = if degraded_scopes.is_empty() {
+        let mut health = if degraded_scopes.is_empty() {
             Self::healthy_markers_for_backend(self.config.backend)
         } else {
             let reason = reason_codes
@@ -1068,6 +1166,21 @@ where
                 .unwrap_or_else(|| "retrieval_degraded".to_owned());
             Self::degraded_marker_for_backend(self.config.backend, &reason)
         };
+
+        // T09: surface dense multi-view observability in the per-request health
+        // marker so the orchestrator's live sweep can confirm views were built
+        // without adding new DB columns. Only emitted when views were actually
+        // built (non-empty metadata); test snapshots and cold-start snapshots
+        // with no skills produce empty metadata and no markers are added.
+        let dvm = &graph.dense_views_metadata;
+        if !dvm.view_names.is_empty() {
+            health.insert("dense_views_built".to_owned(), dvm.view_names.join(","));
+            health.insert("dense_views_dim".to_owned(), dvm.embedding_dim.to_string());
+            health.insert(
+                "dense_views_skill_count".to_owned(),
+                dvm.skill_count_with_views.to_string(),
+            );
+        }
 
         RetrievalOutcome {
             skills: selected_skills,
@@ -1372,6 +1485,11 @@ mod tests {
                 // value `usage_prior(0, 0)` produces.
                 prior: 0.0,
                 community_boost: 0.2,
+                // T09 view embeddings empty in test fixtures (not needed for
+                // the concurrency probe; dense_views_enabled stays false).
+                e_task_embedding: Vec::new(),
+                e_needs_embedding: Vec::new(),
+                e_negative_embedding: Vec::new(),
             })
             .collect();
         RetrievalSnapshot::new(skills, version)
@@ -1818,6 +1936,9 @@ mod tests {
                     subunit_embeddings: vec![],
                     prior: 0.0,
                     community_boost: 0.0,
+                    e_task_embedding: Vec::new(),
+                    e_needs_embedding: Vec::new(),
+                    e_negative_embedding: Vec::new(),
                 },
                 SeededSkill {
                     skill: skill_b,
@@ -1829,6 +1950,9 @@ mod tests {
                     subunit_embeddings: vec![],
                     prior: 0.0,
                     community_boost: 0.0,
+                    e_task_embedding: Vec::new(),
+                    e_needs_embedding: Vec::new(),
+                    e_negative_embedding: Vec::new(),
                 },
             ],
             1,
@@ -1993,6 +2117,99 @@ mod tests {
             outcome.health.get("qdrant_hybrid_read").map(String::as_str),
             Some("degraded"),
             "qdrant_hybrid_read must be 'degraded' when Qdrant is down"
+        );
+    }
+
+    // ── T09: RETRIEVAL_DENSE_VIEWS flag tests ───────────────────────────────
+
+    /// T09 guard: `RETRIEVAL_DENSE_VIEWS` defaults to false so dense retrieval
+    /// is byte-for-byte identical to the pre-T09 behaviour when the variable is absent.
+    #[test]
+    fn dense_views_default_is_false_preserving_pre_t09_behaviour() {
+        let _guard = EnvVarGuard::remove("RETRIEVAL_DENSE_VIEWS");
+        let config = RetrievalConfig::from_env();
+        assert!(
+            !config.dense_views_enabled,
+            "RETRIEVAL_DENSE_VIEWS must default to false; got true"
+        );
+        // Also check the typed default directly.
+        assert!(
+            !RetrievalConfig::default().dense_views_enabled,
+            "RetrievalConfig::default().dense_views_enabled must be false"
+        );
+    }
+
+    /// T09 flag parsing: canonical true-like values.
+    #[test]
+    fn dense_views_flag_parses_true_like_values() {
+        use std::str::FromStr;
+        for val in &["1", "true", "on", "yes", "enabled", "TRUE", "ON"] {
+            assert_eq!(
+                BoolFlag::from_str(val).unwrap(),
+                BoolFlag(true),
+                "expected BoolFlag(true) for {:?}",
+                val
+            );
+        }
+    }
+
+    /// T09 flag parsing: canonical false-like values.
+    #[test]
+    fn dense_views_flag_parses_false_like_values() {
+        use std::str::FromStr;
+        for val in &["0", "false", "off", "no", "disabled", "FALSE", "OFF"] {
+            assert_eq!(
+                BoolFlag::from_str(val).unwrap(),
+                BoolFlag(false),
+                "expected BoolFlag(false) for {:?}",
+                val
+            );
+        }
+    }
+
+    /// T09 flag parsing: rejects unknown values fail-loud.
+    #[test]
+    fn dense_views_flag_rejects_unknown_values() {
+        use std::str::FromStr;
+        for val in &["2", "maybe", "y", "n", "enabled-but-maybe"] {
+            assert!(
+                BoolFlag::from_str(val).is_err(),
+                "expected Err for unknown bool value {:?}",
+                val
+            );
+        }
+    }
+
+    /// T09 guard: with RETRIEVAL_DENSE_VIEWS=true the config sets dense_views_enabled.
+    #[test]
+    fn dense_views_enabled_when_env_is_true() {
+        let _guard = EnvVarGuard::set("RETRIEVAL_DENSE_VIEWS", "true");
+        let config = RetrievalConfig::from_env();
+        assert!(
+            config.dense_views_enabled,
+            "RETRIEVAL_DENSE_VIEWS=true must set dense_views_enabled=true"
+        );
+    }
+
+    /// T09 guard: with RETRIEVAL_DENSE_VIEWS=1 the config sets dense_views_enabled.
+    #[test]
+    fn dense_views_enabled_when_env_is_one() {
+        let _guard = EnvVarGuard::set("RETRIEVAL_DENSE_VIEWS", "1");
+        let config = RetrievalConfig::from_env();
+        assert!(
+            config.dense_views_enabled,
+            "RETRIEVAL_DENSE_VIEWS=1 must set dense_views_enabled=true"
+        );
+    }
+
+    /// T09 guard: with RETRIEVAL_DENSE_VIEWS=false the config disables dense_views.
+    #[test]
+    fn dense_views_disabled_when_env_is_false() {
+        let _guard = EnvVarGuard::set("RETRIEVAL_DENSE_VIEWS", "false");
+        let config = RetrievalConfig::from_env();
+        assert!(
+            !config.dense_views_enabled,
+            "RETRIEVAL_DENSE_VIEWS=false must set dense_views_enabled=false"
         );
     }
 
