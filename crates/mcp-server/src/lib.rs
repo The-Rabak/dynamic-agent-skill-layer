@@ -1045,6 +1045,53 @@ fn spawn_graph_refresh_subscriber(
     tokio::spawn(run_graph_refresh_loop(redis_streams, reloader));
 }
 
+/// Embed a batch of dense-view texts, **skipping blank entries**.
+///
+/// A skill legitimately has no `e_task`/`e_needs`/`e_negative` when its source
+/// multi-view fields are empty (e.g. a pre-T03 corpus, or any skill with no
+/// `avoid_when`/`requires`/`invariants`). That is ABSENCE, not an error: the
+/// embedding provider rejects a blank string (`"text input must not be blank"`),
+/// so sending one would crash the boot-time graph build. Instead we embed only
+/// the non-blank texts and scatter the results back into a full-length vector;
+/// blank positions get an empty `Vec<f32>`, which `retrieval::fuse_dense_views`
+/// already treats as "this view is absent — fall back to e_summary".
+///
+/// Fail-loud is preserved: the provider must return exactly one vector per
+/// non-blank input, else the build errors (mirrors the e_summary/subunit guards).
+async fn embed_dense_view_skipping_blank(
+    embedding_service: &dyn EmbeddingService,
+    texts: &[String],
+    view_name: &str,
+) -> Result<Vec<Vec<f32>>, Box<dyn std::error::Error + Send + Sync>> {
+    let mut nonblank_refs: Vec<&str> = Vec::new();
+    let mut nonblank_positions: Vec<usize> = Vec::new();
+    for (idx, text) in texts.iter().enumerate() {
+        if !text.trim().is_empty() {
+            nonblank_refs.push(text.as_str());
+            nonblank_positions.push(idx);
+        }
+    }
+
+    let mut scattered: Vec<Vec<f32>> = vec![Vec::new(); texts.len()];
+    if nonblank_refs.is_empty() {
+        return Ok(scattered);
+    }
+
+    let flat = embedding_service.embed_batch(&nonblank_refs).await?;
+    if flat.len() != nonblank_refs.len() {
+        return Err(format!(
+            "embed_batch returned {} {view_name} vectors for {} non-blank texts",
+            flat.len(),
+            nonblank_refs.len()
+        )
+        .into());
+    }
+    for (position, embedding) in nonblank_positions.into_iter().zip(flat.into_iter()) {
+        scattered[position] = embedding;
+    }
+    Ok(scattered)
+}
+
 /// Loads the full skill graph from Postgres and populates each skill's
 /// deterministic usage prior from the live `skill_usage` aggregates.
 ///
@@ -1223,42 +1270,28 @@ async fn build_graph_from_pg(
             e_negative_texts.push(build_e_negative(&fields));
         }
 
-        let e_task_refs: Vec<&str> = e_task_texts.iter().map(String::as_str).collect();
-        let e_task_flat = embedding_service.embed_batch(&e_task_refs).await?;
-        if e_task_flat.len() != skills.len() {
-            return Err(format!(
-                "embed_batch returned {} e_task vectors for {} skills",
-                e_task_flat.len(),
-                skills.len()
-            )
-            .into());
-        }
-
-        let e_needs_refs: Vec<&str> = e_needs_texts.iter().map(String::as_str).collect();
-        let e_needs_flat = embedding_service.embed_batch(&e_needs_refs).await?;
-        if e_needs_flat.len() != skills.len() {
-            return Err(format!(
-                "embed_batch returned {} e_needs vectors for {} skills",
-                e_needs_flat.len(),
-                skills.len()
-            )
-            .into());
-        }
-
-        let e_negative_refs: Vec<&str> = e_negative_texts.iter().map(String::as_str).collect();
-        let e_negative_flat = embedding_service.embed_batch(&e_negative_refs).await?;
-        if e_negative_flat.len() != skills.len() {
-            return Err(format!(
-                "embed_batch returned {} e_negative vectors for {} skills",
-                e_negative_flat.len(),
-                skills.len()
-            )
-            .into());
-        }
+        // Embed each view, skipping blank texts. A skill with empty source fields
+        // for a view has NO embedding for that view (an empty Vec) — never a blank
+        // string sent to the provider (which would fail loud and crash the boot
+        // build). `fuse_dense_views` treats an empty view embedding as absent and
+        // falls back to e_summary, so flag-ON on a sparse corpus is safe.
+        let e_task_flat =
+            embed_dense_view_skipping_blank(embedding_service, &e_task_texts, "e_task").await?;
+        let e_needs_flat =
+            embed_dense_view_skipping_blank(embedding_service, &e_needs_texts, "e_needs").await?;
+        let e_negative_flat =
+            embed_dense_view_skipping_blank(embedding_service, &e_negative_texts, "e_negative")
+                .await?;
 
         // Capture the embedding dimensionality from the first non-empty vector
-        // for the DenseViewsMetadata (observability only; all views share the same dim).
-        dense_view_embedding_dim = e_task_flat.first().map_or(0, |v| v.len());
+        // across all three views (any single view may be entirely empty on a
+        // sparse corpus). Observability only; all views share the same dim.
+        dense_view_embedding_dim = e_task_flat
+            .iter()
+            .chain(e_needs_flat.iter())
+            .chain(e_negative_flat.iter())
+            .find(|v| !v.is_empty())
+            .map_or(0, |v| v.len());
 
         (e_task_flat, e_needs_flat, e_negative_flat)
     };
