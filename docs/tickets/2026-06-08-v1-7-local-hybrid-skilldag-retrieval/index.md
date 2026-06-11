@@ -3,8 +3,9 @@ plan_ref: docs/plans/2026-06-08-feat-v1-7-local-hybrid-skilldag-retrieval-plan.m
 architecture_ref: "explicit-handoff: parent plan ## Architectural Context and ## Proposed V1.7 Architecture"
 execution_shape: vertical-slices
 ticket_set_status: in_progress
-last_completed_batch: 9
-total_batches: 16
+last_completed_batch: 10
+total_batches: 17
+amendment_note: "2026-06-11 — owner-directed Phase B tightening from docs/assessments/2026-06-11-v1-7-midpoint-deep-grok-assessment.md: T11 made instrument-first (negative-control gate, paired diagnostics, candidate-recall metric, anti-circularity fixture rule, conditional lexical-ranking arm); T12 gains T11 dep + pre-registered signal ROI; T14 gains pre-registration/paired-design/placebo-arm/attribution; T15 gains minimum-detectable-effect pre-registration; NEW T17 mcp-server boot-readiness honesty. T13 intentionally untouched (in-flight session)."
 phase_a_status: "closed 2026-06-11 (T01-T09 done; T07 skipped). Efficacy substrate handed to Phase B with explicit honest gaps — see docs/assessments/2026-06-11-v1-7-retrieval-contract-measured.md. The frozen 0.80 MRR/nDCG target is NOT yet validated on the qwen3 262-corpus; held-out measurement is blocked on a corpus-aligned eval fixture (T11)."
 reorg_note: "2026-06-09 — consolidated open large todos into tickets T09-T16 and re-batched (owner decision). Remaining todos are chunkable T03/T04 fixes only (#251/#252/#253/#256/#257)."
 ---
@@ -33,13 +34,14 @@ Phase A — V1.7 retrieval core (T01-T09):
 Phase B — corpus, validation, efficacy (T10-T15) [efficacy promoted into the set per owner decision 2026-06-09; the plan lists it as a downstream Non-Goal]:
 - T13 `convert-integration-fakes-to-live`: no deps; hygiene gate — must precede efficacy measurement. (Parallel-safe.)
 - T10 `seed-corpus-self-ingestion-foundation`: depends on T03 (extraction pipeline). Foundation for everything below; first run that populates real multi-view fields.
-- T11 `corpus-multiview-resweep-hybrid-validation`: depends on T10, T09, T06. Earns the real dense-vs-hybrid verdict; may flip the default (→ update T08 docs).
-- T12 `trigger-aware-retrieval-priming-mode`: depends on T10 (corpus to measure).
-- T14 `efficacy-task-outcome-ab-harness`: depends on T10, T13 (+T08 handoff).
-- T15 `swebench-compounding-efficacy`: depends on T10, T14; also resolve #217 (cold-start) first.
+- T11 `corpus-multiview-resweep-hybrid-validation`: depends on T10, T09, T06. **Amended 2026-06-11: instrument-first** — α=0 negative-control gate before any verdict, anti-circularity fixture rule (use_when-derived queries demoted), per-query paired diagnostics, candidate-recall@limit as first-class metric, MRR@10 resolution arm, conditional env-gated lexical-ranking arm (the structural reason all arms tied: candidate gen can't affect eq.3 ranking — see ticket). Earns the real dense-vs-hybrid verdict; may flip the default (→ update T08 docs).
+- T12 `trigger-aware-retrieval-priming-mode`: depends on T10, **T11 (amended 2026-06-11 — signal ROI must be measured on T11's validated instrument; session-start query stratum + pre-registered thresholds)**.
+- T14 `efficacy-task-outcome-ab-harness`: depends on T10, T13 (+T08 handoff). **Amended 2026-06-11: pre-registered pass criterion, paired per-task design, placebo arm (matched-mass irrelevant context), per-pull attribution, PASS/FAIL/UNDERPOWERED outcomes.**
+- T15 `swebench-compounding-efficacy`: depends on T10, T14; also resolve #217 (cold-start) first. **Amended 2026-06-11: minimum-detectable-effect committed in advance; UNDERPOWERED is a reportable outcome.**
 
 Independent hardening (slot anywhere — non-retrieval feature homes, parallel-safe):
 - T16 `maintenance-run-once-robustness-trio`: no deps.
+- T17 `mcp-server-boot-readiness-honesty`: no deps (NEW 2026-06-11). /health must not claim ready during the qwen3 boot re-embed window (~7 min); load precomputed vectors at boot. **Sequencing: do not execute until the in-flight T13 session lands (shared crates/mcp-server files).** Strongly recommended before T11's measured sweeps (until then T11 gates on a probe query, not /health).
 
 ## Execution Batches
 
@@ -55,15 +57,16 @@ Independent hardening (slot anywhere — non-retrieval feature homes, parallel-s
 - **Batch 9:** T08 retrieval-contract-docs-efficacy-handoff. Status: **completed** (session work-2026-06-11-T08; T07 intentionally skipped). Reconciled `retrieval-contract.md` (+§0 V1.7 delta) + `online-retrieval-cqrs.md` (qdrant_hybrid query-time read exception) + new `docs/assessments/2026-06-11-v1-7-retrieval-contract-measured.md`. Honest gap recorded: the live held-out quality gate is un-runnable on the dogfood corpus (234-fixture 0/30 aligned) → 0.80 NOT validated, measured gate → T11; not faked. **Closes Phase A.**
 
 **Phase B — corpus, validation, efficacy:**
-- **Batch 10:** T13 convert-integration-fakes-to-live. Status: ready. (Hygiene gate before efficacy; parallel-safe — may run any time in Phase A too.)
+- **Batch 10:** T13 convert-integration-fakes-to-live. Status: **completed** (session work-2026-06-11-T13; policy=relocate-or-live). All 9 fake-bearing files relocated from tests/integration into their owning crates' test-only code (crates/{mcp-server,graph-builder,maintenance}/tests/ + src/#[cfg(test)] where applicable); allowlist drained empty; guard Zone 3 now hard-fails (verified via probe) with the test-location taxonomy documented explicitly. CapturingEventPublisher/fault-injection providers recorded as acceptable observers (test_extract_session stays). 49 relocated tests pass (+2 ignored live-PG); no regression. Orchestrator caught+fixed an agent guard-blind-spot (now explicit policy) and a real inlined-test bug (lib.rs self-inspection) that the agent had hidden by skipping --features test-utils. **Unblocks T17** (was sequenced to wait on this in-flight session).
 - **Batch 11:** T10 seed-corpus-self-ingestion-foundation. Status: completed (session work-2026-06-10-T10; 24 genuine dev sessions → 262 skills via real pipeline, 71% multi-view, 60 communities; `skill_layer_test` + `skills__qwen3-embedding-4b`; report: `tests/e2e/reports/replica-run/VALIDATION-REPORT.md`).
-- **Batch 12:** T11 corpus-multiview-resweep-hybrid-validation. Status: **ready** (deps T10 ✅, T09 ✅, T06 ✅ all met). **Now also absorbs T09's deferred sweep AC:** T11 must build a 262-corpus-aligned labeled eval fixture (the committed `234_corpus` fixture is 0/30 aligned with the live corpus) and run the dense-views ON/OFF sweep as part of the dense-vs-hybrid verdict.
-- **Batch 13:** T12 trigger-aware-retrieval-priming-mode. Status: blocked (T10).
-- **Batch 14:** T14 efficacy-task-outcome-ab-harness. Status: blocked (T10, T13).
-- **Batch 15:** T15 swebench-compounding-efficacy. Status: blocked (T10, T14; resolve #217 first).
+- **Batch 12:** T11 corpus-multiview-resweep-hybrid-validation. Status: **ready** (deps T10 ✅, T09 ✅, T06 ✅ all met). **Now also absorbs T09's deferred sweep AC:** T11 must build a 262-corpus-aligned labeled eval fixture (the committed `234_corpus` fixture is 0/30 aligned with the live corpus) and run the dense-views ON/OFF sweep as part of the dense-vs-hybrid verdict. **Amended 2026-06-11 (instrument-first):** α=0 negative-control gate before any arm verdict; anti-circularity fixture rule (headline queries from held-out transcript problem statements, use_when-derived only as secondary stratum — owner decision recorded in the ticket); paired per-query rank diagnostics + sign-test verdicts; candidate-recall@limit reported per arm; MRR@10 resolution arm; conditional env-gated lexical-ranking arm if rankings tie again; floor re-calibration on qwen3.
+- **Batch 13:** T12 trigger-aware-retrieval-priming-mode. Status: blocked (T11 — amended dep 2026-06-11; T10 ✅).
+- **Batch 14:** T14 efficacy-task-outcome-ab-harness. Status: blocked (T10 ✅, T13). **Amended 2026-06-11:** pre-registered pass criterion, paired design + sign test, placebo arm, per-pull attribution, PASS/FAIL/UNDERPOWERED.
+- **Batch 15:** T15 swebench-compounding-efficacy. Status: blocked (T10, T14; resolve #217 first). **Amended 2026-06-11:** minimum-detectable-effect pre-registered; UNDERPOWERED reportable.
 
 **Independent hardening:**
 - **Batch 16:** T16 maintenance-run-once-robustness-trio. Status: ready. (No deps; parallel-safe — slot anywhere.)
+- **Batch 17:** T17 mcp-server-boot-readiness-honesty. Status: ready (NEW 2026-06-11). No ticket deps, but **must not execute until the in-flight T13 session lands** (shared `crates/mcp-server` files). Best slotted before T11's measured sweeps.
 
 Batches are singleton by default (shared retrieval config / graph-builder / persistence / Qdrant / MCP / docs must stay in lockstep). Exceptions explicitly parallel-safe (different feature homes): **T13** (tests/integration) and **T16** (crates/maintenance) may run alongside any Phase-A retrieval batch.
 
@@ -75,6 +78,8 @@ File-overlap safety notes:
 - T08 is documentation/handoff after Phase-A code+measurements are known; if T07 is skipped, T08 records the skip.
 - T11 may flip the production default; if it does, it must update the T08 retrieval-contract doc.
 - T13, T16 touch non-retrieval homes — safe to parallelize.
+- T17 touches `crates/mcp-server`, which the in-flight T13 session is also modifying (tests relocated into `crates/mcp-server/tests/`, `src/lib.rs` edits) — T17 must NOT start until that session's work lands.
+- T11's conditional lexical-ranking arm touches `crates/retrieval` scoring — if exercised, T11 must not run concurrently with T12's retrieval changes (T12 already hard-depends on T11, so the ordering holds).
 
 ## Ticket Table
 
@@ -89,13 +94,14 @@ File-overlap safety notes:
 | [T06](06-skilldag-style-agent-retrieval-tools.md) | SkillDAG-style agent retrieval tools (owns folded #255, #260) | 7 | T04, T05 | `crates/mcp-server/src/tools` and `crates/retrieval` | completed |
 | [T07](07-optional-local-reranker-cheap-decomposition.md) | Optional local reranker and cheap query decomposition | 8 | T04 | `crates/retrieval` | skipped |
 | [T08](08-retrieval-contract-docs-efficacy-handoff.md) | Retrieval contract docs and efficacy handoff | 9 | T01-T06 hard (+T09); T07 optional | `docs/reference` and `docs/assessments` | completed |
-| [T13](13-convert-integration-fakes-to-live.md) | Convert integration fakes → live (drain allowlist) | 10 | none | `tests/integration` and no-fakes guard | ready |
+| [T13](13-convert-integration-fakes-to-live.md) | Convert integration fakes → live (drain allowlist) | 10 | none | `tests/integration` and no-fakes guard | completed |
 | [T10](10-seed-corpus-self-ingestion-foundation.md) | Seed ≥200-skill corpus by dogfooding ingestion (was #216) | 11 | T03 | ingestion pipeline end-to-end | completed |
-| [T11](11-corpus-multiview-resweep-hybrid-validation.md) | Multi-view re-sweep — validate the hybrid bet (was #259) | 12 | T10, T09, T06 | `tests/e2e` quality harness, `scripts/retrieval_quality_*` | ready |
-| [T12](12-trigger-aware-retrieval-priming-mode.md) | Trigger-aware retrieval — priming mode (was #220) | 13 | T10 | `crates/retrieval`, `crates/compiler` | blocked |
-| [T14](14-efficacy-task-outcome-ab-harness.md) | Efficacy A/B harness — layer ON vs OFF (was #205) | 14 | T10, T13 | efficacy harness over live stack | blocked |
-| [T15](15-swebench-compounding-efficacy.md) | SWE-bench Lite compounding efficacy (was #218) | 15 | T10, T14 | efficacy harness + SWE-bench integration | blocked |
+| [T11](11-corpus-multiview-resweep-hybrid-validation.md) | Multi-view re-sweep — validate the hybrid bet (was #259; amended 2026-06-11 instrument-first) | 12 | T10, T09, T06 | `tests/e2e` quality harness, `scripts/retrieval_quality_*` (+ conditional `crates/retrieval` lexical arm) | ready |
+| [T12](12-trigger-aware-retrieval-priming-mode.md) | Trigger-aware retrieval — priming mode (was #220; amended 2026-06-11) | 13 | T10, T11 | `crates/retrieval`, `crates/compiler` | blocked |
+| [T14](14-efficacy-task-outcome-ab-harness.md) | Efficacy A/B harness — layer ON vs OFF (was #205; amended 2026-06-11) | 14 | T10, T13 | efficacy harness over live stack | blocked |
+| [T15](15-swebench-compounding-efficacy.md) | SWE-bench Lite compounding efficacy (was #218; amended 2026-06-11) | 15 | T10, T14 | efficacy harness + SWE-bench integration | blocked |
 | [T16](16-maintenance-run-once-robustness-trio.md) | Maintenance run-once robustness trio (was #222) | 16 | none | `crates/maintenance` | ready |
+| [T17](17-mcp-server-boot-readiness-honesty.md) | mcp-server boot readiness honesty (NEW 2026-06-11) | 17 | none (sequence after in-flight T13 session) | `crates/mcp-server`, `crates/infrastructure` | ready |
 
 ## Blockers
 

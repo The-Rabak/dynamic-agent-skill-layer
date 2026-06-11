@@ -14,13 +14,3 @@
 # Format: one relative path per line (relative to repo root), no leading slash.
 # Blank lines and lines starting with '#' are ignored.
 
-tests/integration/test_admin_tools.rs
-tests/integration/test_compile_context.rs
-tests/integration/test_dual_scope.rs
-tests/integration/test_extract_session.rs
-tests/integration/test_merge_workflow.rs
-tests/integration/test_outbox_consistency.rs
-tests/integration/test_promotion_recurrence.rs
-tests/integration/test_retire_workflow.rs
-tests/integration/test_session_persistence.rs
-tests/integration/test_watcher_rebuild.rs

@@ -35,21 +35,31 @@ Every artifact proves correctness; none proves efficacy. The whole value proposi
 - Reproducible report: measured ON-vs-OFF delta over ≥10 representative tasks, with per-task scores.
 - Draft-acceptance-rate over ≥10 `.pending` drafts from REAL captured sessions (not synthetic).
 - An explicit efficacy threshold in the release gate; run summary reports PASS/FAIL.
+- **(Amended 2026-06-11, from `docs/assessments/2026-06-11-v1-7-midpoint-deep-grok-assessment.md`):**
+  - **Pre-registration:** the pass/fail criterion is committed to this ticket BEFORE any measured run (e.g. "ON beats OFF on ≥ X of N paired tasks with no catastrophic regression" — owner sets X/N). Post-hoc readings of noisy means are not a verdict.
+  - **Paired design:** every task runs both ON and OFF (same task, same rubric); the report shows per-task paired win/loss/tie and a sign test, not just aggregate means. At N≈10 the paired structure is the only thing that gives the result teeth.
+  - **Three honest outcomes, not two:** PASS / FAIL / **UNDERPOWERED**. If the paired result can't distinguish the arms at the pre-registered bar, the report says "underpowered," which is distinct from "no effect" — and neither is spun.
+  - **Placebo arm:** a third arm injecting irrelevant-but-plausible skill context at matched token mass (the real server serving a deliberately mismatched scope/corpus — an explicitly-labeled experimental control in the measurement harness, not a production fake). Without it, "relevant skills help" cannot be separated from "any extra context helps/hurts," and that distinction decides T12's investment.
+  - **Attribution from the start:** every retrieval pull during measured runs is labeled (SessionStart priming vs mid-session `find_skill`) and lands in the per-task report — do not wait for T15 to start capturing this.
 
 ## Scope Fence
 
 - Tasks/corpus come from T10 (real ingestion), not hand-authored shortcuts.
-- No faked infrastructure (depends on T13).
+- No faked infrastructure (depends on T13). The placebo arm is an explicitly-labeled measurement control configured on the real stack, recorded as such in the report — never a silent fallback or a production path.
 - A null/negative delta is documented honestly with raw data — not hidden or gamed.
+- No changing the pre-registered criterion after data exists; a criterion change voids the run.
 
 ## Acceptance Criteria
 
-- [ ] Efficacy harness runs the same task set with layer ON and OFF against the live stack.
+- [ ] Pass/fail criterion pre-registered in this ticket before any measured run; the final report cites it verbatim.
+- [ ] Efficacy harness runs the same task set with layer ON and OFF against the live stack, paired per task.
 - [ ] Committed deterministic scoring rubric with the judge prompt (if used) recorded in-repo.
-- [ ] Reproducible report shows the measured delta (ON vs OFF) on ≥10 tasks, with per-task scores.
+- [ ] Reproducible report shows the measured delta (ON vs OFF) on ≥10 tasks, with per-task paired scores, win/loss/tie counts, and a sign test.
+- [ ] Placebo arm (matched-mass irrelevant context) run and reported alongside ON/OFF; the ON-vs-placebo comparison is stated explicitly.
+- [ ] Per-pull retrieval attribution (priming vs `find_skill`) captured and reported per task.
 - [ ] Draft-acceptance-rate over ≥10 `.pending` drafts from REAL captured sessions.
-- [ ] Release gate includes an explicit, justified efficacy threshold; run reports PASS/FAIL.
-- [ ] If the delta is null/negative, documented in `docs/assessments/` with raw data.
+- [ ] Release gate includes an explicit, justified efficacy threshold; run reports PASS / FAIL / UNDERPOWERED.
+- [ ] If the delta is null/negative/underpowered, documented in `docs/assessments/` with raw data.
 
 ## Local Context
 

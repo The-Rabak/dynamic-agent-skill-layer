@@ -10,6 +10,7 @@ source_packet_ref: "promoted from todo #220 (P1)"
 feature_home: "crates/retrieval and crates/compiler (SessionStart priming path)"
 depends_on:
   - T10
+  - T11
 dependency_type: hard
 serves:
   - SessionStart priming vs mid-session task retrieval as distinct, measured intents
@@ -34,6 +35,8 @@ Retrieval currently treats SessionStart priming and mid-session `find_skill` ide
 - Implement a priming ranker (centrality + recent usage + bounded freshness slot, bounded N).
 - Define global appropriateness via cross-project recurrence (#180).
 - Measure each signal's MRR/nDCG impact on the T10 corpus (#210 rig); drop signals that don't help.
+- **(Amended 2026-06-11)** Measure priming on the PRIMING query distribution: coordinate with T11's fixture authoring so it includes a session-start stratum (thin/vague session-opening prompts — the distribution priming actually serves), distinct from the specific task-query strata. Priming signals evaluated against task-shaped queries would answer the wrong question.
+- **(Amended 2026-06-11)** Pre-register per-signal ROI thresholds BEFORE any measured sweep: for each signal (centrality, recent-use, freshness), record in this ticket what minimum paired quality delta keeps it. "Drop signals that don't help" only has teeth if "help" is defined before the data exists.
 
 ## Scope Fence
 
@@ -48,6 +51,8 @@ Retrieval currently treats SessionStart priming and mid-session `find_skill` ide
 - [ ] Priming ranker (centrality + recent usage + freshness slot, bounded N) implemented; MRR/nDCG impact measured on the T10 corpus; a thin/empty session-start prompt surfaces high-value project baseline skills incl. a relevant brand-new one.
 - [ ] Global appropriateness defined via cross-project recurrence (#180), measured, matching code.
 - [ ] Each signal's measured quality delta recorded; non-helping signals dropped.
+- [ ] Per-signal ROI thresholds were recorded in this ticket BEFORE the measured sweeps ran; the keep/drop decisions cite them.
+- [ ] Priming measured on a session-start query stratum (from the T11 fixture), not only on task-shaped queries.
 - [ ] T15 (#218) source-attribution (priming vs find_skill) reviewed and used to scope investment.
 
 ## Local Context
@@ -55,6 +60,7 @@ Retrieval currently treats SessionStart priming and mid-session `find_skill` ide
 - WHY source: plan `## Agent usefulness targets`; referenced in the plan's source_docs (todo #220).
 - Needs the T10 corpus to measure; the freshness slot connects to the cold-start concern (#217).
 - Coordinates with T15 (#218) which captures retrieval-source attribution per pull.
+- **Amendment 2026-06-11:** T11 added as a hard dependency — every measured claim in this ticket runs through the quality instrument, and T11's midpoint-assessment findings showed the prior instrument could not see arm differences (saturated fixture, mean-equality verdicts). Measuring priming signals on a broken ruler would ship noise as ROI. See `docs/assessments/2026-06-11-v1-7-midpoint-deep-grok-assessment.md`.
 
 ## Source
 

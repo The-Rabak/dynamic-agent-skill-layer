@@ -177,6 +177,7 @@ impl infrastructure::SkillGeneralityVerifier for NeverGeneralVerifier {
 /// Also implicitly verifies AC #1 (reads from PG across all roots) and AC #3
 /// (threshold logging — verified via pass completing without error).
 #[tokio::test]
+#[ignore = "requires live Postgres — run with DATABASE_URL set and --ignored flag"]
 async fn live_pg_two_distinct_roots_produce_recurrence_proposal_with_project_count_two() {
     let Some(base_db_url) = std::env::var("DATABASE_URL").ok() else {
         // Graceful skip when DATABASE_URL is unset (CI without live infra).
@@ -276,6 +277,7 @@ async fn live_pg_two_distinct_roots_produce_recurrence_proposal_with_project_cou
 /// Also verifies AC #3: the pass must complete without error (the threshold-not-met
 /// branch is a clean Ok, not a panic or error).
 #[tokio::test]
+#[ignore = "requires live Postgres — run with DATABASE_URL set and --ignored flag"]
 async fn live_pg_single_root_produces_no_recurrence_proposal() {
     let Some(base_db_url) = std::env::var("DATABASE_URL").ok() else {
         return;

@@ -1,3 +1,10 @@
+//! Relocated from `tests/integration/test_session_persistence.rs`.
+//!
+//! Tests compile_context session cache behavior: repeated prompts return cached
+//! context, degraded outcomes skip the cache, and cache is invalidated when the
+//! graph version changes. Uses a controlled token-based embedder (4-dim, rust/
+//! file/async/python keywords) so assertions about which skill appears in results
+//! are deterministic without a live Ollama instance.
 use std::{
     path::PathBuf,
     sync::{
@@ -20,12 +27,15 @@ use retrieval::{RetrievalConfig, RetrievalSnapshot, SeededSkill};
 #[path = "env_guard.rs"]
 mod env_guard;
 
+/// Controlled 4-dim embedder that maps rust/file/async/python keywords to
+/// fixed dimensions. Supports configurable failure injection to simulate
+/// transient provider outages.
 #[derive(Clone)]
-struct DeterministicEmbeddingService {
+struct ControlledEmbeddingService {
     fail_next: Arc<AtomicUsize>,
 }
 
-impl DeterministicEmbeddingService {
+impl ControlledEmbeddingService {
     fn healthy() -> Self {
         Self {
             fail_next: Arc::new(AtomicUsize::new(0)),
@@ -65,7 +75,7 @@ impl DeterministicEmbeddingService {
 }
 
 #[async_trait]
-impl EmbeddingService for DeterministicEmbeddingService {
+impl EmbeddingService for ControlledEmbeddingService {
     async fn embed_text(&self, text: &str) -> Result<Vec<f32>, EmbeddingError> {
         self.embed_internal(text)
     }
@@ -137,6 +147,9 @@ fn seeded_graph() -> RetrievalSnapshot {
                 }],
                 prior: 0.1,
                 community_boost: 0.3,
+                e_task_embedding: vec![],
+                e_needs_embedding: vec![],
+                e_negative_embedding: vec![],
             },
             SeededSkill {
                 skill: tokio_skill.clone(),
@@ -154,6 +167,9 @@ fn seeded_graph() -> RetrievalSnapshot {
                 }],
                 prior: 0.1,
                 community_boost: 0.2,
+                e_task_embedding: vec![],
+                e_needs_embedding: vec![],
+                e_negative_embedding: vec![],
             },
             SeededSkill {
                 skill: python_skill.clone(),
@@ -171,6 +187,9 @@ fn seeded_graph() -> RetrievalSnapshot {
                 }],
                 prior: 0.1,
                 community_boost: 0.1,
+                e_task_embedding: vec![],
+                e_needs_embedding: vec![],
+                e_negative_embedding: vec![],
             },
         ],
         7,
@@ -202,7 +221,7 @@ fn test_repo_path() -> String {
 async fn repeated_prompt_returns_cached_context_without_rerunning_pipeline() {
     let _env_guard = env_guard::configure_scope_env();
     let server = McpServerApp::with_explicit_graph(
-        Arc::new(DeterministicEmbeddingService::healthy()),
+        Arc::new(ControlledEmbeddingService::healthy()),
         seeded_graph(),
         retrieval_config(),
         None,
@@ -242,7 +261,7 @@ async fn cache_invalidated_on_graph_version_mismatch() {
     let _env_guard = env_guard::configure_scope_env();
     let graph_v7 = seeded_graph();
     let server_v7 = McpServerApp::with_explicit_graph(
-        Arc::new(DeterministicEmbeddingService::healthy()),
+        Arc::new(ControlledEmbeddingService::healthy()),
         graph_v7,
         retrieval_config(),
         None,
@@ -293,12 +312,15 @@ async fn cache_invalidated_on_graph_version_mismatch() {
             }],
             prior: 0.1,
             community_boost: 0.3,
+            e_task_embedding: vec![],
+            e_needs_embedding: vec![],
+            e_negative_embedding: vec![],
         }],
         8,
     );
 
     let server_v8 = McpServerApp::with_explicit_graph(
-        Arc::new(DeterministicEmbeddingService::healthy()),
+        Arc::new(ControlledEmbeddingService::healthy()),
         graph_v8,
         retrieval_config(),
         None,
@@ -313,7 +335,7 @@ async fn cache_invalidated_on_graph_version_mismatch() {
 async fn degraded_outcome_does_not_populate_cache() {
     let _env_guard = env_guard::configure_scope_env();
     let server = McpServerApp::with_explicit_graph(
-        Arc::new(DeterministicEmbeddingService {
+        Arc::new(ControlledEmbeddingService {
             fail_next: Arc::new(AtomicUsize::new(1)),
         }),
         seeded_graph(),
@@ -343,7 +365,7 @@ async fn degraded_outcome_does_not_populate_cache() {
 async fn healthy_no_match_populates_cache_and_returns_cached_on_repeat() {
     let _env_guard = env_guard::configure_scope_env();
     let server = McpServerApp::with_explicit_graph(
-        Arc::new(DeterministicEmbeddingService::healthy()),
+        Arc::new(ControlledEmbeddingService::healthy()),
         seeded_graph(),
         retrieval_config(),
         None,

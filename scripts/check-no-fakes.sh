@@ -1,9 +1,30 @@
 #!/usr/bin/env bash
 # check-no-fakes.sh — Constitution enforcement guard for no-fakes policy.
 #
-# Enforces the standing rule: zero fakes/stubs/mocks in tests/e2e/ and in any
-# non-#[cfg(test)] production path under crates/*/src. For tests/integration/,
-# new fakes hard-fail; existing debt is frozen via the allowlist manifest.
+# Enforces the standing rule: zero fakes/stubs/mocks in tests/e2e/, in any
+# non-#[cfg(test)] production path under crates/*/src, and in tests/integration/.
+# All three zones are hard-fail — there is no allowlist exemption.
+#
+# ── Test-location taxonomy (the line this guard draws, made EXPLICIT) ──────────
+# FAKE-FREE (policed here — these are "real app" / production surfaces):
+#   - tests/e2e/            : drives the real, fully-wired app end-to-end. Zone 1.
+#   - tests/integration/    : cross-component tests over real seams. Zone 3.
+#                             (Drained empty by T13, 2026-06-11; was allowlisted.)
+#   - crates/*/src (non-#[cfg(test)]) : production code. Zone 2.
+# FAKE-FRIENDLY (intentionally NOT policed — test-only crate-local unit/component
+# tests, allowed by the constitution's "or the language's equivalent test-only
+# gating" clause; controlled doubles are legitimate for asserting LOGIC such as
+# ranking math or fault-injection paths that real non-deterministic infra cannot):
+#   - crates/*/src/#[cfg(test)]  : in-crate unit tests.
+#   - crates/*/tests/            : the crate's own integration tests (compiled
+#                                  ONLY under `cargo test`; never shipped).
+# This boundary is a STATED policy, not a blind spot: a logic/component test that
+# needs a controlled embedder belongs in a crate-local test dir, NOT in tests/e2e
+# or tests/integration. The efficacy/real-app suites (tests/e2e) therefore stay
+# zero-fake regardless of crate-local doubles.
+# KNOWN LIMITATION: the guard matches by SYMBOL NAME, so a renamed double evades
+# the symbol scan. The taxonomy above — not the symbol list — is the real contract;
+# reviewers must keep "real app" tests in tests/e2e/ (Zone 1) where doubles are banned.
 #
 # Exit codes:
 #   0  — clean: no violations found
@@ -11,14 +32,10 @@
 #
 # Usage:
 #   bash scripts/check-no-fakes.sh
-#
-# The allowlist is at: scripts/no-fakes-integration-allowlist.txt
-# It may only shrink, never grow. See ticket #206 for context.
 
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-ALLOWLIST="$REPO_ROOT/scripts/no-fakes-integration-allowlist.txt"
 
 # ── Banned symbol patterns ────────────────────────────────────────────────────
 # Expand this list when new banned symbols are discovered during audit.
@@ -94,11 +111,12 @@ symbols = [s.strip() for s in raw_pattern.split("\\|") if s.strip()]
 files = sys.argv[2:]
 
 # A line carries a test-only gate if it annotates #[cfg(test)],
-# #[cfg(any(test, ...))], or a `feature = "test-utils"` cfg. Anything inside
-# such a gated block is allowed to use fakes; everything else is a production
-# path and must be fake-free.
+# #![cfg(test)] (inner attribute), #[cfg(any(test, ...))], or a
+# `feature = "test-utils"` cfg. Anything inside such a gated block is allowed
+# to use fakes; everything else is a production path and must be fake-free.
+# The `#!?` handles both outer (#[...]) and inner (#![...]) attribute forms.
 cfg_test_re = re.compile(
-    r'#\s*\[\s*cfg\s*\(\s*(?:test\b|any\s*\(\s*test\b)'
+    r'#!?\s*\[\s*cfg\s*\(\s*(?:test\b|any\s*\(\s*test\b)'
     r'|feature\s*=\s*"test-utils"'
 )
 
@@ -162,39 +180,18 @@ PYEOF
     fi
 fi
 
-# ── Zone 3: tests/integration/ — new fakes fail; existing allowlisted debt passes ──
+# ── Zone 3: tests/integration/ — must be completely fake-free ────────────────
 integration_dir="$REPO_ROOT/tests/integration"
 if [ -d "$integration_dir" ]; then
-    # Load the allowlist into a set
-    declare -A allowed_files
-    if [ -f "$ALLOWLIST" ]; then
-        while IFS= read -r entry; do
-            # Strip whitespace and skip blank/comment lines
-            entry="${entry#"${entry%%[![:space:]]*}"}"
-            entry="${entry%"${entry##*[![:space:]]}"}"
-            if [[ -n "$entry" && "$entry" != "#"* ]]; then
-                allowed_files["$entry"]=1
-            fi
-        done < "$ALLOWLIST"
+    integration_hits=$(grep -rn "$GREP_PATTERN" "$integration_dir" --include="*.rs" 2>/dev/null || true)
+    if [ -n "$integration_hits" ]; then
+        violation_report+=$'\n'"[HARD FAIL] tests/integration/ must be completely fake-free."$'\n'
+        violation_report+="Banned symbol(s) found:"$'\n'
+        while IFS= read -r line; do
+            violation_report+="  $line"$'\n'
+        done <<< "$integration_hits"
+        violations=$((violations + 1))
     fi
-
-    # Find .rs files in tests/integration with banned symbols
-    while IFS= read -r filepath; do
-        # Compute path relative to repo root
-        rel_path="${filepath#$REPO_ROOT/}"
-        if [[ -n "${allowed_files[$rel_path]+_}" ]]; then
-            continue  # frozen debt — skip
-        fi
-        # Not in allowlist — check if it contains banned symbols
-        hits=$(grep -n "$GREP_PATTERN" "$filepath" 2>/dev/null || true)
-        if [ -n "$hits" ]; then
-            violation_report+=$'\n'"[HARD FAIL] tests/integration/ NEW fake — not in allowlist: $rel_path"$'\n'
-            while IFS= read -r line; do
-                violation_report+="  $line"$'\n'
-            done <<< "$hits"
-            violations=$((violations + 1))
-        fi
-    done < <(find "$integration_dir" -name "*.rs" -not -path "*/target/*" 2>/dev/null || true)
 fi
 
 # ── Report ────────────────────────────────────────────────────────────────────
@@ -207,7 +204,7 @@ if [ "$violations" -eq 0 ]; then
     echo ""
     echo "  tests/e2e/        : fake-free (OK)"
     echo "  crates/*/src      : no production fakes (OK)"
-    echo "  tests/integration : no new fakes beyond frozen allowlist (OK)"
+    echo "  tests/integration : fake-free (OK)"
     exit 0
 else
     echo "FAIL: $violations zone(s) with violations."

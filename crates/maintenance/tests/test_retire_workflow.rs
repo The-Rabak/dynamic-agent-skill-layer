@@ -92,11 +92,21 @@ fn retirement_workflow_creates_non_destructive_retired_proposal_marker() {
     let retirement_proposals = writer
         .propose(
             &[stale_skill.clone(), healthy_skill.clone()],
-            &[UsageSample {
-                skill_id: "healthy-skill".to_owned(),
-                used_at: now - Duration::days(2),
-                usage_count: 15,
-            }],
+            &[
+                // healthy-skill: 15 uses 2 days ago — well above the threshold.
+                UsageSample {
+                    skill_id: "healthy-skill".to_owned(),
+                    used_at: now - Duration::days(2),
+                    usage_count: 15,
+                },
+                // stale-skill: 1 use 60 days ago — score ≈ 0.33/month, below
+                // the default threshold of 1.0/month, so this skill is retired.
+                UsageSample {
+                    skill_id: "stale-skill".to_owned(),
+                    used_at: now - Duration::days(60),
+                    usage_count: 1,
+                },
+            ],
             now,
         )
         .expect("retirement workflow should run");
@@ -166,7 +176,14 @@ fn retirement_workflow_rejects_non_skill_filename_paths() {
         &NoopMaintenanceAuditSink,
     );
 
-    let result = writer.propose(&[stale_skill], &[], Utc::now());
+    // Provide a stale usage sample so the cold-start guard does not skip the
+    // skill before the path-validation check fires.
+    let stale_sample = UsageSample {
+        skill_id: "stale-skill".to_owned(),
+        used_at: Utc::now() - Duration::days(60),
+        usage_count: 1,
+    };
+    let result = writer.propose(&[stale_skill], &[stale_sample], Utc::now());
 
     assert!(
         matches!(
@@ -194,9 +211,16 @@ fn retirement_workflow_rejects_existing_retired_symlink_without_clobbering_targe
         RetirementConfig::default(),
         &NoopMaintenanceAuditSink,
     );
+    // Provide a stale usage sample so the cold-start guard does not skip the
+    // skill before the symlink-escape check fires.
+    let stale_sample = UsageSample {
+        skill_id: "stale-skill".to_owned(),
+        used_at: Utc::now() - Duration::days(60),
+        usage_count: 1,
+    };
     let result = writer.propose(
         &[skill_snapshot("stale-skill", stale_skill_path)],
-        &[],
+        &[stale_sample],
         Utc::now(),
     );
 

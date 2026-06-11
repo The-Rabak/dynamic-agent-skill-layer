@@ -678,7 +678,7 @@ async fn rebuild_graph_processes_jobs_singleflight_with_queueing() {
 
 #[test]
 fn mcp_server_transport_keeps_admin_wiring_in_internal_module() {
-    let transport_source = include_str!("../../crates/mcp-server/src/lib.rs");
+    let transport_source = include_str!("../src/lib.rs");
     assert!(
         transport_source.contains("admin_wiring::live_admin_runtime_dependencies()"),
         "transport entrypoints should delegate admin assembly to internal wiring module"
@@ -688,7 +688,7 @@ fn mcp_server_transport_keeps_admin_wiring_in_internal_module() {
         "scope root assembly should not live in mcp-server transport path"
     );
 
-    let wiring_source = include_str!("../../crates/mcp-server/src/admin_wiring.rs");
+    let wiring_source = include_str!("../src/admin_wiring.rs");
     assert!(
         wiring_source.contains("fn default_scope_roots()"),
         "admin wiring module should own graph scope root defaults"

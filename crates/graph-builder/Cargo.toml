@@ -15,12 +15,12 @@ path = "src/main.rs"
 
 [[test]]
 name = "test_watcher_rebuild"
-path = "../../tests/integration/test_watcher_rebuild.rs"
+path = "tests/test_watcher_rebuild.rs"
 required-features = ["test-utils"]
 
 [[test]]
 name = "test_outbox_consistency"
-path = "../../tests/integration/test_outbox_consistency.rs"
+path = "tests/test_outbox_consistency.rs"
 required-features = ["test-utils"]
 
 [[test]]

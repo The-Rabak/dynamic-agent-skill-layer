@@ -1,3 +1,9 @@
+//! Relocated from `tests/integration/test_compile_context.rs`.
+//!
+//! Tests compile_context tool logic: suppression, degraded states, cache,
+//! tool registration, and JSON-RPC surface. Uses a controlled token-based
+//! embedder (4-dim, keyword matching) so assertions about which skill appears
+//! in results are deterministic without a live Ollama instance.
 use std::{
     path::PathBuf,
     sync::{
@@ -55,12 +61,17 @@ impl Drop for DatabaseUrlGuard {
     }
 }
 
+/// Token-based 4-dim embedder for compile_context tests.
+///
+/// Uses keyword matching (rust/file/async/python) so test assertions about
+/// which skill appears in results are deterministic and human-readable.
+/// Supports `fail_first()` to inject a single embedding failure.
 #[derive(Clone)]
-struct DeterministicEmbeddingService {
+struct ControlledEmbeddingService {
     fail_next: Arc<AtomicUsize>,
 }
 
-impl DeterministicEmbeddingService {
+impl ControlledEmbeddingService {
     fn healthy() -> Self {
         Self {
             fail_next: Arc::new(AtomicUsize::new(0)),
@@ -106,7 +117,7 @@ impl DeterministicEmbeddingService {
 }
 
 #[async_trait]
-impl EmbeddingService for DeterministicEmbeddingService {
+impl EmbeddingService for ControlledEmbeddingService {
     async fn embed_text(&self, text: &str) -> Result<Vec<f32>, EmbeddingError> {
         self.embed_internal(text)
     }
@@ -178,6 +189,9 @@ fn seeded_graph() -> RetrievalSnapshot {
                 }],
                 prior: 0.1,
                 community_boost: 0.3,
+                e_task_embedding: vec![],
+                e_needs_embedding: vec![],
+                e_negative_embedding: vec![],
             },
             SeededSkill {
                 skill: tokio_skill.clone(),
@@ -195,6 +209,9 @@ fn seeded_graph() -> RetrievalSnapshot {
                 }],
                 prior: 0.1,
                 community_boost: 0.2,
+                e_task_embedding: vec![],
+                e_needs_embedding: vec![],
+                e_negative_embedding: vec![],
             },
             SeededSkill {
                 skill: python_skill.clone(),
@@ -212,6 +229,9 @@ fn seeded_graph() -> RetrievalSnapshot {
                 }],
                 prior: 0.1,
                 community_boost: 0.1,
+                e_task_embedding: vec![],
+                e_needs_embedding: vec![],
+                e_negative_embedding: vec![],
             },
         ],
         7,
@@ -277,7 +297,7 @@ Reusable capability for {title}.
 async fn registers_compile_context_find_skill_and_extract_session_tools() {
     let _env_guard = env_guard::configure_scope_env();
     let server = McpServerApp::with_explicit_graph(
-        Arc::new(DeterministicEmbeddingService::healthy()),
+        Arc::new(ControlledEmbeddingService::healthy()),
         seeded_graph(),
         retrieval_config(),
         None,
@@ -291,7 +311,8 @@ async fn registers_compile_context_find_skill_and_extract_session_tools() {
             "rebuild_graph",
             "rebuild_graph_status",
             "inspect_skill",
-            "list_communities"
+            "list_communities",
+            "search_skill_graph",
         ]
     );
 }
@@ -312,7 +333,7 @@ async fn rebuild_graph_requires_live_graph_database_for_seeded_server() {
         Some(global_root),
     );
     let server = McpServerApp::with_explicit_graph(
-        Arc::new(DeterministicEmbeddingService::healthy()),
+        Arc::new(ControlledEmbeddingService::healthy()),
         seeded_graph(),
         retrieval_config(),
         None,
@@ -352,7 +373,7 @@ async fn rebuild_graph_requires_live_graph_database_for_seeded_server() {
 async fn compile_context_returns_ok_then_duplicate_suppressed_after_healthy_result() {
     let _env_guard = env_guard::configure_scope_env();
     let server = McpServerApp::with_explicit_graph(
-        Arc::new(DeterministicEmbeddingService::healthy()),
+        Arc::new(ControlledEmbeddingService::healthy()),
         seeded_graph(),
         retrieval_config(),
         None,
@@ -385,7 +406,7 @@ async fn compile_context_returns_ok_then_duplicate_suppressed_after_healthy_resu
 async fn compile_context_returns_no_match_for_healthy_empty_and_suppresses_followups() {
     let _env_guard = env_guard::configure_scope_env();
     let server = McpServerApp::with_explicit_graph(
-        Arc::new(DeterministicEmbeddingService::healthy()),
+        Arc::new(ControlledEmbeddingService::healthy()),
         seeded_graph(),
         retrieval_config(),
         None,
@@ -417,7 +438,7 @@ async fn compile_context_returns_no_match_for_healthy_empty_and_suppresses_follo
 async fn degraded_first_attempt_does_not_set_suppression_state() {
     let _env_guard = env_guard::configure_scope_env();
     let server = McpServerApp::with_explicit_graph(
-        Arc::new(DeterministicEmbeddingService::fail_first()),
+        Arc::new(ControlledEmbeddingService::fail_first()),
         seeded_graph(),
         retrieval_config(),
         None,
@@ -445,7 +466,7 @@ async fn degraded_first_attempt_does_not_set_suppression_state() {
 async fn find_skill_reports_top_matches_from_seeded_graph() {
     let _env_guard = env_guard::configure_scope_env();
     let server = McpServerApp::with_explicit_graph(
-        Arc::new(DeterministicEmbeddingService::healthy()),
+        Arc::new(ControlledEmbeddingService::healthy()),
         seeded_graph(),
         retrieval_config(),
         None,
@@ -466,7 +487,7 @@ async fn find_skill_reports_top_matches_from_seeded_graph() {
 async fn json_rpc_tools_list_and_call_compile_context() {
     let _env_guard = env_guard::configure_scope_env();
     let server = McpServerApp::with_explicit_graph(
-        Arc::new(DeterministicEmbeddingService::healthy()),
+        Arc::new(ControlledEmbeddingService::healthy()),
         seeded_graph(),
         retrieval_config(),
         None,
@@ -607,15 +628,13 @@ async fn json_rpc_tools_list_and_call_compile_context() {
     assert_eq!(status, Some("ok"));
 }
 
-/// Proves that a `compact`-triggered request bypasses session suppression and returns
-/// fresh context instead of `DuplicateSuppressed`. This enables compaction re-injection:
-/// the first prompt compiles and suppresses; the compaction hook re-invokes with
-/// `trigger: TriggerKind::Compact` and must receive `Ok` (not `DuplicateSuppressed`).
+/// Proves that a `compact`-triggered request bypasses session suppression and
+/// returns fresh context instead of `DuplicateSuppressed`.
 #[tokio::test]
 async fn compact_trigger_bypasses_suppression_and_returns_fresh_context() {
     let _env_guard = env_guard::configure_scope_env();
     let server = McpServerApp::with_explicit_graph(
-        Arc::new(DeterministicEmbeddingService::healthy()),
+        Arc::new(ControlledEmbeddingService::healthy()),
         seeded_graph(),
         retrieval_config(),
         None,
@@ -625,7 +644,6 @@ async fn compact_trigger_bypasses_suppression_and_returns_fresh_context() {
     let prompt = "how do i read a file in rust";
     let repo_path = test_repo_path();
 
-    // First call: establishes suppression state (Ok response + suppressed flag set).
     let first = server
         .compile_context(CompileContextRequest {
             prompt: prompt.to_owned(),
@@ -636,7 +654,6 @@ async fn compact_trigger_bypasses_suppression_and_returns_fresh_context() {
         .await;
     assert_eq!(first.status, CompileContextStatus::Ok);
 
-    // Second call: ordinary re-call is suppressed as expected.
     let suppressed = server
         .compile_context(CompileContextRequest {
             prompt: prompt.to_owned(),
@@ -647,8 +664,6 @@ async fn compact_trigger_bypasses_suppression_and_returns_fresh_context() {
         .await;
     assert_eq!(suppressed.status, CompileContextStatus::DuplicateSuppressed);
 
-    // Third call: compaction re-inject with `trigger: TriggerKind::Compact` must bypass
-    // suppression and return fresh context so post-compaction context injection works.
     let compact_reinject = server
         .compile_context(CompileContextRequest {
             prompt: prompt.to_owned(),
@@ -673,22 +688,13 @@ async fn compact_trigger_bypasses_suppression_and_returns_fresh_context() {
     );
 }
 
-/// Proves the two-state `usage_write` observability contract in `compile_context` responses.
-///
-/// States:
-///   "ok"     — writer healthy; key is ABSENT from the response (compact ok = no key)
-///   "failed" — last write or channel-post failed; key present with value "failed"
-///
-/// This test exercises the "ok" state: when no writer is wired (the default for
-/// `with_explicit_graph` test constructors), the health cell starts at `HEALTH_OK`.
-/// The response must NOT include `health["usage_write"]` since the key is only
-/// injected on failure (absent = ok).
+/// Proves the two-state `usage_write` observability contract in `compile_context`
+/// responses: when no writer is wired, the health key must be absent (ok = no key).
 #[tokio::test]
 async fn compile_context_omits_usage_write_health_key_when_writer_is_ok() {
     let _env_guard = env_guard::configure_scope_env();
-    // No `.with_usage_writer(...)` call — usage_sender is None; health cell starts ok.
     let server = McpServerApp::with_explicit_graph(
-        Arc::new(DeterministicEmbeddingService::healthy()),
+        Arc::new(ControlledEmbeddingService::healthy()),
         seeded_graph(),
         retrieval_config(),
         None,

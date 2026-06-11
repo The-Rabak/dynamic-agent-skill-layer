@@ -32,6 +32,7 @@ The thesis is not "context helps" — it is "the system compounds: it learns fro
 
 - Spike: confirm SWE-bench Lite runs through Claude Code with our hooks wired (or document the integration path).
 - Commit metric + thresholds + instance/seed counts in advance.
+- **(Amended 2026-06-11)** The advance commitment must include the **minimum detectable effect** at the chosen instance/seed counts: state up front what size of difference-of-differences the design can resolve. If the measured CI spans zero at that power, the report says **UNDERPOWERED** — a distinct outcome from "no effect," and neither is spun. (Same three-outcome honesty as T14.)
 - Full per-run instrumentation: score, unique skills created, ranks, communities, scope, per-instance retrieval pulls (skill + timing + score), post-session store deltas.
 - Retrieval-source attribution per pull (SessionStart priming vs mid-session `find_skill`), reported per passing instance (feeds T12/#217/#210).
 - Headline: layer-ON vs OFF on a DISJOINT held-out TEST set with a control arm, as difference-of-differences with variance/CI.
@@ -47,7 +48,7 @@ The thesis is not "context helps" — it is "the system compounds: it learns fro
 
 - [ ] Spike confirms SWE-bench Lite runs through Claude Code with hooks wired (or documents the chosen path).
 - [ ] #217 (cold-start) resolved before the measured runs.
-- [ ] Committed-in-advance metric + thresholds + instance/seed counts.
+- [ ] Committed-in-advance metric + thresholds + instance/seed counts + minimum detectable effect; final report classifies the outcome PASS / FAIL / UNDERPOWERED against that pre-registration.
 - [ ] Full per-run instrumentation captured (scores, skills, ranks, communities, scope, retrieval pulls + timing + score, store deltas).
 - [ ] Retrieval-source attribution captured per pull and reported per passing instance.
 - [ ] Headline: layer-ON vs OFF on a disjoint held-out test set, control arm, difference-of-differences, variance/CI.

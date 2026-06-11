@@ -15,12 +15,12 @@ path = "src/main.rs"
 
 [[test]]
 name = "test_merge_workflow"
-path = "../../tests/integration/test_merge_workflow.rs"
+path = "tests/test_merge_workflow.rs"
 required-features = ["test-utils"]
 
 [[test]]
 name = "test_retire_workflow"
-path = "../../tests/integration/test_retire_workflow.rs"
+path = "tests/test_retire_workflow.rs"
 required-features = ["test-utils"]
 
 [[test]]
@@ -39,7 +39,7 @@ path = "../../tests/integration/test_cleanup_scan_resilience.rs"
 
 [[test]]
 name = "test_promotion_recurrence"
-path = "../../tests/integration/test_promotion_recurrence.rs"
+path = "tests/test_promotion_recurrence.rs"
 required-features = ["test-utils"]
 
 [[test]]

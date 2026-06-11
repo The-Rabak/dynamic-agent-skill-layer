@@ -2,7 +2,8 @@
 ticket_id: T13
 title: Convert all tests/integration fakes to live/real (drain the allowlist to empty)
 kind: hygiene
-status: ready
+status: completed
+status_note: "Completed 2026-06-11 (session work-2026-06-11-T13). Policy=relocate-or-live (owner). Drained all 9 fake-bearing files from tests/integration by relocating them into their owning crates' test-only code (crates/{mcp-server,graph-builder,maintenance}/tests + a documented fake-friendly taxonomy in the guard); allowlist emptied; Zone 3 now hard-fails (verified). CapturingEventPublisher/fault-provider recorded as acceptable observers (test_extract_session stays). 49 relocated tests pass (+2 ignored live-PG); no regression. Orchestrator caught+fixed: a guard blind-spot left silent (now an explicit stated taxonomy) and a real bug where the agent inlined test_admin_tools into lib.rs (broke its self-inspecting structural test) and hid it by skipping --features test-utils."
 plan_ref: docs/plans/2026-06-08-feat-v1-7-local-hybrid-skilldag-retrieval-plan.md
 tickets_ref: docs/tickets/2026-06-08-v1-7-local-hybrid-skilldag-retrieval/index.md
 architecture_ref: "constitution: no stubs/fakes in non-unit tests"

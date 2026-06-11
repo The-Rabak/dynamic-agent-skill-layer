@@ -1,3 +1,10 @@
+//! Relocated from `tests/integration/test_dual_scope.rs`.
+//!
+//! Tests compile_context dual-scope behavior: project scope is fused with global
+//! scope and project results are ordered first, partial scope failures are
+//! degraded-not-suppressed, and suppression is keyed on session+repo pairs.
+//! Uses a controlled 3-dim embedder (rust/auth/python keywords) so scope
+//! ordering assertions are deterministic without a live Ollama instance.
 use std::{
     path::PathBuf,
     sync::{
@@ -20,12 +27,15 @@ use retrieval::{RetrievalConfig, RetrievalSnapshot, SeededSkill};
 #[path = "env_guard.rs"]
 mod env_guard;
 
+/// Controlled 3-dim embedder that maps rust/auth/python keywords to fixed
+/// dimensions. Supports configurable failure injection to simulate transient
+/// provider outages.
 #[derive(Clone)]
-struct DeterministicEmbeddingService {
+struct ControlledEmbeddingService {
     fail_next: Arc<AtomicUsize>,
 }
 
-impl DeterministicEmbeddingService {
+impl ControlledEmbeddingService {
     fn healthy() -> Self {
         Self {
             fail_next: Arc::new(AtomicUsize::new(0)),
@@ -58,7 +68,7 @@ impl DeterministicEmbeddingService {
 }
 
 #[async_trait]
-impl EmbeddingService for DeterministicEmbeddingService {
+impl EmbeddingService for ControlledEmbeddingService {
     async fn embed_text(&self, text: &str) -> Result<Vec<f32>, EmbeddingError> {
         self.embed_internal(text)
     }
@@ -121,6 +131,9 @@ fn seeded_dual_scope_graph() -> RetrievalSnapshot {
                 }],
                 prior: 0.2,
                 community_boost: 0.3,
+                e_task_embedding: vec![],
+                e_needs_embedding: vec![],
+                e_negative_embedding: vec![],
             },
             SeededSkill {
                 skill: global_skill.clone(),
@@ -139,6 +152,9 @@ fn seeded_dual_scope_graph() -> RetrievalSnapshot {
                 }],
                 prior: 0.1,
                 community_boost: 0.2,
+                e_task_embedding: vec![],
+                e_needs_embedding: vec![],
+                e_negative_embedding: vec![],
             },
         ],
         9,
@@ -179,7 +195,7 @@ async fn compile_context_searches_project_and_global_with_project_priority_bias(
     let _env_guard = env_guard::configure_scope_env();
 
     let server = McpServerApp::with_explicit_graph(
-        Arc::new(DeterministicEmbeddingService::healthy()),
+        Arc::new(ControlledEmbeddingService::healthy()),
         seeded_dual_scope_graph(),
         retrieval_config(),
         None,
@@ -220,7 +236,7 @@ async fn suppression_is_scoped_by_session_and_repo_pair_and_degraded_does_not_co
     let _env_guard = env_guard::configure_scope_env();
 
     let server = McpServerApp::with_explicit_graph(
-        Arc::new(DeterministicEmbeddingService::fail_first()),
+        Arc::new(ControlledEmbeddingService::fail_first()),
         seeded_dual_scope_graph(),
         retrieval_config(),
         None,
@@ -264,7 +280,7 @@ async fn suppression_is_scoped_by_session_and_repo_pair_and_degraded_does_not_co
 async fn compile_context_uses_request_repo_path_for_scope_resolution() {
     let _env_guard = env_guard::configure_scope_env();
     let server = McpServerApp::with_explicit_graph(
-        Arc::new(DeterministicEmbeddingService::healthy()),
+        Arc::new(ControlledEmbeddingService::healthy()),
         seeded_dual_scope_graph(),
         retrieval_config(),
         None,
@@ -313,7 +329,7 @@ async fn partial_scope_failure_returns_degraded_with_available_context_and_no_su
     let _env_guard = configure_scope_env_with_missing_global_path();
 
     let server = McpServerApp::with_explicit_graph(
-        Arc::new(DeterministicEmbeddingService::healthy()),
+        Arc::new(ControlledEmbeddingService::healthy()),
         seeded_dual_scope_graph(),
         retrieval_config(),
         None,

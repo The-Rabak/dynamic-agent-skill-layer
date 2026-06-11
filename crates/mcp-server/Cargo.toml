@@ -15,7 +15,7 @@ path = "src/main.rs"
 
 [[test]]
 name = "test_compile_context"
-path = "../../tests/integration/test_compile_context.rs"
+path = "tests/test_compile_context.rs"
 
 [dependencies]
 admin = { path = "../admin" }
@@ -53,7 +53,7 @@ walkdir = "2.5.0"
 
 [[test]]
 name = "test_dual_scope"
-path = "../../tests/integration/test_dual_scope.rs"
+path = "tests/test_dual_scope.rs"
 
 [[test]]
 name = "test_extract_session"
@@ -141,7 +141,7 @@ path = "../../tests/e2e/test_claude_code_provider_e2e.rs"
 
 [[test]]
 name = "test_admin_tools"
-path = "../../tests/integration/test_admin_tools.rs"
+path = "tests/test_admin_tools.rs"
 required-features = ["test-utils"]
 
 [[test]]
@@ -150,7 +150,7 @@ path = "../../tests/integration/test_resilience.rs"
 
 [[test]]
 name = "test_session_persistence"
-path = "../../tests/integration/test_session_persistence.rs"
+path = "tests/test_session_persistence.rs"
 
 [[test]]
 name = "test_skill_graph_tools"
