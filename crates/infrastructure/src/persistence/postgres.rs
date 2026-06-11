@@ -40,6 +40,12 @@ const MIGRATION_009: &str = include_str!("../../migrations/009_skill_multiview_f
 /// constraints guard `edge_type`/`edge_origin`. Edges are SEPARATE graph evidence, never
 /// a ranking multiplier (V1.7 T05 / parent plan Design Decision #4).
 const MIGRATION_010: &str = include_str!("../../migrations/010_skill_edges.sql");
+/// Migration 011: creates the `skill_embeddings` cache table that persists per-skill
+/// per-view f32 embedding vectors as BYTEA so `build_graph_from_pg` can skip
+/// re-embedding unchanged skills at boot/reload.  On the qwen3-embedding:4b model the
+/// cold-boot re-embed of a 262-skill corpus takes ~7 minutes; exact-match cache hits
+/// collapse that to seconds (V1.7 T17 boot-readiness honesty).
+const MIGRATION_011: &str = include_str!("../../migrations/011_skill_embeddings.sql");
 
 /// Ordered migration set: each entry is `(stable_id, sql)`.
 ///
@@ -52,7 +58,8 @@ const MIGRATION_010: &str = include_str!("../../migrations/010_skill_edges.sql")
 /// 001; 004 adds a constraint to session_logs; 005 adds a column to skills;
 /// 006 widens community_skills for dual membership; 007 adds generality columns;
 /// 008 adds embedding_model_metadata table; 009 adds multi-view skill fields;
-/// 010 adds the skill_edges table, which FK-references skills created in 001).
+/// 010 adds the skill_edges table, which FK-references skills created in 001;
+/// 011 adds the skill_embeddings cache table for boot-time re-embed avoidance).
 ///
 /// Individual migrations remain idempotent (`IF NOT EXISTS` / `ADD COLUMN IF NOT
 /// EXISTS`) as a belt-and-braces safety net, but the tracking table is the primary
@@ -68,6 +75,7 @@ const MIGRATIONS: &[(&str, &str)] = &[
     ("008_embedding_model_metadata", MIGRATION_008),
     ("009_skill_multiview_fields", MIGRATION_009), // WRITE-AHEAD: multi-view optional fields for T04/T05; no live reader yet
     ("010_skill_edges", MIGRATION_010), // V1.7 T05: typed inter-skill graph edges (depends_on/specializes/composes_with/similar_to/conflicts_with)
+    ("011_skill_embeddings", MIGRATION_011), // V1.7 T17: persisted embedding cache (kill boot/reload re-embed); FIRST live reader at boot/reload
 ];
 
 /// SQL executed by `truncate_all_tables`.
@@ -80,7 +88,7 @@ const MIGRATIONS: &[(&str, &str)] = &[
 /// Must be kept in sync with every table created by the migration set.  Any table
 /// omitted here causes cross-suite contamination when the table has live data.
 #[cfg(any(test, feature = "test-utils"))]
-const TRUNCATE_ALL_TABLES_SQL: &str = "TRUNCATE TABLE skill_edges, community_skills, skill_subunits, communities, subunits, skills, \
+const TRUNCATE_ALL_TABLES_SQL: &str = "TRUNCATE TABLE skill_embeddings, skill_edges, community_skills, skill_subunits, communities, subunits, skills, \
      outbox_events, rebuild_locks, transcript_ingest_queue, \
      session_logs, skill_usage, embedding_model_metadata CASCADE";
 
@@ -540,9 +548,9 @@ mod tests {
     }
 
     #[test]
-    fn migration_set_is_ordered_001_through_010() {
+    fn migration_set_is_ordered_001_through_011() {
         // MIGRATIONS is now &[(&str, &str)] — (stable_id, sql). Assert that
-        // the ids and sql content appear in the correct 001..010 order.
+        // the ids and sql content appear in the correct 001..011 order.
         let ids: Vec<&str> = MIGRATIONS.iter().map(|(id, _)| *id).collect();
         assert_eq!(
             ids,
@@ -557,8 +565,9 @@ mod tests {
                 "008_embedding_model_metadata",
                 "009_skill_multiview_fields",
                 "010_skill_edges",
+                "011_skill_embeddings",
             ],
-            "migration ids must appear in 001..010 order"
+            "migration ids must appear in 001..011 order"
         );
 
         let sqls: Vec<&str> = MIGRATIONS.iter().map(|(_, sql)| *sql).collect();
@@ -575,8 +584,9 @@ mod tests {
                 MIGRATION_008,
                 MIGRATION_009,
                 MIGRATION_010,
+                MIGRATION_011,
             ],
-            "migration sql bodies must match the include_str! constants in 001..010 order"
+            "migration sql bodies must match the include_str! constants in 001..011 order"
         );
     }
 
@@ -627,6 +637,34 @@ mod tests {
         );
     }
 
+    /// Write-ahead guard for migration 011: asserts the SQL constant contains the
+    /// expected DDL tokens so a rename or file-swap is caught at compile-test time
+    /// without requiring a live database.  Mirrors the pattern established by the
+    /// 008/009/010 write-ahead tests.
+    #[test]
+    fn migration_011_declares_skill_embeddings_cache_table() {
+        assert!(
+            MIGRATION_011.contains("CREATE TABLE IF NOT EXISTS skill_embeddings"),
+            "migration 011 must create the skill_embeddings table idempotently"
+        );
+        assert!(
+            MIGRATION_011.contains("PRIMARY KEY (skill_id, view_kind, model_name)"),
+            "migration 011 must declare the (skill_id, view_kind, model_name) composite primary key"
+        );
+        assert!(
+            MIGRATION_011.contains("vector       BYTEA"),
+            "migration 011 must store embedding vectors as BYTEA"
+        );
+        assert!(
+            MIGRATION_011.contains("CREATE INDEX IF NOT EXISTS idx_skill_embeddings_model"),
+            "migration 011 must create the idx_skill_embeddings_model index for bulk-load access pattern"
+        );
+        assert!(
+            MIGRATION_011.contains("APPROVED"),
+            "migration 011 must carry the human-gate APPROVED comment marker"
+        );
+    }
+
     #[test]
     fn migration_009_declares_multiview_columns_with_if_not_exists_guard() {
         for column in &[
@@ -657,9 +695,9 @@ mod tests {
         );
     }
 
-    /// Live Postgres: proves that `run_migrations` applies all ten migrations on
+    /// Live Postgres: proves that `run_migrations` applies all eleven migrations on
     /// a fresh schema and records them in `schema_migrations`, then proves that a
-    /// second call skips all ten by asserting `applied_at` timestamps are UNCHANGED.
+    /// second call skips all eleven by asserting `applied_at` timestamps are UNCHANGED.
     ///
     /// A re-applied migration would re-INSERT or UPDATE the row (changing the
     /// timestamp). A truly skipped migration leaves the row exactly as it was.
@@ -705,7 +743,7 @@ mod tests {
             .await
             .expect("scratch adapter connect");
 
-        // ---- First boot: all ten migrations must be applied ----
+        // ---- First boot: all eleven migrations must be applied ----
         adapter
             .run_migrations()
             .await
@@ -731,14 +769,15 @@ mod tests {
                 "008_embedding_model_metadata",
                 "009_skill_multiview_fields",
                 "010_skill_edges",
+                "011_skill_embeddings",
             ],
-            "first boot must record all ten migration ids"
+            "first boot must record all eleven migration ids"
         );
 
         let first_applied_ats: Vec<chrono::DateTime<chrono::Utc>> =
             first_run_rows.iter().map(|(_, ts)| *ts).collect();
 
-        // ---- Second boot: all ten must be SKIPPED (applied_at unchanged) ----
+        // ---- Second boot: all eleven must be SKIPPED (applied_at unchanged) ----
         adapter
             .run_migrations()
             .await

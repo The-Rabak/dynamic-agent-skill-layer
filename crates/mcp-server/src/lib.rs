@@ -38,13 +38,15 @@ use domain::{EmbeddingService, ScopeResolver};
 #[cfg(any(test, feature = "test-utils"))]
 use infrastructure::OutboxVectorStore;
 use infrastructure::{
-    EmbeddingModelInfo, EnvPathGlobalResolver, FsMarkerProjectResolver, OllamaEmbeddingConfig,
-    OllamaEmbeddingService, PostgresAdapter, PostgresConfig, PostgresGraphSnapshotStore,
+    EmbeddingCacheRow, EmbeddingCacheStore, EmbeddingModelInfo, EnvPathGlobalResolver,
+    FsMarkerProjectResolver, LoadedEmbedding, OllamaEmbeddingConfig, OllamaEmbeddingService,
+    PersistedGraphSkillRecord, PostgresAdapter, PostgresConfig, PostgresGraphSnapshotStore,
     PostgresGraphWriteCoordinator, PostgresPool, PostgresRebuildCoordinator,
     PostgresUsageSampleStore, PostgresUsageWriter, QdrantAdapter, QdrantConfig, QdrantError,
     RedisClient, RedisStreamsAdapter, RedisStreamsConfig, SessionUsageRecord, SkillSelectionRecord,
-    TranscriptIngestQueue, UsagePersistencePort, UsageSampleStore, model_keyed_collection_name,
-    model_keyed_hybrid_collection_name,
+    TranscriptIngestQueue, UsagePersistencePort, UsageSampleStore, VIEW_KIND_E_NEEDS,
+    VIEW_KIND_E_NEGATIVE, VIEW_KIND_E_SUMMARY, VIEW_KIND_E_TASK, content_hash_for_view_text,
+    model_keyed_collection_name, model_keyed_hybrid_collection_name, subunit_view_kind,
 };
 use maintenance::RetirementConfig;
 use retrieval::{
@@ -700,6 +702,7 @@ async fn build_live_server(
         pg_adapter.pool(),
         embedding_service.as_ref(),
         usage_sample_store.as_ref(),
+        &embedding_model_info,
     )
     .await?;
 
@@ -809,6 +812,7 @@ async fn build_live_server(
         embedding_service.clone(),
         retriever,
         usage_sample_store.clone(),
+        embedding_model_info.clone(),
     );
 
     Ok(LiveServerComponents {
@@ -1036,11 +1040,22 @@ fn scope_paths_from_env(name: &str) -> Vec<std::path::PathBuf> {
 ///
 /// This is the `mcp-server`-side bridge that keeps `retrieval` persistence- and
 /// transport-agnostic: the subscriber depends only on the [`GraphReloader`] seam.
+///
+/// `model_info` carries the embedding model identity discovered at boot.  It is
+/// stored here (not re-discovered on each reload) because:
+///   (a) discover_dimension calls the live Ollama server; re-calling it on every
+///       `graph.rebuilt` event would add latency and a failure surface,
+///   (b) the model cannot change between boot and reload without an operator
+///       intervention that restarts the server.
 struct PostgresGraphReloader {
     pg_adapter: Arc<PostgresAdapter>,
     embedding_service: Arc<OllamaEmbeddingService>,
     retriever: Arc<RetrievalOrchestrator<OllamaEmbeddingService>>,
     usage_sample_store: Arc<PostgresUsageSampleStore>,
+    /// The active embedding model identity discovered at boot via
+    /// `discover_dimension`.  Passed to `build_graph_from_pg` on every reload
+    /// to key the persisted embedding cache.
+    model_info: EmbeddingModelInfo,
 }
 
 #[async_trait]
@@ -1050,6 +1065,7 @@ impl GraphReloader for PostgresGraphReloader {
             self.pg_adapter.pool(),
             self.embedding_service.as_ref(),
             self.usage_sample_store.as_ref(),
+            &self.model_info,
         )
         .await
         .map_err(|error| format!("graph reload from PG failed: {error}"))?;
@@ -1071,67 +1087,149 @@ impl GraphReloader for PostgresGraphReloader {
 ///
 /// Runs on a detached Tokio task so a slow/failed reload never blocks request
 /// handling. Returns immediately; the loop owns its own backoff/reconnect.
+///
+/// `model_info` is stored on the reloader so every `graph.rebuilt` reload can
+/// key the persisted embedding cache by (model_name, dimension) without
+/// re-calling Ollama's discover_dimension endpoint.
 fn spawn_graph_refresh_subscriber(
     redis_streams: Arc<RedisStreamsAdapter>,
     pg_adapter: Arc<PostgresAdapter>,
     embedding_service: Arc<OllamaEmbeddingService>,
     retriever: Arc<RetrievalOrchestrator<OllamaEmbeddingService>>,
     usage_sample_store: Arc<PostgresUsageSampleStore>,
+    model_info: EmbeddingModelInfo,
 ) {
     let reloader: Arc<dyn GraphReloader> = Arc::new(PostgresGraphReloader {
         pg_adapter,
         embedding_service,
         retriever,
         usage_sample_store,
+        model_info,
     });
     tokio::spawn(run_graph_refresh_loop(redis_streams, reloader));
 }
 
-/// Embed a batch of dense-view texts, **skipping blank entries**.
+/// Cache-aware dense-view embedder for T09 multi-view fields.
 ///
-/// A skill legitimately has no `e_task`/`e_needs`/`e_negative` when its source
-/// multi-view fields are empty (e.g. a pre-T03 corpus, or any skill with no
-/// `avoid_when`/`requires`/`invariants`). That is ABSENCE, not an error: the
-/// embedding provider rejects a blank string (`"text input must not be blank"`),
-/// so sending one would crash the boot-time graph build. Instead we embed only
-/// the non-blank texts and scatter the results back into a full-length vector;
-/// blank positions get an empty `Vec<f32>`, which `retrieval::fuse_dense_views`
-/// already treats as "this view is absent — fall back to e_summary".
+/// For each skill, checks the persisted embedding cache first.  Rows that match
+/// on `(skill_id, view_kind, content_hash)` are returned from cache without
+/// calling the embedding provider.  Only misses (absent or stale rows) are
+/// batched and sent to the provider; the resulting vectors are upserted back to
+/// the cache.
 ///
-/// Fail-loud is preserved: the provider must return exactly one vector per
-/// non-blank input, else the build errors (mirrors the e_summary/subunit guards).
-async fn embed_dense_view_skipping_blank(
+/// Blank view texts (empty after trimming) are skipped: they produce an empty
+/// `Vec<f32>` and are never stored in the cache.  `retrieval::fuse_dense_views`
+/// treats an empty vector as "this view is absent — fall back to e_summary".
+///
+/// # Parameters
+///
+/// - `embedding_service` — the live embedding provider (called only for misses).
+/// - `cache_store` — the Postgres-backed cache for upserts.
+/// - `cache` — the already-loaded cache snapshot for the active model (loaded
+///   once at the start of `build_graph_from_pg`).
+/// - `skills` — the ordered skill records whose `skill_id` keys the cache.
+/// - `texts` — one view text per skill (same ordering as `skills`).
+/// - `view_kind` — e.g. `VIEW_KIND_E_TASK`; used as the cache row's `view_kind`.
+/// - `model_name` / `dimension` — active model identity for cache rows.
+///
+/// # Fail-loud invariants
+///
+/// - Provider must return exactly one vector per non-blank miss text, else the
+///   build errors.
+/// - The `cache` must already have passed the dimension-mismatch gate in
+///   `load_for_model`; this function does not re-check dimensions.
+#[allow(clippy::too_many_arguments)]
+async fn embed_dense_view_with_cache(
     embedding_service: &dyn EmbeddingService,
+    cache_store: &EmbeddingCacheStore,
+    cache: &std::collections::HashMap<(String, String), LoadedEmbedding>,
+    skills: &[PersistedGraphSkillRecord],
     texts: &[String],
-    view_name: &str,
+    view_kind: &str,
+    model_name: &str,
+    dimension: usize,
 ) -> Result<Vec<Vec<f32>>, Box<dyn std::error::Error + Send + Sync>> {
-    let mut nonblank_refs: Vec<&str> = Vec::new();
-    let mut nonblank_positions: Vec<usize> = Vec::new();
-    for (idx, text) in texts.iter().enumerate() {
-        if !text.trim().is_empty() {
-            nonblank_refs.push(text.as_str());
-            nonblank_positions.push(idx);
+    debug_assert_eq!(
+        skills.len(),
+        texts.len(),
+        "embed_dense_view_with_cache: skills and texts must have the same length"
+    );
+
+    // Separate non-blank misses from hits and blank texts.
+    let mut miss_indices: Vec<usize> = Vec::new();
+    let mut miss_texts: Vec<&str> = Vec::new();
+    for (idx, (skill, text)) in skills.iter().zip(texts.iter()).enumerate() {
+        if text.trim().is_empty() {
+            continue; // blank → empty Vec<f32>, not cached
+        }
+        let cache_key = (skill.skill_id.clone(), view_kind.to_owned());
+        let hash = content_hash_for_view_text(text);
+        match cache.get(&cache_key) {
+            Some(entry) if entry.content_hash == hash => {} // cache hit
+            _ => {
+                miss_indices.push(idx);
+                miss_texts.push(text.as_str());
+            }
         }
     }
 
-    let mut scattered: Vec<Vec<f32>> = vec![Vec::new(); texts.len()];
-    if nonblank_refs.is_empty() {
-        return Ok(scattered);
+    // Embed misses in one batch.
+    let miss_embeddings = if miss_texts.is_empty() {
+        vec![]
+    } else {
+        let result = embedding_service.embed_batch(&miss_texts).await?;
+        if result.len() != miss_texts.len() {
+            return Err(format!(
+                "embed_batch returned {} {view_kind} vectors for {} miss texts",
+                result.len(),
+                miss_texts.len()
+            )
+            .into());
+        }
+        result
+    };
+
+    // Build the full-length output vector and collect upsert rows.
+    let mut output: Vec<Vec<f32>> = vec![Vec::new(); skills.len()];
+    let mut cache_rows: Vec<EmbeddingCacheRow> = Vec::new();
+    for (miss_pos, &skill_idx) in miss_indices.iter().enumerate() {
+        let vector = miss_embeddings[miss_pos].clone();
+        cache_rows.push(EmbeddingCacheRow {
+            skill_id: skills[skill_idx].skill_id.clone(),
+            view_kind: view_kind.to_owned(),
+            model_name: model_name.to_owned(),
+            dimension,
+            content_hash: content_hash_for_view_text(&texts[skill_idx]),
+            vector: vector.clone(),
+        });
+        output[skill_idx] = vector;
+    }
+    // Fill cache hits back into output.
+    for (idx, (skill, text)) in skills.iter().zip(texts.iter()).enumerate() {
+        if !text.trim().is_empty() && output[idx].is_empty() {
+            let cache_key = (skill.skill_id.clone(), view_kind.to_owned());
+            let hash = content_hash_for_view_text(text);
+            if let Some(entry) = cache.get(&cache_key)
+                && entry.content_hash == hash
+            {
+                output[idx] = entry.vector.clone();
+            }
+        }
     }
 
-    let flat = embedding_service.embed_batch(&nonblank_refs).await?;
-    if flat.len() != nonblank_refs.len() {
-        return Err(format!(
-            "embed_batch returned {} {view_name} vectors for {} non-blank texts",
-            flat.len(),
-            nonblank_refs.len()
-        )
-        .into());
+    // Upsert newly embedded vectors back to the cache.
+    if !cache_rows.is_empty() {
+        cache_store.upsert_many(&cache_rows).await.map_err(|e| {
+            format!("dense-view {view_kind} cache upsert failed: {e}")
+        })?;
+        info!(
+            view_kind,
+            upserted = cache_rows.len(),
+            "dense-view embeddings upserted to cache"
+        );
     }
-    for (position, embedding) in nonblank_positions.into_iter().zip(flat.into_iter()) {
-        scattered[position] = embedding;
-    }
-    Ok(scattered)
+
+    Ok(output)
 }
 
 /// Loads the full skill graph from Postgres and populates each skill's
@@ -1141,11 +1239,27 @@ async fn embed_dense_view_skipping_blank(
 /// in a single batched query (no N+1). Skills with zero usage rows receive
 /// `prior=0.0` (honest cold-start). The prior is a pure function of
 /// `usage_count` and `age_days` — it is never written back to the DB.
-#[tracing::instrument(skip(pool, embedding_service, usage_sample_store))]
+///
+/// # Embedding cache (T17 AC2 + AC3)
+///
+/// `model_info` identifies the active embedding model (name + dimension) used
+/// to key the persisted `skill_embeddings` cache (migration 011).  On every
+/// call, the cache is loaded first; only skills whose view text changed (content
+/// hash mismatch) or whose view is absent from the cache are sent to the
+/// embedding provider.  Freshly embedded vectors are written back via upsert.
+///
+/// On an unchanged 262-skill corpus, all four embed batches collapse to ~zero
+/// calls, dropping boot/reload time from ~7 minutes to seconds (T17 AC3).
+///
+/// A cached row whose stored `dimension` does not equal
+/// `model_info.dimension` fails loud with a `DimensionMismatch` error — the
+/// operator must clear `skill_embeddings` rows for the affected model.
+#[tracing::instrument(skip(pool, embedding_service, usage_sample_store, model_info))]
 async fn build_graph_from_pg(
     pool: &PostgresPool,
     embedding_service: &dyn EmbeddingService,
     usage_sample_store: &dyn UsageSampleStore,
+    model_info: &EmbeddingModelInfo,
 ) -> Result<RetrievalSnapshot, Box<dyn std::error::Error + Send + Sync>> {
     let store = PostgresGraphSnapshotStore::new(pool.clone());
     // Read the real durable version so the snapshot (and the version-keyed cache)
@@ -1193,63 +1307,222 @@ async fn build_graph_from_pg(
         .into());
     }
 
+    // ── T17: Load the persisted embedding cache (AC2 + AC3) ─────────────────
+    // Load all cached vectors for the active (model_name, dimension) pair.
+    // Any row whose stored dimension != model_info.dimension fails loud here —
+    // consistent with #235 DimensionMismatch semantics.  A cold cache returns
+    // an empty map; every skill is then embedded and upserted back.
+    let embedding_cache_store = EmbeddingCacheStore::new(pool.clone());
+    let embedding_cache: std::collections::HashMap<(String, String), LoadedEmbedding> =
+        embedding_cache_store
+            .load_for_model(&model_info.model_name, model_info.dimension)
+            .await
+            .map_err(|e| format!("embedding cache load failed: {e}"))?;
+
+    info!(
+        model_name = %model_info.model_name,
+        dimension = model_info.dimension,
+        cached_entries = embedding_cache.len(),
+        "embedding cache loaded for active model"
+    );
+
+    // ── e_summary embeddings (name + description + tags) ────────────────────
+    // For each skill, check whether the cache has a current vector (same
+    // content_hash).  Misses are collected, embedded in one batch, then merged
+    // back.  Cache rows for this view are upserted after embedding.
     let texts: Vec<String> = skills
         .iter()
         .map(|s| format!("{} {} {}", s.name, s.description, s.tags.join(" ")))
         .collect();
-    let text_refs: Vec<&str> = texts.iter().map(String::as_str).collect();
-    let embeddings = embedding_service.embed_batch(&text_refs).await?;
 
-    // Fail loudly if the embedding provider returned a mismatched batch. A shorter
-    // vector would cause silent zip truncation, loading a graph with fewer skills
-    // than PG contains and no diagnostic. Crashing the reload is preferable.
-    if embeddings.len() != skills.len() {
-        return Err(format!(
-            "embed_batch returned {} vectors for {} skills",
-            embeddings.len(),
-            skills.len()
-        )
-        .into());
+    // Identify misses: indices whose (skill_id, e_summary, content_hash) are
+    // absent or stale in the cache.
+    let mut e_summary_miss_indices: Vec<usize> = Vec::new();
+    let mut e_summary_miss_texts: Vec<&str> = Vec::new();
+    for (idx, (skill, text)) in skills.iter().zip(texts.iter()).enumerate() {
+        let cache_key = (skill.skill_id.clone(), VIEW_KIND_E_SUMMARY.to_owned());
+        let hash = content_hash_for_view_text(text);
+        match embedding_cache.get(&cache_key) {
+            Some(entry) if entry.content_hash == hash => {} // cache hit — skip
+            _ => {
+                e_summary_miss_indices.push(idx);
+                e_summary_miss_texts.push(text.as_str());
+            }
+        }
     }
 
-    // Embed every subunit's text so the read path can score the β
-    // (subunit_evidence) term of eq.3 semantically at request time (issue #172).
-    // Subunit embeddings live ONLY in the in-memory snapshot — recomputed at boot
-    // exactly like skill embeddings above, so no migration or write-side storage is
-    // needed. One flat batch keeps this to a single provider round trip; it is
-    // re-sliced back into per-skill groups in the SeededSkill map below.
-    let subunit_texts: Vec<String> = skills
-        .iter()
-        .flat_map(|s| {
-            s.subunits
-                .iter()
-                .map(|su| format!("{} {}", su.title, su.content))
-        })
-        .collect();
-    let per_skill_subunit_embeddings: Vec<Vec<Vec<f32>>> = if subunit_texts.is_empty() {
-        skills.iter().map(|_| Vec::new()).collect()
+    // Embed only the misses (one batch, fail loud on length mismatch).
+    let e_summary_miss_embeddings = if e_summary_miss_texts.is_empty() {
+        vec![]
     } else {
-        let subunit_text_refs: Vec<&str> = subunit_texts.iter().map(String::as_str).collect();
-        let flat = embedding_service.embed_batch(&subunit_text_refs).await?;
-        // Fail loudly on a mismatched batch for the same reason as the skill path:
-        // a short vector would silently mis-align subunit embeddings to subunits.
-        if flat.len() != subunit_texts.len() {
+        let result = embedding_service.embed_batch(&e_summary_miss_texts).await?;
+        if result.len() != e_summary_miss_texts.len() {
             return Err(format!(
-                "embed_batch returned {} subunit vectors for {} subunit texts",
-                flat.len(),
-                subunit_texts.len()
+                "embed_batch returned {} e_summary vectors for {} miss texts",
+                result.len(),
+                e_summary_miss_texts.len()
             )
             .into());
         }
-        let mut flat = flat.into_iter();
+        result
+    };
+
+    // Scatter misses back into the full-length embeddings vector and build upsert rows.
+    let mut embeddings: Vec<Vec<f32>> = vec![vec![]; skills.len()];
+    let mut e_summary_cache_rows: Vec<EmbeddingCacheRow> = Vec::new();
+    for (miss_pos, &skill_idx) in e_summary_miss_indices.iter().enumerate() {
+        let vector = e_summary_miss_embeddings[miss_pos].clone();
+        e_summary_cache_rows.push(EmbeddingCacheRow {
+            skill_id: skills[skill_idx].skill_id.clone(),
+            view_kind: VIEW_KIND_E_SUMMARY.to_owned(),
+            model_name: model_info.model_name.clone(),
+            dimension: model_info.dimension,
+            content_hash: content_hash_for_view_text(&texts[skill_idx]),
+            vector: vector.clone(),
+        });
+        embeddings[skill_idx] = vector;
+    }
+    // Fill cache hits back into the full vector.
+    for (idx, (skill, text)) in skills.iter().zip(texts.iter()).enumerate() {
+        if embeddings[idx].is_empty() {
+            let cache_key = (skill.skill_id.clone(), VIEW_KIND_E_SUMMARY.to_owned());
+            let hash = content_hash_for_view_text(text);
+            if let Some(entry) = embedding_cache.get(&cache_key)
+                && entry.content_hash == hash
+            {
+                embeddings[idx] = entry.vector.clone();
+            }
+        }
+    }
+    // Verify every slot was populated (guards against logic errors above).
+    if embeddings.iter().any(|v| v.is_empty()) {
+        return Err(
+            "e_summary embedding assembly left empty slot(s) — cache/miss logic error".into(),
+        );
+    }
+
+    // Upsert newly embedded e_summary vectors back to the cache.
+    if !e_summary_cache_rows.is_empty() {
+        embedding_cache_store
+            .upsert_many(&e_summary_cache_rows)
+            .await
+            .map_err(|e| format!("e_summary cache upsert failed: {e}"))?;
+        info!(
+            upserted = e_summary_cache_rows.len(),
+            "e_summary embeddings upserted to cache"
+        );
+    }
+
+    // ── Subunit embeddings ───────────────────────────────────────────────────
+    // Subunit identity for the cache: (skill_id, "subunit:{position}").
+    // Position matches skill_subunits.position (the stable ordering column).
+    // Only non-blank subunit texts are embedded; blank subunits are never sent
+    // to the provider and never cached — they stay as empty Vec<f32>.
+    let per_skill_subunit_embeddings: Vec<Vec<Vec<f32>>> = {
+        // Collect (subunit_position, skill_id, text) for all subunits.
+        struct SubunitEntry {
+            position: usize,
+            skill_id: String,
+            text: String,
+        }
+        let all_subunit_entries: Vec<SubunitEntry> = skills
+            .iter()
+            .flat_map(|s| {
+                s.subunits
+                    .iter()
+                    .enumerate()
+                    .map(move |(position, su)| SubunitEntry {
+                        position,
+                        skill_id: s.skill_id.clone(),
+                        text: format!("{} {}", su.title, su.content),
+                    })
+            })
+            .collect();
+
+        // Identify misses.
+        let mut subunit_miss_indices: Vec<usize> = Vec::new(); // index into all_subunit_entries
+        let mut subunit_miss_texts: Vec<&str> = Vec::new();
+        for (entry_idx, entry) in all_subunit_entries.iter().enumerate() {
+            let cache_key = (entry.skill_id.clone(), subunit_view_kind(entry.position));
+            let hash = content_hash_for_view_text(&entry.text);
+            match embedding_cache.get(&cache_key) {
+                Some(cached) if cached.content_hash == hash => {} // hit
+                _ => {
+                    subunit_miss_indices.push(entry_idx);
+                    subunit_miss_texts.push(&entry.text);
+                }
+            }
+        }
+
+        // Embed misses in one flat batch.
+        let subunit_miss_embeddings = if subunit_miss_texts.is_empty() {
+            vec![]
+        } else {
+            let result = embedding_service.embed_batch(&subunit_miss_texts).await?;
+            if result.len() != subunit_miss_texts.len() {
+                return Err(format!(
+                    "embed_batch returned {} subunit vectors for {} miss texts",
+                    result.len(),
+                    subunit_miss_texts.len()
+                )
+                .into());
+            }
+            result
+        };
+
+        // Build a per-entry flat embedding map (entry_idx → Vec<f32>).
+        let mut flat_subunit_embeddings: Vec<Vec<f32>> =
+            vec![vec![]; all_subunit_entries.len()];
+        let mut subunit_cache_rows: Vec<EmbeddingCacheRow> = Vec::new();
+        for (miss_pos, &entry_idx) in subunit_miss_indices.iter().enumerate() {
+            let vector = subunit_miss_embeddings[miss_pos].clone();
+            let entry = &all_subunit_entries[entry_idx];
+            subunit_cache_rows.push(EmbeddingCacheRow {
+                skill_id: entry.skill_id.clone(),
+                view_kind: subunit_view_kind(entry.position),
+                model_name: model_info.model_name.clone(),
+                dimension: model_info.dimension,
+                content_hash: content_hash_for_view_text(&entry.text),
+                vector: vector.clone(),
+            });
+            flat_subunit_embeddings[entry_idx] = vector;
+        }
+        // Fill cache hits.
+        for (entry_idx, entry) in all_subunit_entries.iter().enumerate() {
+            if flat_subunit_embeddings[entry_idx].is_empty() {
+                let cache_key =
+                    (entry.skill_id.clone(), subunit_view_kind(entry.position));
+                let hash = content_hash_for_view_text(&entry.text);
+                if let Some(cached) = embedding_cache.get(&cache_key)
+                    && cached.content_hash == hash
+                {
+                    flat_subunit_embeddings[entry_idx] = cached.vector.clone();
+                }
+            }
+        }
+
+        // Upsert newly embedded subunit vectors.
+        if !subunit_cache_rows.is_empty() {
+            embedding_cache_store
+                .upsert_many(&subunit_cache_rows)
+                .await
+                .map_err(|e| format!("subunit cache upsert failed: {e}"))?;
+            info!(
+                upserted = subunit_cache_rows.len(),
+                "subunit embeddings upserted to cache"
+            );
+        }
+
+        // Re-slice the flat result back into per-skill groups.
+        let mut flat_iter = flat_subunit_embeddings.into_iter();
         skills
             .iter()
             .map(|s| {
                 (0..s.subunits.len())
                     .map(|_| {
-                        flat.next().expect(
+                        flat_iter.next().expect(
                             "flat subunit embedding stream exhausted before all subunits were \
-                             assigned — len check above guarantees this cannot happen",
+                             assigned — entry count matches subunit count",
                         )
                     })
                     .collect()
@@ -1258,23 +1531,12 @@ async fn build_graph_from_pg(
     };
 
     // ── T09: Dense multi-view embeddings ────────────────────────────────────
-    // Build e_task / e_needs / e_negative texts from the T03 multi-view fields
-    // and embed them as three flat batches. Built UNCONDITIONALLY at boot so
-    // RETRIEVAL_DENSE_VIEWS can be toggled at request time without a graph
-    // rebuild — the scoring path simply does not read these vectors when the flag
-    // is off. The single-source-of-truth field→text mapping lives in
-    // `retrieval::dense_views` (mirrors BM25's `skill_lexical_document`).
+    // Build e_task / e_needs / e_negative texts from the T03 multi-view fields.
+    // Each view is now cache-aware: vectors are loaded from the persisted cache
+    // when content matches; only misses are sent to the embedding provider.
     //
-    // Subunit procedure text for e_task uses short form (title only, not full
-    // body) to honour the embedding-window discipline (plan line 251):
-    //   subunit_title_text = subunit headings joined with spaces.
-    //
-    // Three separate embed_batch calls are intentional: the provider may have
-    // a per-request token budget; keeping the per-batch size bounded (== corpus
-    // size per view) is safer than one mega-batch.
-    //
-    // Fail-loud guards: each batch length is checked against `skills.len()`
-    // before zipping (mirrors the e_summary and subunit batch guards above).
+    // Blank-view semantics are preserved: blank texts produce an empty Vec<f32>
+    // and are never cached.
     let dense_view_embedding_dim: usize;
     let (
         per_skill_e_task_embeddings,
@@ -1286,11 +1548,9 @@ async fn build_graph_from_pg(
         // Build all three view texts in one pass over `skills` before it is
         // consumed by `.into_iter()`. The subunit_procedure_text for e_task
         // uses titles only — not full content — to stay bounded.
-        let (mut e_task_texts, mut e_needs_texts, mut e_negative_texts) = (
-            Vec::with_capacity(skills.len()),
-            Vec::with_capacity(skills.len()),
-            Vec::with_capacity(skills.len()),
-        );
+        let mut e_task_texts: Vec<String> = Vec::with_capacity(skills.len());
+        let mut e_needs_texts: Vec<String> = Vec::with_capacity(skills.len());
+        let mut e_negative_texts: Vec<String> = Vec::with_capacity(skills.len());
         for record in &skills {
             let subunit_title_text: String = record
                 .subunits
@@ -1312,21 +1572,40 @@ async fn build_graph_from_pg(
             e_negative_texts.push(build_e_negative(&fields));
         }
 
-        // Embed each view, skipping blank texts. A skill with empty source fields
-        // for a view has NO embedding for that view (an empty Vec) — never a blank
-        // string sent to the provider (which would fail loud and crash the boot
-        // build). `fuse_dense_views` treats an empty view embedding as absent and
-        // falls back to e_summary, so flag-ON on a sparse corpus is safe.
-        //
-        // The three views are independent: each receives its own text slice and
-        // produces its own output. Running them concurrently lets their batch
-        // supervisors interleave under the existing max_concurrency semaphore
-        // inside the embedding service, reducing sequential blocking on the
-        // hot boot path.
+        // Embed each view with cache awareness: load hits, embed misses, upsert.
+        // Blank texts (empty string) are excluded from both the cache and the
+        // provider — they result in an empty Vec<f32> (view absent).
         let (e_task_flat, e_needs_flat, e_negative_flat) = tokio::try_join!(
-            embed_dense_view_skipping_blank(embedding_service, &e_task_texts, "e_task"),
-            embed_dense_view_skipping_blank(embedding_service, &e_needs_texts, "e_needs"),
-            embed_dense_view_skipping_blank(embedding_service, &e_negative_texts, "e_negative"),
+            embed_dense_view_with_cache(
+                embedding_service,
+                &embedding_cache_store,
+                &embedding_cache,
+                &skills,
+                &e_task_texts,
+                VIEW_KIND_E_TASK,
+                &model_info.model_name,
+                model_info.dimension,
+            ),
+            embed_dense_view_with_cache(
+                embedding_service,
+                &embedding_cache_store,
+                &embedding_cache,
+                &skills,
+                &e_needs_texts,
+                VIEW_KIND_E_NEEDS,
+                &model_info.model_name,
+                model_info.dimension,
+            ),
+            embed_dense_view_with_cache(
+                embedding_service,
+                &embedding_cache_store,
+                &embedding_cache,
+                &skills,
+                &e_negative_texts,
+                VIEW_KIND_E_NEGATIVE,
+                &model_info.model_name,
+                model_info.dimension,
+            ),
         )?;
 
         // Capture the embedding dimensionality from the first non-empty vector

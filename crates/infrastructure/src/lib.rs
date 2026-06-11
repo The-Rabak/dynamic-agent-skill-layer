@@ -8,6 +8,7 @@ pub mod similarity;
 pub mod health;
 pub mod logging;
 pub mod persistence {
+    pub mod embedding_cache;
     pub mod outbox;
     pub mod outbox_reconciler;
     pub mod postgres;
@@ -52,6 +53,11 @@ pub use extraction::prompt_contract::{
 };
 pub use extraction::text_llm::{ClaudeCodeTextLlm, OllamaTextLlm, StructuredTextLlm};
 pub use health::{DependencyFactory, HealthComponent, HealthReport, InfrastructureHealthChecker};
+pub use persistence::embedding_cache::{
+    EmbeddingCacheError, EmbeddingCacheRow, EmbeddingCacheStore, LoadedEmbedding,
+    VIEW_KIND_E_NEEDS, VIEW_KIND_E_NEGATIVE, VIEW_KIND_E_SUMMARY, VIEW_KIND_E_TASK,
+    content_hash_for_view_text, decode_f32_vector, encode_f32_vector, subunit_view_kind,
+};
 pub use persistence::outbox::{
     GraphWriteCoordinator, OutboxEvent, OutboxInspection, OutboxRecord, OutboxRelay,
     OutboxRelayError, OutboxRelayRunReport, OutboxVectorStore, PostgresGraphWriteCoordinator,
