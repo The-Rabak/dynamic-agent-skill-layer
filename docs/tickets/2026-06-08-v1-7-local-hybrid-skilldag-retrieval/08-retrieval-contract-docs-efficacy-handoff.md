@@ -2,7 +2,8 @@
 ticket_id: T08
 title: Retrieval contract docs and efficacy handoff
 kind: hardening
-status: ready
+status: completed
+status_note: "Completed 2026-06-11 (session work-2026-06-11-T08). Reconciled retrieval-contract.md (+§0 V1.7 delta), online-retrieval-cqrs.md (qdrant_hybrid query-time read exception), and wrote docs/assessments/2026-06-11-v1-7-retrieval-contract-measured.md (measured state + #205/#218 handoff). Records T07 skipped + #260 live fix. HONEST GAP: the test_command's live held-out gate is un-runnable on the dogfood corpus (234-fixture 0/30 aligned, PG join 30|0) → the 0.80 target is NOT validated and the measured gate is delegated to T11; not faked. Closes Phase A."
 plan_ref: docs/plans/2026-06-08-feat-v1-7-local-hybrid-skilldag-retrieval-plan.md
 tickets_ref: docs/tickets/2026-06-08-v1-7-local-hybrid-skilldag-retrieval/index.md
 architecture_ref: "explicit-handoff: parent plan ## Architectural Context and ## Proposed V1.7 Architecture"

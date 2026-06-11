@@ -3,6 +3,18 @@
 > Decision ratified in ADR-0001. This note explains the read/write split to developers
 > who are reading health output, writing tests, or planning V2 work.
 
+> **V1.7 note (2026-06-11):** the CQRS split below describes the **default** backend
+> (`RETRIEVAL_BACKEND=snapshot_dense`), which is unchanged: Qdrant is write-side only and
+> the in-memory `RetrievalSnapshot` is the sole query target. V1.7 added two **experimental,
+> opt-in** backends (T04): `snapshot_hybrid` still queries only the in-memory snapshot (dense +
+> in-memory BM25 — CQRS intact), but **`qdrant_hybrid` reads Qdrant at query time** via the
+> Query API, which **deliberately breaks the Option-A read/write split** for that arm only. It is
+> NOT the default, measured **no uplift** in T04, and is gated behind the env flag. If `qdrant_hybrid`
+> is ever promoted to default, this document's "Qdrant is NOT read at query time" guarantee and the
+> §Health-Reporting markers below must change, and the change must be ratified in a new ADR (Qdrant
+> hot-path promotion is approval-sensitive — it alters the DS-003 resilience contract). Collections
+> are model-keyed (`skills__<slug>`, charset-guarded, `Result`-returning derivation), not `"skills"`.
+
 ## The Split
 
 The skill layer uses a **CQRS pattern** (Command Query Responsibility Segregation) to

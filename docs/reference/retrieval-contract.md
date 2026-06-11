@@ -1,8 +1,47 @@
 # Retrieval Contract
 
 This document describes how skill retrieval **actually works today**. Every claim is grounded in the
-real code and cites the exact file and line at time of writing (branch `feat/v-1-5-1`). No aspirational
-claims are stated as current behavior. Known gaps are enumerated at the end.
+real code. No aspirational claims are stated as current behavior. Known gaps are enumerated at the end.
+
+The grounded core below (sections 1–7) was written on branch `feat/v-1-5-1` and remains accurate for
+the **default** path. The **V1.7 delta** (section 0) records what `feat/v-1-7` changed; where the two
+differ, V1.7 wins. For the measured state, flags, and unmeasured gaps, see
+`docs/assessments/2026-06-11-v1-7-retrieval-contract-measured.md`.
+
+---
+
+## 0. V1.7 delta (branch `feat/v-1-7`, 2026-06-11)
+
+V1.7 is **additive** over the v1.5.1 core below. The default query path is unchanged in shape
+(query → dual-scope cosine → weighted RRF → eq.3 floor), with these changes:
+
+- **Embedder is now `qwen3-embedding:4b` (dim 2560), model-keyed collection `skills__qwen3-embedding-4b`**
+  (T02; `infrastructure::ollama::DEFAULT_EMBEDDING_MODEL`). Dimension is discovered live.
+- **Candidate generation is backend-selectable** via `RETRIEVAL_BACKEND` (`RetrievalBackend`,
+  `crates/retrieval/src/orchestrator.rs:166`, fail-loud parse). **Default `snapshot_dense`** (the path
+  documented in §5). `snapshot_hybrid` (in-memory dense + Okapi BM25 over the 9 multi-view fields) and
+  `qdrant_hybrid` (live Qdrant dense+sparse read) are **experimental, opt-in** — T04 measured **no
+  uplift** from either on the current corpus, so dense stays default. `qdrant_hybrid` reads Qdrant at
+  query time and thus breaks the default CQRS split — see `online-retrieval-cqrs.md`.
+- **Dense multi-view views** (`e_task`/`e_needs`/`e_negative`, max-over-views α fusion) exist behind
+  `RETRIEVAL_DENSE_VIEWS` (T09), **default-OFF**; OFF == byte-for-byte pre-T09 ranking. The measured
+  ON/OFF delta is **deferred to T11** (needs a corpus-aligned eval).
+- **No local reranker / query decomposition** — T07 was **skipped** (optional; T04 showed candidate
+  generation is not the ceiling).
+- **Typed skill graph edges** (`skill_edges`: depends_on / composes_with / similar_to / conflicts_with)
+  are persisted (T05), exposed to agents but **not** used as a ranking multiplier.
+- **Agent-facing score is now relevance, not the RRF artifact (#260).** `find_skill`/`search_skill_graph`
+  expose `score` = eq.3 relevance (threaded `ScoredSkill.semantic_score`), `fusion_rank_score` = the RRF
+  ordering value, plus per-match `rationale` and a `retrieval_context {embedding_model, collection,
+  graph_version}` provenance block (#243). `search_skill_graph` additionally returns separate
+  `neighbors` (positive edges incident on matches) and `conflicts` (`conflicts_with`, never folded into
+  match scores) and `latency_ms`. `inspect_skill` exposes the 7 multi-view fields. `/health` carries
+  `embedding_arm` and `retrieval_backend` components.
+- **Community/graph multiplier (`λ·community_boost` in §2) is measured ranking-inert** — present in
+  code but it does not change ranking; do not claim the graph improves retrieval ranking.
+- **The 0.48 no-match floor (§4) and the 0.80 quality target are NOT re-validated on the qwen3
+  262-corpus.** The committed labeled fixture is 0/30 aligned with that corpus; honest held-out
+  measurement is the T11 deliverable. See the assessment doc.
 
 ---
 

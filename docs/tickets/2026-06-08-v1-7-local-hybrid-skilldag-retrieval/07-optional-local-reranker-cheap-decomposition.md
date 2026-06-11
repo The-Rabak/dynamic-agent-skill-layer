@@ -2,7 +2,8 @@
 ticket_id: T07
 title: Optional local reranker and cheap query decomposition
 kind: expansion
-status: ready
+status: skipped
+status_note: "Intentionally SKIPPED (owner decision 2026-06-11). T07 is optional-by-design and gated on 'earning its runtime cost'. T04 measured ZERO uplift from candidate-generation changes (snapshot_dense/snapshot_hybrid/qdrant_hybrid all MRR 0.767; ceiling = embedding model + scoring weights, NOT candidate gen — see [[v17-t04-hybrid-no-uplift-measured]]). The user explicitly wants retrieval to stay quick. Building a reranker speculatively contradicts the ticket's own guidance. Recorded as skipped per the index instruction so T08 documents reranker/decomposition as not-shipped. May be revisited only if a future corpus-aligned sweep (T11) shows a ranking gap a reranker could close within p95."
 plan_ref: docs/plans/2026-06-08-feat-v1-7-local-hybrid-skilldag-retrieval-plan.md
 tickets_ref: docs/tickets/2026-06-08-v1-7-local-hybrid-skilldag-retrieval/index.md
 architecture_ref: "explicit-handoff: parent plan ## Architectural Context and ## Proposed V1.7 Architecture"
