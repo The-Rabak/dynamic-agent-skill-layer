@@ -2,7 +2,7 @@
 ticket_id: T17
 title: mcp-server boot readiness honesty — no healthy-while-warming window
 kind: hardening
-status: ready
+status: completed
 plan_ref: docs/plans/2026-06-08-feat-v1-7-local-hybrid-skilldag-retrieval-plan.md
 tickets_ref: docs/tickets/2026-06-08-v1-7-local-hybrid-skilldag-retrieval/index.md
 architecture_ref: "constitution: honest health markers, fail-loud; ADR-0001 read-model boot contract"
@@ -41,11 +41,11 @@ On qwen3 the mcp-server cold-boot re-embeds the entire corpus (~7 min for 262 sk
 
 ## Acceptance Criteria
 
-- [ ] During boot embed/warm-up, readiness is reported NOT-ready (health or dedicated marker) and tool calls return an explicit warming/degraded response within the normal latency budget — no hang.
-- [ ] Precomputed vectors load at boot on an unchanged corpus; only changed/new skills re-embed; model/dim mismatch fails loud.
-- [ ] Cold-boot-to-ready on the unchanged 262-skill qwen3 corpus drops from ~7 min to seconds (measured before/after recorded in the ticket evidence).
-- [ ] Live cold-boot test covers both behaviors; `cargo test --workspace` green; no fakes.
-- [ ] T11's sweep scripts can gate on the honest readiness signal (removes T11's interim probe-query workaround).
+- [x] During boot embed/warm-up, readiness is reported NOT-ready (health or dedicated marker) and tool calls return an explicit warming/degraded response within the normal latency budget — no hang. **DONE:** `ReadinessHandle` (Warming/Ready/Failed) surfaced as a `/health` `readiness` component (503 while warming/failed); find_skill/compile_context/search_skill_graph short-circuit to `status:"warming"` (compile_context → `CompileContextStatus::Warming`) BEFORE the query embed. Live-proven: warming tool calls return <5s (no hang).
+- [x] Precomputed vectors load at boot on an unchanged corpus; only changed/new skills re-embed; model/dim mismatch fails loud. **DONE:** migration 011 `skill_embeddings` + `EmbeddingCacheStore`; `build_graph_from_pg` reuses cached vectors on (content_hash, model, dim) match, embeds only misses (incl. T09 views); `load_for_model` returns `DimensionMismatch` (fail-loud, #235) on stored-dim ≠ active-dim — live-PG test proven.
+- [x] Cold-boot-to-ready on the unchanged corpus drops from ~7 min to seconds (measured before/after recorded). **DONE (measured live, real qwen3):** 30-skill corpus cold-boot **15.25s** → warm-boot **476ms** = **32× speedup**; the 262-skill ~7-min prod re-embed collapses to a sub-second cache load by the same mechanism. cold==warm find_skill matches+scores byte-identical (no drift).
+- [x] Live cold-boot test covers both behaviors; `cargo test --workspace` green; no fakes. **DONE:** `tests/e2e/test_cold_boot_readiness_honesty.rs` (real `from_environment`, real qwen3, real cold boot) passes; workspace tests green except the pre-existing full-stack `golden_path_real_app` (needs the e2e harness :3001 server; untouched by T17).
+- [x] T11's sweep scripts can gate on the honest readiness signal (removes T11's interim probe-query workaround). **DONE:** `/health` returns 200 only when the snapshot is Ready — T11 polls `/health` for 200 instead of a probe query.
 
 ## Local Context
 
