@@ -67,11 +67,11 @@ impl Drop for DatabaseUrlGuard {
 /// which skill appears in results are deterministic and human-readable.
 /// Supports `fail_first()` to inject a single embedding failure.
 #[derive(Clone)]
-struct ControlledEmbeddingService {
+struct DeterministicEmbeddingService {
     fail_next: Arc<AtomicUsize>,
 }
 
-impl ControlledEmbeddingService {
+impl DeterministicEmbeddingService {
     fn healthy() -> Self {
         Self {
             fail_next: Arc::new(AtomicUsize::new(0)),
@@ -117,7 +117,7 @@ impl ControlledEmbeddingService {
 }
 
 #[async_trait]
-impl EmbeddingService for ControlledEmbeddingService {
+impl EmbeddingService for DeterministicEmbeddingService {
     async fn embed_text(&self, text: &str) -> Result<Vec<f32>, EmbeddingError> {
         self.embed_internal(text)
     }
@@ -297,7 +297,7 @@ Reusable capability for {title}.
 async fn registers_compile_context_find_skill_and_extract_session_tools() {
     let _env_guard = env_guard::configure_scope_env();
     let server = McpServerApp::with_explicit_graph(
-        Arc::new(ControlledEmbeddingService::healthy()),
+        Arc::new(DeterministicEmbeddingService::healthy()),
         seeded_graph(),
         retrieval_config(),
         None,
@@ -333,7 +333,7 @@ async fn rebuild_graph_requires_live_graph_database_for_seeded_server() {
         Some(global_root),
     );
     let server = McpServerApp::with_explicit_graph(
-        Arc::new(ControlledEmbeddingService::healthy()),
+        Arc::new(DeterministicEmbeddingService::healthy()),
         seeded_graph(),
         retrieval_config(),
         None,
@@ -373,7 +373,7 @@ async fn rebuild_graph_requires_live_graph_database_for_seeded_server() {
 async fn compile_context_returns_ok_then_duplicate_suppressed_after_healthy_result() {
     let _env_guard = env_guard::configure_scope_env();
     let server = McpServerApp::with_explicit_graph(
-        Arc::new(ControlledEmbeddingService::healthy()),
+        Arc::new(DeterministicEmbeddingService::healthy()),
         seeded_graph(),
         retrieval_config(),
         None,
@@ -406,7 +406,7 @@ async fn compile_context_returns_ok_then_duplicate_suppressed_after_healthy_resu
 async fn compile_context_returns_no_match_for_healthy_empty_and_suppresses_followups() {
     let _env_guard = env_guard::configure_scope_env();
     let server = McpServerApp::with_explicit_graph(
-        Arc::new(ControlledEmbeddingService::healthy()),
+        Arc::new(DeterministicEmbeddingService::healthy()),
         seeded_graph(),
         retrieval_config(),
         None,
@@ -438,7 +438,7 @@ async fn compile_context_returns_no_match_for_healthy_empty_and_suppresses_follo
 async fn degraded_first_attempt_does_not_set_suppression_state() {
     let _env_guard = env_guard::configure_scope_env();
     let server = McpServerApp::with_explicit_graph(
-        Arc::new(ControlledEmbeddingService::fail_first()),
+        Arc::new(DeterministicEmbeddingService::fail_first()),
         seeded_graph(),
         retrieval_config(),
         None,
@@ -466,7 +466,7 @@ async fn degraded_first_attempt_does_not_set_suppression_state() {
 async fn find_skill_reports_top_matches_from_seeded_graph() {
     let _env_guard = env_guard::configure_scope_env();
     let server = McpServerApp::with_explicit_graph(
-        Arc::new(ControlledEmbeddingService::healthy()),
+        Arc::new(DeterministicEmbeddingService::healthy()),
         seeded_graph(),
         retrieval_config(),
         None,
@@ -487,7 +487,7 @@ async fn find_skill_reports_top_matches_from_seeded_graph() {
 async fn json_rpc_tools_list_and_call_compile_context() {
     let _env_guard = env_guard::configure_scope_env();
     let server = McpServerApp::with_explicit_graph(
-        Arc::new(ControlledEmbeddingService::healthy()),
+        Arc::new(DeterministicEmbeddingService::healthy()),
         seeded_graph(),
         retrieval_config(),
         None,
@@ -634,7 +634,7 @@ async fn json_rpc_tools_list_and_call_compile_context() {
 async fn compact_trigger_bypasses_suppression_and_returns_fresh_context() {
     let _env_guard = env_guard::configure_scope_env();
     let server = McpServerApp::with_explicit_graph(
-        Arc::new(ControlledEmbeddingService::healthy()),
+        Arc::new(DeterministicEmbeddingService::healthy()),
         seeded_graph(),
         retrieval_config(),
         None,
@@ -694,7 +694,7 @@ async fn compact_trigger_bypasses_suppression_and_returns_fresh_context() {
 async fn compile_context_omits_usage_write_health_key_when_writer_is_ok() {
     let _env_guard = env_guard::configure_scope_env();
     let server = McpServerApp::with_explicit_graph(
-        Arc::new(ControlledEmbeddingService::healthy()),
+        Arc::new(DeterministicEmbeddingService::healthy()),
         seeded_graph(),
         retrieval_config(),
         None,

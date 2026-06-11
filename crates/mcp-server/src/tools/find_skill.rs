@@ -168,67 +168,130 @@ impl FindSkillTool {
 
 #[cfg(test)]
 mod tests {
+    use std::{collections::BTreeMap, sync::Arc};
+
+    use async_trait::async_trait;
     use domain::{DomainId, LifecycleStatus, ScopeType, ScoredSkill, Skill, SkillStatus};
+    use retrieval::{RetrievalOutcome, RetrievedSkill, SkillRetriever};
 
-    /// #260 RED→GREEN: two `ScoredSkill` values with different `semantic_score` at the
-    /// same RRF `score` must expose DIFFERENT agent-facing `score` strings.
-    ///
-    /// This is the core behavioral assertion for the #260 bug: previously, `score`
-    /// was sourced from `scored_skill.score` (the RRF rank artifact, `~0.016` for all
-    /// top-ranked results), which is independent of match quality. After the fix,
-    /// `score` is `format!("{:.3}", scored_skill.semantic_score)` — so a 0.80 match
-    /// and a 0.50 match at the same RRF rank are distinguishable.
-    #[test]
-    fn scored_skill_semantic_score_distinguishes_different_cosine_matches() {
-        // Two ScoredSkills with the same RRF rank artifact but different semantic cosine.
-        let high = ScoredSkill {
-            skill: minimal_skill("skill-high"),
-            score: 0.016393,
-            semantic_score: 0.800,
-            matched_scope: ScopeType::Global,
-            rationale: vec!["rrf=0.016393".to_owned(), "semantic=0.800".to_owned()],
-        };
-        let low = ScoredSkill {
-            skill: minimal_skill("skill-low"),
-            score: 0.016393,
-            semantic_score: 0.500,
-            matched_scope: ScopeType::Global,
-            rationale: vec!["rrf=0.016393".to_owned(), "semantic=0.500".to_owned()],
-        };
+    use super::{FindSkillRequest, FindSkillTool};
 
-        let high_exposed = format!("{:.3}", high.semantic_score);
-        let low_exposed = format!("{:.3}", low.semantic_score);
+    // ---------------------------------------------------------------------------
+    // Stub retriever: returns two skills with identical RRF score (0.016393) but
+    // distinct semantic_score values (0.80 and 0.50), mirroring the exact
+    // scenario that produced the #260 bug.  degraded_scopes is empty so
+    // invoke() takes the normal (non-degraded) branch.
+    // ---------------------------------------------------------------------------
 
-        assert_ne!(
-            high_exposed, low_exposed,
-            "#260: two ScoredSkills with different semantic_score at the same RRF rank must \
-             produce different exposed scores; got high={high_exposed}, low={low_exposed}"
-        );
-        assert!(
-            high.semantic_score > low.semantic_score,
-            "higher cosine must produce a higher relevance score"
-        );
+    struct TwoSkillStub;
+
+    #[async_trait]
+    impl SkillRetriever for TwoSkillStub {
+        async fn retrieve(&self, _prompt: &str, _repo_path: Option<&str>) -> RetrievalOutcome {
+            RetrievalOutcome {
+                skills: vec![
+                    RetrievedSkill {
+                        scored_skill: ScoredSkill {
+                            skill: minimal_skill("skill-high"),
+                            score: 0.016393, // RRF rank artifact (same for both)
+                            semantic_score: 0.800, // eq.3 relevance — should surface as `score`
+                            matched_scope: ScopeType::Global,
+                            rationale: vec!["rrf=0.016393".to_owned(), "semantic=0.800".to_owned()],
+                        },
+                        highlights: Vec::new(),
+                    },
+                    RetrievedSkill {
+                        scored_skill: ScoredSkill {
+                            skill: minimal_skill("skill-low"),
+                            score: 0.016393,       // same RRF artifact
+                            semantic_score: 0.500, // lower cosine
+                            matched_scope: ScopeType::Global,
+                            rationale: vec!["rrf=0.016393".to_owned(), "semantic=0.500".to_owned()],
+                        },
+                        highlights: Vec::new(),
+                    },
+                ],
+                rescue_pool: Vec::new(),
+                degraded_scopes: Vec::new(), // must be empty — non-empty triggers "degraded" branch
+                reason_codes: Vec::new(),
+                health: BTreeMap::new(),
+                scopes_considered: vec!["global".to_owned()],
+                graph_version: 1,
+                latency_ms: 0,
+            }
+        }
+
+        fn current_graph_version(&self) -> i64 {
+            1
+        }
+
+        fn configured_scopes(&self) -> Vec<String> {
+            vec!["global".to_owned()]
+        }
     }
 
-    /// Proves that `semantic_score` and `score` (RRF) are tracked as independent fields:
-    /// two skills can have the same RRF rank artifact while carrying different semantic scores.
-    #[test]
-    fn scored_skill_rrf_and_semantic_are_independent_fields() {
-        let skill = ScoredSkill {
-            skill: minimal_skill("skill-x"),
-            score: 0.016393,      // RRF artifact
-            semantic_score: 0.75, // real cosine signal
-            matched_scope: ScopeType::Global,
-            rationale: vec![],
+    /// #260 RED→GREEN seam test: drives `FindSkillTool::invoke` through a stub that
+    /// returns two skills with the *same* RRF artifact (`score=0.016393`) but
+    /// *different* cosine relevance (`semantic_score` 0.80 / 0.50).
+    ///
+    /// Asserts:
+    /// 1. The two agent-facing `score` strings are DISTINCT — they track semantic cosine,
+    ///    not the shared RRF constant.
+    /// 2. For each match, `score != fusion_rank_score` — the two fields expose different
+    ///    quantities.
+    /// 3. The two `fusion_rank_score` strings are IDENTICAL — confirms the RRF input was
+    ///    the same for both, making the `score` distinctness meaningful.
+    ///
+    /// RED trigger: revert `invoke()` line ~131 to
+    ///   `score: format!("{:.3}", retrieved.scored_skill.score)`
+    /// and invariant (1) MUST fail because both scores collapse to "0.016".
+    #[tokio::test]
+    async fn invoke_exposes_semantic_score_not_rrf_artifact() {
+        let tool = FindSkillTool::new(Arc::new(TwoSkillStub));
+        let req = FindSkillRequest {
+            prompt: "test query".to_owned(),
+            limit: Some(5),
         };
-        // The RRF artifact and semantic score must be independently stored.
-        assert!(
-            (skill.score - 0.016393_f32).abs() < 1e-5,
-            "score field must hold the RRF artifact"
+        let resp = tool.invoke(req).await;
+
+        assert_eq!(
+            resp.status, "ok",
+            "stub with two skills must return status 'ok'"
         );
-        assert!(
-            (skill.semantic_score - 0.75_f32).abs() < 1e-5,
-            "semantic_score field must hold the eq.3 cosine"
+        assert_eq!(resp.matches.len(), 2, "invoke must return both matches");
+
+        let m0 = &resp.matches[0];
+        let m1 = &resp.matches[1];
+
+        // (1) Agent-facing scores must differ — semantic_score (0.80 vs 0.50), not the
+        //     shared RRF artifact (0.016393 for both).
+        assert_ne!(
+            m0.score, m1.score,
+            "#260: matches with different semantic_score but identical RRF artifact must \
+             produce different agent-facing `score` values; got m0={}, m1={}",
+            m0.score, m1.score
+        );
+
+        // (2) Per match: score != fusion_rank_score (different quantities in the response).
+        assert_ne!(
+            m0.score, m0.fusion_rank_score,
+            "#260: m0.score ({}) must differ from m0.fusion_rank_score ({}); \
+             score=semantic relevance, fusion_rank_score=RRF artifact",
+            m0.score, m0.fusion_rank_score
+        );
+        assert_ne!(
+            m1.score, m1.fusion_rank_score,
+            "#260: m1.score ({}) must differ from m1.fusion_rank_score ({})",
+            m1.score, m1.fusion_rank_score
+        );
+
+        // (3) Both fusion_rank_scores are identical (same RRF input) — confirms the
+        //     score distinctness above comes from semantic_score, not RRF variation.
+        assert_eq!(
+            m0.fusion_rank_score, m1.fusion_rank_score,
+            "#260: both matches had the same RRF artifact; fusion_rank_score must match; \
+             got m0={}, m1={}",
+            m0.fusion_rank_score, m1.fusion_rank_score
         );
     }
 

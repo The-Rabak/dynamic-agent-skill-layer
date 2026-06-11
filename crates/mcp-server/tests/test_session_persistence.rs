@@ -31,11 +31,11 @@ mod env_guard;
 /// fixed dimensions. Supports configurable failure injection to simulate
 /// transient provider outages.
 #[derive(Clone)]
-struct ControlledEmbeddingService {
+struct DeterministicEmbeddingService {
     fail_next: Arc<AtomicUsize>,
 }
 
-impl ControlledEmbeddingService {
+impl DeterministicEmbeddingService {
     fn healthy() -> Self {
         Self {
             fail_next: Arc::new(AtomicUsize::new(0)),
@@ -75,7 +75,7 @@ impl ControlledEmbeddingService {
 }
 
 #[async_trait]
-impl EmbeddingService for ControlledEmbeddingService {
+impl EmbeddingService for DeterministicEmbeddingService {
     async fn embed_text(&self, text: &str) -> Result<Vec<f32>, EmbeddingError> {
         self.embed_internal(text)
     }
@@ -221,7 +221,7 @@ fn test_repo_path() -> String {
 async fn repeated_prompt_returns_cached_context_without_rerunning_pipeline() {
     let _env_guard = env_guard::configure_scope_env();
     let server = McpServerApp::with_explicit_graph(
-        Arc::new(ControlledEmbeddingService::healthy()),
+        Arc::new(DeterministicEmbeddingService::healthy()),
         seeded_graph(),
         retrieval_config(),
         None,
@@ -261,7 +261,7 @@ async fn cache_invalidated_on_graph_version_mismatch() {
     let _env_guard = env_guard::configure_scope_env();
     let graph_v7 = seeded_graph();
     let server_v7 = McpServerApp::with_explicit_graph(
-        Arc::new(ControlledEmbeddingService::healthy()),
+        Arc::new(DeterministicEmbeddingService::healthy()),
         graph_v7,
         retrieval_config(),
         None,
@@ -320,7 +320,7 @@ async fn cache_invalidated_on_graph_version_mismatch() {
     );
 
     let server_v8 = McpServerApp::with_explicit_graph(
-        Arc::new(ControlledEmbeddingService::healthy()),
+        Arc::new(DeterministicEmbeddingService::healthy()),
         graph_v8,
         retrieval_config(),
         None,
@@ -335,7 +335,7 @@ async fn cache_invalidated_on_graph_version_mismatch() {
 async fn degraded_outcome_does_not_populate_cache() {
     let _env_guard = env_guard::configure_scope_env();
     let server = McpServerApp::with_explicit_graph(
-        Arc::new(ControlledEmbeddingService {
+        Arc::new(DeterministicEmbeddingService {
             fail_next: Arc::new(AtomicUsize::new(1)),
         }),
         seeded_graph(),
@@ -365,7 +365,7 @@ async fn degraded_outcome_does_not_populate_cache() {
 async fn healthy_no_match_populates_cache_and_returns_cached_on_repeat() {
     let _env_guard = env_guard::configure_scope_env();
     let server = McpServerApp::with_explicit_graph(
-        Arc::new(ControlledEmbeddingService::healthy()),
+        Arc::new(DeterministicEmbeddingService::healthy()),
         seeded_graph(),
         retrieval_config(),
         None,

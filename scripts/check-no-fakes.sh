@@ -22,9 +22,19 @@
 # needs a controlled embedder belongs in a crate-local test dir, NOT in tests/e2e
 # or tests/integration. The efficacy/real-app suites (tests/e2e) therefore stay
 # zero-fake regardless of crate-local doubles.
-# KNOWN LIMITATION: the guard matches by SYMBOL NAME, so a renamed double evades
-# the symbol scan. The taxonomy above — not the symbol list — is the real contract;
-# reviewers must keep "real app" tests in tests/e2e/ (Zone 1) where doubles are banned.
+#
+# ── Structural seam-trait-impl scan (Zones 1 and 3) ───────────────────────────
+# For the policed zones (tests/e2e/ and tests/integration/), the guard performs a
+# STRUCTURAL scan in addition to the banned-symbol-name scan: it flags any
+#   impl <SeamTrait> for <AnyType>
+# where <SeamTrait> is one of the real seam traits that a fake would implement:
+#   EmbeddingService, MergeSemanticVerifier, LlmEquivalenceVerifier,
+#   SkillGeneralityVerifier, SynthesisPass.
+# A renamed double still has to `impl EmbeddingService for Whatever`, so this
+# signal cannot be renamed away. The banned-symbol-name list is kept as a
+# secondary belt-and-suspenders tripwire.
+# The structural scan is NOT applied to crates/*/tests/ or crates/*/src cfg(test)
+# blocks — those zones legitimately contain test doubles for logic testing.
 #
 # Exit codes:
 #   0  — clean: no violations found
@@ -64,12 +74,42 @@ build_grep_pattern() {
 
 GREP_PATTERN="$(build_grep_pattern)"
 
+# ── Seam trait names for structural impl scan (Zones 1 and 3 only) ───────────
+# These are the real trait names a fake double must implement. Any `impl <Trait>
+# for <X>` in a policed zone is a hard violation regardless of the struct name X.
+# Confirmed from crates/*/tests/ canonical doubles and trait definitions (2026-06-11).
+SEAM_TRAITS=(
+    "EmbeddingService"
+    "MergeSemanticVerifier"
+    "LlmEquivalenceVerifier"
+    "SkillGeneralityVerifier"
+    "SynthesisPass"
+)
+
+# Build a grep pattern for `impl <SeamTrait> for` — matches the struct, not any
+# production `impl SomeTrait for SomeRealType` as long as the trait name appears.
+build_seam_pattern() {
+    local pattern=""
+    for trait in "${SEAM_TRAITS[@]}"; do
+        local p="impl[[:space:]].*${trait}[[:space:]].*for[[:space:]]"
+        if [ -n "$pattern" ]; then
+            pattern="${pattern}\\|${p}"
+        else
+            pattern="${p}"
+        fi
+    done
+    echo "$pattern"
+}
+
+SEAM_GREP_PATTERN="$(build_seam_pattern)"
+
 violations=0
 violation_report=""
 
 # ── Zone 1: tests/e2e/ — must be completely fake-free ────────────────────────
 e2e_dir="$REPO_ROOT/tests/e2e"
 if [ -d "$e2e_dir" ]; then
+    # Secondary: banned symbol names
     e2e_hits=$(grep -rn "$GREP_PATTERN" "$e2e_dir" --include="*.rs" 2>/dev/null || true)
     if [ -n "$e2e_hits" ]; then
         violation_report+=$'\n'"[HARD FAIL] tests/e2e/ must be completely fake-free."$'\n'
@@ -77,6 +117,16 @@ if [ -d "$e2e_dir" ]; then
         while IFS= read -r line; do
             violation_report+="  $line"$'\n'
         done <<< "$e2e_hits"
+        violations=$((violations + 1))
+    fi
+    # Primary: structural seam-trait-impl scan (rename-proof)
+    e2e_seam_hits=$(grep -rn "$SEAM_GREP_PATTERN" "$e2e_dir" --include="*.rs" 2>/dev/null || true)
+    if [ -n "$e2e_seam_hits" ]; then
+        violation_report+=$'\n'"[HARD FAIL] tests/e2e/ contains a seam-trait impl — fake doubles are banned here regardless of struct name."$'\n'
+        violation_report+="Seam trait impl(s) found:"$'\n'
+        while IFS= read -r line; do
+            violation_report+="  $line"$'\n'
+        done <<< "$e2e_seam_hits"
         violations=$((violations + 1))
     fi
 fi
@@ -183,6 +233,7 @@ fi
 # ── Zone 3: tests/integration/ — must be completely fake-free ────────────────
 integration_dir="$REPO_ROOT/tests/integration"
 if [ -d "$integration_dir" ]; then
+    # Secondary: banned symbol names
     integration_hits=$(grep -rn "$GREP_PATTERN" "$integration_dir" --include="*.rs" 2>/dev/null || true)
     if [ -n "$integration_hits" ]; then
         violation_report+=$'\n'"[HARD FAIL] tests/integration/ must be completely fake-free."$'\n'
@@ -192,19 +243,30 @@ if [ -d "$integration_dir" ]; then
         done <<< "$integration_hits"
         violations=$((violations + 1))
     fi
+    # Primary: structural seam-trait-impl scan (rename-proof)
+    integration_seam_hits=$(grep -rn "$SEAM_GREP_PATTERN" "$integration_dir" --include="*.rs" 2>/dev/null || true)
+    if [ -n "$integration_seam_hits" ]; then
+        violation_report+=$'\n'"[HARD FAIL] tests/integration/ contains a seam-trait impl — fake doubles are banned here regardless of struct name."$'\n'
+        violation_report+="Seam trait impl(s) found:"$'\n'
+        while IFS= read -r line; do
+            violation_report+="  $line"$'\n'
+        done <<< "$integration_seam_hits"
+        violations=$((violations + 1))
+    fi
 fi
 
 # ── Report ────────────────────────────────────────────────────────────────────
 echo "=== check-no-fakes.sh ==="
-echo "Banned symbols: ${BANNED_PATTERNS[*]}"
+echo "Banned symbols (secondary tripwire): ${BANNED_PATTERNS[*]}"
+echo "Seam traits (structural scan, policed zones): ${SEAM_TRAITS[*]}"
 echo ""
 
 if [ "$violations" -eq 0 ]; then
     echo "PASS: No fake/stub/mock violations found."
     echo ""
-    echo "  tests/e2e/        : fake-free (OK)"
+    echo "  tests/e2e/        : fake-free — symbol scan + seam-trait-impl scan (OK)"
     echo "  crates/*/src      : no production fakes (OK)"
-    echo "  tests/integration : fake-free (OK)"
+    echo "  tests/integration : fake-free — symbol scan + seam-trait-impl scan (OK)"
     exit 0
 else
     echo "FAIL: $violations zone(s) with violations."

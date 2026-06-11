@@ -31,11 +31,11 @@ mod env_guard;
 /// dimensions. Supports configurable failure injection to simulate transient
 /// provider outages.
 #[derive(Clone)]
-struct ControlledEmbeddingService {
+struct DeterministicEmbeddingService {
     fail_next: Arc<AtomicUsize>,
 }
 
-impl ControlledEmbeddingService {
+impl DeterministicEmbeddingService {
     fn healthy() -> Self {
         Self {
             fail_next: Arc::new(AtomicUsize::new(0)),
@@ -68,7 +68,7 @@ impl ControlledEmbeddingService {
 }
 
 #[async_trait]
-impl EmbeddingService for ControlledEmbeddingService {
+impl EmbeddingService for DeterministicEmbeddingService {
     async fn embed_text(&self, text: &str) -> Result<Vec<f32>, EmbeddingError> {
         self.embed_internal(text)
     }
@@ -195,7 +195,7 @@ async fn compile_context_searches_project_and_global_with_project_priority_bias(
     let _env_guard = env_guard::configure_scope_env();
 
     let server = McpServerApp::with_explicit_graph(
-        Arc::new(ControlledEmbeddingService::healthy()),
+        Arc::new(DeterministicEmbeddingService::healthy()),
         seeded_dual_scope_graph(),
         retrieval_config(),
         None,
@@ -236,7 +236,7 @@ async fn suppression_is_scoped_by_session_and_repo_pair_and_degraded_does_not_co
     let _env_guard = env_guard::configure_scope_env();
 
     let server = McpServerApp::with_explicit_graph(
-        Arc::new(ControlledEmbeddingService::fail_first()),
+        Arc::new(DeterministicEmbeddingService::fail_first()),
         seeded_dual_scope_graph(),
         retrieval_config(),
         None,
@@ -280,7 +280,7 @@ async fn suppression_is_scoped_by_session_and_repo_pair_and_degraded_does_not_co
 async fn compile_context_uses_request_repo_path_for_scope_resolution() {
     let _env_guard = env_guard::configure_scope_env();
     let server = McpServerApp::with_explicit_graph(
-        Arc::new(ControlledEmbeddingService::healthy()),
+        Arc::new(DeterministicEmbeddingService::healthy()),
         seeded_dual_scope_graph(),
         retrieval_config(),
         None,
@@ -329,7 +329,7 @@ async fn partial_scope_failure_returns_degraded_with_available_context_and_no_su
     let _env_guard = configure_scope_env_with_missing_global_path();
 
     let server = McpServerApp::with_explicit_graph(
-        Arc::new(ControlledEmbeddingService::healthy()),
+        Arc::new(DeterministicEmbeddingService::healthy()),
         seeded_dual_scope_graph(),
         retrieval_config(),
         None,

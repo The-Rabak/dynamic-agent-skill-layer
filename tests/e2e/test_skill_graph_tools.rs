@@ -95,41 +95,28 @@ async fn find_skill_returns_t06_structural_contract() {
 
     assert_skill_match_t06_fields(first, "first match");
 
-    // #260: when two or more matches exist, check that `score` values can
-    // differ.  This does not assert they MUST differ (the corpus may genuinely
-    // produce identical scores for distinct skills), but it proves the field
-    // carries a real signal rather than a fixed RRF artifact.
-    if matches.len() >= 2 {
-        let score_a = matches[0]
-            .get("score")
-            .and_then(|v| v.as_str())
-            .and_then(|s| s.parse::<f64>().ok())
-            .expect("first match score must parse as f64");
-        let score_b = matches[1]
-            .get("score")
-            .and_then(|v| v.as_str())
-            .and_then(|s| s.parse::<f64>().ok())
-            .expect("second match score must parse as f64");
-
-        // Scores must be non-negative and parseable — this is always true.
-        assert!(score_a >= 0.0, "match score must be non-negative");
-        assert!(score_b >= 0.0, "match score must be non-negative");
-
-        // Scores must not both be the same suspicious RRF constant (~0.016393).
-        // Before the #260 fix, all matches at the same RRF rank had identical
-        // scores; after the fix they reflect the actual cosine similarity.
-        // We allow equality only if the first match's rationale also shows the
-        // same semantic= value (meaning the corpus genuinely has equal cosine).
-        let rrf_sentinel = 0.016393_f64;
-        let both_are_rrf_sentinel =
-            (score_a - rrf_sentinel).abs() < 0.0001 && (score_b - rrf_sentinel).abs() < 0.0001;
-
-        assert!(
-            !both_are_rrf_sentinel,
-            "#260: both top matches carry the RRF rank artifact ({score_a:.6}, {score_b:.6}); \
-             score must expose eq.3 relevance, not the RRF constant"
-        );
-    }
+    // #260 live plausibility check. The AUTHORITATIVE regression guard for #260 is the
+    // unit seam test `find_skill::tests::invoke_exposes_semantic_score_not_rrf_artifact`
+    // (proven RED→GREEN against the real `invoke()` mapping). Here, against the live
+    // corpus, we assert the TOP match's `score` sits in the eq.3 cosine band AND well
+    // above the RRF artifact range (~0.016): if `score` regressed to the RRF artifact the
+    // top hit would read ~0.016 and this goes RED. Lower-ranked matches are only
+    // band-checked in `assert_skill_match_t06_fields` (their cosine may legitimately be
+    // low), so this floor lives on the top match where high relevance is reliably expected.
+    let top_score = first
+        .get("score")
+        .and_then(|v| v.as_str())
+        .and_then(|s| s.parse::<f64>().ok())
+        .expect("top match 'score' must parse as f64");
+    assert!(
+        (0.0..=1.0).contains(&top_score),
+        "#260: top match score={top_score} must be in the eq.3 cosine band [0, 1]"
+    );
+    assert!(
+        top_score > 0.1,
+        "#260: top match score={top_score} sits in the RRF-artifact range (~0.016), not eq.3 \
+         relevance — `score` must expose semantic cosine, not the fusion rank artifact"
+    );
 }
 
 /// Calls `search_skill_graph` and asserts the three-section structural contract.
@@ -410,6 +397,22 @@ fn assert_skill_match_t06_fields(m: &Value, label: &str) {
     assert!(
         fusion_str.parse::<f64>().is_ok(),
         "{label}: 'fusion_rank_score' must be a parseable decimal, got '{fusion_str}'"
+    );
+
+    // #260 per-match band check: `score` is the eq.3 semantic relevance ({:.3}), a
+    // distinct quantity from `fusion_rank_score` (the RRF ordering artifact, {:.6}).
+    // Every match's score must lie in the cosine band [0, 1]. The strict "well above the
+    // RRF artifact range" floor is asserted only on the TOP match at the call site, since
+    // lower-ranked matches may legitimately carry low cosine — applying it to every match
+    // would false-RED on a healthy server. The authoritative #260 regression guard is the
+    // unit seam test `invoke_exposes_semantic_score_not_rrf_artifact`.
+    let score_f = score_str
+        .parse::<f64>()
+        .unwrap_or_else(|_| panic!("{label}: score must be parseable (already checked above)"));
+    assert!(
+        (0.0..=1.0).contains(&score_f),
+        "{label}: #260: score={score_str} is outside the eq.3 cosine band [0, 1]; \
+         score must be the eq.3 relevance, not an RRF artifact"
     );
 
     assert!(
