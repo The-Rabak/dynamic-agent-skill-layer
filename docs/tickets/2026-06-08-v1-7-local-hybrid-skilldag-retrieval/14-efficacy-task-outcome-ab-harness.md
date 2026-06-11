@@ -2,7 +2,8 @@
 ticket_id: T14
 title: Prove the system is USEFUL — task-outcome A/B harness (layer ON vs OFF)
 kind: efficacy
-status: blocked
+status: ready
+status_note: "Unblocked 2026-06-12: T10 and T13 are both completed. Restructure 2026-06-12 sequences T14 BEFORE T12's ranker work — it measures the honest baseline with the T11-validated dense-views default-ON config, and its per-pull attribution scopes T12's investment (T12 AC cites it). Amended: one invented-rule positive-control task (see Scope)."
 plan_ref: docs/plans/2026-06-08-feat-v1-7-local-hybrid-skilldag-retrieval-plan.md
 tickets_ref: docs/tickets/2026-06-08-v1-7-local-hybrid-skilldag-retrieval/index.md
 architecture_ref: "explicit-handoff: parent plan ## Non-Goals (efficacy is downstream of V1.7 retrieval); promoted into the ticket set per owner decision 2026-06-09"
@@ -41,6 +42,16 @@ Every artifact proves correctness; none proves efficacy. The whole value proposi
   - **Three honest outcomes, not two:** PASS / FAIL / **UNDERPOWERED**. If the paired result can't distinguish the arms at the pre-registered bar, the report says "underpowered," which is distinct from "no effect" — and neither is spun.
   - **Placebo arm:** a third arm injecting irrelevant-but-plausible skill context at matched token mass (the real server serving a deliberately mismatched scope/corpus — an explicitly-labeled experimental control in the measurement harness, not a production fake). Without it, "relevant skills help" cannot be separated from "any extra context helps/hurts," and that distinction decides T12's investment.
   - **Attribution from the start:** every retrieval pull during measured runs is labeled (SessionStart priming vs mid-session `find_skill`) and lands in the per-task report — do not wait for T15 to start capturing this.
+- **(Amended 2026-06-12, restructure — positive-control task):** exactly ONE task in the ≥10 set is an
+  **invented-rule positive control**: a task whose correct solution requires a project-specific
+  invented rule/procedure that (a) exists as a skill in the T10 corpus and (b) is verifiably absent
+  from model pretraining. It plays the role for this harness that the α=0 gate played for T11 — a
+  sensitivity control. Interpretation is pre-registered with the rest: if ON fails the positive
+  control, the harness or injection path is broken and the run reports INSTRUMENT-FAILURE (no efficacy
+  verdict may be claimed from the other 9); if ON wins ONLY the positive control, that is reported as
+  "value concentrates in non-pretrained knowledge" — the strongest possible T12/CL-bench investment
+  signal. This is deliberately NOT a full CL-bench band (DS-025–030 stay parked until after T14/T15 —
+  extraction-fidelity confounds make them uninterpretable today); it is one task, no design change.
 
 ## Scope Fence
 
@@ -58,6 +69,7 @@ Every artifact proves correctness; none proves efficacy. The whole value proposi
 - [ ] Placebo arm (matched-mass irrelevant context) run and reported alongside ON/OFF; the ON-vs-placebo comparison is stated explicitly.
 - [ ] Per-pull retrieval attribution (priming vs `find_skill`) captured and reported per task.
 - [ ] Draft-acceptance-rate over ≥10 `.pending` drafts from REAL captured sessions.
+- [ ] Invented-rule positive-control task included (pre-registered interpretation as amended); its outcome reported distinctly; INSTRUMENT-FAILURE reported if ON loses it.
 - [ ] Release gate includes an explicit, justified efficacy threshold; run reports PASS / FAIL / UNDERPOWERED.
 - [ ] If the delta is null/negative/underpowered, documented in `docs/assessments/` with raw data.
 
@@ -66,6 +78,10 @@ Every artifact proves correctness; none proves efficacy. The whole value proposi
 - WHY source: plan `## Non-Goals` names efficacy as downstream; owner decision 2026-06-09 promoted it into the V1.7 ticket set.
 - Depends on T10 (real corpus) and T13 (no-fakes substrate). Consumes T08's measured-retrieval handoff.
 - T15 (#218 SWE-bench) is the flagship compounding variant of this.
+- Sequenced after T20/T21 (restructure 2026-06-12): reuse the shared measurement lib (paired/sign-test
+  machinery promoted from `scripts/t11_*` by T20) instead of growing a parallel stats implementation;
+  run on a green tree (T21). Runs with the as-shipped default config (dense-views ON) — that IS the
+  honest baseline; T12's priming improvements land after and are measured as a separate delta.
 
 ## Source
 

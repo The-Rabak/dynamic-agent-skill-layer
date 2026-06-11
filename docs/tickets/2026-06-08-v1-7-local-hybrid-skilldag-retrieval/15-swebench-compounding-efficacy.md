@@ -58,6 +58,10 @@ The thesis is not "context helps" — it is "the system compounds: it learns fro
 
 - WHY source: plan `## Non-Goals` (downstream); owner decision 2026-06-09 promoted into the V1.7 ticket set.
 - Depends on T10 (corpus) and T14 (A/B harness it extends). Coordinates with T12 (priming attribution).
+- **(Restructure 2026-06-12)** Conditional: if T14's invented-rule positive control shows the layer's
+  value concentrating in non-pretrained knowledge, add a small CL-bench-shaped instance arm here
+  (taught novel procedure → held-out reuse); otherwise the disjoint difference-of-differences stays
+  the sole headline. Full DS-025–030 contracts remain parked until after this ticket either way.
 
 ## Source
 
