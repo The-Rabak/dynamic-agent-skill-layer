@@ -62,6 +62,53 @@ Retrieval currently treats SessionStart priming and mid-session `find_skill` ide
 - Coordinates with T15 (#218) which captures retrieval-source attribution per pull.
 - **Amendment 2026-06-11:** T11 added as a hard dependency — every measured claim in this ticket runs through the quality instrument, and T11's midpoint-assessment findings showed the prior instrument could not see arm differences (saturated fixture, mean-equality verdicts). Measuring priming signals on a broken ruler would ship noise as ROI. See `docs/assessments/2026-06-11-v1-7-midpoint-deep-grok-assessment.md`.
 
+## Rethink (post-T11, 2026-06-11)
+
+T11 ran on the discriminating 262-corpus fixture and its findings reshape this ticket. Fold these in
+BEFORE executing; they override conflicting wording above where noted.
+
+1. **The task-retrieval re-ranking signals are likely inert — deprioritize or cut them.** T11 proved
+   that at this corpus scale **candidate-recall, not ranking, is the lever**: MRR@3 == MRR@10 for every
+   arm (the first relevant hit is in the top-3 or absent from the top-10 entirely; there is no
+   rank-4..10 population to re-order). Mid-session `find_skill` ranking is already saturated (judge-aug
+   0.91) and dense multi-view (now default-ON) already captured the recall win. Centrality / recent-use
+   re-ranking on a saturated list will, by the same structural argument that flattened the hybrid arms,
+   show ~0 MRR delta. **Keep a task-retrieval signal only if it measurably raises candidate-recall@limit
+   (pulls a missing gold INTO the pool) — not MRR.** A re-rank signal cannot do that, so the bar is high.
+
+2. **Priming's success metric is wrong as written (AC#2 "MRR/nDCG impact").** SessionStart priming has
+   no single gold skill, and T11 showed MRR@3 is quantized/saturated. **Pre-register a priming-appropriate
+   metric instead:** set-coverage of the project's high-recurrence baseline skills + "≥1 relevant fresh
+   skill surfaced," and/or judge-rated usefulness of the bounded primed set. Do NOT score priming with MRR.
+
+3. **AC#6 has a hidden gap: the T11 fixture contains NO session-start stratum.** The shipped
+   `tests/fixtures/retrieval_quality_262_corpus_labeled.json` is entirely task-shaped (transcript /
+   disjoint / lexical / multiview / use_when / negative). T12 must **author the session-start stratum
+   itself** — reuse `scripts/build_t11_fixture.py` + the anti-circularity discipline (thin/vague
+   session-opening prompts from the 24 transcripts' *opening* turns, gold = the project-baseline skills
+   a useful prime would surface). Do not assume T11 provided it.
+
+4. **Do not broaden candidate generation.** T11 showed adding a BM25/lexical candidate source is
+   net-negative (snapshot_hybrid lost 23 golds from the pool). The freshness slot must be a **bounded
+   explicit injection / re-rank over the existing dense pool**, never a new candidate source.
+
+5. **The freshness slot is MORE motivated, not less.** T11 measured ~28% of golds missing from the
+   top-50 pool (anchor-only) and dense-views recovered some; a freshness slot that guarantees brand-new
+   high-value skills surface addresses exactly that recall/cold-start (#217) gap — for the priming path.
+
+6. **Reuse T11's instrument + honesty discipline.** Run every claim through the real server on the
+   262 corpus; reuse the α=0-style negative control, candidate-recall@limit, and **paired per-query +
+   sign-test** verdicts (not 3-decimal mean equality). Note explicitly that **+0.03 MRR is within
+   1-query noise at N≈137** before citing any MRR delta. State conclusions are **scale-bound** (262
+   skills; candidate-gen cannot move ranking here by construction) — centrality may matter more at 5k,
+   where candidate-recall is the predictor.
+
+**Net reframing:** T12 becomes "**SessionStart priming + freshness slot + recurrence-based global
+appropriateness**" (the parts T11 did not already settle), measured with priming-appropriate metrics on
+a self-authored session-start stratum. The task-retrieval re-ranking signals are dropped unless
+candidate-recall (not MRR) earns them. See `tests/e2e/reports/t11/T11-VALIDATION-REPORT.md` and
+[[v17-t11-hybrid-verdict-dense-views-win]].
+
 ## Source
 
 Promoted 2026-06-09 from todo #220 (P1). Original analysis in git of `todos/220-*`.
