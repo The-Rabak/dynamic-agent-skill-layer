@@ -28,11 +28,11 @@ V1.7 is **additive** over the v1.5.1 core below. The default query path is uncha
   `qdrant_hybrid` reads Qdrant at query time and thus breaks the default CQRS split — see
   `online-retrieval-cqrs.md`.
 - **Dense multi-view views** (`e_task`/`e_needs`/`e_negative`, max-over-views α fusion) behind
-  `RETRIEVAL_DENSE_VIEWS` (T09). Currently **default-OFF** (OFF == byte-for-byte pre-T09 ranking), but
-  **T11 measured a validated uplift and RECOMMENDS promoting it to default-ON**: anchor-only MRR@3
-  0.686→0.743, candidate-recall@50 0.723→0.796, nDCG@3 0.696→0.755 (sign p=0.0074); judge-aug held-out
-  **0.912 / 0.839 / 0.92** (vs dense 0.884 / 0.804 / 0.92), p95 369ms < 500ms. The actual flag-default
-  flip is a pending owner-approved change (behavior-changing default); see
+  `RETRIEVAL_DENSE_VIEWS` (T09). **DEFAULT-ON since T11** (2026-06-11, owner-approved flip;
+  `RetrievalConfig::default().dense_views_enabled = true`). Set `RETRIEVAL_DENSE_VIEWS=false` to
+  restore byte-for-byte pre-T09 e_summary-only ranking. T11 measured the validated uplift:
+  anchor-only MRR@3 0.686→0.743, candidate-recall@50 0.723→0.796, nDCG@3 0.696→0.755 (sign p=0.0074);
+  judge-aug held-out **0.912 / 0.839 / 0.92** (vs dense 0.884 / 0.804 / 0.92), p95 369ms < 500ms. See
   `tests/e2e/reports/t11/T11-VALIDATION-REPORT.md`.
 - **No local reranker / query decomposition** — T07 was **skipped** (optional; T04 showed candidate
   generation is not the ceiling).

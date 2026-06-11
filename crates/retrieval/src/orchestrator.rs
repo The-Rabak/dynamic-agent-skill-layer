@@ -364,7 +364,9 @@ pub struct RetrievalConfig {
     /// using only `e_summary`. `e_negative` is built and observable but NEVER
     /// enters the positive fusion regardless of this flag.
     ///
-    /// **Default: `false`** (off). Enabled via `RETRIEVAL_DENSE_VIEWS=true/1/on`.
+    /// **Default: `true`** (on) since the T11 sweep (2026-06-11) measured a
+    /// validated uplift on the rich 262-skill corpus. Disable via
+    /// `RETRIEVAL_DENSE_VIEWS=false/0/off` to restore pre-T09 single-view ranking.
     /// A present-but-unparseable value panics fail-loud (no silent fallback).
     ///
     /// With the flag off the α term equals `cosine(prompt, e_summary)` exactly —
@@ -437,10 +439,15 @@ impl Default for RetrievalConfig {
             // docs/assessments/2026-06-07-retrieval-quality-234-corpus-measured.md.
             community_boost_mode: CommunityBoostMode::Off,
             backend: RetrievalBackend::SnapshotDense,
-            // T09: multi-view dense fusion — default OFF until the T11 sweep shows
-            // non-negative MRR/nDCG delta on the live corpus. The view embeddings
-            // are built unconditionally; only the scoring read is gated here.
-            dense_views_enabled: false,
+            // T09: multi-view dense fusion — DEFAULT-ON since the T11 sweep
+            // (2026-06-11) measured a validated uplift on the rich 262-skill qwen3
+            // corpus: anchor MRR@3 0.686→0.743, candidate-recall@50 0.723→0.796,
+            // nDCG@3 0.696→0.755 (sign p=0.0074); judge-aug held-out 0.912/0.839/0.92
+            // vs dense 0.884/0.804/0.92, p95 369ms < 500ms SLO. The view embeddings
+            // are built unconditionally; this flag gates only the scoring read.
+            // Set RETRIEVAL_DENSE_VIEWS=false to restore byte-for-byte pre-T09 ranking.
+            // See tests/e2e/reports/t11/T11-VALIDATION-REPORT.md.
+            dense_views_enabled: true,
         }
     }
 }
@@ -484,7 +491,7 @@ impl RetrievalConfig {
     /// `RETRIEVAL_GLOBAL_SCOPE_WEIGHT`, `RETRIEVAL_RRF_K`,
     /// `RETRIEVAL_COMMUNITY_BOOST_MODE` (`binary`|`centroid_affinity`|`off`),
     /// `RETRIEVAL_BACKEND` (`snapshot_dense`|`snapshot_hybrid`|`qdrant_hybrid`),
-    /// `RETRIEVAL_DENSE_VIEWS` (`0/false/off` or `1/true/on`, default `false`).
+    /// `RETRIEVAL_DENSE_VIEWS` (`0/false/off` or `1/true/on`, default `true` since T11).
     pub fn from_env() -> Self {
         let d = RetrievalConfig::default();
         Self {
@@ -2123,20 +2130,23 @@ mod tests {
 
     // ── T09: RETRIEVAL_DENSE_VIEWS flag tests ───────────────────────────────
 
-    /// T09 guard: `RETRIEVAL_DENSE_VIEWS` defaults to false so dense retrieval
-    /// is byte-for-byte identical to the pre-T09 behaviour when the variable is absent.
+    /// T09/T11 guard: `RETRIEVAL_DENSE_VIEWS` defaults to TRUE since the T11 sweep
+    /// (2026-06-11) measured a validated uplift on the rich 262-skill corpus.
+    /// Multi-view dense fusion is the default; `RETRIEVAL_DENSE_VIEWS=false` opts back
+    /// out to the pre-T09 single-view ranking (covered by
+    /// `dense_views_disabled_when_env_is_false`).
     #[test]
-    fn dense_views_default_is_false_preserving_pre_t09_behaviour() {
+    fn dense_views_default_is_true_after_t11_validation() {
         let _guard = EnvVarGuard::remove("RETRIEVAL_DENSE_VIEWS");
         let config = RetrievalConfig::from_env();
         assert!(
-            !config.dense_views_enabled,
-            "RETRIEVAL_DENSE_VIEWS must default to false; got true"
+            config.dense_views_enabled,
+            "RETRIEVAL_DENSE_VIEWS must default to true after the T11 validation; got false"
         );
         // Also check the typed default directly.
         assert!(
-            !RetrievalConfig::default().dense_views_enabled,
-            "RetrievalConfig::default().dense_views_enabled must be false"
+            RetrievalConfig::default().dense_views_enabled,
+            "RetrievalConfig::default().dense_views_enabled must be true"
         );
     }
 

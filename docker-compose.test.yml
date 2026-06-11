@@ -181,9 +181,10 @@ services:
       # Set RETRIEVAL_RERANK=true to activate the local reranker (T07, not yet wired).
       RETRIEVAL_BACKEND: ${RETRIEVAL_BACKEND:-}
       RETRIEVAL_RERANK: ${RETRIEVAL_RERANK:-}
-      # T09: dense multi-view fusion flag. Unset/false (default) → α term is the
-      # e_summary cosine only (pre-T09 behaviour). Set RETRIEVAL_DENSE_VIEWS=true to
-      # fuse max-over-views {e_summary, e_task, e_needs} into the α term. The view
+      # T09 dense multi-view fusion flag. DEFAULT-ON since T11 (2026-06-11) measured
+      # a validated uplift — unset (the `:-` empty passthrough is treated as absent)
+      # fuses max-over-views {e_summary, e_task, e_needs} into the α term. Set
+      # RETRIEVAL_DENSE_VIEWS=false to restore pre-T09 e_summary-only ranking. The view
       # embeddings are built unconditionally at mcp-server boot, so flipping this flag
       # is a pure mcp-server restart (reboot_mcp) — no graph-builder rebuild needed.
       RETRIEVAL_DENSE_VIEWS: ${RETRIEVAL_DENSE_VIEWS:-}
