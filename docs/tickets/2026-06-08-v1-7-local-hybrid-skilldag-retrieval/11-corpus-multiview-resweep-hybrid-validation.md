@@ -2,7 +2,7 @@
 ticket_id: T11
 title: Multi-view re-sweep on the rich corpus — validate the hybrid bet
 kind: measurement
-status: blocked
+status: ready  # reconciled 2026-06-11 to match index.md Batch 12 (deps T10/T09/T06 all met)
 plan_ref: docs/plans/2026-06-08-feat-v1-7-local-hybrid-skilldag-retrieval-plan.md
 tickets_ref: docs/tickets/2026-06-08-v1-7-local-hybrid-skilldag-retrieval/index.md
 architecture_ref: "explicit-handoff: parent plan ## Success Criteria (quality targets) + measurement mandate"

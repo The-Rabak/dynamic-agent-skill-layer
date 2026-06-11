@@ -18,3 +18,8 @@ tests/e2e/reports/replica-run/
 
 # Claude Code local state (per-machine memory + session transcripts; never committed).
 .claude/projects/
+
+# Per-run e2e console logs and run-scoped report trees (transient artifacts; CI
+# uploads them). Same policy as the reports/*.json + replica-run/ ignores above.
+tests/e2e/reports/console-*.log
+tests/e2e/reports/runs/
