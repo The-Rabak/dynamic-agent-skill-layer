@@ -513,6 +513,9 @@ async fn compile_context_parallel_burst_under_live_infra_stays_within_contract_s
             CompileContextStatus::NoMatch => no_match_count += 1,
             CompileContextStatus::Degraded => degraded_count += 1,
             CompileContextStatus::DuplicateSuppressed => duplicate_suppressed_count += 1,
+            // Warming should never occur against a fully-ready in-process server; if it
+            // does, error_count captures it via the valid_status gate above.
+            CompileContextStatus::Warming => {}
         }
         if response.status != CompileContextStatus::Ok
             && response.reason_code.as_deref().unwrap_or("").is_empty()

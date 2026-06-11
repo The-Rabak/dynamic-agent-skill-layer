@@ -500,22 +500,40 @@ mod tests {
         assert_eq!(subunit_view_kind(99), "subunit:99");
     }
 
-    // ── Live PG roundtrip (ignored; requires PG at 127.0.0.1:15432) ───────────
+    // ── Live PG roundtrip (ignored; requires DATABASE_URL + live Postgres) ──────
 
     /// Full roundtrip: upsert a row → load it back → verify exact equality.
     ///
     /// Run with:
     ///   `cargo test -p infrastructure embedding_cache -- --ignored`
     ///
-    /// Requires Postgres at `postgresql://postgres:postgres@127.0.0.1:15432/skill_layer_test`.
+    /// Requires `DATABASE_URL` pointing to a live Postgres instance.  Applies all
+    /// migrations via [`PostgresAdapter::run_migrations`] before the test body so
+    /// the `skill_embeddings` table (migration 011) is guaranteed to exist.
     #[ignore]
     #[tokio::test]
     async fn live_pg_roundtrip_upsert_and_load() {
-        let pool = sqlx::PgPool::connect(
-            "postgresql://postgres:postgres@127.0.0.1:15432/skill_layer_test",
-        )
-        .await
-        .expect("PG connection for live roundtrip test must succeed");
+        use super::super::postgres::{PostgresAdapter, PostgresConfig};
+
+        let db_url = std::env::var("DATABASE_URL")
+            .expect("DATABASE_URL must be set for live postgres tests");
+
+        let config = PostgresConfig {
+            database_url: db_url,
+            max_connections: 2,
+            min_connections: 1,
+            connect_timeout_secs: 5,
+            acquire_timeout_secs: 5,
+        };
+        let adapter = PostgresAdapter::connect(&config)
+            .await
+            .expect("PostgresAdapter connect must succeed for live roundtrip test");
+        adapter
+            .run_migrations()
+            .await
+            .expect("run_migrations must succeed before live roundtrip test");
+
+        let pool = adapter.pool().clone();
 
         // Clean up any leftover rows from previous runs.
         sqlx::query("DELETE FROM skill_embeddings WHERE skill_id = 'test-roundtrip-skill'")
@@ -565,14 +583,34 @@ mod tests {
     ///
     /// Run with:
     ///   `cargo test -p infrastructure embedding_cache -- --ignored`
+    ///
+    /// Requires `DATABASE_URL` pointing to a live Postgres instance.  Applies all
+    /// migrations via [`PostgresAdapter::run_migrations`] before the test body so
+    /// the `skill_embeddings` table (migration 011) is guaranteed to exist.
     #[ignore]
     #[tokio::test]
     async fn live_pg_dimension_mismatch_fails_loud() {
-        let pool = sqlx::PgPool::connect(
-            "postgresql://postgres:postgres@127.0.0.1:15432/skill_layer_test",
-        )
-        .await
-        .expect("PG connection for live mismatch test must succeed");
+        use super::super::postgres::{PostgresAdapter, PostgresConfig};
+
+        let db_url = std::env::var("DATABASE_URL")
+            .expect("DATABASE_URL must be set for live postgres tests");
+
+        let config = PostgresConfig {
+            database_url: db_url,
+            max_connections: 2,
+            min_connections: 1,
+            connect_timeout_secs: 5,
+            acquire_timeout_secs: 5,
+        };
+        let adapter = PostgresAdapter::connect(&config)
+            .await
+            .expect("PostgresAdapter connect must succeed for live mismatch test");
+        adapter
+            .run_migrations()
+            .await
+            .expect("run_migrations must succeed before live mismatch test");
+
+        let pool = adapter.pool().clone();
 
         // Clean up leftovers.
         sqlx::query(

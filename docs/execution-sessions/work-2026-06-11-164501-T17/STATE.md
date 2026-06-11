@@ -7,10 +7,11 @@ tickets_ref: docs/tickets/2026-06-08-v1-7-local-hybrid-skilldag-retrieval/index.
 source_packet_ref: docs/tickets/2026-06-08-v1-7-local-hybrid-skilldag-retrieval/17-mcp-server-boot-readiness-honesty.md
 brainstorm_ref: null
 started: 2026-06-11T16:45:01Z
-status: in_progress
+status: completed
 execution_shape: vertical-slices
-current_unit: 2
+current_unit: 3
 total_units: 3
+completed: 2026-06-11T17:55:00Z
 session_id: work-2026-06-11-164501-T17
 ---
 
@@ -46,7 +47,7 @@ session_id: work-2026-06-11-164501-T17
 |---|------|------|------------------|--------|----------|--------------|
 | 1 | Persisted embedding cache: kill the boot/reload re-embed | infra-persistence | AC2 + AC3 (precomputed-vector load, changed-only re-embed, fail-loud model/dim, ~7min→seconds) | completed (code+unit; live-PG → Unit 3 stack) | 1 | unit-01-persisted-embedding-cache.md |
 | 2 | Readiness honesty: snapshot-ready signal + fast tool warming | hardening | AC1 (no healthy-while-warming; tools warming-fast, no hang) | completed (code+unit; live → Unit 3) | 1 | unit-02-readiness-honesty.md |
-| 3 | Live qwen3 cold-boot test + workspace green + T11 gate signal | e2e-evidence | AC3/AC4/AC5 (live proof both behaviors; cargo test --workspace green; T11 gates on honest signal) | pending | -- | -- |
+| 3 | Live qwen3 cold-boot test + workspace green + T11 gate signal | e2e-evidence | AC3/AC4/AC5 (live proof both behaviors; cargo test --workspace green; T11 gates on honest signal) | completed (live: 32× cold→warm, fidelity exact, warming guard) | 1 | unit-03-live-cold-boot-test.md |
 
 ## Learnings Brief
 - [migration] Migrations are a compile-time `MIGRATIONS` array in `crates/infrastructure/src/persistence/postgres.rs` (include_str! consts), NOT directory-scanned. A new `.sql` file is INERT until: (1) `MIGRATION_0NN` const added, (2) appended to `MIGRATIONS`, (3) added to `TRUNCATE_ALL_TABLES_SQL` if it holds live data, (4) ordering test `migration_set_is_ordered_001_through_0NN` updated, (5) per-migration declares-table test added, (6) live `..._applies_then_skips...` count updated. Always verify postgres.rs is in the diff when a migration is added.

@@ -157,6 +157,11 @@ name = "test_skill_graph_tools"
 path = "../../tests/e2e/test_skill_graph_tools.rs"
 required-features = ["test-utils"]
 
+[[test]]
+name = "test_cold_boot_readiness_honesty"
+path = "../../tests/e2e/test_cold_boot_readiness_honesty.rs"
+required-features = ["test-utils"]
+
 [[bench]]
 name = "compile_context_bench"
 path = "../../tests/bench/compile_context_bench.rs"
