@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use chrono::{DateTime, Utc};
 use domain::EmbeddingService;
@@ -8,6 +8,131 @@ use sqlx::PgPool;
 
 use crate::embeddings::ollama::{OllamaEmbeddingConfig, OllamaEmbeddingService};
 use crate::vector::qdrant::validate_qdrant_url;
+
+// ---------------------------------------------------------------------------
+// Snapshot readiness signal
+// ---------------------------------------------------------------------------
+
+/// The readiness state of the in-memory graph snapshot.
+///
+/// Transitions:
+/// - `Warming` → `Ready`: snapshot successfully built/installed.
+/// - `Warming` → `Failed`: snapshot build failed.
+/// - `Ready`   → `Warming`: a background reload started.
+/// - `Warming` → `Ready`/`Failed`: reload completed or errored.
+///
+/// `Failed` carries the error message surfaced on `/health` so operators can
+/// diagnose the problem without tailing container logs.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ReadinessState {
+    /// Snapshot build/reload is in flight — tool calls must not embed queries.
+    Warming,
+    /// Snapshot is installed and ready to serve queries.
+    Ready,
+    /// The last snapshot build failed; details are in the message.
+    Failed(String),
+}
+
+/// Thread-safe handle for the snapshot readiness signal.
+///
+/// Wraps the mutable [`ReadinessState`] behind an `Arc<RwLock<…>>` so reads
+/// on the hot path are essentially free (shared lock) and state transitions
+/// (`set_ready`, `set_failed`, `set_warming`) use exclusive writes only.
+///
+/// Constructed in two ways:
+/// - [`ReadinessHandle::warming`] — the live boot path, starts in `Warming`.
+/// - [`ReadinessHandle::ready`] — test/non-live constructors, starts `Ready`
+///   so existing tests do not regress into the warming short-circuit.
+#[derive(Debug, Clone)]
+pub struct ReadinessHandle {
+    state: Arc<RwLock<ReadinessState>>,
+}
+
+impl ReadinessHandle {
+    /// Creates a handle in the `Warming` state (live boot path).
+    pub fn warming() -> Self {
+        Self {
+            state: Arc::new(RwLock::new(ReadinessState::Warming)),
+        }
+    }
+
+    /// Creates a handle already in the `Ready` state (test/non-live constructors).
+    ///
+    /// Non-live test constructors default to `Ready` so the ~40 existing
+    /// `McpServerApp` tests do not hit the warming short-circuit.
+    pub fn ready() -> Self {
+        Self {
+            state: Arc::new(RwLock::new(ReadinessState::Ready)),
+        }
+    }
+
+    /// Transitions the handle to `Ready`.
+    ///
+    /// Called once after the initial snapshot and once after each successful
+    /// background reload (`reload_and_swap` → `swap_graph` succeeded).
+    pub fn set_ready(&self) {
+        *self.state.write().expect("readiness lock poisoned") = ReadinessState::Ready;
+    }
+
+    /// Transitions the handle to `Warming`.
+    ///
+    /// Called at the start of each background reload so `/health` reports
+    /// NOT-ready during the (potentially long) re-embed window.
+    pub fn set_warming(&self) {
+        *self.state.write().expect("readiness lock poisoned") = ReadinessState::Warming;
+    }
+
+    /// Transitions the handle to `Failed` with the given error message.
+    ///
+    /// Called when `build_graph_from_pg` errors during a background reload.
+    /// A failed reload is observable on `/health` rather than silently stuck
+    /// in `Warming` forever. The error still propagates as `Err` so the event
+    /// replays (existing ACK contract unchanged).
+    pub fn set_failed(&self, message: impl Into<String>) {
+        *self.state.write().expect("readiness lock poisoned") =
+            ReadinessState::Failed(message.into());
+    }
+
+    /// Returns `true` iff the snapshot is `Ready`.
+    ///
+    /// Hot path: acquires a shared read lock (non-blocking when no writer holds
+    /// the exclusive lock).
+    pub fn is_ready(&self) -> bool {
+        matches!(
+            *self.state.read().expect("readiness lock poisoned"),
+            ReadinessState::Ready
+        )
+    }
+
+    /// Produces a `HealthComponent` for the `/health` report.
+    ///
+    /// - `Ready`   → `healthy: true`,  detail `"ready"`
+    /// - `Warming` → `healthy: false`, detail `"warming: snapshot build/reload in flight"`
+    /// - `Failed`  → `healthy: false`, detail `"failed: <message>"`
+    pub fn health_component(&self) -> HealthComponent {
+        match &*self.state.read().expect("readiness lock poisoned") {
+            ReadinessState::Ready => HealthComponent {
+                name: "readiness".to_owned(),
+                healthy: true,
+                detail: "ready".to_owned(),
+            },
+            ReadinessState::Warming => HealthComponent {
+                name: "readiness".to_owned(),
+                healthy: false,
+                detail: "warming: snapshot build/reload in flight".to_owned(),
+            },
+            ReadinessState::Failed(msg) => HealthComponent {
+                name: "readiness".to_owned(),
+                healthy: false,
+                detail: format!("failed: {msg}"),
+            },
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Health report types
+// ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct HealthComponent {
@@ -30,6 +155,12 @@ pub struct InfrastructureHealthChecker {
     http_dependencies: Vec<HttpDependencyCheck>,
     http_client: Option<reqwest::Client>,
     config_invalid_components: Vec<HealthComponent>,
+    /// Optional snapshot-readiness handle.
+    ///
+    /// When `Some`, a `readiness` component is appended to every `check()` report.
+    /// `Warming` or `Failed` states make the component unhealthy, which flips the
+    /// overall `healthy` flag to `false` and causes `/health` to return 503.
+    readiness: Option<Arc<ReadinessHandle>>,
 }
 
 #[derive(Debug, Clone)]
@@ -114,6 +245,22 @@ impl InfrastructureHealthChecker {
         self
     }
 
+    /// Attaches a snapshot-readiness handle to this checker.
+    ///
+    /// When set, every `check()` call appends a `readiness` component derived
+    /// from the handle's current state:
+    /// - `Ready`   → `healthy: true`, detail `"ready"`
+    /// - `Warming` → `healthy: false`, detail `"warming: snapshot build/reload in flight"`
+    /// - `Failed`  → `healthy: false`, detail `"failed: <message>"`
+    ///
+    /// Because the overall `healthy` flag is `all components healthy`, a `Warming`
+    /// or `Failed` readiness component causes `/health` to return 503 — killing the
+    /// "healthy-while-warming" window.
+    pub fn with_readiness(mut self, handle: Arc<ReadinessHandle>) -> Self {
+        self.readiness = Some(handle);
+        self
+    }
+
     pub async fn check(&self) -> HealthReport {
         let mut components: Vec<HealthComponent> = self.config_invalid_components.clone();
 
@@ -180,6 +327,13 @@ impl InfrastructureHealthChecker {
                 };
                 components.push(dependency_health);
             }
+        }
+
+        // Append the snapshot-readiness component last so it is clearly visible
+        // at the end of the report and does not interfere with the static/infra
+        // components registered above.
+        if let Some(handle) = &self.readiness {
+            components.push(handle.health_component());
         }
 
         let healthy = components.iter().all(|component| component.healthy);
@@ -555,6 +709,203 @@ mod tests {
                 .iter()
                 .all(|c| c.name != "qdrant_read_path"),
             "qdrant_read_path must be absent from /health for snapshot-arm configs"
+        );
+    }
+
+    // ---------------------------------------------------------------------------
+    // ReadinessHandle unit tests (T17 AC1)
+    // ---------------------------------------------------------------------------
+
+    /// Proves `ReadinessHandle::warming()` starts in Warming state (`is_ready` = false),
+    /// transitions to Ready via `set_ready()`, and that state is reflected by `is_ready`.
+    #[test]
+    fn readiness_handle_warming_to_ready_transition() {
+        let handle = ReadinessHandle::warming();
+        assert!(
+            !handle.is_ready(),
+            "handle created via warming() must start NOT ready"
+        );
+
+        handle.set_ready();
+        assert!(
+            handle.is_ready(),
+            "after set_ready() the handle must report is_ready = true"
+        );
+    }
+
+    /// Proves `set_failed()` transitions the handle out of Ready and `is_ready` returns false.
+    #[test]
+    fn readiness_handle_ready_to_failed_transition() {
+        let handle = ReadinessHandle::ready();
+        assert!(handle.is_ready(), "handle from ready() must start ready");
+
+        handle.set_failed("build_graph_from_pg: connection refused");
+        assert!(
+            !handle.is_ready(),
+            "after set_failed() the handle must report is_ready = false"
+        );
+    }
+
+    /// Proves `set_warming()` followed by `set_failed()` results in `is_ready = false`,
+    /// and `set_warming()` alone also results in `is_ready = false`.
+    #[test]
+    fn readiness_handle_warming_is_not_ready() {
+        let handle = ReadinessHandle::ready();
+        handle.set_warming();
+        assert!(
+            !handle.is_ready(),
+            "handle in Warming state must not be ready"
+        );
+    }
+
+    /// Proves `health_component()` produces a healthy component when Ready.
+    #[test]
+    fn readiness_handle_health_component_ready() {
+        let handle = ReadinessHandle::ready();
+        let component = handle.health_component();
+
+        assert_eq!(component.name, "readiness");
+        assert!(
+            component.healthy,
+            "Ready state must produce a healthy readiness component"
+        );
+        assert_eq!(component.detail, "ready");
+    }
+
+    /// Proves `health_component()` produces an unhealthy component with the warming detail
+    /// when the handle is in Warming state.
+    #[test]
+    fn readiness_handle_health_component_warming() {
+        let handle = ReadinessHandle::warming();
+        let component = handle.health_component();
+
+        assert_eq!(component.name, "readiness");
+        assert!(
+            !component.healthy,
+            "Warming state must produce an unhealthy readiness component"
+        );
+        assert!(
+            component.detail.contains("warming"),
+            "Warming detail must contain 'warming': got '{}'",
+            component.detail
+        );
+    }
+
+    /// Proves `health_component()` produces an unhealthy component with the failure message
+    /// when the handle is in Failed state.
+    #[test]
+    fn readiness_handle_health_component_failed() {
+        let handle = ReadinessHandle::warming();
+        handle.set_failed("pg pool timed out");
+        let component = handle.health_component();
+
+        assert_eq!(component.name, "readiness");
+        assert!(
+            !component.healthy,
+            "Failed state must produce an unhealthy readiness component"
+        );
+        assert!(
+            component.detail.contains("failed"),
+            "Failed detail must contain 'failed': got '{}'",
+            component.detail
+        );
+        assert!(
+            component.detail.contains("pg pool timed out"),
+            "Failed detail must contain the error message: got '{}'",
+            component.detail
+        );
+    }
+
+    /// Proves `with_readiness` wires the readiness component into `check()` and that
+    /// Warming makes the overall report unhealthy (→ /health 503).
+    #[tokio::test]
+    async fn with_readiness_warming_makes_report_unhealthy() {
+        let handle = Arc::new(ReadinessHandle::warming());
+        let checker = InfrastructureHealthChecker::new().with_readiness(handle);
+
+        let report = checker.check().await;
+
+        assert!(
+            !report.healthy,
+            "Warming readiness must make the overall /health report unhealthy"
+        );
+
+        let component = report
+            .components
+            .iter()
+            .find(|c| c.name == "readiness")
+            .expect("readiness component must appear in check() output when with_readiness is set");
+        assert!(!component.healthy);
+        assert!(component.detail.contains("warming"));
+    }
+
+    /// Proves `with_readiness` wires the readiness component into `check()` and that
+    /// Ready makes the overall report healthy.
+    #[tokio::test]
+    async fn with_readiness_ready_preserves_healthy_report() {
+        let handle = Arc::new(ReadinessHandle::ready());
+        let checker = InfrastructureHealthChecker::new().with_readiness(handle);
+
+        let report = checker.check().await;
+
+        assert!(
+            report.healthy,
+            "Ready readiness must leave the overall /health report healthy"
+        );
+
+        let component = report
+            .components
+            .iter()
+            .find(|c| c.name == "readiness")
+            .expect("readiness component must appear in check() output");
+        assert!(component.healthy);
+        assert_eq!(component.detail, "ready");
+    }
+
+    /// Proves `with_readiness` Failed state makes the overall report unhealthy and
+    /// surfaces the failure message.
+    #[tokio::test]
+    async fn with_readiness_failed_makes_report_unhealthy_with_message() {
+        let handle = Arc::new(ReadinessHandle::warming());
+        handle.set_failed("pg connection pool exhausted");
+        let checker = InfrastructureHealthChecker::new()
+            .with_readiness(handle);
+
+        let report = checker.check().await;
+
+        assert!(
+            !report.healthy,
+            "Failed readiness must make the overall /health report unhealthy"
+        );
+
+        let component = report
+            .components
+            .iter()
+            .find(|c| c.name == "readiness")
+            .expect("readiness component must be present");
+        assert!(!component.healthy);
+        assert!(
+            component.detail.contains("pg connection pool exhausted"),
+            "detail must contain the failure message: got '{}'",
+            component.detail
+        );
+    }
+
+    /// Proves that checkers WITHOUT `with_readiness` do NOT emit a `readiness` component,
+    /// preserving the existing component count for all tests that do not call `with_readiness`.
+    #[tokio::test]
+    async fn without_with_readiness_no_readiness_component_emitted() {
+        let checker = InfrastructureHealthChecker::new()
+            .with_static_component("usage_write", true, "enabled");
+
+        let report = checker.check().await;
+
+        assert!(
+            report
+                .components
+                .iter()
+                .all(|c| c.name != "readiness"),
+            "readiness component must be absent when with_readiness was not called"
         );
     }
 }

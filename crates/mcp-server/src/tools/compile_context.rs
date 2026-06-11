@@ -15,6 +15,13 @@ pub enum CompileContextStatus {
     NoMatch,
     Degraded,
     DuplicateSuppressed,
+    /// Snapshot build or background reload is in flight.
+    ///
+    /// Returned by the `McpServerApp::compile_context` coordination layer (T17 AC1)
+    /// when the readiness handle is in `Warming` or `Failed` state. The tool-level
+    /// `CompileContextTool::invoke` is never called in this state — the guard runs
+    /// before any query embed so the embedding semaphore is not acquired.
+    Warming,
 }
 
 /// The lifecycle event that caused a `compile_context` call.

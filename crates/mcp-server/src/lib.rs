@@ -43,10 +43,11 @@ use infrastructure::{
     PersistedGraphSkillRecord, PostgresAdapter, PostgresConfig, PostgresGraphSnapshotStore,
     PostgresGraphWriteCoordinator, PostgresPool, PostgresRebuildCoordinator,
     PostgresUsageSampleStore, PostgresUsageWriter, QdrantAdapter, QdrantConfig, QdrantError,
-    RedisClient, RedisStreamsAdapter, RedisStreamsConfig, SessionUsageRecord, SkillSelectionRecord,
-    TranscriptIngestQueue, UsagePersistencePort, UsageSampleStore, VIEW_KIND_E_NEEDS,
-    VIEW_KIND_E_NEGATIVE, VIEW_KIND_E_SUMMARY, VIEW_KIND_E_TASK, content_hash_for_view_text,
-    model_keyed_collection_name, model_keyed_hybrid_collection_name, subunit_view_kind,
+    ReadinessHandle, RedisClient, RedisStreamsAdapter, RedisStreamsConfig, SessionUsageRecord,
+    SkillSelectionRecord, TranscriptIngestQueue, UsagePersistencePort, UsageSampleStore,
+    VIEW_KIND_E_NEEDS, VIEW_KIND_E_NEGATIVE, VIEW_KIND_E_SUMMARY, VIEW_KIND_E_TASK,
+    content_hash_for_view_text, model_keyed_collection_name, model_keyed_hybrid_collection_name,
+    subunit_view_kind,
 };
 use maintenance::RetirementConfig;
 use retrieval::{
@@ -97,6 +98,16 @@ pub struct McpServerApp {
     /// after the next successful write. Injected into every `compile_context`
     /// response under `health["usage_write"]`.
     usage_write_health: UsageWriteHealth,
+    /// Snapshot readiness signal shared with the health checker and the background
+    /// graph-reload subscriber.
+    ///
+    /// `find_skill`, `compile_context`, and `search_skill_graph` check this before
+    /// embedding the query — a `Warming` state short-circuits to an explicit warming
+    /// response without touching the embedding semaphore.
+    ///
+    /// Non-live constructors (`new_with_admin`, `with_explicit_graph`) default to
+    /// `ReadinessHandle::ready()` so existing tests do not hit the warming guard.
+    readiness: Arc<ReadinessHandle>,
 }
 
 impl McpServerApp {
@@ -130,6 +141,10 @@ impl McpServerApp {
             transcript_ingest: None,
             usage_sender: None,
             usage_write_health: new_usage_write_health(),
+            // Non-live constructors default to Ready so existing tests never hit the
+            // warming short-circuit.  The live boot path calls `with_readiness` after
+            // `build_graph_from_pg` succeeds to flip to Ready.
+            readiness: Arc::new(ReadinessHandle::ready()),
         }
     }
 
@@ -187,6 +202,19 @@ impl McpServerApp {
         (self, join_handle)
     }
 
+    /// Replaces the readiness handle with the given one (live boot path).
+    ///
+    /// Called from `build_live_server` after the app is built via `new_with_admin`
+    /// (which defaults to `Ready`) so the live path can start `Warming` and transition
+    /// to `Ready` once the initial snapshot and warmup embed complete.
+    ///
+    /// The handle is `Arc`-cloned so the same handle is shared with
+    /// `PostgresGraphReloader` and the health checker.
+    pub fn with_readiness_handle(mut self, handle: Arc<ReadinessHandle>) -> Self {
+        self.readiness = handle;
+        self
+    }
+
     /// Builds a server from an explicit in-memory [`RetrievalSnapshot`].
     ///
     /// This is the explicit-graph constructor used by tests and benches to wire a
@@ -229,6 +257,12 @@ impl McpServerApp {
             admin_runtime_dependencies.graph_reader,
             redis_client,
         )
+    }
+
+    /// Returns the shared readiness handle so callers (e.g. `build_live_server`) can
+    /// thread it onto `PostgresGraphReloader` and the health checker.
+    pub fn readiness_handle(&self) -> Arc<ReadinessHandle> {
+        self.readiness.clone()
     }
 
     /// Drops the `usage_sender` to signal channel closure to the background writer task.
@@ -274,7 +308,25 @@ impl McpServerApp {
     /// background writer (T06). Usage writes are off the response path — failures
     /// set `health["usage_write"]="failed"` and emit a `warn` log but never affect
     /// latency or the returned response.
+    ///
+    /// Short-circuits to `CompileContextStatus::Warming` when the snapshot is not
+    /// yet ready (T17 AC1). This guard runs BEFORE any query embed so the embedding
+    /// semaphore is never acquired during a cold-start or background reload window.
     pub async fn compile_context(&self, request: CompileContextRequest) -> CompileContextResponse {
+        // Guard: snapshot not ready → explicit warming response, no embed.
+        if !self.readiness.is_ready() {
+            return CompileContextResponse {
+                status: CompileContextStatus::Warming,
+                reason_code: Some("snapshot_warming".to_owned()),
+                additional_context: None,
+                health: std::collections::BTreeMap::new(),
+                scopes_considered: Vec::new(),
+                graph_version: 0,
+                latency_ms: 0,
+                source: "warming".to_owned(),
+            };
+        }
+
         let prompt_hash = compute_prompt_hash(&request.prompt);
         // Extract only the fields needed for usage capture before consuming the
         // request, so `invoke_and_capture_outcome` can take ownership without
@@ -321,16 +373,46 @@ impl McpServerApp {
         response
     }
 
+    /// Retrieves skills matching the prompt.
+    ///
+    /// Short-circuits to `status: "warming"` when the snapshot is not yet ready
+    /// (T17 AC1). The guard runs BEFORE any query embed so the embedding semaphore
+    /// is never acquired during a cold-start or background reload window.
     pub async fn find_skill(&self, request: FindSkillRequest) -> FindSkillResponse {
+        // Guard: snapshot not ready → explicit warming response, no embed.
+        if !self.readiness.is_ready() {
+            return FindSkillResponse {
+                status: "warming".to_owned(),
+                reason_code: Some("snapshot_warming".to_owned()),
+                matches: Vec::new(),
+                retrieval_context: None,
+            };
+        }
         self.find_skill.invoke(request).await
     }
 
     /// Queries the SkillDAG graph surface: ranked matches, typed neighbors, and
     /// conflict signals in separate sections.
+    ///
+    /// Short-circuits to `status: "warming"` when the snapshot is not yet ready
+    /// (T17 AC1). The guard runs BEFORE any query embed so the embedding semaphore
+    /// is never acquired during a cold-start or background reload window.
     pub async fn search_skill_graph(
         &self,
         request: SearchSkillGraphRequest,
     ) -> SearchSkillGraphResponse {
+        // Guard: snapshot not ready → explicit warming response, no embed.
+        if !self.readiness.is_ready() {
+            return SearchSkillGraphResponse {
+                status: "warming".to_owned(),
+                reason_code: Some("snapshot_warming".to_owned()),
+                matches: Vec::new(),
+                neighbors: Vec::new(),
+                conflicts: Vec::new(),
+                retrieval_context: None,
+                latency_ms: 0,
+            };
+        }
         self.search_skill_graph.invoke(request).await
     }
 
@@ -476,6 +558,13 @@ pub struct LiveServerComponents {
     /// `truncate_all_tables` to release RowExclusive locks held by in-flight writes.
     #[cfg(any(test, feature = "test-utils"))]
     pub usage_writer_join_handle: tokio::task::JoinHandle<()>,
+    /// Snapshot readiness handle (T17 AC1).
+    ///
+    /// Exposed so `main.rs` can wire it into the health checker via
+    /// `health_checker.with_readiness(live.readiness_handle.clone())`.
+    /// The same `Arc` is already shared with `PostgresGraphReloader` so background
+    /// reloads flip the signal without going through `LiveServerComponents`.
+    pub readiness_handle: Arc<ReadinessHandle>,
 }
 
 impl LiveServerComponents {
@@ -623,6 +712,13 @@ impl HybridCandidateSource for QdrantHybridCandidateSource {
 async fn build_live_server(
     config: RetrievalConfig,
 ) -> Result<LiveServerComponents, Box<dyn std::error::Error + Send + Sync>> {
+    // Create the readiness handle in the Warming state immediately so that any
+    // /health probe that arrives before the snapshot is ready sees NOT-ready.
+    // The handle is set to Ready after build_graph_from_pg + warmup complete.
+    // It is also shared with PostgresGraphReloader so background reloads flip
+    // the signal correctly.
+    let readiness_handle = Arc::new(ReadinessHandle::warming());
+
     // Build the embedding service first (sync, no network) so we can discover
     // its real vector dimension before setting up the Qdrant collection.
     // The model is read from OLLAMA_EMBED_MODEL (defaults to qwen3-embedding:4b).
@@ -722,6 +818,12 @@ async fn build_live_server(
         ),
     }
 
+    // Snapshot and warmup embed are complete — signal Ready so /health returns 200
+    // and tool calls can embed queries.  The signal is also wired into the app and
+    // the background reload subscriber below so reloads can flip it back to Warming.
+    readiness_handle.set_ready();
+    info!("snapshot ready — server entering ready state");
+
     let admin_runtime_dependencies = admin_wiring::live_admin_runtime_dependencies();
     let start_dir = std::env::current_dir().unwrap_or_else(|_| ".".into());
     let project_resolver: Arc<dyn ScopeResolver> =
@@ -789,7 +891,12 @@ async fn build_live_server(
     .with_find_skill_provenance(
         &embedding_model_info.model_name,
         &qdrant_adapter.config.collection_name,
-    );
+    )
+    // Wire the readiness handle (T17 AC1): the live path starts Warming (set above);
+    // the handle is already set to Ready by this point so the first real request can
+    // embed immediately.  The same Arc is shared with the reload subscriber below so
+    // background reloads can flip the signal correctly.
+    .with_readiness_handle(readiness_handle.clone());
 
     // Wire the background usage writer so compile_context records usage (T06).
     // In test/test-utils builds the join handle is stashed on `LiveServerComponents`
@@ -806,6 +913,8 @@ async fn build_live_server(
     // task so it never blocks the HTTP server.
     // T06: pass the usage_sample_store so graph refreshes also populate
     // the deterministic usage prior.
+    // T17: pass the readiness handle so the subscriber can flip Warming/Ready/Failed
+    // around each background reload.
     spawn_graph_refresh_subscriber(
         redis_streams.clone(),
         pg_adapter.clone(),
@@ -813,6 +922,7 @@ async fn build_live_server(
         retriever,
         usage_sample_store.clone(),
         embedding_model_info.clone(),
+        readiness_handle.clone(),
     );
 
     Ok(LiveServerComponents {
@@ -830,6 +940,9 @@ async fn build_live_server(
         // so the production binary never carries a reference to the task handle.
         #[cfg(any(test, feature = "test-utils"))]
         usage_writer_join_handle,
+        // Snapshot readiness signal — threaded to `main.rs` so it can wire the
+        // handle into the health checker via `with_readiness(...)`.
+        readiness_handle,
     })
 }
 
@@ -1056,30 +1169,56 @@ struct PostgresGraphReloader {
     /// `discover_dimension`.  Passed to `build_graph_from_pg` on every reload
     /// to key the persisted embedding cache.
     model_info: EmbeddingModelInfo,
+    /// Shared readiness signal (T17 AC1).
+    ///
+    /// Flipped `Warming` before `build_graph_from_pg` starts, then `Ready` on
+    /// success or `Failed(err)` on error.  The same `Arc` is held by the
+    /// `McpServerApp` and the health checker so the state is visible on `/health`
+    /// and the tool short-circuit guards see it immediately.
+    readiness: Arc<ReadinessHandle>,
 }
 
 #[async_trait]
 impl GraphReloader for PostgresGraphReloader {
     async fn reload_and_swap(&self) -> Result<i64, String> {
-        let snapshot = build_graph_from_pg(
+        // Signal Warming BEFORE touching the embedding semaphore so any concurrent
+        // tool call that checks `is_ready()` gets the short-circuit response instead
+        // of blocking behind the bulk re-embed.
+        self.readiness.set_warming();
+
+        let snapshot_result = build_graph_from_pg(
             self.pg_adapter.pool(),
             self.embedding_service.as_ref(),
             self.usage_sample_store.as_ref(),
             &self.model_info,
         )
-        .await
-        .map_err(|error| format!("graph reload from PG failed: {error}"))?;
-        let target_version = snapshot.graph_version;
-        // `swap_graph` is idempotent: re-applying the current/older version is a
-        // no-op, so a coalesced burst that resolves to an already-applied version
-        // still lets the triggering event be ACKed.
-        let applied = self.retriever.swap_graph(snapshot);
-        if applied {
-            info!(target_version, "graph refresh applied");
-        } else {
-            debug!(target_version, "graph refresh no-op (already current)");
+        .await;
+
+        match snapshot_result {
+            Err(error) => {
+                // Failed reload: surface the error on /health rather than staying
+                // stuck in Warming forever.  The event still returns Err so the
+                // ACK is withheld and the event replays — existing contract unchanged.
+                let msg = format!("graph reload from PG failed: {error}");
+                self.readiness.set_failed(&msg);
+                Err(msg)
+            }
+            Ok(snapshot) => {
+                let target_version = snapshot.graph_version;
+                // `swap_graph` is idempotent: re-applying the current/older version is a
+                // no-op, so a coalesced burst that resolves to an already-applied version
+                // still lets the triggering event be ACKed.
+                let applied = self.retriever.swap_graph(snapshot);
+                if applied {
+                    info!(target_version, "graph refresh applied");
+                } else {
+                    debug!(target_version, "graph refresh no-op (already current)");
+                }
+                // Snapshot installed — signal Ready so tool calls can embed queries.
+                self.readiness.set_ready();
+                Ok(target_version)
+            }
         }
-        Ok(target_version)
     }
 }
 
@@ -1091,6 +1230,10 @@ impl GraphReloader for PostgresGraphReloader {
 /// `model_info` is stored on the reloader so every `graph.rebuilt` reload can
 /// key the persisted embedding cache by (model_name, dimension) without
 /// re-calling Ollama's discover_dimension endpoint.
+///
+/// `readiness` is flipped `Warming` at the start of each reload and `Ready`
+/// (or `Failed`) when the reload completes, surfacing the state on `/health` and
+/// short-circuiting tool calls during the re-embed window (T17 AC1).
 fn spawn_graph_refresh_subscriber(
     redis_streams: Arc<RedisStreamsAdapter>,
     pg_adapter: Arc<PostgresAdapter>,
@@ -1098,6 +1241,7 @@ fn spawn_graph_refresh_subscriber(
     retriever: Arc<RetrievalOrchestrator<OllamaEmbeddingService>>,
     usage_sample_store: Arc<PostgresUsageSampleStore>,
     model_info: EmbeddingModelInfo,
+    readiness: Arc<ReadinessHandle>,
 ) {
     let reloader: Arc<dyn GraphReloader> = Arc::new(PostgresGraphReloader {
         pg_adapter,
@@ -1105,6 +1249,7 @@ fn spawn_graph_refresh_subscriber(
         retriever,
         usage_sample_store,
         model_info,
+        readiness,
     });
     tokio::spawn(run_graph_refresh_loop(redis_streams, reloader));
 }
@@ -1975,6 +2120,10 @@ fn build_session_usage_record(
         CompileContextStatus::NoMatch => "no_match",
         CompileContextStatus::Degraded => "degraded",
         CompileContextStatus::DuplicateSuppressed => "duplicate_suppressed",
+        // Warming responses never reach this function — the caller short-circuits
+        // before invoking retrieve() when the snapshot is not ready — but the
+        // match must be exhaustive.
+        CompileContextStatus::Warming => "warming",
     };
 
     // Determine the scope string from the first resolved scope, falling back to
@@ -2032,6 +2181,272 @@ fn subunit_kind_from_db(raw: &str) -> domain::SubunitType {
         "evidence" => domain::SubunitType::Evidence,
         "summary" => domain::SubunitType::Summary,
         _ => domain::SubunitType::Procedure,
+    }
+}
+
+/// T17 AC1: warming short-circuit tests.
+///
+/// These tests prove that `McpServerApp::find_skill`, `compile_context`, and
+/// `search_skill_graph` return an explicit warming response — without calling
+/// the embedder — when the readiness handle is in the `Warming` state.
+///
+/// Inline stubs (`EmbedCountingRetriever`, `NoopSnapshotReader`, `NoopTrigger`) are
+/// defined here rather than imported from `admin` to keep the unit tests free of the
+/// `test-utils` feature gate.  All stubs are `#[cfg(test)]`-only.
+#[cfg(test)]
+mod readiness_short_circuit_tests {
+    use std::{collections::BTreeMap, sync::Arc};
+
+    use admin::tools::{AdminToolError, CommunitySnapshot, GraphRebuildTrigger, GraphSnapshotReader, GraphRebuildSnapshot, SkillSnapshot};
+    use async_trait::async_trait;
+    use domain::{DomainId, LifecycleStatus, ScopeType, ScoredSkill, Skill, SkillStatus};
+    use infrastructure::ReadinessHandle;
+    use retrieval::{RetrievalOutcome, RetrievedSkill, SkillRetriever};
+
+    use super::{
+        McpServerApp,
+        tools::{
+            compile_context::{CompileContextRequest, CompileContextStatus},
+            find_skill::FindSkillRequest,
+            search_skill_graph::SearchSkillGraphRequest,
+        },
+    };
+
+    // -----------------------------------------------------------------------
+    // Test-only stub: counts how many `retrieve` calls have been made.
+    // Never compiled outside `#[cfg(test)]`.
+    // -----------------------------------------------------------------------
+
+    struct EmbedCountingRetriever {
+        call_count: std::sync::Mutex<usize>,
+    }
+
+    impl EmbedCountingRetriever {
+        fn new() -> Arc<Self> {
+            Arc::new(Self {
+                call_count: std::sync::Mutex::new(0),
+            })
+        }
+
+        fn retrieve_calls(&self) -> usize {
+            *self.call_count.lock().unwrap()
+        }
+    }
+
+    #[async_trait]
+    impl SkillRetriever for EmbedCountingRetriever {
+        async fn retrieve(&self, _prompt: &str, _repo_path: Option<&str>) -> RetrievalOutcome {
+            *self.call_count.lock().unwrap() += 1;
+            RetrievalOutcome {
+                skills: vec![RetrievedSkill {
+                    scored_skill: ScoredSkill {
+                        skill: Skill {
+                            id: DomainId::new_unchecked("test-skill"),
+                            name: "Test Skill".to_owned(),
+                            description: "A test skill".to_owned(),
+                            scope: ScopeType::Global,
+                            status: SkillStatus::Ready,
+                            lifecycle: LifecycleStatus::Active,
+                            tags: vec![],
+                            subunit_ids: vec![],
+                            community_id: None,
+                        },
+                        score: 0.9,
+                        semantic_score: 0.9,
+                        matched_scope: ScopeType::Global,
+                        rationale: vec![],
+                    },
+                    highlights: Vec::new(),
+                }],
+                rescue_pool: Vec::new(),
+                degraded_scopes: Vec::new(),
+                reason_codes: Vec::new(),
+                health: BTreeMap::new(),
+                scopes_considered: vec!["global".to_owned()],
+                graph_version: 1,
+                latency_ms: 0,
+            }
+        }
+
+        fn current_graph_version(&self) -> i64 {
+            1
+        }
+
+        fn configured_scopes(&self) -> Vec<String> {
+            vec!["global".to_owned()]
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Minimal admin stubs — avoids the `admin/test-utils` feature dependency.
+    // -----------------------------------------------------------------------
+
+    struct NoopSnapshotReader;
+
+    #[async_trait]
+    impl GraphSnapshotReader for NoopSnapshotReader {
+        async fn list_skills(&self) -> Result<Vec<SkillSnapshot>, AdminToolError> {
+            Ok(Vec::new())
+        }
+        async fn list_communities(&self) -> Result<Vec<CommunitySnapshot>, AdminToolError> {
+            Ok(Vec::new())
+        }
+    }
+
+    struct NoopTrigger;
+
+    #[async_trait]
+    impl GraphRebuildTrigger for NoopTrigger {
+        async fn trigger_full_rebuild(&self) -> Result<GraphRebuildSnapshot, AdminToolError> {
+            Err(AdminToolError::Unavailable(
+                "rebuild trigger is not configured in unit test".to_owned(),
+            ))
+        }
+    }
+
+    fn warming_app(retriever: Arc<EmbedCountingRetriever>) -> McpServerApp {
+        McpServerApp::new_with_admin(
+            retriever as Arc<dyn SkillRetriever>,
+            Arc::new(NoopTrigger),
+            Arc::new(NoopSnapshotReader),
+            None,
+        )
+        .with_readiness_handle(Arc::new(ReadinessHandle::warming()))
+    }
+
+    // -----------------------------------------------------------------------
+    // Tests
+    // -----------------------------------------------------------------------
+
+    /// `find_skill` returns `status: "warming"` when the readiness handle is
+    /// `Warming`, and does NOT call `retrieve` (no embed attempted).
+    #[tokio::test]
+    async fn find_skill_returns_warming_status_without_embed() {
+        let retriever = EmbedCountingRetriever::new();
+        let app = warming_app(retriever.clone());
+
+        let response = app
+            .find_skill(FindSkillRequest {
+                prompt: "test prompt".to_owned(),
+                limit: Some(5),
+            })
+            .await;
+
+        assert_eq!(
+            response.status, "warming",
+            "find_skill must return status 'warming' when readiness is Warming; \
+             got '{}'",
+            response.status
+        );
+        assert!(
+            response.matches.is_empty(),
+            "warming response must have no matches"
+        );
+        assert_eq!(
+            retriever.retrieve_calls(),
+            0,
+            "retriever must NOT be called when readiness is Warming (no embed should run)"
+        );
+    }
+
+    /// `search_skill_graph` returns `status: "warming"` and does NOT call `retrieve`.
+    #[tokio::test]
+    async fn search_skill_graph_returns_warming_status_without_embed() {
+        let retriever = EmbedCountingRetriever::new();
+        let app = warming_app(retriever.clone());
+
+        let response = app
+            .search_skill_graph(SearchSkillGraphRequest {
+                prompt: "test prompt".to_owned(),
+                limit: Some(5),
+            })
+            .await;
+
+        assert_eq!(
+            response.status, "warming",
+            "search_skill_graph must return status 'warming' when readiness is Warming; \
+             got '{}'",
+            response.status
+        );
+        assert!(response.matches.is_empty());
+        assert!(response.neighbors.is_empty());
+        assert!(response.conflicts.is_empty());
+        assert_eq!(
+            retriever.retrieve_calls(),
+            0,
+            "retriever must NOT be called when readiness is Warming (no embed should run)"
+        );
+    }
+
+    /// `compile_context` returns `CompileContextStatus::Warming` and does NOT call `retrieve`.
+    #[tokio::test]
+    async fn compile_context_returns_warming_status_without_embed() {
+        let retriever = EmbedCountingRetriever::new();
+        let app = warming_app(retriever.clone());
+
+        let response = app
+            .compile_context(CompileContextRequest {
+                prompt: "test prompt".to_owned(),
+                session_id: "test-session".to_owned(),
+                repo_path: "/test/repo".to_owned(),
+                trigger: None,
+            })
+            .await;
+
+        assert_eq!(
+            response.status,
+            CompileContextStatus::Warming,
+            "compile_context must return Warming status when readiness is Warming"
+        );
+        assert_eq!(
+            retriever.retrieve_calls(),
+            0,
+            "retriever must NOT be called when readiness is Warming (no embed should run)"
+        );
+    }
+
+    /// After the handle transitions to `Ready`, `find_skill` calls the retriever normally.
+    #[tokio::test]
+    async fn find_skill_calls_retriever_after_ready_transition() {
+        let retriever = EmbedCountingRetriever::new();
+        let handle = Arc::new(ReadinessHandle::warming());
+        let app = McpServerApp::new_with_admin(
+            retriever.clone() as Arc<dyn SkillRetriever>,
+            Arc::new(NoopTrigger),
+            Arc::new(NoopSnapshotReader),
+            None,
+        )
+        .with_readiness_handle(handle.clone());
+
+        // Still warming — retriever must not be called.
+        let warming_response = app
+            .find_skill(FindSkillRequest {
+                prompt: "test".to_owned(),
+                limit: Some(5),
+            })
+            .await;
+        assert_eq!(warming_response.status, "warming");
+        assert_eq!(retriever.retrieve_calls(), 0);
+
+        // Transition to Ready.
+        handle.set_ready();
+
+        let ready_response = app
+            .find_skill(FindSkillRequest {
+                prompt: "test".to_owned(),
+                limit: Some(5),
+            })
+            .await;
+        // Status must be "ok" (retriever returns one skill).
+        assert_eq!(
+            ready_response.status, "ok",
+            "after set_ready(), find_skill must call the retriever and return 'ok'"
+        );
+        assert_eq!(
+            retriever.retrieve_calls(),
+            1,
+            "retriever must be called exactly once after transitioning to Ready"
+        );
     }
 }
 

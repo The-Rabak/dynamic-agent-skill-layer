@@ -52,7 +52,9 @@ pub use extraction::prompt_contract::{
     build_text_json_extraction_prompt, render_sanitized_transcript_lines,
 };
 pub use extraction::text_llm::{ClaudeCodeTextLlm, OllamaTextLlm, StructuredTextLlm};
-pub use health::{DependencyFactory, HealthComponent, HealthReport, InfrastructureHealthChecker};
+pub use health::{
+    DependencyFactory, HealthComponent, HealthReport, InfrastructureHealthChecker, ReadinessHandle,
+};
 pub use persistence::embedding_cache::{
     EmbeddingCacheError, EmbeddingCacheRow, EmbeddingCacheStore, LoadedEmbedding,
     VIEW_KIND_E_NEEDS, VIEW_KIND_E_NEGATIVE, VIEW_KIND_E_SUMMARY, VIEW_KIND_E_TASK,

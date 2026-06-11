@@ -9,7 +9,7 @@ brainstorm_ref: null
 started: 2026-06-11T16:45:01Z
 status: in_progress
 execution_shape: vertical-slices
-current_unit: 1
+current_unit: 2
 total_units: 3
 session_id: work-2026-06-11-164501-T17
 ---
@@ -45,7 +45,7 @@ session_id: work-2026-06-11-164501-T17
 | # | Unit | Kind | Serves / Unlocks | Status | Attempts | Session File |
 |---|------|------|------------------|--------|----------|--------------|
 | 1 | Persisted embedding cache: kill the boot/reload re-embed | infra-persistence | AC2 + AC3 (precomputed-vector load, changed-only re-embed, fail-loud model/dim, ~7min→seconds) | completed (code+unit; live-PG → Unit 3 stack) | 1 | unit-01-persisted-embedding-cache.md |
-| 2 | Readiness honesty: snapshot-ready signal + fast tool warming | hardening | AC1 (no healthy-while-warming; tools warming-fast, no hang) | pending | -- | -- |
+| 2 | Readiness honesty: snapshot-ready signal + fast tool warming | hardening | AC1 (no healthy-while-warming; tools warming-fast, no hang) | completed (code+unit; live → Unit 3) | 1 | unit-02-readiness-honesty.md |
 | 3 | Live qwen3 cold-boot test + workspace green + T11 gate signal | e2e-evidence | AC3/AC4/AC5 (live proof both behaviors; cargo test --workspace green; T11 gates on honest signal) | pending | -- | -- |
 
 ## Learnings Brief

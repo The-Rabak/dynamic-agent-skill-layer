@@ -70,6 +70,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         format!("backend={backend_label}"),
     );
 
+    // Wire the snapshot readiness handle (T17 AC1) into the health checker so
+    // /health returns 503 while a build/reload is in flight and 200 when ready.
+    // The same Arc is already shared with McpServerApp and PostgresGraphReloader,
+    // so the signal transitions atomically across all three.
+    health_checker = health_checker.with_readiness(live.readiness_handle.clone());
+
     let app = live.app;
 
     info!(
