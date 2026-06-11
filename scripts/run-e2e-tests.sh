@@ -6,6 +6,10 @@ INCLUDE_QUALITY=0
 SKIP_INFRA=0
 SKIP_LIVE=0
 
+# Fix 2: initialize gate_exit at top scope so the final `exit "$gate_exit"` is
+# always valid even when --include-quality is not passed.
+gate_exit=0
+
 for arg in "$@"; do
   case "$arg" in
     --include-dream)
@@ -66,6 +70,18 @@ if [[ "${SKIP_INFRA}" -eq 0 ]]; then
 
   echo "==> Starting infrastructure test stack"
   docker compose --ansi never -f "${REPO_ROOT}/${COMPOSE_FILE}" down --remove-orphans >/dev/null 2>&1 || true
+
+  # Fix 1: wipe stateful data volumes before each run so stale postgres/qdrant/redis
+  # state (e.g. old graph_state rows, outbox idempotency keys) can never contaminate
+  # this run.  ollama_data is intentionally preserved — re-pulling qwen3-embedding:4b
+  # + gemma4:12b on every run is very slow and unnecessary.
+  # Volume names: docker compose default project = COMPOSE_PROJECT_NAME or the repo
+  # dir basename.  The container_name stanzas in docker-compose.yml confirm the
+  # default project name is "skill-layer" (${COMPOSE_PROJECT_NAME:-skill-layer}).
+  PROJECT="${COMPOSE_PROJECT_NAME:-$(basename "${REPO_ROOT}")}"
+  echo "==> Wiping stateful data volumes (${PROJECT}_postgres_data, ${PROJECT}_qdrant_data, ${PROJECT}_redis_data); ollama_data preserved"
+  docker volume rm -f "${PROJECT}_postgres_data" "${PROJECT}_qdrant_data" "${PROJECT}_redis_data" 2>/dev/null || true
+
   docker compose --ansi never -f "${REPO_ROOT}/${COMPOSE_FILE}" up -d postgres redis qdrant ollama
 
   echo "==> Verifying topology"
@@ -143,8 +159,16 @@ if [[ "${SKIP_INFRA}" -eq 0 ]]; then
       # printed for visibility, NOT faked green, NOT lowered.
       # Requires: live 234-corpus + Ollama + the `claude` CLI on PATH.
       echo "==> [GATING] Retrieval quality on the real 234-corpus (regression floor MRR >= 0.60; aspiration 0.80 tracked)"
+      # Fix 2: capture the gate's exit code instead of letting set -e abort the suite.
+      # The suite continues so aggregation + remaining suites still run; the failure is
+      # propagated to the final script exit (see bottom of script).
       python3 "${REPO_ROOT}/scripts/retrieval_quality_live.py" --split held_out --gate \
-        --regression-floor 0.60 --config-label "release-gate"
+        --regression-floor 0.60 --config-label "release-gate" || gate_exit=$?
+      if [[ "${gate_exit}" -ne 0 ]]; then
+        echo "    [NON-FATAL] Efficacy gate exited with code ${gate_exit}. Suite is CONTINUING so aggregation + remaining suites still run."
+        echo "    [NON-FATAL] NOTE: this gate is currently KNOWN non-runnable on the e2e fixture corpus — the 234-fixture is 0/30-aligned with the live corpus (MRR=0.000); this is the T11-deferred gap, NOT a retrieval regression. The aligned fixture is T11's deliverable."
+        echo "    [NON-FATAL] The non-zero gate exit will be propagated to the final script exit so CI still sees red."
+      fi
     fi
 
     echo "==> Tearing down service containers"
@@ -364,3 +388,7 @@ with open('${JUDGE_REPORT}', 'w') as f:
 
 print(f'Judge evaluation written to ${JUDGE_REPORT}')
 " 2>&1
+
+# Fix 2: propagate the efficacy gate failure to the final script exit so CI sees
+# red when the gate fails, but only AFTER the full suite + reports have completed.
+exit "${gate_exit}"
