@@ -183,6 +183,33 @@ impl McpClient {
         })
     }
 
+    /// Sends a raw `tools/list` request and returns the JSON-RPC response.
+    pub async fn list_tools(&self) -> Result<JsonRpcResponse, String> {
+        let body = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/list",
+            "params": {}
+        });
+        let resp = self
+            .http
+            .post(format!("{}/mcp", self.base_url))
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| format!("HTTP request to /mcp (tools/list) failed: {e}"))?;
+        let status = resp.status();
+        let text = resp
+            .text()
+            .await
+            .map_err(|e| format!("failed to read tools/list response body: {e}"))?;
+        if !status.is_success() {
+            return Err(format!("/mcp tools/list returned HTTP {status}: {text}"));
+        }
+        serde_json::from_str::<JsonRpcResponse>(&text)
+            .map_err(|e| format!("failed to deserialize tools/list response: {e}\nbody: {text}"))
+    }
+
     /// Calls `GET /health` and returns `(status_code, body_json)`.
     ///
     /// A `200` with `{"healthy":true}` means the server is ready.

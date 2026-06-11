@@ -98,4 +98,47 @@ Either way, this is the rare repo where the next 8 tickets will produce an *answ
 
 ---
 
-*Prior scores for continuity: 58% (05-21 adversarial) → 72% (05-26) → 78% (05-28) → 82% (05-31) → 84% (06-02) → re-based by 06-07 brutal (efficacy 0/10). This assessment: trust-basis ~87%, endgame-basis ~66%, efficacy 1.5/10 (scale built, never stood on).*
+## Addendum — 2026-06-11 (same day): endgame re-armed against CL-bench + ticket tightening
+
+Two pieces of work landed after the body above was written. Both change *what the endgame is*, not the midpoint score — so the scorecard stands, but the denominator it's measured against just got harder and more honest.
+
+### 1. Phase-B tickets tightened (T11/T12/T14/T15 amended, T17 added)
+
+The retrieval-evaluation critique in this assessment was converted into ticket law:
+
+- **T11 is now instrument-first.** Before any arm verdict it must pass an **α=0 negative-control gate** (semantic scoring off must crater MRR, or the fixture is rejected), report **candidate-recall@limit** as a first-class per-arm metric (the only thing candidate-gen can move at 262 skills), use **paired per-query rank diagnostics + sign tests** instead of 3-decimal mean equality, add an **MRR@10 resolution arm**, and build a **conditional env-gated lexical-ranking arm** (δ·BM25 in eq.3) so the hybrid bet gets tested as a *ranking* signal at least once. The anti-circularity rule is now an owner decision in-ticket: headline queries come from held-out transcript *problem statements*, `use_when`-derived queries demoted to a labeled secondary stratum.
+- **T12** gains a hard T11 dependency + a session-start query stratum + pre-registered per-signal ROI thresholds.
+- **T14** gains pre-registration, paired design, a **placebo arm** (matched-token-mass irrelevant context), per-pull attribution, and a third honest outcome: **PASS / FAIL / UNDERPOWERED**.
+- **T15** gains a committed **minimum-detectable-effect** so a null on a small SWE-bench subset reports UNDERPOWERED, not "no effect."
+- **New T17** (`mcp-server-boot-readiness-honesty`): `/health` must not report ready during the ~7-min qwen3 boot re-embed; load precomputed vectors at boot. Sequenced after the in-flight T13 session (shared `crates/mcp-server` files). This is the same health-marker-honesty class the project has fixed twice before, and it directly protects T11's measurement validity.
+
+**Why this matters to the score:** the "measurement integrity 6.0" line was the binding constraint on everything downstream. These amendments don't raise it yet — they make it *raisable*, by forcing the instrument to prove it can discriminate before any verdict rides on it. The next assessment can move that number only if T11 actually runs the negative-control gate and it craters.
+
+### 2. The dream-state suite was fully realized and re-aimed at CL-bench (arXiv:2602.03587)
+
+The endgame is no longer 24 mostly-stubbed contracts with 7 live bodies. `tests/e2e/test_dream_state_contract.rs` went 2,987 → 4,933 lines; **every `pending_contract` panic is gone**. The suite now has three honest bands:
+
+- **Trust band (DS-001–013): all live, all hard-asserted.** DS-001/002/008/009/010/011/012/013 were promoted from panics to real bodies that drive the containerized stack — closed-loop *extraction* determinism, stdio↔HTTP transport parity, multi-repo canary isolation + repo-scoped suppression, restart/Redis-restart suppression durability, a hostile-input barrage, reason-coded observability, provider parity, and a lifecycle SLA with a hard "rejected never activates" no-auto-approval gate.
+- **Platform band (DS-014–024): live RED capability probes.** Each drives the real server and asserts the dream surface is advertised in `tools/list`, red-lining the exact missing tool name as the machine-checkable definition of done. No more silent placeholders; add the tool, the contract greens.
+- **NEW — Context-Learning Mastery band (DS-025–030):** the CL-bench counter-move encoded as executable contracts. One-shot acquisition of a *non-pretrained* invented rule; procedural fidelity (complete + in-order); **supersession** (a corrected rule must outrank the one it contradicts); compositional retrieval across typed `requires↔produces` edges; **zero negative transfer**; and the north star, **DS-030's compounding mastery curve** — coverage of a fixed task must be monotone non-decreasing and net-positive as skills accumulate. That is "the system gets better the more it learns" as a monotonicity assertion — precisely the property CL-bench shows static models lack.
+
+**New learning that updates the thesis framing:** CL-bench reframes the efficacy question from "does injected context help a task" to "can the system durably acquire what a model *cannot* learn in-context." That is a stronger, more defensible differentiation than generic RAG uplift — and DS-025/DS-030 are the cleanest expression of it in the repo. It also sharpens the efficacy gate: T14/T15 should adopt at least one CL-bench-shaped task (a novel rule/procedure absent from pretraining) as a headline arm, because that is where the layer's advantage is largest and least confoundable by "any extra context helps."
+
+**Process note (honesty cost):** a prior session had left a truncated, brace-imbalanced DS-010 block (ended mid-token in `ass`) that would never compile — found and excised surgically. Worth a standing watch-item: large hand-authored test files are a corruption surface; the compile-gate in `run-e2e-tests.sh` (`--skip ignored`) is the thing that catches it and must stay green.
+
+**Status of the new suite:** compiles clean and fmt-clean; all 30 DS contracts register. The bodies are unrun against live containers in this session (they're `#[ignore]` by contract). That is the single biggest caveat below.
+
+### What the follow-up assessment (a few days out) should focus on
+
+1. **Did T11 build a ruler that can see?** This is the keystone. Specifically: did the α=0 negative-control arm actually crater MRR on the new fixture (proving discrimination), and did candidate-recall@limit and paired sign-tests replace mean-equality verdicts? If T11 shipped a verdict *without* the negative-control gate passing first, treat every retrieval conclusion as unproven and say so. Grade **measurement integrity** primarily on this.
+2. **Do the promoted dream contracts actually pass live?** DS-001/008/009/010/011/012/013 are written but unrun here. Run them against the real stack (or read the persisted `tests/e2e/reports/*.json`) and report a real pass/fail/RED matrix. Watch for the old DS-006 failure mode (NoMatch-counted-as-success) creeping back in — the new bodies have non-vacuity guards, so verify those guards fired. Promote the dream-state readiness number only on observed green, never on "written."
+3. **Is the CL-bench framing reflected in the efficacy harness?** Check whether T14/T15 adopted a CL-bench-shaped headline task (novel non-pretrained rule/procedure) and whether DS-025/DS-030 ran. The compounding-curve (DS-030) and one-shot-acquisition (DS-025) results are the highest-signal evidence the project can produce; if they're green, the efficacy score moves off 1.5 for the first time on real grounds.
+4. **Pre-registration discipline held?** For any T14/T15 run, confirm the pass criterion / minimum-detectable-effect was written *before* the data existed and the report classifies PASS/FAIL/UNDERPOWERED against it verbatim. A post-hoc reading is a regression in the project's strongest asset (its honesty), and should be scored as one.
+5. **Did the workspace gates go green?** The pre-existing clippy dead-code + T04/T05 fmt blockers, plus the new T17 boot-readiness item, all gate the V1.7 final. Track whether they cleared; an honest tree is the foundation every other score rests on.
+6. **Watch-item, not a focus:** confirm no new truncation/corruption in the now-4,933-line dream file, and that T13's landing didn't collide with the untouched-this-session mcp-server surface T17 depends on.
+
+The shape of the next assessment is therefore: *less about capability, entirely about whether the measurement apparatus is real and whether the CL-bench-shaped contracts run green.* The project has, this session, defined a harder and more honest finish line. The score moves when the stack is driven across it — not before.
+
+---
+
+*Prior scores for continuity: 58% (05-21 adversarial) → 72% (05-26) → 78% (05-28) → 82% (05-31) → 84% (06-02) → re-based by 06-07 brutal (efficacy 0/10). This assessment: trust-basis ~87%, endgame-basis ~66%, efficacy 1.5/10 (scale built, never stood on). Addendum 06-11: endgame re-armed against CL-bench (DS-025–030) and Phase-B tickets tightened to instrument-first + pre-registered; scores unchanged — the finish line moved, the runner has not yet crossed it.*
