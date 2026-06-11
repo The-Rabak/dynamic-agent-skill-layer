@@ -2,7 +2,7 @@
 ticket_id: T21
 title: Workspace gates green — clippy -D warnings + fmt clean at HEAD (the honest-tree gate)
 kind: hygiene
-status: ready
+status: completed
 plan_ref: docs/plans/2026-06-08-feat-v1-7-local-hybrid-skilldag-retrieval-plan.md
 tickets_ref: docs/tickets/2026-06-08-v1-7-local-hybrid-skilldag-retrieval/index.md
 architecture_ref: "constitution: honest tree; V1.7 final gate requires cargo clippy --workspace --all-targets -D warnings and cargo fmt --check green"
@@ -62,11 +62,27 @@ not wait for the final gate, and T20's full-suite verification run is only meani
 
 ## Acceptance Criteria
 
-- [ ] `cargo clippy --workspace --all-targets -- -D warnings` exits 0.
-- [ ] `cargo fmt --check` exits 0.
-- [ ] Dead code in tests/e2e/harness+support either wired into real use or deleted (decision per
+- [x] `cargo clippy --workspace --all-targets -- -D warnings` exits 0.
+- [x] `cargo fmt --check` exits 0.
+- [x] Dead code in tests/e2e/harness+support either wired into real use or deleted (decision per
       item recorded; targeted allows justified inline).
-- [ ] Prevention note recorded for the unformatted-commit pattern.
+- [x] Prevention note recorded for the unformatted-commit pattern.
+
+## Completion Evidence (session work-2026-06-12-012651-T21)
+
+Both gates GREEN, orchestrator-verified independently (clippy exit 0, fmt exit 0). The clippy
+`useless_vec` abort at `cosine_rank.rs:64` was masking three further error classes, all drained:
+
+1. **`useless_vec`** (`crates/retrieval/src/cosine_rank.rs:64`) — `vec![vec![…]]` → array literal in test.
+2. **`items_after_test_module`** (`crates/mcp-server/src/tools/search_skill_graph.rs`) — `classify_edges_for_matches`/`emit_edge` moved before the `#[cfg(test)]` block (pure relocation, byte-identical).
+3. **Dead-code class** — the real offender was NOT the QdrantObserver/RedisObserver/run_docker class but `crates/mcp-server/tests/env_guard.rs` being auto-discovered by Cargo as an orphan standalone test binary. Fixed by relocating it to `tests/helpers/env_guard.rs` (byte-identical move; subdirectory files are not auto-discovered) and updating the three `#[path]` includes. No blanket allows used.
+4. **Bench compile-fix** (`tests/bench/compile_context_bench.rs`) — added the three T09 `e_task/e_needs/e_negative` empty-vec fields the bench was missing (empty == absent per the fusion contract; zero behavior delta).
+
+fmt sweep: 31 diffs across 7 files (graph-builder, infrastructure ×4, mcp-server). All formatting-only.
+
+**Zero behavior change audited:** every non-fmt edit is test/bench/relocation; touched-test regression green (retrieval cosine + mcp-server search_skill_graph suites pass).
+
+**Prevention note (unformatted-commit pattern):** root cause is `cargo fmt` not enforced at commit time. Habit: run `cargo fmt` before staging; optionally a `.git/hooks/pre-commit` running `cargo fmt --check`. No new tool added.
 
 ## Local Context
 

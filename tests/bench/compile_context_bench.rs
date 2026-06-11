@@ -66,6 +66,11 @@ fn build_seeded_skill(id: &str, name: &str, scope: ScopeType, embedding: Vec<f32
         }],
         prior: 0.5,
         community_boost: 0.0,
+        // T09 dense multi-view embeddings: empty → fusion falls back to e_summary.
+        // The benchmark isolates retrieval + compilation latency, not multi-view quality.
+        e_task_embedding: Vec::new(),
+        e_needs_embedding: Vec::new(),
+        e_negative_embedding: Vec::new(),
     }
 }
 

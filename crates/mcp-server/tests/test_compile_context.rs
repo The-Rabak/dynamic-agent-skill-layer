@@ -30,7 +30,7 @@ use mcp_server::{
 use retrieval::{RetrievalConfig, RetrievalSnapshot, SeededSkill};
 use serde_json::json;
 
-#[path = "env_guard.rs"]
+#[path = "helpers/env_guard.rs"]
 mod env_guard;
 
 struct DatabaseUrlGuard {

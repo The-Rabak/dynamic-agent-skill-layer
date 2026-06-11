@@ -1364,9 +1364,10 @@ async fn embed_dense_view_with_cache(
 
     // Upsert newly embedded vectors back to the cache.
     if !cache_rows.is_empty() {
-        cache_store.upsert_many(&cache_rows).await.map_err(|e| {
-            format!("dense-view {view_kind} cache upsert failed: {e}")
-        })?;
+        cache_store
+            .upsert_many(&cache_rows)
+            .await
+            .map_err(|e| format!("dense-view {view_kind} cache upsert failed: {e}"))?;
         info!(
             view_kind,
             upserted = cache_rows.len(),
@@ -1616,8 +1617,7 @@ async fn build_graph_from_pg(
         };
 
         // Build a per-entry flat embedding map (entry_idx → Vec<f32>).
-        let mut flat_subunit_embeddings: Vec<Vec<f32>> =
-            vec![vec![]; all_subunit_entries.len()];
+        let mut flat_subunit_embeddings: Vec<Vec<f32>> = vec![vec![]; all_subunit_entries.len()];
         let mut subunit_cache_rows: Vec<EmbeddingCacheRow> = Vec::new();
         for (miss_pos, &entry_idx) in subunit_miss_indices.iter().enumerate() {
             let vector = subunit_miss_embeddings[miss_pos].clone();
@@ -1635,8 +1635,7 @@ async fn build_graph_from_pg(
         // Fill cache hits.
         for (entry_idx, entry) in all_subunit_entries.iter().enumerate() {
             if flat_subunit_embeddings[entry_idx].is_empty() {
-                let cache_key =
-                    (entry.skill_id.clone(), subunit_view_kind(entry.position));
+                let cache_key = (entry.skill_id.clone(), subunit_view_kind(entry.position));
                 let hash = content_hash_for_view_text(&entry.text);
                 if let Some(cached) = embedding_cache.get(&cache_key)
                     && cached.content_hash == hash
@@ -2197,7 +2196,10 @@ fn subunit_kind_from_db(raw: &str) -> domain::SubunitType {
 mod readiness_short_circuit_tests {
     use std::{collections::BTreeMap, sync::Arc};
 
-    use admin::tools::{AdminToolError, CommunitySnapshot, GraphRebuildTrigger, GraphSnapshotReader, GraphRebuildSnapshot, SkillSnapshot};
+    use admin::tools::{
+        AdminToolError, CommunitySnapshot, GraphRebuildSnapshot, GraphRebuildTrigger,
+        GraphSnapshotReader, SkillSnapshot,
+    };
     use async_trait::async_trait;
     use domain::{DomainId, LifecycleStatus, ScopeType, ScoredSkill, Skill, SkillStatus};
     use infrastructure::ReadinessHandle;

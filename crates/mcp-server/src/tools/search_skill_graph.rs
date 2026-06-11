@@ -198,6 +198,103 @@ impl SearchSkillGraphTool {
     }
 }
 
+/// Filters edges to those incident on at least one matched skill, then separates
+/// positive neighbors from conflict signals.
+///
+/// For each edge where `source_skill_id` is in `matched_ids`:
+/// - `direction` is `"outbound"` and the neighbor/conflict `skill_id` is `target_skill_id`.
+///
+/// For each edge where `target_skill_id` is in `matched_ids` (and source is not):
+/// - `direction` is `"inbound"` and the neighbor/conflict `skill_id` is `source_skill_id`.
+///
+/// An edge where BOTH endpoints are matched skills is emitted once per matched
+/// endpoint (outbound from the source match and inbound to the target match) so
+/// both matched skills see their adjacency.
+///
+/// `conflicts_with` edges go to `conflicts`; `depends_on`, `composes_with`, and
+/// `similar_to` go to `neighbors`. Unknown edge types are skipped (forward-compat
+/// with future migrations).
+///
+/// This function MUST NOT fold `conflicts_with` edges into `neighbors`.
+pub(crate) fn classify_edges_for_matches(
+    edges: &[SkillEdgeSnapshot],
+    matched_ids: &std::collections::HashSet<&str>,
+) -> (Vec<SkillNeighbor>, Vec<SkillConflict>) {
+    let mut neighbors = Vec::new();
+    let mut conflicts = Vec::new();
+
+    for edge in edges {
+        let source_matched = matched_ids.contains(edge.source_skill_id.as_str());
+        let target_matched = matched_ids.contains(edge.target_skill_id.as_str());
+
+        if !source_matched && !target_matched {
+            continue;
+        }
+
+        // Emit once for the source-is-matched (outbound) perspective.
+        if source_matched {
+            emit_edge(
+                edge,
+                "outbound",
+                &edge.target_skill_id,
+                &mut neighbors,
+                &mut conflicts,
+            );
+        }
+
+        // Emit once for the target-is-matched (inbound) perspective, but only
+        // when the source is not also matched (avoids a duplicate self-loop entry
+        // for edges that connect two matched skills via the outbound pass above).
+        if target_matched && !source_matched {
+            emit_edge(
+                edge,
+                "inbound",
+                &edge.source_skill_id,
+                &mut neighbors,
+                &mut conflicts,
+            );
+        }
+    }
+
+    (neighbors, conflicts)
+}
+
+/// Appends a single classified edge entry for the given perspective.
+///
+/// `direction` is `"outbound"` when the matched skill is the edge source,
+/// `"inbound"` when it is the target. `other_endpoint` is the non-matched
+/// endpoint that the resulting neighbor/conflict entry should name.
+fn emit_edge(
+    edge: &SkillEdgeSnapshot,
+    direction: &str,
+    other_endpoint: &str,
+    neighbors: &mut Vec<SkillNeighbor>,
+    conflicts: &mut Vec<SkillConflict>,
+) {
+    match edge.edge_type.as_str() {
+        "depends_on" | "composes_with" | "similar_to" => {
+            neighbors.push(SkillNeighbor {
+                skill_id: other_endpoint.to_owned(),
+                edge_type: edge.edge_type.clone(),
+                direction: direction.to_owned(),
+                origin: edge.origin.clone(),
+                confidence: edge.confidence,
+                reason: edge.reason.clone(),
+            });
+        }
+        "conflicts_with" => {
+            conflicts.push(SkillConflict {
+                skill_id: other_endpoint.to_owned(),
+                direction: direction.to_owned(),
+                origin: edge.origin.clone(),
+                confidence: edge.confidence,
+                reason: edge.reason.clone(),
+            });
+        }
+        _ => {}
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashSet;
@@ -355,102 +452,5 @@ mod tests {
             "all 3 positive types must go to neighbors"
         );
         assert_eq!(conflicts.len(), 0, "no conflicts_with edges in input");
-    }
-}
-
-/// Filters edges to those incident on at least one matched skill, then separates
-/// positive neighbors from conflict signals.
-///
-/// For each edge where `source_skill_id` is in `matched_ids`:
-/// - `direction` is `"outbound"` and the neighbor/conflict `skill_id` is `target_skill_id`.
-///
-/// For each edge where `target_skill_id` is in `matched_ids` (and source is not):
-/// - `direction` is `"inbound"` and the neighbor/conflict `skill_id` is `source_skill_id`.
-///
-/// An edge where BOTH endpoints are matched skills is emitted once per matched
-/// endpoint (outbound from the source match and inbound to the target match) so
-/// both matched skills see their adjacency.
-///
-/// `conflicts_with` edges go to `conflicts`; `depends_on`, `composes_with`, and
-/// `similar_to` go to `neighbors`. Unknown edge types are skipped (forward-compat
-/// with future migrations).
-///
-/// This function MUST NOT fold `conflicts_with` edges into `neighbors`.
-pub(crate) fn classify_edges_for_matches(
-    edges: &[SkillEdgeSnapshot],
-    matched_ids: &std::collections::HashSet<&str>,
-) -> (Vec<SkillNeighbor>, Vec<SkillConflict>) {
-    let mut neighbors = Vec::new();
-    let mut conflicts = Vec::new();
-
-    for edge in edges {
-        let source_matched = matched_ids.contains(edge.source_skill_id.as_str());
-        let target_matched = matched_ids.contains(edge.target_skill_id.as_str());
-
-        if !source_matched && !target_matched {
-            continue;
-        }
-
-        // Emit once for the source-is-matched (outbound) perspective.
-        if source_matched {
-            emit_edge(
-                edge,
-                "outbound",
-                &edge.target_skill_id,
-                &mut neighbors,
-                &mut conflicts,
-            );
-        }
-
-        // Emit once for the target-is-matched (inbound) perspective, but only
-        // when the source is not also matched (avoids a duplicate self-loop entry
-        // for edges that connect two matched skills via the outbound pass above).
-        if target_matched && !source_matched {
-            emit_edge(
-                edge,
-                "inbound",
-                &edge.source_skill_id,
-                &mut neighbors,
-                &mut conflicts,
-            );
-        }
-    }
-
-    (neighbors, conflicts)
-}
-
-/// Appends a single classified edge entry for the given perspective.
-///
-/// `direction` is `"outbound"` when the matched skill is the edge source,
-/// `"inbound"` when it is the target. `other_endpoint` is the non-matched
-/// endpoint that the resulting neighbor/conflict entry should name.
-fn emit_edge(
-    edge: &SkillEdgeSnapshot,
-    direction: &str,
-    other_endpoint: &str,
-    neighbors: &mut Vec<SkillNeighbor>,
-    conflicts: &mut Vec<SkillConflict>,
-) {
-    match edge.edge_type.as_str() {
-        "depends_on" | "composes_with" | "similar_to" => {
-            neighbors.push(SkillNeighbor {
-                skill_id: other_endpoint.to_owned(),
-                edge_type: edge.edge_type.clone(),
-                direction: direction.to_owned(),
-                origin: edge.origin.clone(),
-                confidence: edge.confidence,
-                reason: edge.reason.clone(),
-            });
-        }
-        "conflicts_with" => {
-            conflicts.push(SkillConflict {
-                skill_id: other_endpoint.to_owned(),
-                direction: direction.to_owned(),
-                origin: edge.origin.clone(),
-                confidence: edge.confidence,
-                reason: edge.reason.clone(),
-            });
-        }
-        _ => {}
     }
 }

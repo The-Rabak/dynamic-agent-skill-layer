@@ -405,12 +405,12 @@ impl PostgresGraphSnapshotStore {
         let rows = sqlx::query_as::<
             _,
             (
-                String,                       // source_skill_id
-                String,                       // target_skill_id
-                String,                       // edge_type
-                String,                       // edge_origin
-                f32,                          // confidence
-                String,                       // reason
+                String,                           // source_skill_id
+                String,                           // target_skill_id
+                String,                           // edge_type
+                String,                           // edge_origin
+                f32,                              // confidence
+                String,                           // reason
                 Option<sqlx::types::Json<Value>>, // evidence (nullable JSONB)
             ),
         >(
@@ -433,7 +433,15 @@ impl PostgresGraphSnapshotStore {
         Ok(rows
             .into_iter()
             .map(
-                |(source_skill_id, target_skill_id, edge_type, origin, confidence, reason, evidence)| {
+                |(
+                    source_skill_id,
+                    target_skill_id,
+                    edge_type,
+                    origin,
+                    confidence,
+                    reason,
+                    evidence,
+                )| {
                     PersistedGraphEdgeRecord {
                         source_skill_id,
                         target_skill_id,
@@ -1058,7 +1066,10 @@ mod tests {
             .await
             .expect("replace with empty set");
         let after = store.list_skill_edges().await.expect("read edges again");
-        assert!(after.is_empty(), "replace_skill_edges must replace, not append");
+        assert!(
+            after.is_empty(),
+            "replace_skill_edges must replace, not append"
+        );
 
         sqlx::query(&format!("DROP SCHEMA {scratch_schema} CASCADE"))
             .execute(&admin_pool)

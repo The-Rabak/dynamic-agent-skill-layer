@@ -6,7 +6,9 @@ use infrastructure::{
     PostgresGraphWriteCoordinator, PostgresRebuildCoordinator, RebuildCoordinator,
     VECTOR_UPSERT_EVENT_TYPE, stable_skill_uuid,
 };
-use retrieval::{Bm25Index, SkillLexicalFields, build_skill_sparse_vectors, skill_lexical_document};
+use retrieval::{
+    Bm25Index, SkillLexicalFields, build_skill_sparse_vectors, skill_lexical_document,
+};
 use serde_json::json;
 use thiserror::Error;
 use uuid::Uuid;
@@ -312,9 +314,12 @@ where
         // snapshot commit so each edge's source/target foreign-keys resolve against the
         // skill rows just written. A backbone cycle or self-loop fails the rebuild loudly
         // rather than committing a contradictory graph.
-        let proposed_edges = build_validated_cold_start_edges(&mutation.skills).map_err(|error| {
-            GraphRebuildError::DurableWrite(format!("cold-start edge validation failed: {error}"))
-        })?;
+        let proposed_edges =
+            build_validated_cold_start_edges(&mutation.skills).map_err(|error| {
+                GraphRebuildError::DurableWrite(format!(
+                    "cold-start edge validation failed: {error}"
+                ))
+            })?;
         let edge_records: Vec<LiveGraphEdgeRecord> = proposed_edges
             .iter()
             .map(|edge| LiveGraphEdgeRecord {

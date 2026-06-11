@@ -868,8 +868,7 @@ mod tests {
     async fn with_readiness_failed_makes_report_unhealthy_with_message() {
         let handle = Arc::new(ReadinessHandle::warming());
         handle.set_failed("pg connection pool exhausted");
-        let checker = InfrastructureHealthChecker::new()
-            .with_readiness(handle);
+        let checker = InfrastructureHealthChecker::new().with_readiness(handle);
 
         let report = checker.check().await;
 
@@ -895,16 +894,16 @@ mod tests {
     /// preserving the existing component count for all tests that do not call `with_readiness`.
     #[tokio::test]
     async fn without_with_readiness_no_readiness_component_emitted() {
-        let checker = InfrastructureHealthChecker::new()
-            .with_static_component("usage_write", true, "enabled");
+        let checker = InfrastructureHealthChecker::new().with_static_component(
+            "usage_write",
+            true,
+            "enabled",
+        );
 
         let report = checker.check().await;
 
         assert!(
-            report
-                .components
-                .iter()
-                .all(|c| c.name != "readiness"),
+            report.components.iter().all(|c| c.name != "readiness"),
             "readiness component must be absent when with_readiness was not called"
         );
     }

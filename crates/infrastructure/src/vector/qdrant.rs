@@ -192,7 +192,10 @@ pub enum QdrantError {
 /// invoke this at method entry on any `collection_name` argument that will be
 /// used in a URL segment, not just at adapter construction time.
 fn validate_collection_name(name: &str) -> Result<(), QdrantError> {
-    if !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-') {
+    if !name
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+    {
         return Err(QdrantError::InvalidConfiguration(format!(
             "collection name {:?} contains characters outside [A-Za-z0-9_-]; \
              collection names are used as Qdrant REST path segments and must not \

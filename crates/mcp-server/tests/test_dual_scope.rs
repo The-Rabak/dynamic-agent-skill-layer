@@ -24,7 +24,7 @@ use mcp_server::{
 };
 use retrieval::{RetrievalConfig, RetrievalSnapshot, SeededSkill};
 
-#[path = "env_guard.rs"]
+#[path = "helpers/env_guard.rs"]
 mod env_guard;
 
 /// Controlled 3-dim embedder that maps rust/auth/python keywords to fixed

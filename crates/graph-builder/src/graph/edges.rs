@@ -441,7 +441,9 @@ mod tests {
         let edges = propose_cold_start_edges(&[a, b]);
 
         assert!(
-            !edges.iter().any(|edge| edge.edge_type == EdgeType::DependsOn),
+            !edges
+                .iter()
+                .any(|edge| edge.edge_type == EdgeType::DependsOn),
             "disjoint requires/produces must not invent a dependency"
         );
     }
@@ -459,7 +461,9 @@ mod tests {
             .expect("mutual overlap must not produce a backbone cycle");
 
         assert!(
-            !edges.iter().any(|edge| edge.edge_type == EdgeType::DependsOn),
+            !edges
+                .iter()
+                .any(|edge| edge.edge_type == EdgeType::DependsOn),
             "mutual overlap must not emit depends_on in either direction"
         );
         let composes = edges
@@ -493,18 +497,16 @@ mod tests {
     #[test]
     fn weak_tool_overlap_below_floor_proposes_no_similar_to() {
         let mut a = skill("a", "alpha");
-        a.tools = vec![
-            "qdrant".to_owned(),
-            "ollama".to_owned(),
-            "redis".to_owned(),
-        ];
+        a.tools = vec!["qdrant".to_owned(), "ollama".to_owned(), "redis".to_owned()];
         let mut b = skill("b", "beta");
         b.tools = vec!["qdrant".to_owned(), "kafka".to_owned(), "nats".to_owned()];
 
         let edges = propose_cold_start_edges(&[a, b]);
 
         assert!(
-            !edges.iter().any(|edge| edge.edge_type == EdgeType::SimilarTo),
+            !edges
+                .iter()
+                .any(|edge| edge.edge_type == EdgeType::SimilarTo),
             "1/5 Jaccard is below the floor and must not propose similar_to"
         );
     }
@@ -532,8 +534,8 @@ mod tests {
             },
         ];
 
-        let err = validate_backbone_acyclic(&cyclic)
-            .expect_err("a depends_on 2-cycle must fail clearly");
+        let err =
+            validate_backbone_acyclic(&cyclic).expect_err("a depends_on 2-cycle must fail clearly");
         assert!(matches!(err, EdgeValidationError::BackboneCycle { .. }));
     }
 
@@ -549,8 +551,7 @@ mod tests {
             evidence: json!({}),
         }];
 
-        let err =
-            validate_backbone_acyclic(&self_loop).expect_err("a self-loop must fail clearly");
+        let err = validate_backbone_acyclic(&self_loop).expect_err("a self-loop must fail clearly");
         assert!(matches!(err, EdgeValidationError::SelfLoop { .. }));
     }
 

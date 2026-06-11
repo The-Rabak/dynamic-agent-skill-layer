@@ -61,7 +61,7 @@ mod tests {
     #[test]
     fn rank_by_cosine_orders_by_semantic_score() {
         let prompt = vec![1.0, 0.0];
-        let embeddings = vec![vec![0.9, 0.0], vec![0.2, 0.8], vec![1.0, 0.0]];
+        let embeddings = [vec![0.9, 0.0_f32], vec![0.2, 0.8], vec![1.0, 0.0]];
         let embedding_refs: Vec<&[f32]> = embeddings.iter().map(Vec::as_slice).collect();
 
         let hits = rank_by_cosine(&prompt, &embedding_refs, 2);

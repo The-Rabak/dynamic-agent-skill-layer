@@ -156,7 +156,9 @@ pub fn decode_f32_vector(bytes: &[u8]) -> Result<Vec<f32>, String> {
     Ok(bytes
         .chunks_exact(4)
         .map(|chunk| {
-            let arr: [u8; 4] = chunk.try_into().expect("chunks_exact always yields 4 bytes");
+            let arr: [u8; 4] = chunk
+                .try_into()
+                .expect("chunks_exact always yields 4 bytes");
             f32::from_le_bytes(arr)
         })
         .collect())
@@ -245,10 +247,13 @@ impl EmbeddingCacheStore {
                     .into(),
                 )
             })?;
-            cache.insert((skill_id, view_kind), LoadedEmbedding {
-                content_hash,
-                vector,
-            });
+            cache.insert(
+                (skill_id, view_kind),
+                LoadedEmbedding {
+                    content_hash,
+                    vector,
+                },
+            );
         }
 
         Ok(cache)
@@ -322,7 +327,8 @@ mod tests {
     fn f32_vector_bytea_roundtrip_is_exact() {
         let original: Vec<f32> = vec![0.0, 1.0, -1.0, 0.5, -0.5, f32::MAX, f32::MIN_POSITIVE];
         let encoded = encode_f32_vector(&original);
-        let decoded = decode_f32_vector(&encoded).expect("decode must succeed for well-formed bytes");
+        let decoded =
+            decode_f32_vector(&encoded).expect("decode must succeed for well-formed bytes");
         assert_eq!(
             original, decoded,
             "decoded vector must exactly equal the original (bit-for-bit via LE bytes)"
@@ -334,9 +340,15 @@ mod tests {
     fn f32_vector_bytea_roundtrip_empty() {
         let original: Vec<f32> = vec![];
         let encoded = encode_f32_vector(&original);
-        assert!(encoded.is_empty(), "encoding an empty vector must produce zero bytes");
+        assert!(
+            encoded.is_empty(),
+            "encoding an empty vector must produce zero bytes"
+        );
         let decoded = decode_f32_vector(&encoded).expect("decode of empty bytes must succeed");
-        assert!(decoded.is_empty(), "decoded result of zero bytes must be an empty vector");
+        assert!(
+            decoded.is_empty(),
+            "decoded result of zero bytes must be an empty vector"
+        );
     }
 
     /// Proves that a non-aligned byte slice returns an error, not a panic or silent truncation.
@@ -387,7 +399,10 @@ mod tests {
     #[test]
     fn content_hash_of_empty_text_is_non_empty_string() {
         let h = content_hash_for_view_text("");
-        assert!(!h.is_empty(), "hash of empty text must be a non-empty hex string");
+        assert!(
+            !h.is_empty(),
+            "hash of empty text must be a non-empty hex string"
+        );
     }
 
     // ── Cache hit / miss logic (in-memory simulation) ─────────────────────────
@@ -407,10 +422,13 @@ mod tests {
 
         // Simulate a loaded cache containing one entry.
         let mut cache: HashMap<(String, String), LoadedEmbedding> = HashMap::new();
-        cache.insert((skill_id.clone(), view_kind.clone()), LoadedEmbedding {
-            content_hash: hash.clone(),
-            vector: cached_vector.clone(),
-        });
+        cache.insert(
+            (skill_id.clone(), view_kind.clone()),
+            LoadedEmbedding {
+                content_hash: hash.clone(),
+                vector: cached_vector.clone(),
+            },
+        );
 
         // The cache-hit check: same hash → return cached vector, counter stays 0.
         let mut embed_calls: usize = 0;
@@ -426,7 +444,10 @@ mod tests {
             vec![0.9, 0.9, 0.9]
         };
 
-        assert_eq!(result, cached_vector, "cache hit must return the cached vector");
+        assert_eq!(
+            result, cached_vector,
+            "cache hit must return the cached vector"
+        );
         assert_eq!(embed_calls, 0, "cache hit must not trigger an embed call");
     }
 
@@ -442,10 +463,13 @@ mod tests {
         let new_hash = content_hash_for_view_text(new_text);
 
         let mut cache: HashMap<(String, String), LoadedEmbedding> = HashMap::new();
-        cache.insert((skill_id.clone(), view_kind.clone()), LoadedEmbedding {
-            content_hash: cached_hash.clone(),
-            vector: vec![0.1, 0.2, 0.3],
-        });
+        cache.insert(
+            (skill_id.clone(), view_kind.clone()),
+            LoadedEmbedding {
+                content_hash: cached_hash.clone(),
+                vector: vec![0.1, 0.2, 0.3],
+            },
+        );
 
         // Simulate the check: new_hash != cached_hash → re-embed required.
         let mut embed_calls: usize = 0;
@@ -461,8 +485,15 @@ mod tests {
             vec![0.7, 0.8, 0.9]
         };
 
-        assert_ne!(result, vec![0.1_f32, 0.2, 0.3], "stale cache must not be returned");
-        assert_eq!(embed_calls, 1, "content change must trigger exactly one re-embed call");
+        assert_ne!(
+            result,
+            vec![0.1_f32, 0.2, 0.3],
+            "stale cache must not be returned"
+        );
+        assert_eq!(
+            embed_calls, 1,
+            "content change must trigger exactly one re-embed call"
+        );
     }
 
     // ── Dimension mismatch construction ───────────────────────────────────────
@@ -483,11 +514,20 @@ mod tests {
             requested_dimension: 2560,
         };
         let msg = error.to_string();
-        assert!(msg.contains("skill-uuid-aaa"), "error must include skill_id");
+        assert!(
+            msg.contains("skill-uuid-aaa"),
+            "error must include skill_id"
+        );
         assert!(msg.contains("e_summary"), "error must include view_kind");
-        assert!(msg.contains("qwen3-embedding:4b"), "error must include model_name");
+        assert!(
+            msg.contains("qwen3-embedding:4b"),
+            "error must include model_name"
+        );
         assert!(msg.contains("768"), "error must include cached_dimension");
-        assert!(msg.contains("2560"), "error must include requested_dimension");
+        assert!(
+            msg.contains("2560"),
+            "error must include requested_dimension"
+        );
     }
 
     // ── Subunit view-kind naming ───────────────────────────────────────────────
@@ -564,7 +604,10 @@ mod tests {
             .expect("load_for_model must succeed");
 
         let entry = loaded
-            .get(&("test-roundtrip-skill".to_owned(), VIEW_KIND_E_SUMMARY.to_owned()))
+            .get(&(
+                "test-roundtrip-skill".to_owned(),
+                VIEW_KIND_E_SUMMARY.to_owned(),
+            ))
             .expect("upserted entry must be present in load result");
 
         assert_eq!(
@@ -613,12 +656,10 @@ mod tests {
         let pool = adapter.pool().clone();
 
         // Clean up leftovers.
-        sqlx::query(
-            "DELETE FROM skill_embeddings WHERE skill_id = 'test-mismatch-skill'",
-        )
-        .execute(&pool)
-        .await
-        .expect("cleanup DELETE must succeed");
+        sqlx::query("DELETE FROM skill_embeddings WHERE skill_id = 'test-mismatch-skill'")
+            .execute(&pool)
+            .await
+            .expect("cleanup DELETE must succeed");
 
         let store = EmbeddingCacheStore::new(pool);
 
