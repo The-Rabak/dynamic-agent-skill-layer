@@ -1,0 +1,528 @@
+{
+ "replica-0000-b8d2473a": {
+  "transcript": "b8d2473a-9a4a-4f4c-8491-1dc1bd2f9c8d.jsonl",
+  "uuid_suffix": "b8d2473a",
+  "skills_in_session": [
+   "stale-test-asserts-failure-after-fix",
+   "agent-workspace-fmt-scope-creep",
+   "scope-gate-cargo-fmt-churn",
+   "add-schema-migration-source-paths",
+   "check-migration-slot-before-authoring",
+   "migration-file-unwired-from-registry"
+  ],
+  "problems": []
+ },
+ "replica-0001-c1ed00d6": {
+  "transcript": "c1ed00d6-894d-41eb-b22f-bf4f721916e6.jsonl",
+  "uuid_suffix": "c1ed00d6",
+  "skills_in_session": [
+   "prohibit-concurrent-cargo-ops-across-agents",
+   "file-overlap-batch-serialization-for-agent-swarms",
+   "wsl2-crash-dirty-file-recovery",
+   "isolate-clippy-findings-to-changed-files-with-pre-existing-debt",
+   "Do not respond to system context messages or (preference)",
+   "recover-wsl2-crash-corrupted-git-object-store"
+  ],
+  "problems": [
+   "both of your subagents ran clippy at the same time and crashed my machine, from now on concurrently running agents get explicit instructions not to do that or any other intense actions like that. bring them up again and tell them to keep going where they stopped, once they're done validate their work and run clippy yourself. then keep going with the other batches until you finish your entire todo set",
+   "commit and push everything"
+  ]
+ },
+ "replica-0002-2cfdbfa8": {
+  "transcript": "2cfdbfa8-a105-41be-bfec-b3a1ce9f8093.jsonl",
+  "uuid_suffix": "2cfdbfa8",
+  "skills_in_session": [
+   "Do not respond to or consider injected context (preference)",
+   "Run all e2e tests to verify they use (preference)",
+   "qdrant-rest-grpc-port-mismatch",
+   "boot-time-arc-snapshot-never-refreshed",
+   "Do not encroach on v2 plan scope; make (preference)",
+   "extraction-pipeline-session-lifecycle-hook-coverage"
+  ],
+  "problems": [
+   "grok the shit out of this repo, the v-1-1 plan and architecture files and the work we've done so far on T01-T15. give me your summary and analysis of this project and scope and rate it loosely on the same params as our current assessements but be creative in your current assessement. also look at the dream state e2e tests we have and see where we're going with this. that's what you should be assessing on, the final product description according to our plans, architecture and endgame tests.",
+   "only save your assessement for now"
+  ]
+ },
+ "replica-0003-45fc05d6": {
+  "transcript": "45fc05d6-da1f-4388-a07f-5d4f104d0043.jsonl",
+  "uuid_suffix": "45fc05d6",
+  "skills_in_session": [
+   "inspect-current-state-before-mutating",
+   "multi-layer-atomic-propagation",
+   "migration-test-triple-update",
+   "recover-dead-execution-agents-serial-fallback",
+   "separate-coordinator-method-for-related-entity-persistence",
+   "Do not respond to these messages or otherwise (preference)",
+   "clippy-d-warnings-isolate-touched-crates-only"
+  ],
+  "problems": [
+   "your execution agents died, resume from the latest execution state and keep going until this batch is done",
+   "docker is up. build and run the live tests"
+  ]
+ },
+ "replica-0004-f17d6250": {
+  "transcript": "f17d6250-f36d-4dc9-be85-b0e64bb9e667.jsonl",
+  "uuid_suffix": "f17d6250",
+  "skills_in_session": [
+   "sparse-vector-test-must-assert-weight-values-not-just-index-count",
+   "orchestration-side-revalidation-after-parallel-agents",
+   "file-overlap-clustering-before-execution-batching",
+   "Under the qdrant_hybrid feature, any CQRS-path break must (preference)",
+   "byte-identical-hybrid-vs-baseline-metrics-means-investigate-wiring",
+   "backend-selector-arm-must-fail-loud-not-passthrough",
+   "Do not respond to these context messages or (preference)",
+   "The `cargo clippy --workspace --all-targets --features test-utils -- (preference)",
+   "create-review-todo-batch"
+  ],
+  "problems": [
+   "commit and push"
+  ]
+ },
+ "replica-0005-32b720aa": {
+  "transcript": "32b720aa-f42b-4ffc-bdc4-e306efe17542.jsonl",
+  "uuid_suffix": "32b720aa",
+  "skills_in_session": [
+   "serialize-shared-file-todos-across-agent-batches",
+   "run-cargo-fmt-after-multi-agent-rust-edits",
+   "postgres-check-constraint-null-not-valid-migration",
+   "orchestrator-independent-post-batch-validation"
+  ],
+  "problems": [
+   "commit and push"
+  ]
+ },
+ "replica-0006-cd7a91f5": {
+  "transcript": "cd7a91f5-5c3a-4ba9-b5b2-41bfb1700999.jsonl",
+  "uuid_suffix": "cd7a91f5",
+  "skills_in_session": [
+   "handle-agent-scope-fence-violation",
+   "git-stash-verify-preexisting-test-failure",
+   "Do not respond to or otherwise consider injected (preference)",
+   "rust-clippy-option-method-idioms",
+   "selective-stage-agent-batch-from-dirty-tree",
+   "file-conflict-graph-parallel-agent-batching",
+   "rust-allow-clippy-scoped-with-justification-for-public-api",
+   "Suppress the `too_many_arguments` lint on `run_orchestration` using a (preference)",
+   "git-scope-test-isolation-avoid-tmp-as-outside-git-sentinel",
+   "cargo-clippy-workspace-all-targets-includes-examples-and-e2e",
+   "verify-clippy-ci-gate-with-d-warnings"
+  ],
+  "problems": [
+   "yes send an execution agent with the full contexr packet to handle 244 while you update the next tickets with the changes you just listed",
+   "yes commit and push, then do me a favour and paste in the full local path for the tickets index file"
+  ]
+ },
+ "replica-0007-8a0965e3": {
+  "transcript": "8a0965e3-a64a-48c4-87f8-0423515e8383.jsonl",
+  "uuid_suffix": "8a0965e3",
+  "skills_in_session": [
+   "Do not modify the plan review mechanisms in (preference)",
+   "Before working, thoroughly read all implemented plans up (preference)",
+   "Analyze the main commands and the skills and (preference)",
+   "audit-rust-codebase-stub-violations",
+   "docs-are-spec-build-up-not-edit-down",
+   "reject-version-advance-as-proxy-for-retrieval-assertion",
+   "detect-doc-reality-drift-in-planning-heavy-projects",
+   "apply-fail-loud-env-var-checks-to-all-binaries-not-just-the-server",
+   "detect-live-e2e-tests-using-in-process-fakes",
+   "Always ensure all drifts and issues are captured (preference)",
+   "fight-ai-workflow-bloat-with-single-source-references",
+   "When an issue is already being actively addressed (preference)",
+   "Operate as a coding harness agent using the (preference)"
+  ],
+  "problems": [
+   "you are a kickass coding harness agent given this system to use as your dynamic context layer. it should automatically parse your completed sessions, extract meaningful patterns and auto create skills to improve your ability to work with your user and on any given project. skills SHOULD be retrieved on each context window refresh or on demand. Grok the living shit out of this system. read the plans up to v-1-5 which should all be implemented, go through all logic paths, read every corner of the repo, tread through all interfaces and use all the pieces. give me your gosh darned honest evaluation and analysis of this project. be honest and brutal, we can take it.",
+   "We're fixing that right now, don't get obsessed over it. go on with full project exploration and assessment",
+   "you ok there squire?",
+   "keep in mind our over planning, over complicating and over engineering problems, we'll get to them in a minute. for now, 163 should now be resolved and proven green. make sure of that. then create proper todos for all of your findings, code should be aligned with the docs and the project should fully deliver what was promised before we go on. make sure you capture all drifts and issues. sweep the app fully again and see if you find any more drifts, hardcoded placeholders, improper implementations or any other problems",
+   "what do you mean by doc/test reconciliation? these should be actual heavy concrete implementation items of missing features and undelivered promises no?",
+   "i want you to do the following: our main planning and execution skills and commands are from the @~/projects/compound-engineering-plugin/ repo i maintain. I want you to go over and analyze the main commands, the skills and specialist agents attached to them. Suggest ways to refactor this plugin to produce more coherent, simplified, to the point and not overly complex plans and execution schemas. I do like the plugin overall but i admit plans tend to be created too long and convoluted. we probably have a way to remedy this. BE extra thoughtful and careful when planning this out, make no changes yet but present to me your analysis and suggestions",
+   "turn this analysis into todos but only these levers and subsections: lever 1: full lever 2: full lever 3: full lever 4: sections 1 and 2 - don't touch the plan review mechanisms lever 5: section 2 only"
+  ]
+ },
+ "replica-0008-a8625564": {
+  "transcript": "a8625564-b691-458e-a294-230451f146be.jsonl",
+  "uuid_suffix": "a8625564",
+  "skills_in_session": [
+   "gate-parallel-agents-on-file-overlap",
+   "Do not run review after ticket execution completes; (preference)",
+   "validate-smoke-test-is-not-vacuous",
+   "wire-live-graph-replace-stub-server",
+   "independently-verify-execution-agent-completion-claims",
+   "detect-revert-cargo-fmt-agent-churn"
+  ],
+  "problems": [
+   "the skills table should definitely store source paths in its own column. work that in to wherver needed (T09 and wherever else) then go on straight to the next batch (T02 should also be on the next batch, looks like its missing from the index file). don't run review after execution on these tickets is done, i'll run it later on the whole branch"
+  ]
+ },
+ "replica-0009-f007296e": {
+  "transcript": "f007296e-d589-4347-a992-7b61497c6714.jsonl",
+  "uuid_suffix": "f007296e",
+  "skills_in_session": [
+   "isolate-timing-test-to-diagnose-load-flake",
+   "shell-out-to-authenticated-cli-provider",
+   "override-execution-agent-model-to-sonnet",
+   "fixture-corpus-growth-stales-count-assertions",
+   "ollama-docker-healthcheck-use-ollama-ps",
+   "claude-cli-headless-json-fence-stripping",
+   "Execution agents should always use the Sonnet model (preference)"
+  ],
+  "problems": [
+   "no... it's gemma4:e4b exactly like that",
+   "why do you need my sub creds for claude? just run 'claude' cli commands i'm already logged in"
+  ]
+ },
+ "replica-0010-36f19d93": {
+  "transcript": "36f19d93-eab5-489d-9040-5c09786a4d0c.jsonl",
+  "uuid_suffix": "36f19d93",
+  "skills_in_session": [
+   "ollama-embedding-2048-token-batch-limit",
+   "embedding-write-read-path-divergence",
+   "docker-healthcheck-bash-dev-tcp",
+   "postgres-docker-stale-volume-db-missing",
+   "fix-file-not-read-before-write",
+   "cold-start-guard-for-retirement-workers",
+   "ollama-500-embedding-token-overflow",
+   "embed-summary-only-for-hierarchical-documents",
+   "postgres-volume-reuse-missing-database",
+   "qdrant-healthcheck-bash-devtcp",
+   "recursive-watcher-exclude-build-dirs",
+   "docker-healthcheck-tool-absent-in-minimal-image"
+  ],
+  "problems": [
+   "grok the shit out of this project, understand its goals, architecture, implementation path and the awesomeness that went into this. Then fix the damn docker build process, we've currently got two flailing unhealthy containers in mcp-server and maintenance-worker",
+   "actually embedding such large text corpus is rather dumb and ineffective... we want to be chunking it semnatically or extracting keywords and embed them and later have the retrieval also run against them... no? it's probably a large change either way so let's properly research what's the best practice here and revisit the original paper we based some of this architecture on to reach a well educated decision",
+   "commit everything and push"
+  ]
+ },
+ "replica-0011-91f931ff": {
+  "transcript": "91f931ff-cdf9-4616-902d-38a9a71d003d.jsonl",
+  "uuid_suffix": "91f931ff",
+  "skills_in_session": [
+   "pre-commit-gitignore-silent-exclusion-check",
+   "orchestration-validates-agent-self-report",
+   "multi-agent-scope-drift-detection-via-git-status",
+   "file-disjoint-parallel-round-swarm-planning",
+   "merge-coupled-todos-into-one-agent-unit"
+  ],
+  "problems": [
+   "add those untracked files, commit and push everything",
+   "yes yes it's the opencode session, add everything to the commit and push"
+  ]
+ },
+ "replica-0012-f7e56bd4": {
+  "transcript": "f7e56bd4-935d-4b85-9210-e7fa02720f61.jsonl",
+  "uuid_suffix": "f7e56bd4",
+  "skills_in_session": [
+   "reread-file-before-edit-on-conflict",
+   "Never provide false or misleading information (preference)",
+   "verify-todo-diagnosis-matches-current-codebase",
+   "isolate-cross-crate-parallel-test-flakes",
+   "postgres-implicit-tx-atomic-ddl-batch",
+   "llm-extraction-test-must-use-substantive-fixture",
+   "filesystem-walk-resolver-fails-in-container-cwd-root",
+   "tokio-test-for-sqlx-reqwest-construction",
+   "Do not respond to system context messages (date (preference)",
+   "sqlx-transaction-executor-hrtb-send-regression",
+   "migration-self-commit-escapes-outer-sqlx-tx",
+   "read-before-edit-file",
+   "fix-askuserquestion-options-overflow"
+  ],
+  "problems": [
+   "let me just be clear aboot something, it should be in your persistent memory as well. we're only working against live infra, real production logic flows and everything must be top tier quality ON PRODUCTION LIVE INFRA. i cannot stress this enough. if there any placeholders or stubs or anything else i consider it lying. don't lie to me. if anything requires additional digging into or clarifying stop imeediately and let me know",
+   "is everything logged in the 163 and 155 tickets for a new session to pick up on with all required context?"
+  ]
+ },
+ "replica-0013-37dd1e8d": {
+  "transcript": "37dd1e8d-6a7c-4bfc-ac43-ac02229ebe29.jsonl",
+  "uuid_suffix": "37dd1e8d",
+  "skills_in_session": [
+   "two-phase-artifact-wiring-must-be-verified-end-to-end",
+   "probe-external-system-parameters-at-runtime-not-hardcode",
+   "When resuming a session, pick up the last (preference)",
+   "All retrieval and quality measurement must drive the (preference)",
+   "orphaned-migration-file-detection",
+   "silent-ok-does-not-mean-contract-satisfied",
+   "An MRR/nDCG score of 80 is an aspiration (preference)",
+   "No stubs, fakes, placeholders, hardcoded canned data, or (preference)",
+   "Execution agents must always run on the Sonnet (preference)",
+   "live-model-dimension-discovery-via-probe-embed",
+   "verify-live-infra-before-e2e-agent-dispatch",
+   "blank-docker-compose-env-var-rust-empty-string",
+   "orchestrator-verifies-actual-state-before-and-after-delegation",
+   "qdrant-ensure-collection-dimension-footgun",
+   "reread-artifacts-after-agent-completion",
+   "dead-schema-migration-detect-and-block",
+   "All migrations must be registered in both the (preference)",
+   "Do not respond to or consider system-reminder/context messages (preference)",
+   "pre-existing-clippy-regression-triage",
+   "model-keyed-qdrant-collections-multi-arm"
+  ],
+  "problems": [
+   "commit and proceed with batch 2"
+  ]
+ },
+ "replica-0014-4538855f": {
+  "transcript": "4538855f-859c-42ed-bb98-1c2eb1f8459b.jsonl",
+  "uuid_suffix": "4538855f",
+  "skills_in_session": [
+   "cargo-clippy-all-targets-dead-code-from-test-binary",
+   "Do not respond to or consider system-injected context (preference)",
+   "stash-test-to-attribute-clippy-gate-failures",
+   "avoid-default-derive-on-structs-with-required-enum-fields",
+   "identical-hybrid-metrics-check-eval-set-coverage",
+   "write-ahead-db-migration-pattern",
+   "cargo-check-all-targets-after-struct-field-addition",
+   "live-e2e-sweep-catches-write-read-id-mismatch",
+   "stash-run-to-prove-pre-existing-test-failure"
+  ],
+  "problems": [
+   "proceed to next batch, same procedure",
+   "give me the prompt to give to the review workflow, put in ticket links, execution session links, commit hashes and your summary and caveats"
+  ]
+ },
+ "replica-0015-76428acd": {
+  "transcript": "76428acd-06a7-4a73-96f3-7268bf896470.jsonl",
+  "uuid_suffix": "76428acd",
+  "skills_in_session": [
+   "Ticket 205 has a dependency-ordering problem: it requires (preference)",
+   "Ignore injected context messages (e.g. system reminders, background (preference)",
+   "rust-eliminate-expect-with-sum-types",
+   "validate-enforcement-guard-bites-in-all-zones",
+   "ml-benchmark-three-run-validity-design",
+   "Operate as a coding harness agent, treating the (preference)",
+   "rust-fail-loud-via-constructor-removal",
+   "fix-rust-cfg-test-depth-tracker-exit-condition",
+   "Express all work items as actionable todos with (preference)",
+   "rag-retrieval-intent-split",
+   "never-push-without-explicit-request",
+   "uniform-binary-boost-cancels-in-ranking",
+   "rag-corpus-first-efficacy-measurement-ordering",
+   "fail-loud-on-missing-security-scope-env-var",
+   "cold-start-zero-prior-in-usage-scored-retrieval",
+   "Before working on any task, thoroughly read all (preference)",
+   "relevance-floor-fragility-on-small-corpus"
+  ],
+  "problems": [
+   "you are a kickass coding harness agent given this system to use as your dynamic context layer. it should automatically parse your completed sessions, extract meaningful patterns and auto create skills to improve your ability to work with your user and on any given project. skills SHOULD be retrieved on each context window refresh or on demand. Grok the living shit out of this system. read the plans up to v-1-5 which should all be implemented, go through all logic paths, read every corner of the repo, tread through all interfaces and use all the pieces. give me your gosh darned honest evaluation and analysis of this project. be honest and brutal, we can take it.",
+   "you're right. i want all of these as action able todos with clear uncompromising success criteria. we must prove the efficacy and usefulness of this system, there must not be any fakes in tests or on production paths. get everything in there and we'll immediately get to work on getting this out the door today",
+   "i think there's an order problem, the 205 todo wants to demonstrate efficacy using retrieved skills that we don't have. the 209 todo will generate up to 200 skills. I think it'd be smarter to generate those 200 skills first, have them in the real filesystem and real db stores with real communities and what not (if we can create them actually using the system itself that'd be best as it'd probably teach us more about our whole ingestion pipeline along the way). make them real value and actionable for future sessions. then the 205 ticket will run on curated coding and generalized tasks WHICH SHOULD use those skills. that'd be much better in proving what the system's worth is. Also also, our retrieval pipeline. while we're proving efficacy we need to prove we actually pull skills relevant to: sessionStart: project and recently used or recently created skills for this project scope global: again, recently created or recently used or most appropriate (how are we determining this btw?) midsession: active queries initiated by agents using the mcp to gather more skills for whichever context they're working on. That's how retrieval should work optimally, am i just wishful thinking here or is that really how we operate?",
+   "you know what, i just came up with another smashing idea for proving the system's value. What if we run, with a clean slate, one of the trust-me-bro coding benchmarks used to evaluate LLMs. Then after the run is complete we log the scores achieved and log how many unique skills the system created, how are they ranked and what communities they belong to and more, the whole shabang. Then we run the benchmark again with the compile context active, see if there's any improvment, which skills were pulled and when. Again see how we processed the session afterwards, what was updated in the data stores. Run the benchmark one more time with full analysis, what was pulled again and why and when. how much did we improve at the end of that run. That'd really show what we're gunning for, no?",
+   "now put your entire recent assessement in docs/assessements add a \"fix battle plan\" section with the exact order with which to run all these new todos, how should we inspect each batch after it completes and what to expect at every phase, what to do if expectations aren't met",
+   "commit it and then start on phase 0. do it like the workflows:triage command expects, grounding and handing off context well scope packets to execution agents, then validate each execution agent's work as it completes yourself before going to the next phase. stop after phase 1",
+   "are the new tickets logged in the assessement doc battle plan?",
+   "is everything committed and pushed?"
+  ]
+ },
+ "replica-0016-3367184b": {
+  "transcript": "3367184b-f065-42cf-a204-f71df52ef0fa.jsonl",
+  "uuid_suffix": "3367184b",
+  "skills_in_session": [
+   "rust-cargo-bin-target-missing-docker-build-failure",
+   "Do not respond to injected context messages (e.g (preference)",
+   "build-tool-silent-coverage-gap",
+   "When a violation is found, surface it and (preference)",
+   "Add an advisory `generality: project|general|uncertain` field with rationale (preference)",
+   "detect-agent-scope-creep-via-git-diff",
+   "read-before-edit-multi-file",
+   "When verifying builds (e.g. musl), ensure every service (preference)",
+   "cargo-all-targets-silently-skips-required-features",
+   "docker-compose-global-shared-mount-must-not-default-to-project-relative-path",
+   "cfg-test-vs-test-utils-import-mismatch",
+   "cargo-check-misses-workspace-integration-test-compilation",
+   "dual-scope-knowledge-store-intrinsic-vs-emergent-generality-routing",
+   "parallel-agent-wave-planning-via-file-overlap",
+   "On resuming after a break, pick up the (preference)",
+   "orchestrator-must-verify-agent-results-independently",
+   "configuration-default-silent-misrouting",
+   "The extraction hook always sets repo_path to cwd (preference)"
+  ],
+  "problems": [
+   "grok the shit out of this project, understand its goals, architecture, implementation path and the awesomeness that went into this. Then fix the damn docker build process, there should be a todo about it somewhere but here's the latest error output: => ERROR [maintenance-worker builder 8/8] RUN --mount=type=cache,target=/app/target cargo build --release --target x86_64-unknown-linux-musl --b 0.8s => CACHED [graph-builder planner 3/4] COPY . . 0.0s => CACHED [graph-builder planner 4/4] RUN cargo chef prepare --recipe-path recipe.json 0.0s => CACHED [graph-builder builder 5/8] COPY --from=planner /app/recipe.json recipe.json 0.0s => CACHED [graph-builder builder 6/8] RUN --mount=type=cache,target=/app/target cargo chef cook --release --recipe-path recipe.json --target x86 0.0s => CACHED [graph-builder builder 7/8] COPY . . 0.0s => CANCELED [graph-builder builder 8/8] RUN --mount=type=cache,target=/app/target cargo build --release --target x86_64-unknown-linux-musl --bin 1.0s => CANCELED [mcp-server builder 8/8] RUN --mount=type=cache,target=/app/target cargo build --release --target x86_64-unknown-linux-musl --bin mc 1.1s ------ > [maintenance-worker builder 8/8] RUN --mount=type=cache,target=/app/target cargo build --release --target x86_64-unknown-linux-musl --bin maintenance-worker && cp /app/target/x86_64-unknown-linux-musl/release/maintenance-worker /app/service-bin: 0.696 error: no bin target named `maintenance-worker` in default-run packages 0.696 help: available bin tar",
+   "very good, now tell me this, grok the project further if you need to in order to properly answer this. We set out to have skills extracted and retrieved from different namespaces, project specific (multiple) and global (singular per machine) Where does this separation happen on each phase? extraction pipeline and retrieval pipeline. does it even happen? how are we dividing the extracted data to those two? do we have different prompts for each and run the sessions twice per scope and dedupe? is it one prompt that should extract both? did we even do something about it? Think over the whole flow properly and give me an honest answer",
+   "sketch some well thought of sulotion suggestions. maybe this work really does belong in the offline maintenance worker? think about it good and hard",
+   "create the doc and todos, including your caveats",
+   "i changed the model to be gemma4:12b bring it back everywher, document where needed that'll be our new default ollama model",
+   "commit and push everything"
+  ]
+ },
+ "replica-0017-c7fca263": {
+  "transcript": "c7fca263-fe23-4dce-8f94-7a33cec8db31.jsonl",
+  "uuid_suffix": "c7fca263",
+  "skills_in_session": [
+   "Skip confirmation gates and execute autonomously end-to-end; all (preference)",
+   "On this branch, iterate until the feature looks (preference)",
+   "rich-fixture-required-for-llm-extraction-tests",
+   "Use the project's Docker Compose setup for real (preference)",
+   "tokio-current-thread-starves-spawned-server",
+   "e2e-lenient-assertions-mask-real-failures",
+   "bounded-retry-for-llm-nondeterminism-in-e2e",
+   "shell-hook-fire-and-forget-setsid",
+   "postgres-work-queue-for-update-skip-locked",
+   "detect-test-leniency-masking-pipeline-failures"
+  ],
+  "problems": [
+   "we want to work on the \\\\wsl.localhost\\Ubuntu-20.04\\home\\rabak\\projects\\dynamic-agent-skill-layer\\todos\\103-pending-p1-sessionend-hook-ships-absolute-transcript-ref-that-validation-rejects.md ticket read it through carefully, analyze relevant architecture context and all touched upon areas of the code, plan the solution (option 4 we selected) to the tidbits, add e2e (real infra) tests and apply the fix, refactor until the tests pass and we have a clean working solution. use our docker compose setup, again real infra no bullshit placeholders or stubs. don't mind the human gating, we've already thought everything through, take it all the way. on this branch, don't stop until it looks and works perfectly.",
+   "is this a syncronous process or does it run in the background after hooks fire and trigger queues? hint, we want it to not block anyone but be queued and run in the background with errors being logged and not stopping any user interactions",
+   "good, commit and push"
+  ]
+ },
+ "replica-0018-92e5b61c": {
+  "transcript": "92e5b61c-b33a-4dff-bfbb-6c3c8c305f4b.jsonl",
+  "uuid_suffix": "92e5b61c",
+  "skills_in_session": [
+   "deterministic-embedding-drift-from-input-policy-change",
+   "contamination-vs-precision-triangulation-for-no-match-failures",
+   "zero-second-test-failure-is-deterministic-not-flaky",
+   "Run ALL end-to-end suite tests using the Claude (preference)",
+   "latency-floor-shift-indicates-resource-starvation",
+   "read-before-edit-file-guard",
+   "audit-llm-seam-provider-coupling",
+   "avoid-hardcoding-llm-provider-in-extraction-tests",
+   "retrieval-embedding-reuse-silent-recall-loss-in-merge-dedup",
+   "cost-estimate-before-cloud-llm-e2e-run",
+   "single-transport-abstraction-for-provider-agnostic-seams"
+  ],
+  "problems": [
+   "grok the shit out of this repo before doing anything. go over all logic paths, high level docs and their implementation, see where we are and where we're meant to go. i want you to run ALL e2e suite tests with the claude code cli provider. sonnet 4-6 as the extraction model. go through all extracted and generated data, the full test reports and give me a quality assessment and deep dive into the results. then compare to our previous ollama runs and give me an in depth summary",
+   "talk to me about the maintenance test failures and deterministic embedding service... what's going on there?",
+   "commit and talk to me about failures and your hypothesis of them and of the summary embedding weakens",
+   "file all of these as todos with your recommendations and flag that they require additional grounding and external research"
+  ]
+ },
+ "replica-0019-f861f7b6": {
+  "transcript": "f861f7b6-db99-4c47-814e-93978fb537ae.jsonl",
+  "uuid_suffix": "f861f7b6",
+  "skills_in_session": [
+   "use-jsonb-for-write-only-audit-fields",
+   "anthropic-api-forced-tool-use-for-structured-json",
+   "postgres-typed-columns-over-jsonb-for-aggregatable-scalars",
+   "deepen-plan-research-decisions",
+   "detect-in-memory-buffer-never-drained-to-sink",
+   "deepen-plan-multi-agent-research",
+   "reconcile-loop-as-guarantee-events-as-optimization"
+  ],
+  "problems": [
+   "\\\\wsl.localhost\\Ubuntu-20.04\\home\\rabak\\projects\\dynamic-agent-skill-layer\\docs\\plans\\2026-05-31-feat-skill-layer-v1-5-close-the-loop-plan.md",
+   "let's talk about those open questions, one at a time, and update the plan after each decision we reach",
+   "fix the two flags, edit the why section and fix the R-5 conflict with the decision we made"
+  ]
+ },
+ "replica-0020-9e91fe13": {
+  "transcript": "9e91fe13-802f-45e5-9453-f41c7f4f972d.jsonl",
+  "uuid_suffix": "9e91fe13",
+  "skills_in_session": [
+   "path-starts-with-requires-symmetric-canonicalization",
+   "Always read transcripts from a temporary PostgreSQL table (preference)",
+   "container-hook-absolute-path-resolution-options",
+   "parallel-rust-agents-require-file-disjoint-batches-and-git-worktrees",
+   "verify-phantom-field-claim-across-all-code-paths",
+   "git-add-all-sweeps-untracked-test-artifacts",
+   "zip-without-length-guard-silently-drops-trailing-items",
+   "triage-todo-backlog-with-decisions",
+   "parallel-agent-stale-base-detection-and-recovery",
+   "Relax the constitution to allow the user to (preference)",
+   "cargo-test-coupling-direction-online-depends-on-offline",
+   "Do not respond to context messages or otherwise (preference)",
+   "regression-isolation-via-baseline-worktree",
+   "Defer all concrete actions to T05; use the (preference)",
+   "recover-stale-file-edit-retry",
+   "arcswap-rcu-use-return-value-not-closure-mutation",
+   "extract-behavior-not-predicate-for-exactly-once-unit-test"
+  ],
+  "problems": [
+   "let's go over all open todos, starting with \\\\wsl.localhost\\Ubuntu-20.04\\home\\rabak\\projects\\dynamic-agent-skill-layer\\todos\\103-pending-p1-sessionend-hook-ships-absolute-transcript-ref-that-validation-rejects.md and onwards. one at a time, present possible actions to resolve, once we make a decision update the todo file in place with the selected course of action",
+   "what if the hooks immediately upload the full transcripts to a queue db table that the extractor reads from on every run and marks rows as processed? that way we don't even care about the paths but instead always read from a pg table that will temporarily hold the entire transcripts?",
+   "look, we don't need to insist on ollama only for local only constitution. we can relax the constitution a bit and use either of the two extractors per the user choice. ollama can remain a default but anyone flipping the config \\ env switch to headless claude code will get the full cloud llm provider experience. so you've got my permission to relax the consistution. make claude extraction a full citizen in our project if opted into and settle this todo with T05 accordingly. we can defer all actions themselves to T05 and just use this todo to relax the guardrails and polish the T05 instructions",
+   "for the rest of these open todos, work in your recommended solutions for each, i trust your judgement here",
+   "now take all these todos we reviewed, batch them into parallelizable chunks and hand off exeuction of each batch to a dedicated sonnet execution agent. create full context packets for each executing agent, monitor and validate their work",
+   "all of the above"
+  ]
+ },
+ "replica-0021-f6db9035": {
+  "transcript": "f6db9035-01b1-49fe-a3af-1fb51ab0501c.jsonl",
+  "uuid_suffix": "f6db9035",
+  "skills_in_session": [
+   "tokio-spawn-no-joinhandle-teardown-db-race",
+   "pipe-filter-masks-command-exit-code",
+   "cargo-test-required-features-missing-from-integration-tests",
+   "docker-cache-mount-binary-not-persisted-to-image",
+   "cargo-test-ignored-names-after-double-dash",
+   "github-dir-blanket-gitignore-drops-ci-workflows",
+   "cargo-manifest-dir-path-depth-vs-workspace-root",
+   "fix-gitignore-blocking-github-workflows",
+   "independent-validate-agent-output-before-commit",
+   "Use this branch (preference)",
+   "fix-e2e-suite-end-to-end-green",
+   "concurrent-job-pool-test-timeout-sizing",
+   "live-llm-test-assert-terminal-not-output-count",
+   "audit-pre-cleanup-build-health",
+   "docker-musl-ring-missing-gcc"
+  ],
+  "problems": [
+   "do whatever it takes to fix the local docker setup and make the tests run all the way"
+  ]
+ },
+ "replica-0022-ed2c8700": {
+  "transcript": "ed2c8700-c99d-41a9-a9de-b77713a15c42.jsonl",
+  "uuid_suffix": "ed2c8700",
+  "skills_in_session": [
+   "ablation-confounded-by-relevance-floor",
+   "near-zero-cosine-score-suspects",
+   "read-before-write-file-edit",
+   "compare-retrieval-arms-top10",
+   "Do not make assumptions; always refer to what (preference)",
+   "retriage-pending-issues-after-related-commit",
+   "When test documents cover fewer fields than production (preference)",
+   "diagnose-flaky-timing-test-by-isolation",
+   "prevent-cross-module-constant-drift-via-pub-crate",
+   "fix-bm25-silent-none-fallback",
+   "numeric-scores-mandatory-for-system-diagnosis",
+   "post-commit-work-item-hygiene",
+   "Do not respond to or factor in system/context (preference)",
+   "component-isolation-as-first-diagnostic-step",
+   "diagnose-rrf-artifact-score-exposure",
+   "hybrid-search-zero-uplift-diagnosis",
+   "sequence-clustered-fixes-smallest-to-absorbing-refactor",
+   "search-arm-comparison-extend-to-top10-with-scores",
+   "silent-path-success-as-diagnostic-red-herring"
+  ],
+  "problems": [
+   "/workflows: triage on open todos 247 and above",
+   "bring up the damn stack and finish the open tasks",
+   "let's compare both searches again with hit@10 and see the diff between top 10 results",
+   "we'll commit to the hybrid search, on a more dense corpus with the new skill file layout, and with more fields indexed for search, i believe we'll see better results. we'll run this comparison again then. def dig into the scoring problem, it does smell",
+   "we won't be doing subunits in the new architecture right? seems irrelevant",
+   "wait wait wait, we should have this all planned out in the v-1-7 plan. don't make assumptions tell me what's in our actual plan",
+   "look at how the rota retrieval pipeline should look like according to the plan and then tell me",
+   "looks like a lot hinges on todo 259, is everything in there? at what stage of this todo wrap up session do we tackle it? consider still open todos",
+   "yes patch them but if the new fields and schema and extraction prompt and everything else isn't created anywhere why would we run 216? are you sure there's no ticket for it?",
+   "no here's what I want. we're too spread out between tickets and todos and it's getting hard to keep track. all large pieces of work still in open AND NOT implemented todos should go into new tickets under the v-1-7 plan tickets dir then slotted into the index, reshuffle the not done and new ticket in batches so that the order makes sense. all open todos remaining should be chunkable fixes related to the latest batches of ticket execution. make no assumptions on anything and ask me if something isn't clear.",
+   "yeah commit all outstanding unignored changes"
+  ]
+ },
+ "replica-0023-bd3b7606": {
+  "transcript": "bd3b7606-2b23-4adb-93fd-8980411ea687.jsonl",
+  "uuid_suffix": "bd3b7606",
+  "skills_in_session": [
+   "bool-returning-assertion-helper-must-be-asserted",
+   "docker-compose-concurrent-bringup-lock",
+   "retrieval-quality-mrr-collapse-from-shared-test-scope",
+   "retry-ineffective-for-deterministic-llm-failures",
+   "fail-loud-never-silently-default-to-success",
+   "parallel-test-shared-scope-contamination",
+   "cargo-fmt-reformatting-noise-in-diffs",
+   "serde-default-swallows-missing-llm-output-field",
+   "isolate-e2e-corpus-rebaseline-before-tune",
+   "validate-committed-config-default-on-fresh-container",
+   "count-distinct-for-idempotent-upsert-reconciliation-assertions",
+   "rust-test-fake-env-guard-antipattern",
+   "ollama-thinking-model-think-false-structured-json",
+   "Do not proceed if something seems off or (preference)"
+  ],
+  "problems": [
+   "we're going to pull an all nighter. grok the shit out of this repo before doing anything. go over all logic paths, high level docs and their implementation, see where we are and where we're meant to go. This is what's left in order to get this project out the door, it's in \\\\wsl.localhost\\Ubuntu-20.04\\home\\rabak\\projects\\dynamic-agent-skill-layer\\docs\\plans\\last-hurdle-plan-06-06.md Go over stage 0 and stage 1 tasks, run all required research, then launch scoped sonnet execution-agent instances for each task with all the context and scope they need, validate each individual agent's work after they report done. do not proceed if something smells or isn't properly implemented"
+  ]
+ }
+}

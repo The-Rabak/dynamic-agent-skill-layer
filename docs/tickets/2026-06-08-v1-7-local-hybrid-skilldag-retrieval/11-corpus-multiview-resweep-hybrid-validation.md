@@ -2,7 +2,7 @@
 ticket_id: T11
 title: Multi-view re-sweep on the rich corpus — validate the hybrid bet
 kind: measurement
-status: ready  # reconciled 2026-06-11 to match index.md Batch 12 (deps T10/T09/T06 all met)
+status: completed  # 2026-06-11 session work-2026-06-11-192727-T11 — see tests/e2e/reports/t11/T11-VALIDATION-REPORT.md
 plan_ref: docs/plans/2026-06-08-feat-v1-7-local-hybrid-skilldag-retrieval-plan.md
 tickets_ref: docs/tickets/2026-06-08-v1-7-local-hybrid-skilldag-retrieval/index.md
 architecture_ref: "explicit-handoff: parent plan ## Success Criteria (quality targets) + measurement mandate"
@@ -59,16 +59,16 @@ Ordered scope:
 
 ## Acceptance Criteria
 
-- [ ] **Instrument gate passed:** the α=0 negative-control arm craters MRR (≥50% relative drop) on the new fixture — recorded in the report BEFORE any arm verdict.
-- [ ] A meaningful fraction of the corpus carries populated multi-view fields (PG count > 0).
-- [ ] Held-out set obeys the anti-circularity rule (headline strata from held-out transcripts/task descriptions; `use_when`-derived queries only as a labeled secondary stratum) and contains lexical-recall queries whose gold term lives ONLY in a multi-view field.
-- [ ] A fresh real-server sweep records hybrid win/tie/loss vs dense, on both sparse and dense multi-view signals, with per-query paired rank dumps and a sign-test-backed verdict (not mean equality).
-- [ ] Candidate-recall@`candidate_limit` (gold-in-pool rate) reported per arm, separately from MRR; the hybrid verdict explicitly weighs it.
-- [ ] MRR@10 resolution arm reported alongside MRR@3.
-- [ ] If rankings tie again, the env-gated lexical-ranking arm was built and measured before the final hybrid verdict; its delta is recorded.
-- [ ] Relevance floor re-calibrated on qwen3 distributions; histograms in the report.
-- [ ] Uplift is readable: scores reflect relevance (depends on the #260 fix folded into T06), not the RRF rank artifact.
-- [ ] The default-arm + lexical-retrieval-ROI decision is annotated with which case the data supports, and the retrieval contract doc is updated if the default flips.
+- [x] **Instrument gate passed:** α=0 craters MRR 100% (p=0.0000) on the new fixture — recorded in §1 of the report BEFORE any arm verdict.
+- [x] A meaningful fraction of the corpus carries populated multi-view fields (PG: tools 150, invariants 188, use_when 188 of 262).
+- [x] Held-out set obeys the anti-circularity rule (headline strata = the 24 sessions' problem statements / fresh-vocab paraphrases; `use_when` demoted to a labeled secondary stratum) and contains `multiview` lexical-recall queries whose gold term lives only in a multi-view field. All 137 anchors live-resolve.
+- [x] Fresh real-server sweep records hybrid win/tie/loss vs dense on BOTH sparse (snapshot_hybrid: LOSS) and dense multi-view (dense_views_on: WIN) signals, with per-query paired rank dumps + sign-test verdicts (snapshot_hybrid p=0.0000; qdrant_hybrid p=1.0; dense_views p=0.0074) — not mean equality.
+- [x] Candidate-recall@candidate_limit reported per arm separately from MRR (dense 0.723, snapshot_hybrid 0.555, qdrant_hybrid 0.723, dense_views 0.796); the verdict weighs it as THE lever at this scale.
+- [x] MRR@10 resolution arm reported alongside MRR@3 — finding: MRR@3==MRR@10 for all arms (no rank-4..10 near-miss population).
+- [x] Tie gate hit (dense ≡ qdrant_hybrid, 137 ties). Per owner decision 2026-06-11, STOPPED at the gate — the env-gated lexical-ranking Rust arm was NOT built; deferred to a separate owner decision (BM25-as-candidate already hurt → strong prior it would not win as a ranking term). Recorded in §4/§5.
+- [x] Relevance floor re-calibrated on qwen3 distributions; top-1 score histograms in §3/§4 (dense min 0.581/median 0.747/max 0.93). 0.48 floor confirmed well-calibrated.
+- [x] Uplift is readable: #260 eq.3 `score` used throughout (the "compressed 0.016" was the RRF `fusion_rank_score` artifact, now separated).
+- [x] Default-arm + lexical-retrieval-ROI decision annotated (§5): keep snapshot_dense backend, do not promote either hybrid; RECOMMEND RETRIEVAL_DENSE_VIEWS→default-ON. Retrieval contract doc + assessment updated with the measured delta (actual flag-default flip is a pending owner-approved change).
 
 ## Local Context
 

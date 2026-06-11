@@ -1,0 +1,139 @@
+{
+  "stratum_counts": {
+    "disjoint": 36,
+    "lexical": 30,
+    "multiview": 20,
+    "negative": 25,
+    "transcript": 36,
+    "use_when": 15
+  },
+  "split_counts": {
+    "held_out": 64,
+    "tuning": 98
+  },
+  "distinct_gold_skill_count": 45,
+  "distinct_session_count": 24,
+  "total_queries": 162,
+  "samples_by_stratum": {
+    "transcript": [
+      {
+        "id": "t11-transcript-prohibit-concurrent-cargo-ops-across-age",
+        "text": "My host machine locked up completely while two parallel workers were running simultaneously - all my uncommitted working-tree files got zeroed out, they were both doing heavy compilation work at the same time",
+        "anchor": "prohibit-concurrent-cargo-ops-across-agents",
+        "split": "held_out"
+      },
+      {
+        "id": "t11-transcript-file-overlap-batch-serialization-for-age",
+        "text": "I want to run multiple todo-fixes in parallel using separate workers but several of them modify the same source module - how should I structure the dispatch to avoid write conflicts?",
+        "anchor": "file-overlap-batch-serialization-for-agent-swarms",
+        "split": "held_out"
+      },
+      {
+        "id": "t11-transcript-qdrant-rest-grpc-port-mismatch",
+        "text": "My reqwest-based HTTP client keeps getting a hyper Version parsing failure whenever it tries to list available vector collections — the response looks like raw binary framing, not JSON",
+        "anchor": "qdrant-rest-grpc-port-mismatch",
+        "split": "held_out"
+      }
+    ],
+    "disjoint": [
+      {
+        "id": "t11-disjoint-prohibit-concurrent-cargo-ops-across-age",
+        "text": "How do I prevent a WSL2 host from crashing and losing dirty file contents when multiple AI workers are each trying to do compile-heavy tasks at the same time?",
+        "anchor": "prohibit-concurrent-cargo-ops-across-agents",
+        "split": "held_out"
+      },
+      {
+        "id": "t11-disjoint-file-overlap-batch-serialization-for-age",
+        "text": "Before handing out work items to parallel workers on a shared codebase, what analysis prevents two workers from racing on the same source code simultaneously?",
+        "anchor": "file-overlap-batch-serialization-for-agent-swarms",
+        "split": "held_out"
+      },
+      {
+        "id": "t11-disjoint-qdrant-rest-grpc-port-mismatch",
+        "text": "Vector database HTTP client receives mangled binary data instead of a JSON response body — every call to the collections endpoint fails with a protocol version exception",
+        "anchor": "qdrant-rest-grpc-port-mismatch",
+        "split": "held_out"
+      }
+    ],
+    "lexical": [
+      {
+        "id": "t11-lexical-two-phase-artifact-wiring-must-be-verifi",
+        "text": "How do I make sure a migration file is both registered in the array and referenced in application logic after creation?",
+        "anchor": "two-phase-artifact-wiring-must-be-verified-end-to-end",
+        "split": "tuning"
+      },
+      {
+        "id": "t11-lexical-rust-cargo-bin-target-missing-docker-bui",
+        "text": "Dockerfile fails with 'no bin target named' when using --bin flag but the crate has src/main.rs",
+        "anchor": "rust-cargo-bin-target-missing-docker-build-failure",
+        "split": "tuning"
+      },
+      {
+        "id": "t11-lexical-serialize-shared-file-todos-across-agent",
+        "text": "How should I batch parallel agent todos to avoid concurrent writes to the same file?",
+        "anchor": "serialize-shared-file-todos-across-agent-batches",
+        "split": "held_out"
+      }
+    ],
+    "multiview": [
+      {
+        "id": "t11-multiview-two-phase-artifact-wiring-must-be-verifi",
+        "text": "I added a new migration file but nothing is picking it up at runtime — could there be an orphan wiring entry somewhere?",
+        "anchor": "two-phase-artifact-wiring-must-be-verified-end-to-end",
+        "split": "tuning"
+      },
+      {
+        "id": "t11-multiview-rust-cargo-bin-target-missing-docker-bui",
+        "text": "Docker build keeps failing saying 'no bin target named' even though the binary exists — do I need an explicit [[bin]] section in Cargo.toml?",
+        "anchor": "rust-cargo-bin-target-missing-docker-build-failure",
+        "split": "tuning"
+      },
+      {
+        "id": "t11-multiview-serialize-shared-file-todos-across-agent",
+        "text": "Two Claude workflow agents both modified the same source file and now I have a merge conflict — how should I have batched these tickets?",
+        "anchor": "serialize-shared-file-todos-across-agent-batches",
+        "split": "held_out"
+      }
+    ],
+    "use_when": [
+      {
+        "id": "t11-usewhen-two-phase-artifact-wiring-must-be-verifi",
+        "text": "I added a new migration file but need to make sure it's also listed in the migrations registry or runner array",
+        "anchor": "two-phase-artifact-wiring-must-be-verified-end-to-end",
+        "split": "tuning"
+      },
+      {
+        "id": "t11-usewhen-rust-cargo-bin-target-missing-docker-bui",
+        "text": "My Rust workspace Dockerfile parameterizes the build with a BIN arg but the container exits with code 101 and cargo can't find that binary target",
+        "anchor": "rust-cargo-bin-target-missing-docker-build-failure",
+        "split": "tuning"
+      },
+      {
+        "id": "t11-usewhen-serialize-shared-file-todos-across-agent",
+        "text": "I'm running a multi-agent swarm where several agents need to modify the same source files — how do I avoid merge conflicts in the final commit?",
+        "anchor": "serialize-shared-file-todos-across-agent-batches",
+        "split": "held_out"
+      }
+    ],
+    "negative": [
+      {
+        "id": "t11-neg-01",
+        "text": "React useReducer vs useState for complex form state in TypeScript",
+        "anchor": null,
+        "split": "tuning"
+      },
+      {
+        "id": "t11-neg-02",
+        "text": "Python Flask blueprint registration order causing 404 on nested routes",
+        "anchor": null,
+        "split": "tuning"
+      },
+      {
+        "id": "t11-neg-03",
+        "text": "Kubernetes HorizontalPodAutoscaler not scaling down after load drops",
+        "anchor": null,
+        "split": "tuning"
+      }
+    ]
+  }
+}

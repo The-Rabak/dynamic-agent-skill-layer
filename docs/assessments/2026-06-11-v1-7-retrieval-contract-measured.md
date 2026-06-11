@@ -119,3 +119,39 @@ The efficacy harness can attribute every retrieval call to a concrete arm and co
 | T09 dense multi-view views | ✅ code; measured ON/OFF sweep → **T11** |
 
 **Bottom line:** V1.7 ships a real, agent-callable, honestly-scored retrieval substrate on a local qwen3 arm with a typed skill graph. Its *efficacy* — whether the multi-view/hybrid bet beats plain dense, and whether 0.80 is reachable — is **not yet measured** and is gated entirely on T11 building a corpus-aligned eval. No part of V1.7 should be cited as efficacy-proven until that sweep runs.
+
+---
+
+## 8. T11 measured verdict (2026-06-11) — efficacy gate DISCHARGED
+
+The §6 "hard prerequisite" (a corpus-aligned eval set) and the §7 T09 "deferred sweep" are now
+**done**. Built `tests/fixtures/retrieval_quality_262_corpus_labeled.json` (137 positives + 25
+negatives, anti-circularity: headline queries from the 24 sessions' problem statements / fresh-vocab
+symptom paraphrases, gold mapped via `source_session_id`; `use_when` demoted to a labeled secondary
+stratum). The α=0 instrument gate **passed at a 100% MRR crater** (p=0.0000) — the fixture genuinely
+discriminates retrieval quality, not self-recall. All numbers drive the real mcp-server over HTTP,
+judged by the real `claude` CLI; readiness gated on the honest T17 `/health`-200 signal.
+
+**Frozen 0.80 aspiration: MET on the corpus-aligned fixture.** Judge-aug held-out (n=53):
+`snapshot_dense` 0.884 MRR / 0.804 nDCG@3 / 0.92 no-match; `dense_views_on` 0.912 / 0.839 / 0.92.
+Previously un-validatable on the dogfood corpus (234 fixture 0/30 aligned) — now validated, not faked.
+
+**Hybrid bet — split, earned verdict:**
+- SPARSE / BM25 (`snapshot_hybrid`): **FALSIFIED** — net-negative (MRR 0.686→0.522, gold-in-pool
+  99→76, 0 queries improved, p=0.0000). Sparse candidate fusion displaces good dense candidates.
+- `qdrant_hybrid`: **EXACTLY equivalent** to dense (137/137 ties, p=1.0) — CQRS break buys nothing; do
+  not promote.
+- DENSE multi-view (T09 `RETRIEVAL_DENSE_VIEWS`): **VALIDATED** — the real lever. Anchor-only MRR@3
+  0.686→0.743, candidate-recall@50 0.723→0.796, nDCG@3 0.696→0.755 (sign p=0.0074); judge-aug held-out
+  0.912/0.839/0.92; p95 369ms < 500ms. **Recommend promoting to default-ON** (pending owner-approved
+  flag-default flip — behavior-changing default).
+
+**Lever finding:** MRR@3 == MRR@10 for every arm → gold is top-3 or absent from top-10; arm
+differences live entirely in **candidate-recall@limit**, not fine ranking. That is the metric to
+track as the corpus scales (T14/T15). The 0.48 no-match floor is confirmed well-calibrated for qwen3.
+
+**Tie gate:** dense ≡ qdrant_hybrid tie exactly → execution stopped at the gate; the env-gated
+lexical-ranking Rust arm was **not built** (owner decision 2026-06-11; strong prior it would not win
+since BM25-as-candidate already hurt). Full evidence: `tests/e2e/reports/t11/T11-VALIDATION-REPORT.md`.
+
+The §7 T09 row should now read: ✅ code **+ measured (T11): validated uplift, recommend default-ON**.

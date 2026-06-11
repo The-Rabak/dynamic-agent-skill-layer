@@ -20,12 +20,20 @@ V1.7 is **additive** over the v1.5.1 core below. The default query path is uncha
 - **Candidate generation is backend-selectable** via `RETRIEVAL_BACKEND` (`RetrievalBackend`,
   `crates/retrieval/src/orchestrator.rs:166`, fail-loud parse). **Default `snapshot_dense`** (the path
   documented in §5). `snapshot_hybrid` (in-memory dense + Okapi BM25 over the 9 multi-view fields) and
-  `qdrant_hybrid` (live Qdrant dense+sparse read) are **experimental, opt-in** — T04 measured **no
-  uplift** from either on the current corpus, so dense stays default. `qdrant_hybrid` reads Qdrant at
-  query time and thus breaks the default CQRS split — see `online-retrieval-cqrs.md`.
-- **Dense multi-view views** (`e_task`/`e_needs`/`e_negative`, max-over-views α fusion) exist behind
-  `RETRIEVAL_DENSE_VIEWS` (T09), **default-OFF**; OFF == byte-for-byte pre-T09 ranking. The measured
-  ON/OFF delta is **deferred to T11** (needs a corpus-aligned eval).
+  `qdrant_hybrid` (live Qdrant dense+sparse read) are **experimental, opt-in**. T04 measured no uplift
+  on the empty-multiview corpus; **T11 re-measured on the rich 262-corpus and the verdict held and
+  hardened**: `snapshot_hybrid` (BM25 sparse candidate fusion) is **net-negative** (MRR 0.686→0.522,
+  loses 23 golds from the candidate pool), and `qdrant_hybrid` is **byte-identical to `snapshot_dense`**
+  (137/137 ties, p=1.0) — so dense stays the default and neither hybrid backend is promoted.
+  `qdrant_hybrid` reads Qdrant at query time and thus breaks the default CQRS split — see
+  `online-retrieval-cqrs.md`.
+- **Dense multi-view views** (`e_task`/`e_needs`/`e_negative`, max-over-views α fusion) behind
+  `RETRIEVAL_DENSE_VIEWS` (T09). Currently **default-OFF** (OFF == byte-for-byte pre-T09 ranking), but
+  **T11 measured a validated uplift and RECOMMENDS promoting it to default-ON**: anchor-only MRR@3
+  0.686→0.743, candidate-recall@50 0.723→0.796, nDCG@3 0.696→0.755 (sign p=0.0074); judge-aug held-out
+  **0.912 / 0.839 / 0.92** (vs dense 0.884 / 0.804 / 0.92), p95 369ms < 500ms. The actual flag-default
+  flip is a pending owner-approved change (behavior-changing default); see
+  `tests/e2e/reports/t11/T11-VALIDATION-REPORT.md`.
 - **No local reranker / query decomposition** — T07 was **skipped** (optional; T04 showed candidate
   generation is not the ceiling).
 - **Typed skill graph edges** (`skill_edges`: depends_on / composes_with / similar_to / conflicts_with)
@@ -39,9 +47,13 @@ V1.7 is **additive** over the v1.5.1 core below. The default query path is uncha
   `embedding_arm` and `retrieval_backend` components.
 - **Community/graph multiplier (`λ·community_boost` in §2) is measured ranking-inert** — present in
   code but it does not change ranking; do not claim the graph improves retrieval ranking.
-- **The 0.48 no-match floor (§4) and the 0.80 quality target are NOT re-validated on the qwen3
-  262-corpus.** The committed labeled fixture is 0/30 aligned with that corpus; honest held-out
-  measurement is the T11 deliverable. See the assessment doc.
+- **The 0.80 quality target is now VALIDATED on the qwen3 262-corpus (T11, 2026-06-11).** Using the
+  corpus-aligned anti-circularity fixture (`retrieval_quality_262_corpus_labeled.json`, 137 positives,
+  α=0 instrument gate passed at 100% crater), judge-augmented **held-out** retrieval meets the frozen
+  aspiration: `snapshot_dense` 0.884 MRR / 0.804 nDCG@3 / 0.92 no-match, and `dense_views_on` 0.912 /
+  0.839 / 0.92. The 0.48 no-match floor is confirmed well-calibrated (top-1 eq.3 scores span 0.58–0.93,
+  all above the floor; the old "compressed ~0.016" alarm was the RRF artifact, not eq.3). See
+  `tests/e2e/reports/t11/T11-VALIDATION-REPORT.md` and the assessment doc §8.
 
 ---
 

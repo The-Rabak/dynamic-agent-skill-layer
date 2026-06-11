@@ -1,0 +1,23 @@
+
+=== T11 SWEEP  run-id=gate  split=all  arms=['snapshot_dense', 'alpha0_control'] ===
+fixture: tests/fixtures/retrieval_quality_262_corpus_labeled.json  positives=137  negatives=25
+
+########## ARM: snapshot_dense  (defaults) ##########
+  reboot_mcp (snapshot_dense) ...
+  polling /health for readiness (stuck-deadline=2700s) ...
+  readiness: /health returned error:Remote end closed connection without response at 0s; server still warming — polling ...
+  readiness: /health 200 after 5s — server ready
+  MRR@3=0.686  MRR@10=0.686  nDCG@3=0.696  hit@3=0.723  recall@3=0.723  cand_recall@50=0.723  no_match_prec=0.92
+
+########## ARM: alpha0_control  {'RETRIEVAL_ALPHA': '0.0'} ##########
+  reboot_mcp (alpha0_control) ...
+  polling /health for readiness (stuck-deadline=2700s) ...
+  readiness: /health returned error:<urlopen error [Errno 111] Connection refused> at 0s; server still warming — polling ...
+  readiness: /health 200 after 5s — server ready
+  MRR@3=0.000  MRR@10=0.000  nDCG@3=0.000  hit@3=0.000  recall@3=0.000  cand_recall@50=0.000  no_match_prec=1.0
+
+  OK: alpha0_control craters MRR by 100.0% (rel_drop=1.000 >= 0.50) — fixture discriminates.
+  paired alpha0_control vs snapshot_dense: n_a_better=99 n_b_better=0 n_tie=38 mean_delta=-721.09 p=0.0000 (significant)
+
+=== SWEEP COMPLETE ===
+report: tests/e2e/reports/t11/sweep_gate.json

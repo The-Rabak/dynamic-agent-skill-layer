@@ -1,0 +1,21 @@
+
+=== T11 SWEEP  run-id=judged  split=all  arms=['snapshot_dense', 'dense_views_on'] ===
+fixture: tests/fixtures/retrieval_quality_262_corpus_labeled.json  positives=137  negatives=25
+
+########## ARM: snapshot_dense  {'OLLAMA_EMBED_MODEL': 'qwen3-embedding:4b'} ##########
+  reboot_mcp (snapshot_dense) ...
+  polling /health for readiness (stuck-deadline=2700s) ...
+  readiness: /health returned error:Remote end closed connection without response at 0s; server still warming — polling ...
+  readiness: /health 200 after 5s — server ready
+  MRR@3=0.864  MRR@10=0.864  nDCG@3=0.811  hit@3=0.891  recall@3=0.818  cand_recall@50=0.816  no_match_prec=0.92
+
+########## ARM: dense_views_on  {'OLLAMA_EMBED_MODEL': 'qwen3-embedding:4b', 'RETRIEVAL_DENSE_VIEWS': 'true'} ##########
+  reboot_mcp (dense_views_on) ...
+  polling /health for readiness (stuck-deadline=2700s) ...
+  readiness: /health returned error:<urlopen error [Errno 111] Connection refused> at 0s; server still warming — polling ...
+  readiness: /health 200 after 5s — server ready
+  MRR@3=0.911  MRR@10=0.911  nDCG@3=0.863  hit@3=0.942  recall@3=0.875  cand_recall@50=0.875  no_match_prec=0.92
+  paired dense_views_on vs snapshot_dense: n_a_better=3 n_b_better=10 n_tie=124 mean_delta=50.99 p=0.0923 (not-significant)
+
+=== SWEEP COMPLETE ===
+report: tests/e2e/reports/t11/sweep_judged.json
