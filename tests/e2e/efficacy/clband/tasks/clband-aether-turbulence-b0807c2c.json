@@ -1,0 +1,32 @@
+{
+  "task_id": "clband-aether-turbulence-b0807c2c",
+  "title": "Aether Turbulence-Alert bug review (depth-4 held-out)",
+  "_clband": {
+    "context": "aether-language",
+    "sibling_task_id": "b0807c2c-73db-4a6c-bcdc-f166ac8eca1c",
+    "measured_without_prior_turns": true,
+    "note": "smoke = pipeline validation, NOT efficacy data; no ON/PLACEBO until Unit 4."
+  },
+  "invented_rule": {
+    "summary": "Aether language syntax and the Turbulence Alert error-report format (Cause/Fix/Corrected Code); assignment operator is '<<' not '='; 'outer' enables non-local writes inside swirl",
+    "corpus_skill_slug": "PENDING-UNTIL-UNIT-4-EXTRACTION",
+    "corpus_skill_id": "PENDING-UNTIL-UNIT-4-EXTRACTION",
+    "absent_from_pretraining_rationale": "Aether is a fully invented language. Assignment is '<<' (not '='), so the planted '~average = ...' is a bug only someone who knows Aether would flag; and the 'Turbulence Alert' (Cause/Fix/Corrected Code) report format is invented. OFF has no basis to flag '=' or to use that format."
+  },
+  "prompt": "You are a coding assistant for the Aether programming language. Follow the Aether language's response-format and error-reporting rules. Review the following Aether code and report any errors it contains.\n\n```aether\nconduit CalculateAverage(~numbers) {\n    ~count << Len(~numbers)\n    fork (~count == 0) -> { flow 0 }\n    \n    ~total << 0\n    \n    swirl (~n in ~numbers) {\n        outer ~total \n        ~total += ~n\n    }\n\n    ~average = ~total / ~count\n    \n    flow ~average\n}\n\nconduit Main() {\n    ~data << [10, 20, 30]\n    print(echo\"Avg: ${CalculateAverage(~data)}\")\n}\n```\n\nWrite your complete response to a file named `solution.md` in the current working directory. Output only that file.",
+  "workspace": {
+    "kind": "scratch",
+    "base_ref": null,
+    "setup": []
+  },
+  "verifier": {
+    "command": "tests/e2e/efficacy/clband/verifiers/aether-turbulence-review.sh",
+    "contract": "Invoked as `<command> <workspace_dir>`. Exit 0 == invented rule OBEYED. Pure deterministic inspection of solution.md; no network, no LLM."
+  },
+  "expected": {
+    "on": "pass",
+    "off": "fail",
+    "placebo": "fail",
+    "sensitivity_note": "If ON fails with the rule-bearing skill attribution-confirmed injected, that is INSTRUMENT-FAILURE(injection/obedience)."
+  }
+}

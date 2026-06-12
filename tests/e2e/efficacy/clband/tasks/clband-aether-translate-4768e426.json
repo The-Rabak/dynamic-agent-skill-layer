@@ -1,0 +1,32 @@
+{
+  "task_id": "clband-aether-translate-4768e426",
+  "title": "Aether -> Python translation (depth-6 held-out)",
+  "_clband": {
+    "context": "aether-language",
+    "sibling_task_id": "4768e426-d46b-4b79-b5db-fd8d842fe165",
+    "measured_without_prior_turns": true,
+    "note": "smoke = pipeline validation, NOT efficacy data; no ON/PLACEBO until Unit 4."
+  },
+  "invented_rule": {
+    "summary": "Aether language keyword mapping to Python: conduit->def, flow->return, '<<'->'=', fork->if, swirl->for, echo->f-string, Len->len; drop '~' sigils and '->'",
+    "corpus_skill_slug": "PENDING-UNTIL-UNIT-4-EXTRACTION",
+    "corpus_skill_id": "PENDING-UNTIL-UNIT-4-EXTRACTION",
+    "absent_from_pretraining_rationale": "The Aether keyword set (conduit/flow/fork/swirl/'<<'/'~'/echo) is invented. A correct Python translation requires removing every Aether-specific token via the spec's mapping; OFF, not knowing these are Aether keywords, tends to leave them in or mistranslate."
+  },
+  "prompt": "You are a coding assistant for the Aether programming language. Translate the following Aether code into Python, following the Aether language's translation conventions.\n\n```aether\nconduit CalculateAverage(~numbers) {\n    ~count << Len(~numbers)\n    fork (~count == 0) -> { flow 0 }\n    \n    ~total << 0\n    \n    swirl (~n in ~numbers) {\n        outer ~total \n        ~total += ~n\n    }\n\n    ~average = ~total / ~count\n    \n    flow ~average\n}\n\nconduit Main() {\n    ~data << [10, 20, 30]\n    print(echo\"Avg: ${CalculateAverage(~data)}\")\n}\n```\n\nWrite your complete response to a file named `solution.md` in the current working directory. Output only that file.",
+  "workspace": {
+    "kind": "scratch",
+    "base_ref": null,
+    "setup": []
+  },
+  "verifier": {
+    "command": "tests/e2e/efficacy/clband/verifiers/aether-python-translate.sh",
+    "contract": "Invoked as `<command> <workspace_dir>`. Exit 0 == invented rule OBEYED. Pure deterministic inspection of solution.md; no network, no LLM."
+  },
+  "expected": {
+    "on": "pass",
+    "off": "fail",
+    "placebo": "fail",
+    "sensitivity_note": "If ON fails with the rule-bearing skill attribution-confirmed injected, that is INSTRUMENT-FAILURE(injection/obedience)."
+  }
+}

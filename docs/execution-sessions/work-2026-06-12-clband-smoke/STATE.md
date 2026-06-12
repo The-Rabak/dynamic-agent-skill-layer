@@ -48,13 +48,26 @@ dataset_sha: b28a5832a09b0d96c0cf4c22e90d7c60ede25b80
 ## Work Status
 | # | Unit | Kind | Serves / Unlocks | Status | Attempts | Session File |
 |---|------|------|------------------|--------|----------|--------------|
-| 0 | Preflight + pre-reg deltas commit | infra-packet | locks the experiment before any run | in_progress | 1 | unit-00-preflight.md |
-| 1 | Verifier + rewrite + judge authoring | infra-packet | committed instruments before runs | pending | -- | -- |
-| 2 | OFF pre-gate | fix-item | empirical non-pretraining + discrimination | pending | -- | -- |
+| 0 | Preflight + pre-reg deltas commit | infra-packet | locks the experiment before any run | completed | 1 | unit-00-preflight.md |
+| 1 | Verifier + rewrite + judge authoring | infra-packet | committed instruments before runs | completed | 1 | unit-01-instruments.md |
+| 2 | OFF pre-gate | fix-item | empirical non-pretraining + discrimination | in_progress | 1 | -- |
 | 3 | Session A teach sessions (2) | infra-packet | genuine capture under isolated scopes | pending | -- | -- |
 | 4 | Pipeline + human gate + fidelity gate | infra-packet | proves extraction at both sizes | pending | -- | -- |
 | 5 | Session B paired ON/OFF/PLACEBO | infra-packet | end-to-end injection + placebo | pending | -- | -- |
 | 6 | Report + closeout | infra-packet | GO/NO-GO for the full band | pending | -- | -- |
 
 ## Learnings Brief
-_No learnings yet._
+- [scope] **DP-2 RESOLVED (owner: Option A).** Isolate clband via marker subdirs under the dogfood
+  project volume: `/skills/project/clband-<name>/{.git,.skills}`. graph-builder folds all of
+  `/skills/project` into one "project" scope, but retrieval filters by `source_path.starts_with(repo_path)`,
+  so `compile_context repo_path=/skills/project/clband-<name>` returns ONLY that subdir's skills.
+  PROVEN live (empty scope → status `no_match`, 0 skills, zero dogfood leak; broad `/skills/project`
+  → `ok` w/ dogfood). Rules: ON/PLACEBO inject via `compile_context` ONLY (find_skill is unscoped);
+  run NO broad queries during the window; closeout = remove clband subdirs + rebuild + re-probe to
+  restore pure 262. Volume write = one-off `docker run --rm -v <vol>:/p alpine` (mounts are :ro to
+  services). Volume = `dynamic-agent-skill-layer_test-project-skills`.
+- [harness] `scripts/efficacy_ab.py` `compile_context_http` builds `repo_path=/tmp/t14-...` internally;
+  for clband ON/PLACEBO I must thread the clband subdir path through (small additive Python knob —
+  allowed; not a crate/ranking change). ON = focused `--inject-query summary`, LABELED.
+- [extraction] To capture Session A into a clband scope, the extraction `repo_path` must point at the
+  clband subdir so `.pending` drafts land under `/skills/project/clband-<name>/.skills/`.
