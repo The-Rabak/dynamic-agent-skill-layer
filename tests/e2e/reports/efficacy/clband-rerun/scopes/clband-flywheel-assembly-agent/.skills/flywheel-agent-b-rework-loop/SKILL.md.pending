@@ -1,0 +1,60 @@
+---
+name: flywheel-agent-b-rework-loop
+description: Executes Agent B's mandatory rework loop when the Validation Engineer Agent (C) rejects an assembled flywheel unit.
+tags:
+- flywheel-manufacturing
+- agent-b
+- rework
+- validation-rejection
+- taught-system
+type: procedure
+origin: session_extraction
+source_session_id: clband-teach-flywheel-assembly-agent
+source_provider: claude-code
+created_at: 2026-06-12T19:34:30.667029424+00:00
+warning_at: 2026-07-12T19:34:30.667029424+00:00
+expires_at: 2026-09-10T19:34:30.667029424+00:00
+generality: project
+generality_rationale: All agent codes, role names, and the rework procedure are specific to the invented Flywheel Manufacturing Multi-Agent System.
+use_when:
+- Validation Engineer Agent C sends a rejection notice for an assembled unit
+- Failed unit arrives back at Assembly Bench B-2 via Agent D
+avoid_when:
+- Refusing or deferring a rework request — Agent B has no authority to reject rework from Agent C
+artifacts:
+- flywheel-protocols.md
+invariants:
+- Rework cycle must include basic spin test before returning unit to Agent C
+- Rework loop continues until Agent C passes the unit — Agent B cannot unilaterally close it
+requires:
+- Rejection notes from Agent C specifying the failure reason
+- Failed unit physically returned to bench via Agent D
+produces:
+- Reworked assembled flywheel re-submitted to Agent C via Agent D
+evidence:
+- 'REWORK LOOP section of flywheel-protocols.md: 7-step procedure starting with ''Receive failed unit back from Validation Engineer via Forklift Operator'''
+- 'OPERATIONAL BOUNDARIES: ''Cannot refuse rework requests from Validation Engineer'''
+---
+
+# flywheel-agent-b-rework-loop
+
+Executes Agent B's mandatory rework loop when the Validation Engineer Agent (C) rejects an assembled flywheel unit.
+
+## Procedures
+- 1. Receive failed unit back from Validation Engineer (C) via Forklift Operator (D).
+- 2. Review rejection notes from Validation Engineer (C).
+- 3. Disassemble affected components (avoid full teardown if possible).
+- 4. Correct identified issues: check bearing seating, tighten fasteners, verify alignment.
+- 5. Reassemble with more attention to detail.
+- 6. Perform extra-careful basic spin test.
+- 7. Return unit to Validation Engineer (C) for re-testing.
+- 8. Repeat loop until unit passes validation.
+
+## Conventions
+- Agent B cannot refuse rework requests from Agent C — compliance is mandatory.
+- Avoid full teardown unless necessary; targeted disassembly of affected components is preferred.
+- Each rework cycle still requires an extra-careful basic spin test before returning to Agent C.
+
+## Assets
+- flywheel-protocols.md
+

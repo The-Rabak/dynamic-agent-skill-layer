@@ -1,0 +1,23 @@
+---
+name: A single zero is pushed onto the stack (preference)
+description: 'Standing user preference: A single zero is pushed onto the stack before the first line of the file is read; this sentinel value is never popped.'
+tags:
+- preference
+- convention
+origin: session_extraction
+source_session_id: clband-teach-aether-language
+source_provider: claude-code
+created_at: 2026-06-12T19:40:13.758472952+00:00
+warning_at: 2026-07-12T19:40:13.758472952+00:00
+expires_at: 2026-09-10T19:40:13.758472952+00:00
+generality: uncertain
+generality_rationale: Detected as a standing user directive; generality inferred from scope signals.
+---
+
+# A single zero is pushed onto the stack (preference)
+
+Standing user preference: A single zero is pushed onto the stack before the first line of the file is read; this sentinel value is never popped.
+
+## Conventions
+- A single zero is pushed onto the stack before the first line of the file is read; this sentinel value is never popped.
+

@@ -1,0 +1,23 @@
+---
+name: An immutable container remains immutable even if it (preference)
+description: 'Standing user preference: An immutable container remains immutable even if it holds a reference to a mutable object whose value later changes; immutability applies to the set of contained objects, not their internal state.'
+tags:
+- preference
+- convention
+origin: session_extraction
+source_session_id: clband-teach-aether-language
+source_provider: claude-code
+created_at: 2026-06-12T19:40:13.759301506+00:00
+warning_at: 2026-07-12T19:40:13.759301506+00:00
+expires_at: 2026-09-10T19:40:13.759301506+00:00
+generality: uncertain
+generality_rationale: Detected as a standing user directive; generality inferred from scope signals.
+---
+
+# An immutable container remains immutable even if it (preference)
+
+Standing user preference: An immutable container remains immutable even if it holds a reference to a mutable object whose value later changes; immutability applies to the set of contained objects, not their internal state.
+
+## Conventions
+- An immutable container remains immutable even if it holds a reference to a mutable object whose value later changes; immutability applies to the set of contained objects, not their internal state.
+

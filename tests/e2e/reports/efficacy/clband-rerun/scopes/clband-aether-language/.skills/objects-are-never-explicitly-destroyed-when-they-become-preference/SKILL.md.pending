@@ -1,0 +1,23 @@
+---
+name: Objects are never explicitly destroyed; when they become (preference)
+description: 'Standing user preference: Objects are never explicitly destroyed; when they become unreachable, they may be reclaimed by the Evaporator (Garbage Collector).'
+tags:
+- preference
+- convention
+origin: session_extraction
+source_session_id: clband-teach-aether-language
+source_provider: claude-code
+created_at: 2026-06-12T19:40:13.759517941+00:00
+warning_at: 2026-07-12T19:40:13.759517941+00:00
+expires_at: 2026-09-10T19:40:13.759517941+00:00
+generality: general
+generality_rationale: Detected as a standing user directive; generality inferred from scope signals.
+---
+
+# Objects are never explicitly destroyed; when they become (preference)
+
+Standing user preference: Objects are never explicitly destroyed; when they become unreachable, they may be reclaimed by the Evaporator (Garbage Collector).
+
+## Conventions
+- Objects are never explicitly destroyed; when they become unreachable, they may be reclaimed by the Evaporator (Garbage Collector).
+

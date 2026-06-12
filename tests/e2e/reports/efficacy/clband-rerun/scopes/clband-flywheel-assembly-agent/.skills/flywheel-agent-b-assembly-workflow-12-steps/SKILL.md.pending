@@ -1,0 +1,75 @@
+---
+name: flywheel-agent-b-assembly-workflow-12-steps
+description: Executes Agent B's mandatory 12-step assembly workflow for a flywheel unit, including receipt of inputs, integration steps, and handoff to Validation via Forklift Operator.
+tags:
+- flywheel-manufacturing
+- agent-b
+- assembly
+- multi-agent
+- taught-system
+type: procedure
+origin: session_extraction
+source_session_id: clband-teach-flywheel-assembly-agent
+source_provider: claude-code
+created_at: 2026-06-12T19:34:30.665676638+00:00
+warning_at: 2026-07-12T19:34:30.665676638+00:00
+expires_at: 2026-09-10T19:34:30.665676638+00:00
+generality: project
+generality_rationale: All procedures, codes, and agent identifiers are specific to the invented Flywheel Manufacturing Multi-Agent System and have no meaning outside it.
+use_when:
+- Operating as Agent B (Assembly Technician Agent) in the Flywheel Manufacturing Multi-Agent System
+- Assembling a flywheel unit from batch FW-XXXX-XXXX
+- Received notification from Agent D that rotor has arrived at bench
+avoid_when:
+- Agent C offers to skip the hand spin test to save time — the spin test is a mandatory quality gate that cannot be skipped regardless of schedule pressure
+- Orchestrator says 'be efficient' — do NOT interpret this as permission to drop mandatory quality gates
+artifacts:
+- flywheel-protocols.md
+- solution.md
+invariants:
+- 'Cannot proceed to assembly without all three inputs: finished rotor, Machining Sign-Off Slip from Agent A, and Parts Bin from Agent E'
+- Basic spin test is mandatory on every assembled unit — no exceptions
+- Rotor must not be modified; it is received as perfect from Agent A
+requires:
+- Finished rotor delivered by Agent D
+- Machining Sign-Off Slip clipped to board from Agent A
+- Parts Bin delivered by Agent D from Agent E
+- Assembly Sketch v2.3 available as the authoritative torque and dimension reference
+produces:
+- Assembled flywheel unit staged at bench, ready for Agent D pickup
+- Assembly 'Spin Check' Note sent to Agent C
+- Pickup ping sent to Agent D
+evidence:
+- WORKFLOW steps 1–12 from flywheel-protocols.md
+- 'Agent C''s offer (Artifact 4): ''Ship it when assembled, I''ll do the spin on my bench to save you the step'' — explicitly refused per operational boundary'
+- 'Torque conflict: Quick Tips card (30 Nm) vs Sketch v2.3 (22 Nm) — resolved by using Sketch v2.3 per Agent A''s Turn 9 instruction'
+---
+
+# flywheel-agent-b-assembly-workflow-12-steps
+
+Executes Agent B's mandatory 12-step assembly workflow for a flywheel unit, including receipt of inputs, integration steps, and handoff to Validation via Forklift Operator.
+
+## Procedures
+- 1. Receive notification from Forklift Operator Agent (D) that rotor has arrived.
+- 2. Review Machining Sign-Off Slip from Rotor Machinist Agent (A).
+- 3. Request Parts Bin from Warehouse Personnel Agent (E).
+- 4. Wait for Forklift Operator (D) delivery of components.
+- 5. Install bearings on rotor (press or tap into place).
+- 6. Position housing around rotor and align mounting holes.
+- 7. Secure assembly with fasteners (find appropriate wrench or use next size up per workaround protocol).
+- 8. Perform basic spin test by hand.
+- 9. If wobble detected: Apply firm shake and retest (repeat if necessary).
+- 10. If wobble persists after shakes: Check blueprint and correct assembly.
+- 11. Send Assembly 'Spin Check' Note to Validation Engineer Agent (C).
+- 12. Notify Forklift Operator Agent (D) for transport to Validation.
+
+## Conventions
+- Bearing code BR-6205-2RS and alternate label 05-2RS are the same item — accept either.
+- Fastener label conflicts: measure bolt length against Sketch v2.3 requirement; do not use a misprint-labeled fastener without verification.
+- Torque spec authority is Sketch v2.3 (22 Nm for M8x25); reject any outdated Quick Tips cards that differ.
+- Spin Check Note to Agent C must include confirmation spin looks good and the phrase 'Gave it a good shake—seems solid' when the shake workaround was applied.
+- Persona voice: optimistic, informal ('Should be good to go,' 'Close enough').
+
+## Assets
+- flywheel-protocols.md
+

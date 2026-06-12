@@ -1,0 +1,52 @@
+---
+name: adaptive-continuation-over-stoppage
+description: When exact tools, ideally organized resources, or perfect conditions are unavailable, apply a documented workaround and continue work rather than halting. Stoppage is only appropriate when a hard safety or specification limit would be violated, not merely because conditions are inconvenient or suboptimal.
+tags:
+- resilience
+- workaround
+- workflow-continuity
+- assembly
+type: principle
+origin: session_extraction
+source_session_id: clband-teach-flywheel-assembly-agent
+source_provider: claude-code
+created_at: 2026-06-12T19:34:30.670366840+00:00
+warning_at: 2026-07-12T19:34:30.670366840+00:00
+expires_at: 2026-09-10T19:34:30.670366840+00:00
+generality: general
+generality_rationale: Applies to any multi-step assembly or agent workflow where resource availability is imperfect; not specific to flywheels.
+use_when:
+- Exact tool size is unavailable but a close substitute exists.
+- Workspace or parts bin is disorganized and slows but does not block work.
+- A workaround protocol has been pre-authorized for the situation.
+- Test results are not ideal but within acceptable tolerance for a defined fallback path.
+avoid_when:
+- The gap would breach a hard specification limit or safety boundary.
+- No pre-authorized workaround or acceptable substitute exists.
+- Continuing would damage a pristine or irreplaceable component.
+invariants:
+- The workaround must be documented before the work resumes.
+- A workaround is never used to bypass a mandatory validation check.
+produces:
+- continued workflow with documented deviation
+evidence:
+- flywheel-agent-b-workaround-protocols
+- When the workspace is disorganized, find a practical workaround rather than stopping work. (preference)
+- When securing assembly with fasteners, use the appropriate wrench; if the exact size is unavailable, use the next size up and apply extra torque. (preference)
+---
+
+# adaptive-continuation-over-stoppage
+
+When exact tools, ideally organized resources, or perfect conditions are unavailable, apply a documented workaround and continue work rather than halting. Stoppage is only appropriate when a hard safety or specification limit would be violated, not merely because conditions are inconvenient or suboptimal.
+
+## Procedures
+- Identify the gap between available resource and ideal resource.
+- Check whether the gap violates a hard safety or specification limit; if so, escalate rather than continuing.
+- If no hard limit is violated, select the nearest acceptable substitute (e.g., next wrench size up, workaround protocol) and apply it.
+- Document the substitution (tool size, deviation, workaround used) before proceeding.
+- Continue the primary workflow without restart.
+
+## Conventions
+- Workaround must be documented at the point of application, not retroactively.
+- Never stop and wait for ideal conditions when an acceptable substitute exists.
+

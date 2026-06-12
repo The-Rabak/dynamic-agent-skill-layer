@@ -1,0 +1,23 @@
+---
+name: Values pushed onto the stack are always strictly (preference)
+description: 'Standing user preference: Values pushed onto the stack are always strictly increasing from bottom to top.'
+tags:
+- preference
+- convention
+origin: session_extraction
+source_session_id: clband-teach-aether-language
+source_provider: claude-code
+created_at: 2026-06-12T19:40:13.758677324+00:00
+warning_at: 2026-07-12T19:40:13.758677324+00:00
+expires_at: 2026-09-10T19:40:13.758677324+00:00
+generality: uncertain
+generality_rationale: Detected as a standing user directive; generality inferred from scope signals.
+---
+
+# Values pushed onto the stack are always strictly (preference)
+
+Standing user preference: Values pushed onto the stack are always strictly increasing from bottom to top.
+
+## Conventions
+- Values pushed onto the stack are always strictly increasing from bottom to top.
+

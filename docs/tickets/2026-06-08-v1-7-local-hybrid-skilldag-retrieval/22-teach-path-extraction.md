@@ -2,7 +2,7 @@
 ticket_id: T22
 title: Teach-path extraction — capture taught knowledge verbatim (unblocks the T14 CL band)
 kind: expansion
-status: ready
+status: done  # 2026-06-12 — all 4 units delivered; smoke re-run GREEN (GO gate); GO recommended (owner reviewing)
 plan_ref: docs/plans/2026-06-08-feat-v1-7-local-hybrid-skilldag-retrieval-plan.md
 tickets_ref: docs/tickets/2026-06-08-v1-7-local-hybrid-skilldag-retrieval/index.md
 architecture_ref: "explicit-handoff: T14 CL-band plan §4 (docs/plans/2026-06-12-t14-cl-acquisition-band-plan.md) + smoke NO-GO (docs/assessments/2026-06-12-t14-clband-smoke.md incl. 2026-06-12 addendum)"
@@ -93,20 +93,24 @@ components** (see the assessment's 2026-06-12 addendum):
 
 ## Acceptance Criteria
 
-- [ ] Unit A visibility map persisted (per-window dropped-content accounting for both smoke
-      transcripts; the flywheel-SOP-never-seen hypothesis confirmed or refuted with evidence).
-- [ ] Teach-session delivery fixed so the knowledge document verifiably reaches extraction windows
-      (Unit B evidence: window content shows document text).
-- [ ] Taught-knowledge candidate class implemented in the real extraction prompt path; reasoned
-      refusals no longer retried as malformed output.
-- [ ] Dogfood regression diff clean (2–3 organic sessions re-extracted; no quality/count degradation;
-      diff persisted).
-- [ ] Two-tier sentinels in the manifest; operative tier derived from verifier checks; gate gates on
-      operative, reports both.
-- [ ] **Smoke re-run green:** both contexts pass the operative fidelity gate end-to-end
-      (teach → extract → owner gate → `fidelity_gate.sh` exit 0); GO/NO-GO recommendation for the
-      8-context band recorded with raw artifacts.
-- [ ] All claims artifact-backed; assessment updated; workspace gates stay green.
+- [x] Unit A visibility map persisted (per-window dropped-content accounting for both smoke
+      transcripts). Flywheel-SOP-never-seen hypothesis **refuted** (doc mostly visible 8/9; failure =
+      worldview) for flywheel, **confirmed** for aether (visibility). Artifacts: `tests/e2e/reports/
+      efficacy/clband-smoke/visibility/` (commit `671b412`).
+- [x] Teach-session delivery fixed (`teach_delivery.materialize()` injects doc as a user turn); replay
+      proof shows window content contains the document text — flywheel 8/9→9/9, aether 4/8→6/8 operative
+      visible (commit `360f7cd`).
+- [x] Taught-knowledge candidate class implemented in the real prompt path (`EXTRACT_TEACH_CAPTURE`,
+      default ON); reasoned refusals no longer retried (assessment-threaded) (commit `f1647d5`).
+- [x] Dogfood regression diff clean (3 organic sessions; draft delta +1 total, quality equivalent;
+      `tests/e2e/reports/efficacy/dogfood-regression/ANALYSIS.md`).
+- [x] Two-tier sentinels in the manifest; operative tier derived from verifier checks; gate gates on
+      operative, reports document (Unit D).
+- [x] **Smoke re-run green:** both contexts pass the operative fidelity gate (flywheel 7/7, aether 5/5;
+      `fidelity_gate.sh` exit 0). GO recommendation recorded; raw artifacts `tests/e2e/reports/efficacy/
+      clband-rerun/`. (Owner holding the band-launch decision pending review.)
+- [x] All claims artifact-backed; assessment updated (T22 RESOLUTION section); workspace gates green
+      (fmt + clippy bare + clippy --features test-utils). DP-2: drafts left as .pending evidence.
 
 ## Local Context
 

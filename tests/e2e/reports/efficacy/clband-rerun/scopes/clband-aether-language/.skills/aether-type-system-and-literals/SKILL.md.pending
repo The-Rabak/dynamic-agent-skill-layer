@@ -1,0 +1,62 @@
+---
+name: aether-type-system-and-literals
+description: 'Aether built-in type names: Drop=int, Mist=float, Echo=str, Stream=list, Bundle=tuple, Pool=dict, Spark=bool; boolean literals are `ignite` (true) and `extinguish` (false); null is `nil`; intrinsic conversion conduits are Drop(), Mist(), Echo(), Len(), Input().'
+tags:
+- aether
+- types
+- literals
+- builtins
+type: rule
+origin: session_extraction
+source_session_id: clband-teach-aether-language
+source_provider: claude-code
+created_at: 2026-06-12T19:40:13.757549788+00:00
+warning_at: 2026-07-12T19:40:13.757549788+00:00
+expires_at: 2026-09-10T19:40:13.757549788+00:00
+generality: general
+generality_rationale: These type names and literals are universal across all Aether programs.
+use_when:
+- using or converting types in Aether code
+- translating Python `int()`, `float()`, `str()`, `list`, `tuple`, `dict`, `bool`, `True`, `False`, `None` to Aether
+- calling built-in conversion functions in Aether
+avoid_when:
+- do not use Python type names (int, str, list, dict, bool, True, False, None) in Aether source
+artifacts:
+- .ae source files
+tools:
+- Ocean (reference Aether interpreter)
+invariants:
+- Boolean literals must be `ignite` or `extinguish` — `true`/`false` are not keywords in Aether.
+- Null must be written as `nil` — `None`/`null`/`null` are invalid.
+requires:
+- Aether source file (.ae)
+- Ocean interpreter
+produces:
+- Correctly typed Aether literals and type-conversion expressions
+evidence:
+- 'Spark (bool): This type has two values, `ignite` and `extinguish` (spec §3.2)'
+- 'Void (nil): single value `nil`, used to signify the absence of flow or value (spec §3.2)'
+- 'Drop(~x): Returns a Drop (integer) object; Mist(~x): Returns a Mist (floating point) object (spec §3.5)'
+---
+
+# aether-type-system-and-literals
+
+Aether built-in type names: Drop=int, Mist=float, Echo=str, Stream=list, Bundle=tuple, Pool=dict, Spark=bool; boolean literals are `ignite` (true) and `extinguish` (false); null is `nil`; intrinsic conversion conduits are Drop(), Mist(), Echo(), Len(), Input().
+
+## Procedures
+- 1. Integer type/conversion: `Drop` (arbitrary precision). Literal: `10`, `0xFF`, `0b101`, `0o7`.
+- 2. Float type/conversion: `Mist` (double precision). Literal: `3.14`, `1e100`.
+- 3. String type/conversion: `Echo` (immutable Unicode). Literal: `"text"`.
+- 4. List (mutable sequence): `Stream`. Literal: `[1, 2, 3]`.
+- 5. Tuple (immutable sequence): `Bundle`. Literal: `(1, 2, 3)` or comma-separated expressions.
+- 6. Dictionary (mapping): `Pool`. Literal: `{ key: "value" }`.
+- 7. Boolean type: `Spark`. Literals: `ignite` (true), `extinguish` (false).
+- 8. Null/None: `nil`. Truth value is false.
+- 9. Intrinsic conversion conduits available globally: `Drop(~x)`, `Mist(~x)`, `Echo(~object)`, `Len(~s)`, `Input([~prompt])`.
+- 10. Input() reads a line from stdin as an Echo; wrap with Drop() or Mist() for numeric conversion: `~n << Drop(Input("Enter: "))`.
+
+## Conventions
+- Type names are PascalCase (no prefix) matching the Conduit/Mold naming rule.
+- Pool keys must be hashable and immutable (Drops, Echoes, or Bundles of immutables).
+- Spark literals are `ignite`/`extinguish`, NOT `true`/`false` (Python) or `True`/`False`.
+

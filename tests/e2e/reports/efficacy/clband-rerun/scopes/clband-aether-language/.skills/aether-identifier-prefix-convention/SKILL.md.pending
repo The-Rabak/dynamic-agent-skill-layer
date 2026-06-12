@@ -1,0 +1,56 @@
+---
+name: aether-identifier-prefix-convention
+description: 'Every Aether identifier must carry a mandatory semantic prefix: `~` for mutable variables (Waves), `#` for immutable constants (Anchors), and PascalCase with no prefix for functions/types (Conduits/Molds).'
+tags:
+- aether
+- naming
+- identifiers
+- syntax
+type: rule
+origin: session_extraction
+source_session_id: clband-teach-aether-language
+source_provider: claude-code
+created_at: 2026-06-12T19:40:13.756155871+00:00
+warning_at: 2026-07-12T19:40:13.756155871+00:00
+expires_at: 2026-09-10T19:40:13.756155871+00:00
+generality: general
+generality_rationale: These rules apply to any Aether programming task and contain no project-local identifiers.
+use_when:
+- writing any Aether variable, constant, function, or class name
+- translating Python/JS/other-language code to Aether
+- Aether identifier naming or lexical analysis
+avoid_when:
+- non-Aether code — these prefix sigils are exclusive to Aether
+artifacts:
+- .ae source files
+tools:
+- Ocean (reference Aether interpreter)
+invariants:
+- Every Aether identifier must match exactly one of the three prefix patterns.
+- Rebinding a `#` Anchor is a runtime StructuralFracture, not a compile-time warning.
+requires:
+- Aether source file (.ae)
+produces:
+- Correctly prefixed Aether identifiers that pass lexical analysis without TurbulenceAlert
+evidence:
+- 'Waves (~): Regex `~[a-z][a-zA-Z0-9_]*` (spec §2.2)'
+- 'Anchors (#): Regex `#[A-Z][A-Z0-9_]*` (spec §2.2)'
+- Any attempt to rebind an Anchor results in a runtime `StructuralFracture` (spec §2.2)
+---
+
+# aether-identifier-prefix-convention
+
+Every Aether identifier must carry a mandatory semantic prefix: `~` for mutable variables (Waves), `#` for immutable constants (Anchors), and PascalCase with no prefix for functions/types (Conduits/Molds).
+
+## Procedures
+- 1. Prefix every mutable variable with `~` in lowercase-start camelCase: `~count`, `~userInput`. Regex: `~[a-z][a-zA-Z0-9_]*`.
+- 2. Prefix every immutable constant with `#` in ALL_CAPS: `#PI`, `#MAX_RETRIES`. Regex: `#[A-Z][A-Z0-9_]*`.
+- 3. Name all conduit (function) and mold (class) definitions in PascalCase with NO sigil prefix: `Sum`, `UserRecord`. Regex: `[A-Z][a-zA-Z0-9]*`.
+- 4. Never rebind an Anchor (`#` identifier) — doing so raises a runtime `StructuralFracture`.
+- 5. Method special-names (Init, Echo, Repr, Del, Bool, Len, etc.) follow PascalCase (no prefix), matching conduit conventions.
+
+## Conventions
+- The prefix is semantically enforced, not merely stylistic — wrong or missing prefix is a hard error.
+- Function parameters are Wave identifiers (`~`) since they are local mutable bindings.
+- Special method names defined on Molds use PascalCase: `Init(~self, ...)`, `Echo(~self)`, `Len(~self)`.
+

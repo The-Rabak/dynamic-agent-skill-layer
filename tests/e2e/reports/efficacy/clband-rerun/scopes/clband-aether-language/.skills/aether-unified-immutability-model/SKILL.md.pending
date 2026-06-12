@@ -1,0 +1,53 @@
+---
+name: aether-unified-immutability-model
+description: 'Aether enforces immutability consistently at three orthogonal levels that together form a coherent model: (1) Binding-level — the `#` sigil marks an identifier as immutable; its referenced object can never be rebound after initialization. (2) Type-level — numeric types (Drop, Mist) are always immutable objects regardless of their binding sigil; the value of a numeric object never changes after creation. (3) Container-level — an immutable container bound with `#` preserves its set of contained references, even if a contained mutable object''s internal state later changes. This shallow-immutability-at-reference contract is consistent across all three levels. A common mistake is to conflate binding-immutability with deep-freeze; Aether''s model is deliberately shallow at the container level.'
+tags:
+- aether
+- immutability
+- object-model
+- types
+- containers
+type: principle
+origin: session_extraction
+source_session_id: clband-teach-aether-language
+source_provider: claude-code
+created_at: 2026-06-12T19:40:13.760554656+00:00
+warning_at: 2026-07-12T19:40:13.760554656+00:00
+expires_at: 2026-09-10T19:40:13.760554656+00:00
+generality: general
+generality_rationale: Synthesizes three independently-stated immutability rules into one coherent multi-level model that was not articulated by any single skill.
+use_when:
+- 'Deciding whether to use ~ or # for a new variable binding'
+- Reasoning about whether a container has 'changed' for equality, hashing, or caching purposes
+- Explaining why a numeric value appears unchanged despite being inside a ~ binding
+- Debugging unexpected mutation or apparent immutability violations
+avoid_when:
+- 'Assuming # creates a deep-freeze — it does not prevent mutations of objects contained by reference'
+invariants:
+- 'A # binding cannot be rebound to a different object after initialization.'
+- Drop and Mist objects are always immutable regardless of their binding sigil.
+- 'A #-bound container''s reference-set is fixed; the internal state of contained objects is not.'
+requires:
+- aether-identifier-prefix-convention
+- aether-type-system-and-literals
+produces:
+- Correct immutability reasoning for Aether bindings, numerics, and containers
+evidence:
+- 'aether-identifier-prefix-convention (skill 1): # sigil marks immutable bindings'
+- An immutable container remains immutable even if it holds a reference to a mutable object whose value later changes — immutability applies to the set of contained objects, not their internal state (preference/skill 10)
+- Numeric objects are immutable; once created, their value never changes (preference/skill 12)
+---
+
+# aether-unified-immutability-model
+
+Aether enforces immutability consistently at three orthogonal levels that together form a coherent model: (1) Binding-level — the `#` sigil marks an identifier as immutable; its referenced object can never be rebound after initialization. (2) Type-level — numeric types (Drop, Mist) are always immutable objects regardless of their binding sigil; the value of a numeric object never changes after creation. (3) Container-level — an immutable container bound with `#` preserves its set of contained references, even if a contained mutable object's internal state later changes. This shallow-immutability-at-reference contract is consistent across all three levels. A common mistake is to conflate binding-immutability with deep-freeze; Aether's model is deliberately shallow at the container level.
+
+## Procedures
+- Apply the # sigil to any identifier that must not be rebound after initialization.
+- Treat Drop and Mist values as always-immutable regardless of sigil — numeric mutation is impossible.
+- When reasoning about whether a #-bound container has 'changed', check whether its reference-set changed, NOT whether any contained mutable object's internal state changed.
+
+## Conventions
+- Immutability in Aether is shallow (reference-set) at the container level but absolute for numeric primitives.
+- The # sigil documents intent AND enforces rebinding prevention; it does not deep-freeze contained objects.
+

@@ -1,0 +1,75 @@
+---
+name: aether-keyword-statement-mappings
+description: 'Complete authoritative mapping of Aether keywords to their conventional equivalents: conduit=def, flow=return, fork/path=if/elif/else, swirl=while/for, contain/spill/finally=try/except/finally, dam=break, divert=continue, trickle=yield, fracture=raise, still=pass, evaporate=del, siphon=import, verify=assert, mold=class, use=with, inspect/match=match/case, ocean=global, outer=nonlocal.'
+tags:
+- aether
+- keywords
+- syntax
+- reference
+type: rule
+origin: session_extraction
+source_session_id: clband-teach-aether-language
+source_provider: claude-code
+created_at: 2026-06-12T19:40:13.757039855+00:00
+warning_at: 2026-07-12T19:40:13.757039855+00:00
+expires_at: 2026-09-10T19:40:13.757039855+00:00
+generality: general
+generality_rationale: These keyword mappings apply to any Aether program with no project-specific references.
+use_when:
+- writing any Aether control flow, function, or class
+- translating Python/JS control structures to Aether
+- looking up what keyword to use for a given construct in Aether
+avoid_when:
+- do not use Python keywords (def, return, if, while, for, try, except, etc.) in Aether source
+artifacts:
+- .ae source files
+tools:
+- Ocean (reference Aether interpreter)
+invariants:
+- The keyword `path` is only valid as an else/elif clause following a `fork` block.
+- '`contain` must be followed by at least one `spill` clause.'
+- Scoping follows Ocean (global) > River (local conduit) > Eddy (block) hierarchy.
+requires:
+- Aether source file (.ae)
+- Ocean interpreter
+produces:
+- Syntactically valid Aether compound statements and definitions
+evidence:
+- fork_stmt ::= "fork" "(" expression ")" "->" suite ("path" "(" expression ")" "->" suite)* ["path" "->" suite] (spec §8.1)
+- swirl_stmt ::= "swirl" "(" expression ")" suite | "swirl" "(" target "in" expression ")" suite (spec §8.2)
+- contain_stmt ::= "contain" suite "spill" "(" target ")" suite ["finally" suite] (spec §8.4)
+---
+
+# aether-keyword-statement-mappings
+
+Complete authoritative mapping of Aether keywords to their conventional equivalents: conduit=def, flow=return, fork/path=if/elif/else, swirl=while/for, contain/spill/finally=try/except/finally, dam=break, divert=continue, trickle=yield, fracture=raise, still=pass, evaporate=del, siphon=import, verify=assert, mold=class, use=with, inspect/match=match/case, ocean=global, outer=nonlocal.
+
+## Procedures
+- 1. Function definition: `conduit Name(~params) { suite }`.
+- 2. Return: `flow [expression]`.
+- 3. If/elif/else: `fork (cond) -> { } path (cond) -> { } path -> { }`.
+- 4. While loop: `swirl (expression) { suite }`.
+- 5. For-each loop: `swirl (~item in ~iterable) { suite }`.
+- 6. Try/except/finally: `contain { } spill (~err) { } finally { }`.
+- 7. Break: `dam`.
+- 8. Continue: `divert`.
+- 9. Yield: `trickle expression`.
+- 10. Raise: `fracture [expression]`.
+- 11. Pass (no-op): `still`.
+- 12. Del: `evaporate target_list`.
+- 13. Import: `siphon module [as alias]` or `siphon name from module`.
+- 14. Assert: `verify expression [, message]` — raises `AssertionFracture` on failure.
+- 15. Class definition: `mold Name extends Base { suite }`.
+- 16. With/context manager: `use (~resource) { suite }`.
+- 17. Structural pattern match: `inspect (~val) { match pattern -> { } }`.
+- 18. Global declaration: `ocean name`.
+- 19. Nonlocal declaration: `outer name`.
+- 20. Lambda: `conduit(~x) -> { flow ~x + 1 }`.
+- 21. Async coroutine: `tributary` modifier on conduit; await: `~result << merge ~handle`.
+
+## Conventions
+- All compound statement conditions are wrapped in parentheses: `fork (cond) ->`, `swirl (cond) {`.
+- Compound statement bodies use `->` arrow before a brace block for fork/path/inspect/match.
+- `swirl` unifies while and for-in — the in-keyword variant is the for-each form.
+- Exception variable in spill is a Wave identifier: `spill (~err)`.
+

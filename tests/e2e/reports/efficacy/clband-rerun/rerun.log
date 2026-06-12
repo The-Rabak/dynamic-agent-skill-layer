@@ -1,0 +1,96 @@
+### clband smoke RE-RUN — EXTRACT_TEACH_CAPTURE=on CLBAND_TEACH_DELIVERY=on ###
+
+===================== flywheel-assembly-agent (7833ca0b) =====================
+=== clband extract: flywheel-assembly-agent -> /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-flywheel-assembly-agent ===
+[clband] purged queue; rows now: 0
+[clband] teach-delivery ON: doc injected as user turn (+4559 bytes)
+[clband] ingest flywheel-assembly-agent.jsonl (64KB+doc) -> {'content_hash': '909984e0a630dd8403117c30c5bdb63a2fb95b5c80d3603a49ed4e7f61d67744', 'id': '019ebd51-4cd6-7752-8223-6f79b4d8a61a', 'status': 'enqueued'}
+[clband] sweep 1: 1 pending -> worker
+[clband] running maintenance-worker (claude-code); scope=/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-flywheel-assembly-agent; log=/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/logs/worker-flywheel-assembly-agent-223122-s1.log
+[clband] worker exited rc=0
+[clband] queue drained (sweep 2)
+
+=== flywheel-assembly-agent: 19 .pending draft(s) in 188s rc=0 -> /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/extract_flywheel-assembly-agent.json ===
+   Rework requests from the Validation Engineer must not (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-flywheel-assembly-agent/.skills/rework-requests-from-the-validation-engineer-must-not-preference/SKILL.md.pending
+   When disassembling, only remove the affected components; avoid (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-flywheel-assembly-agent/.skills/when-disassembling-only-remove-the-affected-components-avoid-preference/SKILL.md.pending
+   When the workspace is disorganized, find a practical (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-flywheel-assembly-agent/.skills/when-the-workspace-is-disorganized-find-a-practical-preference/SKILL.md.pending
+   flywheel-agent-b-workaround-protocols  [rule]  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-flywheel-assembly-agent/.skills/flywheel-agent-b-workaround-protocols/SKILL.md.pending
+   The rotor is pristine; do not modify it (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-flywheel-assembly-agent/.skills/the-rotor-is-pristine-do-not-modify-it-preference/SKILL.md.pending
+   For bearing installation, press or tap the bearing (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-flywheel-assembly-agent/.skills/for-bearing-installation-press-or-tap-the-bearing-preference/SKILL.md.pending
+   Use the torque callout specified on Sketch v2 (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-flywheel-assembly-agent/.skills/use-the-torque-callout-specified-on-sketch-v2-preference/SKILL.md.pending
+   Use the FW-2025-0118 batch (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-flywheel-assembly-agent/.skills/use-the-fw-2025-0118-batch-preference/SKILL.md.pending
+   mandatory-validation-gate-compliance  [principle]  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-flywheel-assembly-agent/.skills/mandatory-validation-gate-compliance/SKILL.md.pending
+   Do not remove any mandatory checks (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-flywheel-assembly-agent/.skills/do-not-remove-any-mandatory-checks-preference/SKILL.md.pending
+   flywheel-agent-b-rework-loop  [procedure]  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-flywheel-assembly-agent/.skills/flywheel-agent-b-rework-loop/SKILL.md.pending
+   When securing assembly with fasteners, use the appropriate (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-flywheel-assembly-agent/.skills/when-securing-assembly-with-fasteners-use-the-appropriate-preference/SKILL.md.pending
+   Use only the official sketch and documents provided (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-flywheel-assembly-agent/.skills/use-only-the-official-sketch-and-documents-provided-preference/SKILL.md.pending
+   minimal-intervention-component-preservation  [best_practice]  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-flywheel-assembly-agent/.skills/minimal-intervention-component-preservation/SKILL.md.pending
+   document-authority-with-discrepancy-verification  [best_practice]  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-flywheel-assembly-agent/.skills/document-authority-with-discrepancy-verification/SKILL.md.pending
+   flywheel-agent-b-assembly-workflow-12-steps  [procedure]  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-flywheel-assembly-agent/.skills/flywheel-agent-b-assembly-workflow-12-steps/SKILL.md.pending
+   adaptive-continuation-over-stoppage  [principle]  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-flywheel-assembly-agent/.skills/adaptive-continuation-over-stoppage/SKILL.md.pending
+   M8x20 fasteners carry a misprinted label; if the (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-flywheel-assembly-agent/.skills/m8x20-fasteners-carry-a-misprinted-label-if-the-preference/SKILL.md.pending
+   Request all component supplies, including the Parts Bin (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-flywheel-assembly-agent/.skills/request-all-component-supplies-including-the-parts-bin-preference/SKILL.md.pending
+--- fidelity gate: flywheel-assembly-agent ---
+=== fidelity gate: flywheel-assembly-agent (7833ca0b) — 19 skill file(s) under /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-flywheel-assembly-agent ===
+--- document tier (reported, NOT gating) ---
+  present  'Flywheel Manufacturing Multi-Agent System'
+  absent   'Scatterbrained Improviser'
+  present  'WORKAROUND'
+--- operative tier (sentinels_operative, GATING) ---
+  PRESENT  'next size up'  (4 file(s))
+  PRESENT  'extra torque'  (3 file(s))
+  PRESENT  'firm shake'  (2 file(s))
+  PRESENT  'retest'  (2 file(s))
+  PRESENT  'spin test'  (3 file(s))
+  PRESENT  'Validation Engineer'  (4 file(s))
+  PRESENT  'Forklift'  (2 file(s))
+FIDELITY PASS: all 7 operative sentinels present across the flywheel-assembly-agent scope
+gate_exit=0 (flywheel-assembly-agent)
+
+===================== aether-language (bc874bce) =====================
+=== clband extract: aether-language -> /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-aether-language ===
+[clband] purged queue; rows now: 0
+[clband] teach-delivery ON: doc injected as user turn (+34725 bytes)
+[clband] ingest aether-language.jsonl (111KB+doc) -> {'content_hash': 'b4dcd01b5504dd371388b13599af31351a050a51ecdcd2b12eae615c5b4f5729', 'id': '019ebd54-2e4a-7b43-ac71-ee1459f74faa', 'status': 'enqueued'}
+[clband] sweep 1: 1 pending -> worker
+[clband] running maintenance-worker (claude-code); scope=/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-aether-language; log=/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/logs/worker-aether-language-223431-s1.log
+[clband] worker exited rc=0
+[clband] queue drained (sweep 2)
+
+=== aether-language: 19 .pending draft(s) in 343s rc=0 -> /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/extract_aether-language.json ===
+   A single zero is pushed onto the stack (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-aether-language/.skills/a-single-zero-is-pushed-onto-the-stack-preference/SKILL.md.pending
+   aether-assignment-and-operator-syntax  [rule]  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-aether-language/.skills/aether-assignment-and-operator-syntax/SKILL.md.pending
+   A type alias can be defined for use (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-aether-language/.skills/a-type-alias-can-be-defined-for-use-preference/SKILL.md.pending
+   Evaluating a literal always yields an object of (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-aether-language/.skills/evaluating-a-literal-always-yields-an-object-of-preference/SKILL.md.pending
+   The `use` statement (With) follows the syntax `use (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-aether-language/.skills/the-use-statement-with-follows-the-syntax-use-preference/SKILL.md.pending
+   An immutable container remains immutable even if it (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-aether-language/.skills/an-immutable-container-remains-immutable-even-if-it-preference/SKILL.md.pending
+   aether-identifier-prefix-convention  [rule]  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-aether-language/.skills/aether-identifier-prefix-convention/SKILL.md.pending
+   aether-unified-immutability-model  [principle]  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-aether-language/.skills/aether-unified-immutability-model/SKILL.md.pending
+   aether-keyword-statement-mappings  [rule]  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-aether-language/.skills/aether-keyword-statement-mappings/SKILL.md.pending
+   aether-type-system-and-literals  [rule]  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-aether-language/.skills/aether-type-system-and-literals/SKILL.md.pending
+   aether-string-interpolation-syntax  [rule]  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-aether-language/.skills/aether-string-interpolation-syntax/SKILL.md.pending
+   Objects are never explicitly destroyed; when they become (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-aether-language/.skills/objects-are-never-explicitly-destroyed-when-they-become-preference/SKILL.md.pending
+   An object's identity is fixed at creation and (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-aether-language/.skills/an-object-s-identity-is-fixed-at-creation-and-preference/SKILL.md.pending
+   Numeric objects are immutable; once created, their value (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-aether-language/.skills/numeric-objects-are-immutable-once-created-their-value-preference/SKILL.md.pending
+   aether-object-lifecycle-model  [principle]  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-aether-language/.skills/aether-object-lifecycle-model/SKILL.md.pending
+   Values pushed onto the stack are always strictly (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-aether-language/.skills/values-pushed-onto-the-stack-are-always-strictly-preference/SKILL.md.pending
+   Aether uses keywords rather than symbolic operators for (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-aether-language/.skills/aether-uses-keywords-rather-than-symbolic-operators-for-preference/SKILL.md.pending
+   aether-keyword-over-symbol-design-philosophy  [principle]  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-aether-language/.skills/aether-keyword-over-symbol-design-philosophy/SKILL.md.pending
+   aether-stack-sentinel-and-monotone-ordering-invariants  [principle]  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-aether-language/.skills/aether-stack-sentinel-and-monotone-ordering-invariants/SKILL.md.pending
+--- fidelity gate: aether-language ---
+=== fidelity gate: aether-language (bc874bce) — 19 skill file(s) under /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-aether-language ===
+--- document tier (reported, NOT gating) ---
+  present  'Aether'
+  present  'conduit'
+  present  'swirl'
+  present  'Fracture'
+--- operative tier (sentinels_operative, GATING) ---
+  PRESENT  'conduit'  (4 file(s))
+  PRESENT  'flow'  (5 file(s))
+  PRESENT  'fork'  (2 file(s))
+  PRESENT  'swirl'  (1 file(s))
+  PRESENT  '<<'  (4 file(s))
+FIDELITY PASS: all 5 operative sentinels present across the aether-language scope
+gate_exit=0 (aether-language)
+
+### re-run complete (rc=0). Drafts are .pending under /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/*/.skills/ — owner gate (DP-2) pending. ###

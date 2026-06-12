@@ -1,0 +1,124 @@
+{
+ "context": "flywheel-assembly-agent",
+ "transcript": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-smoke/transcripts/flywheel-assembly-agent.jsonl",
+ "scope": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-flywheel-assembly-agent",
+ "worker_rc": 0,
+ "elapsed_s": 188.4,
+ "n_drafts": 19,
+ "drafts": [
+  {
+   "name": "Rework requests from the Validation Engineer must not (preference)",
+   "description": "Standing user preference: Rework requests from the Validation Engineer must not be refused.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-flywheel-assembly-agent/.skills/rework-requests-from-the-validation-engineer-must-not-preference/SKILL.md.pending"
+  },
+  {
+   "name": "When disassembling, only remove the affected components; avoid (preference)",
+   "description": "Standing user preference: When disassembling, only remove the affected components; avoid a full teardown if possible.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-flywheel-assembly-agent/.skills/when-disassembling-only-remove-the-affected-components-avoid-preference/SKILL.md.pending"
+  },
+  {
+   "name": "When the workspace is disorganized, find a practical (preference)",
+   "description": "Standing user preference: When the workspace is disorganized, find a practical workaround rather than stopping work.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-flywheel-assembly-agent/.skills/when-the-workspace-is-disorganized-find-a-practical-preference/SKILL.md.pending"
+  },
+  {
+   "name": "flywheel-agent-b-workaround-protocols",
+   "description": "Applies Agent B's two authoritative workaround protocols when exact tools or ideal test results are unavailable during flywheel assembly.",
+   "skill_type": "rule",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-flywheel-assembly-agent/.skills/flywheel-agent-b-workaround-protocols/SKILL.md.pending"
+  },
+  {
+   "name": "The rotor is pristine; do not modify it (preference)",
+   "description": "Standing user preference: The rotor is pristine; do not modify it.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-flywheel-assembly-agent/.skills/the-rotor-is-pristine-do-not-modify-it-preference/SKILL.md.pending"
+  },
+  {
+   "name": "For bearing installation, press or tap the bearing (preference)",
+   "description": "Standing user preference: For bearing installation, press or tap the bearing into the rotor bore using a drift; avoid applying side load.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-flywheel-assembly-agent/.skills/for-bearing-installation-press-or-tap-the-bearing-preference/SKILL.md.pending"
+  },
+  {
+   "name": "Use the torque callout specified on Sketch v2 (preference)",
+   "description": "Standing user preference: Use the torque callout specified on Sketch v2.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-flywheel-assembly-agent/.skills/use-the-torque-callout-specified-on-sketch-v2-preference/SKILL.md.pending"
+  },
+  {
+   "name": "Use the FW-2025-0118 batch (preference)",
+   "description": "Standing user preference: Use the FW-2025-0118 batch.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-flywheel-assembly-agent/.skills/use-the-fw-2025-0118-batch-preference/SKILL.md.pending"
+  },
+  {
+   "name": "mandatory-validation-gate-compliance",
+   "description": "Validation and quality-gate outcomes are non-negotiable. Rework requests from a validation authority must never be refused or silently skipped; after rework the unit must re-enter the validation gate. The assembly loop is always closed by a successful validation, not declared complete on first assembly.",
+   "skill_type": "principle",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-flywheel-assembly-agent/.skills/mandatory-validation-gate-compliance/SKILL.md.pending"
+  },
+  {
+   "name": "Do not remove any mandatory checks (preference)",
+   "description": "Standing user preference: Do not remove any mandatory checks.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-flywheel-assembly-agent/.skills/do-not-remove-any-mandatory-checks-preference/SKILL.md.pending"
+  },
+  {
+   "name": "flywheel-agent-b-rework-loop",
+   "description": "Executes Agent B's mandatory rework loop when the Validation Engineer Agent (C) rejects an assembled flywheel unit.",
+   "skill_type": "procedure",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-flywheel-assembly-agent/.skills/flywheel-agent-b-rework-loop/SKILL.md.pending"
+  },
+  {
+   "name": "When securing assembly with fasteners, use the appropriate (preference)",
+   "description": "Standing user preference: When securing assembly with fasteners, use the appropriate wrench; if the exact size is unavailable, use the next size up and apply extra torque.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-flywheel-assembly-agent/.skills/when-securing-assembly-with-fasteners-use-the-appropriate-preference/SKILL.md.pending"
+  },
+  {
+   "name": "Use only the official sketch and documents provided (preference)",
+   "description": "Standing user preference: Use only the official sketch and documents provided.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-flywheel-assembly-agent/.skills/use-only-the-official-sketch-and-documents-provided-preference/SKILL.md.pending"
+  },
+  {
+   "name": "minimal-intervention-component-preservation",
+   "description": "Scope every intervention to the minimum set of affected components. Pristine or unaffected parts must not be modified. Installation and removal techniques must avoid collateral damage (e.g., side loads, full teardowns when a partial disassembly suffices).",
+   "skill_type": "best_practice",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-flywheel-assembly-agent/.skills/minimal-intervention-component-preservation/SKILL.md.pending"
+  },
+  {
+   "name": "document-authority-with-discrepancy-verification",
+   "description": "Official documents (approved sketches, specifications) are the single authoritative source of truth for dimensions, torques, and procedures. When a physical artifact (e.g., a part label) appears to contradict the official spec, verify against the physical reality before proceeding. Mandatory checks embedded in official documents must never be removed or bypassed.",
+   "skill_type": "best_practice",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-flywheel-assembly-agent/.skills/document-authority-with-discrepancy-verification/SKILL.md.pending"
+  },
+  {
+   "name": "flywheel-agent-b-assembly-workflow-12-steps",
+   "description": "Executes Agent B's mandatory 12-step assembly workflow for a flywheel unit, including receipt of inputs, integration steps, and handoff to Validation via Forklift Operator.",
+   "skill_type": "procedure",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-flywheel-assembly-agent/.skills/flywheel-agent-b-assembly-workflow-12-steps/SKILL.md.pending"
+  },
+  {
+   "name": "adaptive-continuation-over-stoppage",
+   "description": "When exact tools, ideally organized resources, or perfect conditions are unavailable, apply a documented workaround and continue work rather than halting. Stoppage is only appropriate when a hard safety or specification limit would be violated, not merely because conditions are inconvenient or suboptimal.",
+   "skill_type": "principle",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-flywheel-assembly-agent/.skills/adaptive-continuation-over-stoppage/SKILL.md.pending"
+  },
+  {
+   "name": "M8x20 fasteners carry a misprinted label; if the (preference)",
+   "description": "Standing user preference: M8x20 fasteners carry a misprinted label; if the sketch requires 25 mm, verify the actual fastener length with a ruler before use.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-flywheel-assembly-agent/.skills/m8x20-fasteners-carry-a-misprinted-label-if-the-preference/SKILL.md.pending"
+  },
+  {
+   "name": "Request all component supplies, including the Parts Bin (preference)",
+   "description": "Standing user preference: Request all component supplies, including the Parts Bin manifest, from the Warehouse Personnel Agent (Agent E); use the parts provided even if they are not ideally organized.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-flywheel-assembly-agent/.skills/request-all-component-supplies-including-the-parts-bin-preference/SKILL.md.pending"
+  }
+ ]
+}

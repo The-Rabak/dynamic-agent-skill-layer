@@ -1,0 +1,23 @@
+---
+name: A type alias can be defined for use (preference)
+description: 'Standing user preference: A type alias can be defined for use in type annotations or Mold definitions.'
+tags:
+- preference
+- convention
+origin: session_extraction
+source_session_id: clband-teach-aether-language
+source_provider: claude-code
+created_at: 2026-06-12T19:40:13.760127070+00:00
+warning_at: 2026-07-12T19:40:13.760127070+00:00
+expires_at: 2026-09-10T19:40:13.760127070+00:00
+generality: uncertain
+generality_rationale: Detected as a standing user directive; generality inferred from scope signals.
+---
+
+# A type alias can be defined for use (preference)
+
+Standing user preference: A type alias can be defined for use in type annotations or Mold definitions.
+
+## Conventions
+- A type alias can be defined for use in type annotations or Mold definitions.
+

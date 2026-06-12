@@ -1,0 +1,61 @@
+---
+name: document-authority-with-discrepancy-verification
+description: Official documents (approved sketches, specifications) are the single authoritative source of truth for dimensions, torques, and procedures. When a physical artifact (e.g., a part label) appears to contradict the official spec, verify against the physical reality before proceeding. Mandatory checks embedded in official documents must never be removed or bypassed.
+tags:
+- documentation
+- verification
+- spec-compliance
+- anti-pattern:assumption
+type: best_practice
+origin: session_extraction
+source_session_id: clband-teach-flywheel-assembly-agent
+source_provider: claude-code
+created_at: 2026-06-12T19:34:30.671915909+00:00
+warning_at: 2026-07-12T19:34:30.671915909+00:00
+expires_at: 2026-09-10T19:34:30.671915909+00:00
+generality: general
+generality_rationale: Applies to any assembly, manufacturing, or engineering workflow where official specifications and physical parts must be reconciled.
+use_when:
+- About to apply a torque value, dimension, or procedure from any source.
+- A part label value differs from or is not confirmed by the official sketch.
+- Evaluating whether a check or inspection step can be omitted for efficiency.
+- Selecting a fastener whose label may have been misprinted.
+avoid_when:
+- Do not defer to unofficial sources (verbal instructions, ad-hoc notes) over the approved document.
+- Do not assume the official spec is wrong because a part label says otherwise without physical verification.
+artifacts:
+- Sketch v2
+- official specification documents
+tools:
+- ruler
+- torque wrench
+invariants:
+- The approved document (latest version) is always consulted before a spec-dependent action.
+- A label discrepancy triggers physical measurement before use.
+- No mandatory check is ever removed.
+requires:
+- approved sketch or specification document (e.g., Sketch v2)
+produces:
+- verified, spec-compliant assembly step
+evidence:
+- Use the torque callout specified on Sketch v2. (preference)
+- M8x20 fasteners carry a misprinted label; if the sketch requires 25 mm, verify the actual fastener length with a ruler before use. (preference)
+- Use only the official sketch and documents provided. (preference)
+- Do not remove any mandatory checks. (preference)
+---
+
+# document-authority-with-discrepancy-verification
+
+Official documents (approved sketches, specifications) are the single authoritative source of truth for dimensions, torques, and procedures. When a physical artifact (e.g., a part label) appears to contradict the official spec, verify against the physical reality before proceeding. Mandatory checks embedded in official documents must never be removed or bypassed.
+
+## Procedures
+- Always retrieve the approved document version (e.g., Sketch v2) before performing a spec-dependent step.
+- When a labeled value on a physical part conflicts with the spec, measure the part directly (e.g., ruler for fastener length) before use.
+- Use the verified physical measurement—not the misprinted label—when a discrepancy is confirmed.
+- Do not remove, skip, or soften any mandatory check referenced in the official document.
+
+## Conventions
+- Official sketches and documents supersede memory, informal notes, and part labels.
+- Discrepancy between label and spec triggers a physical verification step, not an assumption.
+- Mandatory checks are immutable; they survive rework loops and workaround substitutions.
+

@@ -1,0 +1,58 @@
+---
+name: aether-string-interpolation-syntax
+description: Aether interpolated strings use the `echo"..."` (or `f"..."`) prefix with `$~variable` for wave-variable injection and `${expression}` for arbitrary expression injection; raw strings use `r"..."`.
+tags:
+- aether
+- strings
+- interpolation
+- syntax
+type: rule
+origin: session_extraction
+source_session_id: clband-teach-aether-language
+source_provider: claude-code
+created_at: 2026-06-12T19:40:13.758009476+00:00
+warning_at: 2026-07-12T19:40:13.758009476+00:00
+expires_at: 2026-09-10T19:40:13.758009476+00:00
+generality: general
+generality_rationale: The string interpolation rules apply uniformly to any Aether program without project-specific context.
+use_when:
+- building formatted strings in Aether
+- translating Python f-strings or str.format() to Aether
+- injecting variables or expressions into an Aether string literal
+avoid_when:
+- 'do not use Python f-string syntax `f"{variable}"` directly — the variable reference in Aether must include the `~` prefix: `$~variable`'
+artifacts:
+- .ae source files
+tools:
+- Ocean (reference Aether interpreter)
+invariants:
+- 'Wave variable injection inside an interpolated Echo must retain the `~` sigil: `$~varName`, not `$varName`.'
+- Raw Echoes (`r"..."`) do not process escape sequences or interpolation.
+requires:
+- Aether source file (.ae)
+- Ocean interpreter
+produces:
+- Valid Aether interpolated Echo expression
+evidence:
+- 'Interpolated Echoes: Prefixed with `echo` or `f`. Support variable injection using the `$~variable` syntax or `${expression}` syntax (spec §2.3.1)'
+- print(echo"I'm sorry, $~user.") from Shot 3 in spec Appendix A
+- echo"Sum of ${~a} and ${~b} is ${Sum(~a, ~b)}" from the assistant's produced solution
+---
+
+# aether-string-interpolation-syntax
+
+Aether interpolated strings use the `echo"..."` (or `f"..."`) prefix with `$~variable` for wave-variable injection and `${expression}` for arbitrary expression injection; raw strings use `r"..."`.
+
+## Procedures
+- 1. Plain Echo (string) literal: `"literal text"` with C-style escape sequences (`\n`, `\t`, `\\`).
+- 2. Interpolated Echo: prefix with `echo` or `f`: `echo"Hello, $~name!"`.
+- 3. Inject a wave variable: `$~variableName` inside an interpolated Echo (note: `~` is part of the identifier).
+- 4. Inject an arbitrary expression: `${expression}` — e.g., `echo"Result: ${~a + ~b}"`.
+- 5. Raw Echo (no escape processing): prefix with `r`: `r"raw\nstring"`.
+- 6. Bytes literal: prefix with `b` or `B`; ASCII-only content.
+
+## Conventions
+- Both `echo"..."` and `f"..."` prefixes produce interpolated Echoes — they are equivalent.
+- When injecting a Wave variable directly, use `$~varName` (tilde is part of the name, not a separate sigil).
+- Use `${...}` for any expression that is not a simple variable reference.
+

@@ -1,0 +1,53 @@
+---
+name: aether-keyword-over-symbol-design-philosophy
+description: 'Aether applies a language-wide policy of preferring named keywords over symbolic operators wherever symbolic forms would be ambiguous or visually confusing. This is observed across: bitwise logic (band/bor/bxor/bnot replacing &/|/^/~), control flow (fork/path/otherwise replacing if/elif/else), and function lifecycle (conduit/flow replacing def/return). The single symbolic exception — the assignment operator `<<` — uses a unique, non-conventional symbol specifically to prevent confusion with value equality (`=`). The net effect is that Aether code reads closer to prose than to symbol-dense languages. When in doubt whether Aether uses a symbol or a keyword for an operation, default to the keyword form; symbols are the designed exception.'
+tags:
+- aether
+- design-philosophy
+- keywords
+- readability
+- operators
+type: principle
+origin: session_extraction
+source_session_id: clband-teach-aether-language
+source_provider: claude-code
+created_at: 2026-06-12T19:40:13.761791257+00:00
+warning_at: 2026-07-12T19:40:13.761791257+00:00
+expires_at: 2026-09-10T19:40:13.761791257+00:00
+generality: general
+generality_rationale: Extracts the cross-cutting design rationale unifying three independently-documented syntax choices; the WHY behind the WHAT captured by skills 2, 3, and 13.
+use_when:
+- Deciding how to write a bitwise, logical, or control-flow expression in Aether
+- Explaining the rationale behind Aether's operator naming choices
+- Reviewing Aether code for use of invalid symbolic operators
+- Teaching the Aether language to someone coming from a symbol-heavy background
+avoid_when:
+- Applying this rule to other languages where symbolic operators are idiomatic
+invariants:
+- Bitwise operations are always expressed as keywords (band, bor, bxor, bnot) in Aether.
+- Control-flow branches use fork/path/otherwise — never if/elif/else.
+- '`<<` is the only non-alphabetic operator for a fundamental operation in Aether.'
+requires:
+- aether-assignment-and-operator-syntax
+- aether-keyword-statement-mappings
+produces:
+- Aether code free of invalid or ambiguous symbolic operators
+evidence:
+- 'aether-assignment-and-operator-syntax (skill 2): bitwise ops use keywords; << replaces = for assignment specifically to avoid symbolic ambiguity'
+- 'aether-keyword-statement-mappings (skill 3): control flow uses fork/path/otherwise — all keyword-based'
+- Aether uses keywords rather than symbolic operators for bitwise logic, to avoid confusion with logical operators (preference/skill 13)
+---
+
+# aether-keyword-over-symbol-design-philosophy
+
+Aether applies a language-wide policy of preferring named keywords over symbolic operators wherever symbolic forms would be ambiguous or visually confusing. This is observed across: bitwise logic (band/bor/bxor/bnot replacing &/|/^/~), control flow (fork/path/otherwise replacing if/elif/else), and function lifecycle (conduit/flow replacing def/return). The single symbolic exception — the assignment operator `<<` — uses a unique, non-conventional symbol specifically to prevent confusion with value equality (`=`). The net effect is that Aether code reads closer to prose than to symbol-dense languages. When in doubt whether Aether uses a symbol or a keyword for an operation, default to the keyword form; symbols are the designed exception.
+
+## Procedures
+- When uncertain whether Aether uses a symbol or a keyword for a given operation, default to the keyword form — symbols are the rare exception.
+- Treat `<<` as the one canonical symbolic assignment operator; resist any temptation to use `=` for assignment.
+- When linting Aether code, flag symbolic bitwise operators (&, |, ^, ~) as errors and replace with band/bor/bxor/bnot.
+
+## Conventions
+- Symbolic operators are minimized by language design; keyword forms are always preferred for bitwise and logical operations.
+- `<<` is the sole symbolic exception and is chosen precisely because it is unambiguous — it cannot be mistaken for equality.
+

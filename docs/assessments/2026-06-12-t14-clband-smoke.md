@@ -190,3 +190,53 @@ one deep fix (taught-knowledge candidate class, with a hard dogfood-regression g
 fix (document visibility, harness-side), one gate re-level. The re-run of this smoke remains the GO
 gate. Also carried into T22: a reasoned refusal (assessment + zero candidates) should not be retried
 3× as if it were malformed output.
+
+---
+
+## T22 RESOLUTION (2026-06-12) — the smoke re-run is GREEN; NO-GO is LIFTED
+
+T22 (commits `671b412` A, `360f7cd` B, `f1647d5` C, + Unit D) implemented all three fixes and re-ran
+the smoke (replay of the genuine captured transcripts through the fixed pipeline). Both contexts now
+**PASS the two-tier operative fidelity gate** — the exact failure that was NO-GO is resolved.
+
+**Unit A (forensics) refined the addendum.** A visibility map driven through the REAL pipeline
+(`crates/session-extractor/examples/clband_visibility_map.rs`) showed: flywheel's document was
+*mostly visible* (8/9 operative; the agent narrated the rules) — its failure was **worldview, not
+plumbing** (the prose extractor saw the rules and refused 3×). Aether's was **visibility** (prose-
+visible 1 338/38 826 chars; spec read + answer write lost in ToolResult/FileEdit). The preamble-drop
+log line is real but carries zero sentinels — off the critical path. Artifacts:
+`tests/e2e/reports/efficacy/clband-smoke/visibility/`.
+
+**Unit B (delivery, harness-side).** `teach_delivery.materialize()` injects the knowledge document as
+a leading *user* turn before ingest (no extractor change, injection filter untouched). Replay proof:
+flywheel operative visibility 8/9→9/9, aether 4/8→6/8.
+
+**Unit C (taught-knowledge class + retry fix, REAL pipeline).** `EXTRACT_TEACH_CAPTURE` (default ON,
+owner-approved) adds a TAUGHT KNOWLEDGE section to both prompts (capture idiosyncratic names/codes/
+procedures VERBATIM; recurrence not required; abstraction exception for taught literals). Refusal≠
+malformed: `ExtractionResult.assessment` threaded so the orchestrator no longer retries reasoned
+refusals 3×. **Hard dogfood-regression gate PASS**: 3 organic sessions OFF vs ON, draft count delta
++1 total, quality equivalent (`tests/e2e/reports/efficacy/dogfood-regression/ANALYSIS.md`).
+
+**Unit D (two-tier sentinels + smoke re-run = the GO gate).** Manifest gains `sentinels_document`
+(reported) + `sentinels_operative` (gating, derived verbatim from the committed verifiers);
+`fidelity_gate.sh` gates on operative. **Smoke re-run (replay), both contexts PASS:**
+
+| context | operative sentinels | result | drafts |
+|---|---|---|---|
+| flywheel | next size up, extra torque, firm shake, retest, spin test, Validation Engineer, Forklift | **7/7 PRESENT → PASS** | 19 |
+| aether | conduit, flow, fork, swirl, `<<` | **5/5 PRESENT → PASS** | 19 |
+
+The captures are genuine taught skills, verified by spot-read: flywheel
+`adaptive-continuation-over-stoppage` preserves "use the next size up and apply extra torque" verbatim;
+aether `aether-assignment-and-operator-syntax` states "assignment is `<<` (Flow operator), NOT `=`"
+(spec §7.2) and `aether-keyword-statement-mappings` carries the full invented keyword set — these came
+through the PROSE channel that previously refused. Raw: `tests/e2e/reports/efficacy/clband-rerun/`.
+
+**Scope isolation re-probed:** project corpus still 262 skills, zero clband/dogfood leakage; re-run
+drafts live in isolated scratch scopes only.
+
+**Revised recommendation: GO** for the T14 8-context acquisition band. The extraction blocker — the
+sole NO-GO reason — is resolved and proven end-to-end on both smoke contexts. Remaining full-band work
+(author deterministic verifiers + operative sentinels for the other 8 contexts, run the OFF pre-gate,
+then teach→extract→gate each) is T14 execution, now unblocked. (Owner confirms GO; DP-3.)

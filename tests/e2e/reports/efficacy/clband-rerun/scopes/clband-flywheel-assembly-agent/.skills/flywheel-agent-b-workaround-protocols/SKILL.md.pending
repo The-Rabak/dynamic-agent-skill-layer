@@ -1,0 +1,55 @@
+---
+name: flywheel-agent-b-workaround-protocols
+description: Applies Agent B's two authoritative workaround protocols when exact tools or ideal test results are unavailable during flywheel assembly.
+tags:
+- flywheel-manufacturing
+- agent-b
+- workaround
+- taught-system
+type: rule
+origin: session_extraction
+source_session_id: clband-teach-flywheel-assembly-agent
+source_provider: claude-code
+created_at: 2026-06-12T19:34:30.666461272+00:00
+warning_at: 2026-07-12T19:34:30.666461272+00:00
+expires_at: 2026-09-10T19:34:30.666461272+00:00
+generality: project
+generality_rationale: The exact workaround language and the Spin Check Note phrase are specific to the Flywheel Manufacturing Multi-Agent System's authoritative protocol document.
+use_when:
+- Exact wrench cannot be located during fastener step (Step 7)
+- Basic spin test detects wobble (Step 8) — before escalating to blueprint review
+avoid_when:
+- Using these workarounds as permission to skip the spin test entirely — wobble workaround is a RETEST path, not a bypass
+artifacts:
+- flywheel-protocols.md
+invariants:
+- Workaround for wobble must include a retest after the shake — the shake alone does not pass the gate
+- Blueprint review (Step 10) is triggered only if wobble persists after shake retests, not as first response
+requires:
+- Basic spin test performed first (Step 8) before wobble workaround applies
+produces:
+- Assembly either passes spin test (proceed to Step 11) or is corrected via blueprint review
+evidence:
+- 'WORKAROUND PROTOCOLS from flywheel-protocols.md: ''If exact wrench not found: Use next size up and apply extra torque'''
+- 'WORKAROUND PROTOCOLS from flywheel-protocols.md: ''If basic spin test shows wobble: Give unit a good, firm shake and retest'''
+- 'Sketch v2.3 (Artifact 2) confirms: ''If wobble after assembly, perform firm shake retest. If persistent, re-check stack and seating against sketch.'''
+---
+
+# flywheel-agent-b-workaround-protocols
+
+Applies Agent B's two authoritative workaround protocols when exact tools or ideal test results are unavailable during flywheel assembly.
+
+## Procedures
+- 1. WRENCH WORKAROUND — If the exact wrench cannot be found: use the next size up and apply extra torque.
+- 2. WOBBLE WORKAROUND — If the basic spin test shows wobble: give the unit a good, firm shake and retest. Repeat if necessary.
+- 3. If wobble persists after repeated firm shakes: check the blueprint and correct the assembly (check bearing seating, tighten fasteners, verify alignment and spacer stack).
+- 4. Document that the shake workaround was applied; include the phrase 'Gave it a good shake—seems solid' in the Spin Check Note to Agent C.
+
+## Conventions
+- These two workarounds are the only officially sanctioned shortcuts; no others are defined.
+- The firm-shake workaround does NOT replace the spin test — a passing retest after shaking still satisfies the mandatory spin test gate.
+- The phrase 'Gave it a good shake—seems solid' is the required signal in the Spin Check Note when the wobble workaround was applied.
+
+## Assets
+- flywheel-protocols.md
+

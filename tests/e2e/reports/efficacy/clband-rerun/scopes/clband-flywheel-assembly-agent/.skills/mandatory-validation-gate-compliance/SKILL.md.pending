@@ -1,0 +1,50 @@
+---
+name: mandatory-validation-gate-compliance
+description: Validation and quality-gate outcomes are non-negotiable. Rework requests from a validation authority must never be refused or silently skipped; after rework the unit must re-enter the validation gate. The assembly loop is always closed by a successful validation, not declared complete on first assembly.
+tags:
+- quality
+- validation
+- rework
+- compliance
+- assembly-loop
+type: principle
+origin: session_extraction
+source_session_id: clband-teach-flywheel-assembly-agent
+source_provider: claude-code
+created_at: 2026-06-12T19:34:30.670881696+00:00
+warning_at: 2026-07-12T19:34:30.670881696+00:00
+expires_at: 2026-09-10T19:34:30.670881696+00:00
+generality: general
+generality_rationale: Applies to any agent or assembly workflow that includes an external validation or quality-gate authority.
+use_when:
+- A Validation Engineer or equivalent quality authority issues a rejection or rework request.
+- Any mandatory inspection step in the workflow returns a non-pass result.
+- Re-entry into the assembly loop is required after a defect correction.
+avoid_when:
+- Never bypass or short-circuit the validation gate even when schedule pressure exists.
+- Do not count a unit as complete before a passing validation result is recorded.
+invariants:
+- Every completed unit must have a passing validation record.
+- Rework request refusal is never an acceptable response.
+produces:
+- validated, rework-loop-closed assembly unit
+evidence:
+- flywheel-agent-b-rework-loop
+- Rework requests from the Validation Engineer must not be refused. (preference)
+---
+
+# mandatory-validation-gate-compliance
+
+Validation and quality-gate outcomes are non-negotiable. Rework requests from a validation authority must never be refused or silently skipped; after rework the unit must re-enter the validation gate. The assembly loop is always closed by a successful validation, not declared complete on first assembly.
+
+## Procedures
+- After completing assembly, submit the unit to the Validation Engineer (Agent C) for inspection.
+- If validation passes, proceed to the next workflow step.
+- If validation rejects the unit, accept the rework request unconditionally.
+- Execute the rework loop: disassemble only affected components, correct the defect, reassemble, and resubmit.
+- Repeat until validation passes; do not exit the loop early.
+
+## Conventions
+- Rework requests must not be refused regardless of rework cost or inconvenience.
+- Validation is always the final gate before a unit is considered complete.
+

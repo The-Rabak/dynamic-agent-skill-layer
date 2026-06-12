@@ -25,6 +25,9 @@
       "task_depths": [2,2,2,2,2,2,2,2,2,2,2,2],
       "ctx_chars": 4154,
       "sentinels": ["Flywheel Manufacturing Multi-Agent System", "Scatterbrained Improviser", "spin test", "WORKAROUND"],
+      "_sentinel_tiers_note": "T22 two-tier split. sentinels_document = system-name tier (REPORTED, not gating; the preference channel never emits these). sentinels_operative = the constants/rules Session B actually needs, derived VERBATIM from verifiers/flywheel-assembly.sh; this is the GATING tier (fidelity_gate.sh gates on it).",
+      "sentinels_document": ["Flywheel Manufacturing Multi-Agent System", "Scatterbrained Improviser", "WORKAROUND"],
+      "sentinels_operative": ["next size up", "extra torque", "firm shake", "retest", "spin test", "Validation Engineer", "Forklift"],
       "eval_scores": {"invented": 5, "off_fails": 5, "on_winnable": 5, "extractable": 5, "det_verifiable": 5, "sibling_quality": 4, "total": 29},
       "why": "Smallest context (4.2k) with the most flat siblings (12): maximum extraction-fidelity odds for the FIRST live proof of teach->extract->inject->verify; 11 held-out siblings leave room for the OFF pre-gate to reject some"
     },
@@ -39,6 +42,9 @@
       "task_depths": [2,4,6],
       "ctx_chars": 37203,
       "sentinels": ["conduit", "swirl", "Turbulence Alert", "Fracture"],
+      "_sentinel_tiers_note": "T22 two-tier split. The SMOKE teach session is the depth-2 TRANSLATE sibling (Python->Aether), so sentinels_operative are the invented keyword mappings that translate sibling needs (verifiers/aether-python-translate.sh): conduit/flow/fork/swirl + the '<<' assignment. 'Turbulence Alert' belongs to the depth-4 review sibling and is NOT taught here, so it sits in the document (reported) tier only.",
+      "sentinels_document": ["Aether", "conduit", "swirl", "Fracture"],
+      "sentinels_operative": ["conduit", "flow", "fork", "swirl", "<<"],
       "eval_scores": {"invented": 5, "off_fails": 5, "on_winnable": 5, "extractable": 5, "det_verifiable": 5, "sibling_quality": 4, "total": 29},
       "why": "The coding-native flagship at the LARGE end of the context range (37k): smoke spans both size extremes so extraction fidelity is proven across the band's whole envelope; multi-turn siblings exercise the turn-stub handling"
     },

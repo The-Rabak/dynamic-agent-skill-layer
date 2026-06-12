@@ -1,0 +1,48 @@
+---
+name: aether-stack-sentinel-and-monotone-ordering-invariants
+description: 'Aether''s evaluation stack maintains two structural invariants throughout file execution: (1) Sentinel — a zero is pushed onto the stack before the first line of any file is evaluated, and this sentinel is never popped, ensuring the stack is never truly empty during normal evaluation; (2) Monotone ordering — all values pushed onto the stack after the sentinel are strictly increasing from bottom to top at all times. Together these invariants guarantee that stack underflow cannot occur during normal evaluation and that the relative ordering between any two live stack entries is always deterministic and fully defined.'
+tags:
+- aether
+- stack
+- runtime
+- invariants
+- evaluation-model
+type: principle
+origin: session_extraction
+source_session_id: clband-teach-aether-language
+source_provider: claude-code
+created_at: 2026-06-12T19:40:13.762383038+00:00
+warning_at: 2026-07-12T19:40:13.762383038+00:00
+expires_at: 2026-09-10T19:40:13.762383038+00:00
+generality: general
+generality_rationale: Combines two separately-stated stack invariants into a unified structural model of Aether's evaluation stack and makes explicit the downstream guarantees (no underflow, deterministic ordering) neither individual skill stated.
+use_when:
+- Tracing or simulating Aether program execution step by step
+- Writing tests that verify stack state during Aether evaluation
+- Debugging unexpected stack behavior or apparent underflow in the Aether runtime
+- Implementing or auditing the Aether evaluator's stack management
+avoid_when:
+- Assuming the stack can be empty during file evaluation — the sentinel structurally prevents this
+invariants:
+- The evaluation stack always contains at least one element (the zero sentinel) during file evaluation.
+- All values above the sentinel are strictly increasing from bottom to top at every point during execution.
+produces:
+- Correct stack-trace reasoning for Aether evaluation; valid stack-state assertions in runtime tests
+evidence:
+- A single zero is pushed onto the stack before the first line of the file is read; this sentinel value is never popped (preference/skill 6)
+- Values pushed onto the stack are always strictly increasing from bottom to top (preference/skill 7)
+---
+
+# aether-stack-sentinel-and-monotone-ordering-invariants
+
+Aether's evaluation stack maintains two structural invariants throughout file execution: (1) Sentinel — a zero is pushed onto the stack before the first line of any file is evaluated, and this sentinel is never popped, ensuring the stack is never truly empty during normal evaluation; (2) Monotone ordering — all values pushed onto the stack after the sentinel are strictly increasing from bottom to top at all times. Together these invariants guarantee that stack underflow cannot occur during normal evaluation and that the relative ordering between any two live stack entries is always deterministic and fully defined.
+
+## Procedures
+- When tracing Aether execution, initialize the stack with a single zero before processing any instruction.
+- When verifying a push operation, confirm the value to be pushed is strictly greater than the current top; flag violations as runtime invariant errors.
+- When writing stack-based tests for the Aether runtime, always seed the stack with the zero sentinel before the first evaluated line.
+
+## Conventions
+- The zero sentinel at the bottom is a structural constant of the evaluation environment, not a value pushed by the program under evaluation.
+- Stack values form a strictly monotone increasing sequence: each pushed value must be greater than every value below it.
+

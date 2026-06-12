@@ -1,0 +1,124 @@
+{
+ "context": "aether-language",
+ "transcript": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-smoke/transcripts/aether-language.jsonl",
+ "scope": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-aether-language",
+ "worker_rc": 0,
+ "elapsed_s": 342.7,
+ "n_drafts": 19,
+ "drafts": [
+  {
+   "name": "A single zero is pushed onto the stack (preference)",
+   "description": "Standing user preference: A single zero is pushed onto the stack before the first line of the file is read; this sentinel value is never popped.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-aether-language/.skills/a-single-zero-is-pushed-onto-the-stack-preference/SKILL.md.pending"
+  },
+  {
+   "name": "aether-assignment-and-operator-syntax",
+   "description": "In Aether, assignment is `<<` (Flow operator), NOT `=`. Bitwise ops use keywords (band/bor/bxor/bnot), logical ops use `&&`/`||`/`!`, and exponentiation is `^`.",
+   "skill_type": "rule",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-aether-language/.skills/aether-assignment-and-operator-syntax/SKILL.md.pending"
+  },
+  {
+   "name": "A type alias can be defined for use (preference)",
+   "description": "Standing user preference: A type alias can be defined for use in type annotations or Mold definitions.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-aether-language/.skills/a-type-alias-can-be-defined-for-use-preference/SKILL.md.pending"
+  },
+  {
+   "name": "Evaluating a literal always yields an object of (preference)",
+   "description": "Standing user preference: Evaluating a literal always yields an object of the corresponding declared type (e.g., Echo, Drop, Mist).",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-aether-language/.skills/evaluating-a-literal-always-yields-an-object-of-preference/SKILL.md.pending"
+  },
+  {
+   "name": "The `use` statement (With) follows the syntax `use (preference)",
+   "description": "Standing user preference: The `use` statement (With) follows the syntax `use (resource) { suite }` for scoped resource management.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-aether-language/.skills/the-use-statement-with-follows-the-syntax-use-preference/SKILL.md.pending"
+  },
+  {
+   "name": "An immutable container remains immutable even if it (preference)",
+   "description": "Standing user preference: An immutable container remains immutable even if it holds a reference to a mutable object whose value later changes; immutability applies to the set of contained objects, not their internal state.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-aether-language/.skills/an-immutable-container-remains-immutable-even-if-it-preference/SKILL.md.pending"
+  },
+  {
+   "name": "aether-identifier-prefix-convention",
+   "description": "Every Aether identifier must carry a mandatory semantic prefix: `~` for mutable variables (Waves), `#` for immutable constants (Anchors), and PascalCase with no prefix for functions/types (Conduits/Molds).",
+   "skill_type": "rule",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-aether-language/.skills/aether-identifier-prefix-convention/SKILL.md.pending"
+  },
+  {
+   "name": "aether-unified-immutability-model",
+   "description": "Aether enforces immutability consistently at three orthogonal levels that together form a coherent model: (1) Binding-level \u2014 the `#` sigil marks an identifier as immutable; its referenced object can never be rebound after initialization. (2) Type-level \u2014 numeric types (Drop, Mist) are always immutable objects regardless of their binding sigil; the value of a numeric object never changes after creation. (3) Container-level \u2014 an immutable container bound with `#` preserves its set of contained references, even if a contained mutable object's internal state later changes. This shallow-immutability-at-reference contract is consistent across all three levels. A common mistake is to conflate binding-immutability with deep-freeze; Aether's model is deliberately shallow at the container level.",
+   "skill_type": "principle",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-aether-language/.skills/aether-unified-immutability-model/SKILL.md.pending"
+  },
+  {
+   "name": "aether-keyword-statement-mappings",
+   "description": "Complete authoritative mapping of Aether keywords to their conventional equivalents: conduit=def, flow=return, fork/path=if/elif/else, swirl=while/for, contain/spill/finally=try/except/finally, dam=break, divert=continue, trickle=yield, fracture=raise, still=pass, evaporate=del, siphon=import, verify=assert, mold=class, use=with, inspect/match=match/case, ocean=global, outer=nonlocal.",
+   "skill_type": "rule",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-aether-language/.skills/aether-keyword-statement-mappings/SKILL.md.pending"
+  },
+  {
+   "name": "aether-type-system-and-literals",
+   "description": "Aether built-in type names: Drop=int, Mist=float, Echo=str, Stream=list, Bundle=tuple, Pool=dict, Spark=bool; boolean literals are `ignite` (true) and `extinguish` (false); null is `nil`; intrinsic conversion conduits are Drop(), Mist(), Echo(), Len(), Input().",
+   "skill_type": "rule",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-aether-language/.skills/aether-type-system-and-literals/SKILL.md.pending"
+  },
+  {
+   "name": "aether-string-interpolation-syntax",
+   "description": "Aether interpolated strings use the `echo\"...\"` (or `f\"...\"`) prefix with `$~variable` for wave-variable injection and `${expression}` for arbitrary expression injection; raw strings use `r\"...\"`.",
+   "skill_type": "rule",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-aether-language/.skills/aether-string-interpolation-syntax/SKILL.md.pending"
+  },
+  {
+   "name": "Objects are never explicitly destroyed; when they become (preference)",
+   "description": "Standing user preference: Objects are never explicitly destroyed; when they become unreachable, they may be reclaimed by the Evaporator (Garbage Collector).",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-aether-language/.skills/objects-are-never-explicitly-destroyed-when-they-become-preference/SKILL.md.pending"
+  },
+  {
+   "name": "An object's identity is fixed at creation and (preference)",
+   "description": "Standing user preference: An object's identity is fixed at creation and never changes; it can be thought of as the object's address in the Abyssal Zone (heap).",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-aether-language/.skills/an-object-s-identity-is-fixed-at-creation-and-preference/SKILL.md.pending"
+  },
+  {
+   "name": "Numeric objects are immutable; once created, their value (preference)",
+   "description": "Standing user preference: Numeric objects are immutable; once created, their value never changes.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-aether-language/.skills/numeric-objects-are-immutable-once-created-their-value-preference/SKILL.md.pending"
+  },
+  {
+   "name": "aether-object-lifecycle-model",
+   "description": "Aether's runtime object lifecycle is governed by three rules that together define how objects are created, identified, and reclaimed: (1) Creation \u2014 evaluating any literal immediately produces a new heap object of the corresponding declared Aether type (e.g., the literal 42 produces a new Drop instance; 'hi' produces a new Echo instance). (2) Identity \u2014 an object's identity is fixed at creation and never changes; it functions as a stable address in the Abyssal Zone (heap) and can safely serve as a stable key. (3) Reclamation \u2014 objects are never explicitly destroyed; the Evaporator (Garbage Collector) reclaims unreachable objects automatically. These three rules jointly imply that value equality and identity equality must always be carefully distinguished, and that explicit deallocation is never needed or valid.",
+   "skill_type": "principle",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-aether-language/.skills/aether-object-lifecycle-model/SKILL.md.pending"
+  },
+  {
+   "name": "Values pushed onto the stack are always strictly (preference)",
+   "description": "Standing user preference: Values pushed onto the stack are always strictly increasing from bottom to top.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-aether-language/.skills/values-pushed-onto-the-stack-are-always-strictly-preference/SKILL.md.pending"
+  },
+  {
+   "name": "Aether uses keywords rather than symbolic operators for (preference)",
+   "description": "Standing user preference: Aether uses keywords rather than symbolic operators for bitwise logic, to avoid confusion with logical operators.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-aether-language/.skills/aether-uses-keywords-rather-than-symbolic-operators-for-preference/SKILL.md.pending"
+  },
+  {
+   "name": "aether-keyword-over-symbol-design-philosophy",
+   "description": "Aether applies a language-wide policy of preferring named keywords over symbolic operators wherever symbolic forms would be ambiguous or visually confusing. This is observed across: bitwise logic (band/bor/bxor/bnot replacing &/|/^/~), control flow (fork/path/otherwise replacing if/elif/else), and function lifecycle (conduit/flow replacing def/return). The single symbolic exception \u2014 the assignment operator `<<` \u2014 uses a unique, non-conventional symbol specifically to prevent confusion with value equality (`=`). The net effect is that Aether code reads closer to prose than to symbol-dense languages. When in doubt whether Aether uses a symbol or a keyword for an operation, default to the keyword form; symbols are the designed exception.",
+   "skill_type": "principle",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-aether-language/.skills/aether-keyword-over-symbol-design-philosophy/SKILL.md.pending"
+  },
+  {
+   "name": "aether-stack-sentinel-and-monotone-ordering-invariants",
+   "description": "Aether's evaluation stack maintains two structural invariants throughout file execution: (1) Sentinel \u2014 a zero is pushed onto the stack before the first line of any file is evaluated, and this sentinel is never popped, ensuring the stack is never truly empty during normal evaluation; (2) Monotone ordering \u2014 all values pushed onto the stack after the sentinel are strictly increasing from bottom to top at all times. Together these invariants guarantee that stack underflow cannot occur during normal evaluation and that the relative ordering between any two live stack entries is always deterministic and fully defined.",
+   "skill_type": "principle",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-rerun/scopes/clband-aether-language/.skills/aether-stack-sentinel-and-monotone-ordering-invariants/SKILL.md.pending"
+  }
+ ]
+}

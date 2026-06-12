@@ -7,11 +7,12 @@ tickets_ref: docs/tickets/2026-06-08-v1-7-local-hybrid-skilldag-retrieval/index.
 source_packet_ref: "T22 (NEW 2026-06-12 from clband smoke INSTRUMENT-FAILURE(extraction) + 3-component re-diagnosis)"
 brainstorm_ref: ""
 started: 2026-06-12
-status: in_progress
+status: completed
 execution_shape: infra-track
-current_unit: 1
+current_unit: 4
 total_units: 4
 session_id: work-2026-06-12-t22-teach-path
+outcome: "All 4 units delivered; smoke re-run GREEN (GO gate). DP-1 default-ON approved; DP-2 drafts left .pending; DP-3 GO recommended, owner HOLDING band-launch pending review. Commits 671b412 A, 360f7cd B, f1647d5 C, + Unit D."
 ---
 
 ## WHY Linkage
@@ -67,7 +68,7 @@ session_id: work-2026-06-12-t22-teach-path
 | A | Forensics — visibility map | infra-packet | Apportion blame B vs C; evidence base | completed (671b412) | 1 | unit-A-forensics.md |
 | B | Harness document delivery | infra-packet | Doc verifiably reaches extraction windows | completed (360f7cd) | 1 | unit-B-delivery.md |
 | C | Taught-knowledge candidate class + refusal≠malformed | infra-packet | Verbatim capture; the core | code+tests green; dogfood regression running; DP-1 next | 1 | unit-C-taught-capture.md |
-| D | Two-tier sentinels + full smoke re-run | infra-packet | GO gate; GO/NO-GO recommendation | manifest+gate ready; smoke re-run pending DP-1 | -- | -- |
+| D | Two-tier sentinels + full smoke re-run | infra-packet | GO gate; GO/NO-GO recommendation | completed — smoke re-run GREEN (flywheel 7/7, aether 5/5) | 1 | unit-D-gate-and-rerun.md |
 
 ## Unit C implementation status (pre-regression)
 - Change 1 (taught-knowledge prompt): `EXTRACT_TEACH_CAPTURE` (default ON) injects a TAUGHT KNOWLEDGE

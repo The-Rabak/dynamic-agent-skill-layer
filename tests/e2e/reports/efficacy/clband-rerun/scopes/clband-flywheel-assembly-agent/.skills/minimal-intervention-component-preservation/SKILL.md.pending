@@ -1,0 +1,52 @@
+---
+name: minimal-intervention-component-preservation
+description: Scope every intervention to the minimum set of affected components. Pristine or unaffected parts must not be modified. Installation and removal techniques must avoid collateral damage (e.g., side loads, full teardowns when a partial disassembly suffices).
+tags:
+- disassembly
+- assembly
+- component-integrity
+- precision
+type: best_practice
+origin: session_extraction
+source_session_id: clband-teach-flywheel-assembly-agent
+source_provider: claude-code
+created_at: 2026-06-12T19:34:30.671340058+00:00
+warning_at: 2026-07-12T19:34:30.671340058+00:00
+expires_at: 2026-09-10T19:34:30.671340058+00:00
+generality: general
+generality_rationale: Applies broadly to mechanical assembly/disassembly workflows where component preservation and targeted rework are important.
+use_when:
+- Disassembling to correct a localized defect identified in rework.
+- Installing a bearing, bushing, or other interference-fit component into a bore.
+- Any step that could incidentally contact a pristine or high-value component.
+avoid_when:
+- Do not apply minimal-intervention logic to override a safety-critical step that requires full inspection of all components.
+tools:
+- drift
+- press
+invariants:
+- Pristine components (e.g., the rotor) are never modified.
+- Side load must not be applied during interference-fit installation.
+- Only affected components are removed during rework disassembly.
+produces:
+- component set with minimum incidental disturbance
+evidence:
+- When disassembling, only remove the affected components; avoid a full teardown if possible. (preference)
+- The rotor is pristine; do not modify it. (preference)
+- For bearing installation, press or tap the bearing into the rotor bore using a drift; avoid applying side load. (preference)
+---
+
+# minimal-intervention-component-preservation
+
+Scope every intervention to the minimum set of affected components. Pristine or unaffected parts must not be modified. Installation and removal techniques must avoid collateral damage (e.g., side loads, full teardowns when a partial disassembly suffices).
+
+## Procedures
+- Before disassembly, identify only the components that must be removed to reach the defect; leave all others in place.
+- During installation, select techniques that transfer force axially (e.g., drift for bearing press-fit) rather than laterally.
+- Never modify, rework, or handle pristine components (e.g., rotor) unless the task explicitly requires it.
+- After rework, reinstall only the components that were removed.
+
+## Conventions
+- Full teardown is reserved for cases where partial disassembly is geometrically impossible.
+- Installation tools must not apply side load to interference-fit components.
+

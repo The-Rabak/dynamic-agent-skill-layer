@@ -1,3 +1,5 @@
 contexts/
 .cache/
 teach/
+__pycache__/
+*.pyc

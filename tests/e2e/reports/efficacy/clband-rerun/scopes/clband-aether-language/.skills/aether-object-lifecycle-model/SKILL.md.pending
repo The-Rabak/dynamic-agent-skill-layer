@@ -1,0 +1,55 @@
+---
+name: aether-object-lifecycle-model
+description: 'Aether''s runtime object lifecycle is governed by three rules that together define how objects are created, identified, and reclaimed: (1) Creation — evaluating any literal immediately produces a new heap object of the corresponding declared Aether type (e.g., the literal 42 produces a new Drop instance; ''hi'' produces a new Echo instance). (2) Identity — an object''s identity is fixed at creation and never changes; it functions as a stable address in the Abyssal Zone (heap) and can safely serve as a stable key. (3) Reclamation — objects are never explicitly destroyed; the Evaporator (Garbage Collector) reclaims unreachable objects automatically. These three rules jointly imply that value equality and identity equality must always be carefully distinguished, and that explicit deallocation is never needed or valid.'
+tags:
+- aether
+- object-model
+- memory
+- gc
+- identity
+- lifetime
+type: principle
+origin: session_extraction
+source_session_id: clband-teach-aether-language
+source_provider: claude-code
+created_at: 2026-06-12T19:40:13.761162588+00:00
+warning_at: 2026-07-12T19:40:13.761162588+00:00
+expires_at: 2026-09-10T19:40:13.761162588+00:00
+generality: general
+generality_rationale: Synthesizes three separate object-model rules into a unified lifecycle narrative — creation, identity, and reclamation — that was absent from any single skill.
+use_when:
+- Reasoning about whether two Aether values are the same object or merely equal values
+- Deciding whether to cache or intern frequently-evaluated literals
+- Writing code that depends on object identity (e.g., identity-keyed Pool/Bundle structures)
+- Explaining Aether memory management to newcomers
+avoid_when:
+- Assuming consecutive evaluations of the same literal return the same object — they may not
+- Writing explicit memory management — Aether has no manual deallocation primitive
+invariants:
+- Every literal evaluation produces a new object of the corresponding Aether type.
+- Object identity never changes after creation.
+- The Evaporator is the sole reclamation mechanism; objects cannot be manually freed.
+requires:
+- aether-type-system-and-literals
+produces:
+- Correct reasoning about Aether object identity, equality, and lifetime
+evidence:
+- Evaluating a literal always yields an object of the corresponding declared type (preference/skill 8)
+- An object's identity is fixed at creation and never changes; it can be thought of as the object's address in the Abyssal Zone (preference/skill 9)
+- Objects are never explicitly destroyed; when they become unreachable, they may be reclaimed by the Evaporator (Garbage Collector) (preference/skill 11)
+---
+
+# aether-object-lifecycle-model
+
+Aether's runtime object lifecycle is governed by three rules that together define how objects are created, identified, and reclaimed: (1) Creation — evaluating any literal immediately produces a new heap object of the corresponding declared Aether type (e.g., the literal 42 produces a new Drop instance; 'hi' produces a new Echo instance). (2) Identity — an object's identity is fixed at creation and never changes; it functions as a stable address in the Abyssal Zone (heap) and can safely serve as a stable key. (3) Reclamation — objects are never explicitly destroyed; the Evaporator (Garbage Collector) reclaims unreachable objects automatically. These three rules jointly imply that value equality and identity equality must always be carefully distinguished, and that explicit deallocation is never needed or valid.
+
+## Procedures
+- Never write explicit deallocation code — rely entirely on the Evaporator.
+- When testing whether two Aether values are 'the same', decide up front whether identity equality (same Abyssal Zone address) or value equality is intended.
+- Treat object identity as stable across the full lifetime of the object; it is safe to use as a map key.
+- Do not assume that two evaluations of identical literals return the same object — each evaluation may produce a distinct instance.
+
+## Conventions
+- Literal evaluation allocates a new typed object — interning is not guaranteed unless explicitly documented.
+- The Evaporator is the sole deallocation path; do not attempt to force or predict reclamation timing.
+

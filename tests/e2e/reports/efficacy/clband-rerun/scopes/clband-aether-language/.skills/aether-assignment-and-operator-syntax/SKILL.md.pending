@@ -1,0 +1,57 @@
+---
+name: aether-assignment-and-operator-syntax
+description: In Aether, assignment is `<<` (Flow operator), NOT `=`. Bitwise ops use keywords (band/bor/bxor/bnot), logical ops use `&&`/`||`/`!`, and exponentiation is `^`.
+tags:
+- aether
+- operators
+- assignment
+- syntax
+type: rule
+origin: session_extraction
+source_session_id: clband-teach-aether-language
+source_provider: claude-code
+created_at: 2026-06-12T19:40:13.756632606+00:00
+warning_at: 2026-07-12T19:40:13.756632606+00:00
+expires_at: 2026-09-10T19:40:13.756632606+00:00
+generality: general
+generality_rationale: These operator rules are universal across all Aether programs with no project-specific references.
+use_when:
+- writing Aether assignment statements
+- translating `=` or `+=` from Python/JS to Aether
+- writing bitwise or boolean operations in Aether
+avoid_when:
+- do not apply to any non-Aether language
+artifacts:
+- .ae source files
+tools:
+- Ocean (reference Aether interpreter)
+invariants:
+- '`=` in Aether is only valid as keyword-argument assignment in call expressions.'
+- Bitwise operations must use the keyword forms (band/bor/bxor/bnot), never symbol forms.
+requires:
+- Aether source file (.ae)
+produces:
+- Valid Aether assignment and operator expressions
+evidence:
+- '`<<` (Flow/Assign) listed under Operators in spec §2.4'
+- assignment_stmt ::= target_list "<<" expression_list (spec §7.2)
+- '`band`, `bor`, `bxor`, `bnot` (Bitwise) listed under Operators in spec §2.4'
+---
+
+# aether-assignment-and-operator-syntax
+
+In Aether, assignment is `<<` (Flow operator), NOT `=`. Bitwise ops use keywords (band/bor/bxor/bnot), logical ops use `&&`/`||`/`!`, and exponentiation is `^`.
+
+## Procedures
+- 1. Assign values with `<<`: `~x << 10`, `~result << ~a + ~b`.
+- 2. Use augmented assignment operators for in-place mutation: `+=`, `-=`, `*=`, `/=`, `%=`, `^=`.
+- 3. For bitwise AND/OR/XOR/NOT use keywords exclusively: `band`, `bor`, `bxor`, `bnot` (NOT `&`/`|`/`^`/`~`).
+- 4. For logical AND/OR/NOT use: `&&`, `||`, `!`.
+- 5. For exponentiation use `^`: `~result << ~base ^ ~exp`.
+- 6. Note: `<<` in an expression context (e.g., `~a << ~b`) is bitwise left-shift; in a statement context it is assignment — context disambiguates.
+- 7. Use `=` ONLY for keyword arguments in calls (e.g., `f(key=val)`), never for binding.
+
+## Conventions
+- Never use `=` for variable binding — it is reserved for keyword arguments only.
+- Never use `&`, `|` for bitwise ops — only the keyword forms are valid.
+
