@@ -1,0 +1,181 @@
+{
+  "context": "aether",
+  "event_type_distribution": {
+    "AssistantMessage": 3,
+    "FileEdit": 1,
+    "Metadata": 11,
+    "ToolCall": 2,
+    "ToolResult": 2,
+    "UserMessage": 2
+  },
+  "events_total": 21,
+  "haystack_chars": {
+    "full_session_grounding_text": 72627,
+    "prose_visible_session_text": 35106
+  },
+  "malformed_lines": 0,
+  "per_window": [
+    {
+      "dropped_entries": 1,
+      "entries_after_sanitize": 5,
+      "entries_before_sanitize": 6,
+      "event_indices": 21,
+      "preamble_prepended": true,
+      "preamble_survived_sanitizer": false,
+      "window": 0,
+      "window_full_haystack_chars": 73714,
+      "window_prose_visible_chars": 35106
+    }
+  ],
+  "preamble": {
+    "approx_tokens": 310,
+    "carries_any_document_sentinel": false,
+    "carries_any_operative_sentinel": true,
+    "preferences_detected": 11,
+    "text": "[Project facts]\nRepo: projects\nKey paths: dynamic-agent-skill-layer/tests\n\n[Standing user preferences]\n- Before the first line of the file is read, a single zero is pushed on the stack; this will never be popped off again.\n- The numbers pushed on the stack will always be strictly increasing from bottom to top.\n- Evaluation of a literal always yields an object of the given type (Echo, Drop, Mist, etc.\n- An object’s **identity** never changes once it has been created; you may think of it as the object’s address in the **Abyssal Zone** (heap).\n- (The value of an immutable container object that contains a reference to a mutable object can change when the latter’s value is changed; however the container is still considered immutable, because the collection of objects it contains cannot be changed.\n- Objects are never explicitly destroyed; however, when they become unreachable they may be reclaimed by the **Evaporator** (Garbage Collector).\n- Numeric objects are immutable; once created their value never changes.\n- To avoid confusion with logical operators, Aether uses keywords for bitwise logic.\n- Defines a type alias for use in annotations or Mold definitions.\n- 5 The Use Statement (With)\n- `use (resource) { suite }`.",
+    "text_chars": 1238
+  },
+  "preamble_drop": {
+    "windows_total": 1,
+    "windows_with_preamble_dropped_by_suspicious_speaker_filter": 1
+  },
+  "segmentation_token_budget": 40960,
+  "sentinel_visibility": [
+    {
+      "carrier_event_types": {
+        "AssistantMessage": 1,
+        "ToolCall": 1,
+        "ToolResult": 1,
+        "UserMessage": 2
+      },
+      "in_full_session_haystack": true,
+      "invisible_lost_in_flat_transcript": false,
+      "sentinel": "conduit",
+      "tier": "document",
+      "visible_to_prose_extractor": true
+    },
+    {
+      "carrier_event_types": {
+        "ToolResult": 1,
+        "UserMessage": 2
+      },
+      "in_full_session_haystack": true,
+      "invisible_lost_in_flat_transcript": false,
+      "sentinel": "swirl",
+      "tier": "document",
+      "visible_to_prose_extractor": true
+    },
+    {
+      "carrier_event_types": {},
+      "in_full_session_haystack": false,
+      "invisible_lost_in_flat_transcript": false,
+      "sentinel": "Turbulence Alert",
+      "tier": "document",
+      "visible_to_prose_extractor": false
+    },
+    {
+      "carrier_event_types": {
+        "ToolResult": 1,
+        "UserMessage": 1
+      },
+      "in_full_session_haystack": true,
+      "invisible_lost_in_flat_transcript": false,
+      "sentinel": "Fracture",
+      "tier": "document",
+      "visible_to_prose_extractor": true
+    },
+    {
+      "carrier_event_types": {},
+      "in_full_session_haystack": false,
+      "invisible_lost_in_flat_transcript": false,
+      "sentinel": "Turbulence Alert",
+      "tier": "operative",
+      "visible_to_prose_extractor": false
+    },
+    {
+      "carrier_event_types": {
+        "ToolResult": 1,
+        "UserMessage": 1
+      },
+      "in_full_session_haystack": true,
+      "invisible_lost_in_flat_transcript": false,
+      "sentinel": "Cause",
+      "tier": "operative",
+      "visible_to_prose_extractor": true
+    },
+    {
+      "carrier_event_types": {},
+      "in_full_session_haystack": false,
+      "invisible_lost_in_flat_transcript": false,
+      "sentinel": "Corrected Code",
+      "tier": "operative",
+      "visible_to_prose_extractor": false
+    },
+    {
+      "carrier_event_types": {
+        "ToolResult": 1,
+        "UserMessage": 1
+      },
+      "in_full_session_haystack": true,
+      "invisible_lost_in_flat_transcript": false,
+      "sentinel": "outer",
+      "tier": "operative",
+      "visible_to_prose_extractor": true
+    },
+    {
+      "carrier_event_types": {
+        "AssistantMessage": 1,
+        "ToolCall": 1,
+        "ToolResult": 1,
+        "UserMessage": 2
+      },
+      "in_full_session_haystack": true,
+      "invisible_lost_in_flat_transcript": false,
+      "sentinel": "conduit",
+      "tier": "operative",
+      "visible_to_prose_extractor": true
+    },
+    {
+      "carrier_event_types": {
+        "ToolResult": 1,
+        "UserMessage": 2
+      },
+      "in_full_session_haystack": true,
+      "invisible_lost_in_flat_transcript": false,
+      "sentinel": "swirl",
+      "tier": "operative",
+      "visible_to_prose_extractor": true
+    },
+    {
+      "carrier_event_types": {
+        "ToolResult": 1,
+        "UserMessage": 2
+      },
+      "in_full_session_haystack": true,
+      "invisible_lost_in_flat_transcript": false,
+      "sentinel": "fork",
+      "tier": "operative",
+      "visible_to_prose_extractor": true
+    },
+    {
+      "carrier_event_types": {
+        "AssistantMessage": 1,
+        "ToolCall": 1,
+        "ToolResult": 1,
+        "UserMessage": 2
+      },
+      "in_full_session_haystack": true,
+      "invisible_lost_in_flat_transcript": false,
+      "sentinel": "flow",
+      "tier": "operative",
+      "visible_to_prose_extractor": true
+    }
+  ],
+  "summary": {
+    "document_tier_visible_to_prose": "3/4",
+    "operative_tier_visible_to_prose": "6/8"
+  },
+  "transcript": "tests/e2e/reports/efficacy/clband-smoke/visibility/materialized/aether.jsonl",
+  "unit": "T22-A-forensics",
+  "windows": 1
+}

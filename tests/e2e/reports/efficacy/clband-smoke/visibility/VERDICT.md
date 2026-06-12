@@ -66,3 +66,25 @@ and the answer are lost in tool/file events — AND (C) the taught-knowledge wor
 for both, and the *sole* remaining blocker for flywheel, whose rules were already visible. This does
 **not** trigger decision-point #4 (it is not "Unit A refutes visibility AND C-alone still fails"):
 the data assigns clear, independent work to B and C, both product-justified.
+
+## Unit B — document delivery applied (replay proof, deterministic)
+
+The harness (`tests/e2e/efficacy/clband/teach_delivery.py`) prepends the knowledge document as a
+leading **user** turn before ingest (no extractor change, no filter weakening). Re-running the
+visibility map on the materialized (replayed) transcripts:
+
+| context | doc-tier visible (raw → materialized) | operative-tier visible (raw → materialized) | prose-visible chars |
+|---|---|---|---|
+| flywheel | 3/4 → **4/4** | 8/9 → **9/9** | 6 266 → 10 668 |
+| aether | 2/4 → **3/4** | 4/8 → **6/8** | 1 338 → **35 106** |
+
+`Cause` and `outer` (aether spec-operative tokens previously lost in `ToolResult`) are now visible.
+The two remaining aether invisibles (`Turbulence Alert`, `Corrected Code`) are `full=false` — absent
+from the session entirely because the aether teach session is the **translate** sibling, not the
+turbulence-review sibling. → Unit D must derive the operative sentinel tier from the sibling actually
+taught (translate-spec rules), not from a different sibling's verifier. Raw artifacts:
+`{flywheel,aether}-visibility-materialized.json`, `materialized/*.jsonl`.
+
+**Unit B AC met:** re-extracted (replayed) window contents demonstrably contain the document text;
+delivery is fixed harness-side without touching the injection defense. Unit tests:
+`test_teach_delivery.py` 4/4 green.

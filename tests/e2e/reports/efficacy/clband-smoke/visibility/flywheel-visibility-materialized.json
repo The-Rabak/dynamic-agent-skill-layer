@@ -1,0 +1,212 @@
+{
+  "context": "flywheel",
+  "event_type_distribution": {
+    "AssistantMessage": 3,
+    "FileEdit": 1,
+    "Metadata": 11,
+    "ToolCall": 2,
+    "ToolResult": 2,
+    "UserMessage": 2
+  },
+  "events_total": 21,
+  "haystack_chars": {
+    "full_session_grounding_text": 19629,
+    "prose_visible_session_text": 10668
+  },
+  "malformed_lines": 0,
+  "per_window": [
+    {
+      "dropped_entries": 1,
+      "entries_after_sanitize": 5,
+      "entries_before_sanitize": 6,
+      "event_indices": 21,
+      "preamble_prepended": true,
+      "preamble_survived_sanitizer": false,
+      "window": 0,
+      "window_full_haystack_chars": 23501,
+      "window_prose_visible_chars": 10668
+    }
+  ],
+  "preamble": {
+    "approx_tokens": 293,
+    "carries_any_document_sentinel": true,
+    "carries_any_operative_sentinel": true,
+    "preferences_detected": 18,
+    "text": "[Project facts]\nRepo: projects\nKey paths: dynamic-agent-skill-layer/tests\n\n[Standing user preferences]\n- - Agent E: Warehouse Personnel Agent (Inventory & Finished Goods)\n- Disorganized workspace but can always find a workaround.\n- - Request component supplies from Warehouse Personnel Agent\n- - If exact wrench not found: Use next size up and apply extra torque\n- - Cannot refuse rework requests from Validation Engineer\n- - Must use parts provided by Warehouse even if not ideally organized\n- Request Parts Bin from Warehouse Personnel Agent (E)\n- Secure assembly with fasteners (find appropriate wrench or use next size up)\n- Disassemble affected components (avoid full teardown if possible)\n- Use the FW-2025-0118 batch.\n- Rotor is pristine—do not modify.\n- Use the torque callout on Sketch v2.\n- Notes: Rotor perfect; do not modify.\n- Bearing installation: Press or tap into rotor bore using drift; avoid side load.\n- Artifact 3 — Warehouse Parts Bin Manifest (Agent E)\n- - Fasteners: M8x20 (MISPRINTED label) — do not use if sketch requires 25 mm; verify length with ruler\n- Use the official sketch and documents provided.\n- Do not remove any mandatory checks.",
+    "text_chars": 1172
+  },
+  "preamble_drop": {
+    "windows_total": 1,
+    "windows_with_preamble_dropped_by_suspicious_speaker_filter": 1
+  },
+  "segmentation_token_budget": 40960,
+  "sentinel_visibility": [
+    {
+      "carrier_event_types": {
+        "ToolResult": 1,
+        "UserMessage": 2
+      },
+      "in_full_session_haystack": true,
+      "invisible_lost_in_flat_transcript": false,
+      "sentinel": "Flywheel Manufacturing Multi-Agent System",
+      "tier": "document",
+      "visible_to_prose_extractor": true
+    },
+    {
+      "carrier_event_types": {
+        "ToolResult": 1,
+        "UserMessage": 1
+      },
+      "in_full_session_haystack": true,
+      "invisible_lost_in_flat_transcript": false,
+      "sentinel": "Scatterbrained Improviser",
+      "tier": "document",
+      "visible_to_prose_extractor": true
+    },
+    {
+      "carrier_event_types": {
+        "AssistantMessage": 1,
+        "ToolCall": 1,
+        "ToolResult": 1,
+        "UserMessage": 2
+      },
+      "in_full_session_haystack": true,
+      "invisible_lost_in_flat_transcript": false,
+      "sentinel": "spin test",
+      "tier": "document",
+      "visible_to_prose_extractor": true
+    },
+    {
+      "carrier_event_types": {
+        "AssistantMessage": 1,
+        "ToolCall": 1,
+        "ToolResult": 1,
+        "UserMessage": 2
+      },
+      "in_full_session_haystack": true,
+      "invisible_lost_in_flat_transcript": false,
+      "sentinel": "WORKAROUND",
+      "tier": "document",
+      "visible_to_prose_extractor": true
+    },
+    {
+      "carrier_event_types": {
+        "AssistantMessage": 1,
+        "ToolCall": 1,
+        "ToolResult": 1,
+        "UserMessage": 1
+      },
+      "in_full_session_haystack": true,
+      "invisible_lost_in_flat_transcript": false,
+      "sentinel": "next size up",
+      "tier": "operative",
+      "visible_to_prose_extractor": true
+    },
+    {
+      "carrier_event_types": {
+        "ToolResult": 1,
+        "UserMessage": 1
+      },
+      "in_full_session_haystack": true,
+      "invisible_lost_in_flat_transcript": false,
+      "sentinel": "extra torque",
+      "tier": "operative",
+      "visible_to_prose_extractor": true
+    },
+    {
+      "carrier_event_types": {
+        "AssistantMessage": 1,
+        "ToolCall": 1,
+        "ToolResult": 1,
+        "UserMessage": 2
+      },
+      "in_full_session_haystack": true,
+      "invisible_lost_in_flat_transcript": false,
+      "sentinel": "firm shake",
+      "tier": "operative",
+      "visible_to_prose_extractor": true
+    },
+    {
+      "carrier_event_types": {
+        "AssistantMessage": 1,
+        "ToolCall": 1,
+        "ToolResult": 1,
+        "UserMessage": 2
+      },
+      "in_full_session_haystack": true,
+      "invisible_lost_in_flat_transcript": false,
+      "sentinel": "retest",
+      "tier": "operative",
+      "visible_to_prose_extractor": true
+    },
+    {
+      "carrier_event_types": {
+        "AssistantMessage": 1,
+        "ToolCall": 1,
+        "ToolResult": 1,
+        "UserMessage": 2
+      },
+      "in_full_session_haystack": true,
+      "invisible_lost_in_flat_transcript": false,
+      "sentinel": "spin test",
+      "tier": "operative",
+      "visible_to_prose_extractor": true
+    },
+    {
+      "carrier_event_types": {
+        "ToolCall": 1,
+        "ToolResult": 1,
+        "UserMessage": 2
+      },
+      "in_full_session_haystack": true,
+      "invisible_lost_in_flat_transcript": false,
+      "sentinel": "Validation Engineer",
+      "tier": "operative",
+      "visible_to_prose_extractor": true
+    },
+    {
+      "carrier_event_types": {
+        "AssistantMessage": 1,
+        "ToolCall": 1,
+        "ToolResult": 1,
+        "UserMessage": 2
+      },
+      "in_full_session_haystack": true,
+      "invisible_lost_in_flat_transcript": false,
+      "sentinel": "Agent C",
+      "tier": "operative",
+      "visible_to_prose_extractor": true
+    },
+    {
+      "carrier_event_types": {
+        "ToolCall": 1,
+        "ToolResult": 1,
+        "UserMessage": 2
+      },
+      "in_full_session_haystack": true,
+      "invisible_lost_in_flat_transcript": false,
+      "sentinel": "Forklift",
+      "tier": "operative",
+      "visible_to_prose_extractor": true
+    },
+    {
+      "carrier_event_types": {
+        "ToolCall": 1,
+        "ToolResult": 1,
+        "UserMessage": 2
+      },
+      "in_full_session_haystack": true,
+      "invisible_lost_in_flat_transcript": false,
+      "sentinel": "Agent D",
+      "tier": "operative",
+      "visible_to_prose_extractor": true
+    }
+  ],
+  "summary": {
+    "document_tier_visible_to_prose": "4/4",
+    "operative_tier_visible_to_prose": "9/9"
+  },
+  "transcript": "tests/e2e/reports/efficacy/clband-smoke/visibility/materialized/flywheel.jsonl",
+  "unit": "T22-A-forensics",
+  "windows": 1
+}

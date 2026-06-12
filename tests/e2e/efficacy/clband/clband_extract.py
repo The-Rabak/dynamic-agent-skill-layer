@@ -26,6 +26,9 @@ from pathlib import Path
 
 import yaml
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))  # ensure sibling import works
+import teach_delivery  # noqa: E402  T22 Unit B — harness-side document delivery
+
 ROOT = Path(__file__).resolve().parents[4]
 WORKER = str(ROOT / "target/debug/maintenance-worker")
 MCP = "http://127.0.0.1:3001"
@@ -106,8 +109,17 @@ def main():
     print(f"=== clband extract: {ctx} -> {scope} ===")
     neutralize_queue()
     sid = f"clband-teach-{ctx}"
-    out = ingest(sid, transcript.read_text(errors="replace"), str(scope))
-    print(f"[clband] ingest {transcript.name} ({transcript.stat().st_size//1024}KB) -> {out}")
+    raw = transcript.read_text(errors="replace")
+    # T22 Unit B: deliver the knowledge document into the transcript as a leading user turn
+    # so the prose extractor (which sees only user+assistant message text) gets the verbatim
+    # rules. No-op for contexts without a known document. Toggle: CLBAND_TEACH_DELIVERY=off.
+    delivery = os.environ.get("CLBAND_TEACH_DELIVERY", "on").lower() != "off"
+    content = teach_delivery.materialize(ctx, raw) if delivery else raw
+    if content is not raw:
+        print(f"[clband] teach-delivery ON: doc injected as user turn (+{len(content)-len(raw)} bytes)")
+    out = ingest(sid, content, str(scope))
+    print(f"[clband] ingest {transcript.name} ({transcript.stat().st_size//1024}KB"
+          f"{'+doc' if content is not raw else ''}) -> {out}")
 
     ts = subprocess.run(["date", "+%H%M%S"], capture_output=True, text=True).stdout.strip()
     t0 = time.time()
