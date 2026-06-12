@@ -59,6 +59,17 @@ priming, as its own ticket so the instrument exists before the mechanism it meas
 - **Measure the BASELINE prime** (current SessionStart behavior, dense-views default-ON config) on the
   new stratum against the real mcp-server, so T12 has an honest before-number. Persist raw per-query
   artifacts (T11 report format: raw vectors + paired-ready per-query JSON).
+- **(Amended 2026-06-12, from T14 smoke Finding 2 — `docs/assessments/2026-06-12-t14-efficacy-harness-smoke.md`):**
+  - **Add a VERBOSE-opening-prompt substratum** alongside the thin/vague one: realistic long session
+    openings (multi-paragraph, code blocks), drawn from the transcripts' actual opening turns at full
+    length. The T14 smoke proved the production priming path returns `no_match` for exactly this
+    distribution (prompt-length dilution under qwen3 + the 0.48 floor) while focused queries retrieve
+    fine — T11's fixture never covered it. Without this substratum the baseline prime will overstate
+    priming health.
+  - **The baseline prime MUST be measured through `compile_context`** (the production SessionStart
+    surface), not `find_skill`. T20 retired the only `compile_context`-path quality test; this
+    measurement restores that coverage on the validated ruler. Report `find_skill` numbers as a
+    secondary comparison if cheap, never as the headline.
 
 ## Scope Fence
 
@@ -75,6 +86,9 @@ priming, as its own ticket so the instrument exists before the mechanism it meas
 
 - [ ] Session-start stratum authored (≥20 queries from the 24 transcripts' opening turns, multi-gold
       baseline sets labeled, anti-circularity verified via token-overlap probe ~0.3 band).
+- [ ] Verbose-opening-prompt substratum included (full-length realistic openings; the T14-smoke
+      `no_match` failure mode is reproduced and quantified by the baseline measurement).
+- [ ] Baseline prime measured through `compile_context` (the production surface), not `find_skill`.
 - [ ] Priming metrics + per-signal ROI thresholds + judge rubric recorded in this ticket BEFORE the
       stratum was authored and BEFORE any measured run; later docs cite them verbatim.
 - [ ] Negative-control gate ran FIRST and cratered (wrong-scope prime coverage collapse); result

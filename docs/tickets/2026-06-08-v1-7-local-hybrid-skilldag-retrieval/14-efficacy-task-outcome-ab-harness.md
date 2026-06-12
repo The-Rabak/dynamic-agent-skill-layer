@@ -87,7 +87,40 @@ Owner decisions (session work-2026-06-12-122502-T14):
 - **Catastrophic regression (defined):** any task where `ON` obeys the rule strictly worse than `OFF` AND
   the ON solve introduces a verifier-detected harmful action the OFF solve did not (not merely a tie loss).
 
-## Acceptance Criteria
+## Pre-Registration Amendment (2026-06-12, post-smoke — committed BEFORE any full measured run; the smoke produced no efficacy data, so this amends task selection and adds metrics without voiding anything)
+
+- **OFF-only discrimination pre-gate (pre-committed task-selection rule):** before the full run, every
+  battery task is solved with OFF alone; any task OFF passes is REJECTED as non-discriminating and
+  replaced. This is the per-task α=0 control formalized as a selection rule so it can never be applied
+  selectively after paired data exists. The pre-gate run is recorded with the battery.
+- **Secondary metrics (pre-registered):** paired **turns-to-solve** and **token cost** per arm, reported
+  alongside the primary verifier outcome. Rationale: a binary rule-obeyed verifier only measures the
+  "impossible-without-the-rule" band; most real skill value is plausibly "model re-derives it
+  expensively." Secondary metrics let a task where OFF eventually succeeds still contribute signal
+  (ON solves in fewer turns / cheaper). They do NOT enter the ≥7/10 pass criterion (which is unchanged);
+  they are reported as a separate pre-registered efficiency reading.
+- **CL-bench tasks — policy (revised 2026-06-12, owner direction):** lifted CL-bench tasks are
+  PERMITTED as battery tasks **only via the teach-session protocol** — never by hand-planting the rule
+  as a corpus skill (planting tests only the injection pipe and violates the T10 provenance fence).
+  Protocol per task: **Session A** = a genuine claude-code working session on the CL task with its rule
+  material present → real pipeline (extract → `.pending` → human gate → corpus → rebuild; the drafts
+  also feed the ≥10-real-drafts AC) → **fidelity gate**: deterministic check that the extracted skill
+  contains the operative rule/tokens (CL-bench's invented sentinels make this checkable; same trick as
+  DS-025/026). Fidelity failure = P0 EXTRACTION finding, reported as INSTRUMENT-FAILURE at the
+  extraction stage — no efficacy verdict claimed or denied from that task. → **Session B** = paired
+  ON/OFF/PLACEBO solve of a held-out variant requiring the rule, rule material absent, OFF pre-gate
+  first (which empirically re-proves non-pretraining instead of assuming it). These tasks form the
+  **acquisition band** (2-3 tasks) of the battery; the rest remain in-project organic-knowledge tasks —
+  the two bands answer complementary claims and both feed the unchanged ≥7/10 criterion. Pin the
+  solver checkpoint + bench version in the run report: the bench's non-pretrained property is current
+  (published past every deployed model's cutoff) but EXPIRES with future checkpoints — re-run the OFF
+  pre-gate on any solver change. This protocol is also the only design exercising extraction of taught
+  novel rules (DS-025–030 seed directly, bypassing it) and is the dress rehearsal for DS-030/T15.
+  **Band selected + planned 2026-06-12:** 10 CL-bench contexts (2 smoke + 8 full) + 3 ordered
+  alternates — see `docs/plans/2026-06-12-t14-cl-acquisition-band-plan.md` (full protocol, smoke
+  definition, pre-registration deltas, full-benchmark scaling) and
+  `tests/e2e/efficacy/clband/manifest.json` (pinned dataset sha, verified sentinels, eval scores);
+  contexts re-materialized on demand by `scripts/fetch_clband_contexts.py` (tested 13/13 green).
 
 - [ ] Pass/fail criterion pre-registered in this ticket before any measured run; the final report cites it verbatim.
 - [ ] Efficacy harness runs the same task set with layer ON and OFF against the live stack, paired per task.

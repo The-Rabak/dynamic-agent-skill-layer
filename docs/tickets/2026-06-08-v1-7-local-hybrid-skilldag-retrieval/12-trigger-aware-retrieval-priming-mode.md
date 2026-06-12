@@ -58,6 +58,16 @@ captured the recall win); what T11 did NOT settle — the priming intent — is 
   retrieval orchestrator and the compiler SessionStart path — NOT another env flag
   (`RetrievalConfig` is already env-heavy; per-intent env config would multiply the matrix).
   `Task` intent behavior is byte-identical to today.
+- **FIRST scope item (added 2026-06-12, from T14 smoke Finding 2): fix verbose-prompt priming.**
+  The production `compile_context` path returns `no_match` for realistic verbose prompts
+  (prompt-length dilution under qwen3 + the 0.48 floor); any ranker work before this is fixed
+  re-ranks an empty result. Candidate mechanisms, decided on the T18 instrument (verbose substratum),
+  not by intuition: (a) **intent-conditional floor** — `Priming` intent uses bounded top-N with a
+  lower/no floor (priming is advisory; `Task` intent keeps 0.48 and its measured no-match precision
+  0.92), (b) **query-side multi-view** — segment the verbose prompt and max-over-segments, the
+  symmetric remedy to T09's doc-side max-over-views win (same length-dilution disease), (c)
+  focused-query distillation (mind the no-LLM-on-hot-path fence). Do NOT naively lower the global
+  floor: that trades away the T11-measured negative rejection.
 - **Priming ranker (bounded N):** primed set = high-recurrence project-baseline skills (recurrence
   WITHIN the project scope — cross-project recurrence is T19, deferred) + a bounded freshness slot
   (explicit injection over the dense pool per constraint 3).
