@@ -68,13 +68,41 @@ instrument lives only in `scripts/t11_*`, while the automated e2e gate
 
 ## Acceptance Criteria
 
-- [ ] e2e quality harness loads the 262 fixture; the 2 previously-failing quality tests pass against
-      the live stack on T11-derived thresholds (margins recorded).
-- [ ] α=0 canary test exists and craters live.
-- [ ] candidate-recall@limit asserted in the gate.
-- [ ] Scripts promoted to the ticket-agnostic shared home; references updated; `--self-test` green.
-- [ ] Latency raw artifact persisted; T11 report Erratum appended (109/137, latency artifact pointer).
-- [ ] Stale fixture(s) retired loudly.
+- [x] e2e quality harness loads the 262 fixture; the 2 previously-failing quality tests pass against
+      the live stack on T11-derived thresholds (margins recorded). **Resolved via the owner-chosen
+      mechanism below: the validated Python instrument IS the gate (`--gate`); the superseded
+      synthetic-seed Rust tests were retired. Live gate PASS, all 6 floor assertions green.**
+- [x] α=0 canary test exists and craters live. **`alpha0_control` arm in `--gate`; live crater 100%
+      (MRR 0.743→0.000); canary asserts ≥50%.**
+- [x] candidate-recall@limit asserted in the gate. **`candidate_recall_at_limit` floor 0.68; live 0.796.**
+- [x] Scripts promoted to the ticket-agnostic shared home; references updated; `--self-test` green.
+      **`retrieval_metrics.py`/`retrieval_sweep.py`; 38/38 self-test.**
+- [x] Latency raw artifact persisted; T11 report Erratum appended (109/137, latency artifact pointer).
+      **`latency_t20-gate-20260612-081155.json` (137 queries; measured p95 375.3ms); erratum cites it
+      + the 109/137 correction.**
+- [x] Stale fixture(s) retired loudly. **`retrieval_quality_labeled.json` +
+      `retrieval_quality_234_corpus_labeled.json` deleted; tombstone `tests/fixtures/RETIRED_FIXTURES.md`.**
+
+## Resolution mechanism (owner decision 2026-06-12)
+
+The validated T11 ruler is the Python instrument driving the REAL mcp-server over HTTP on the live
+262 corpus (anchor-based) — "measurement drives the real app". The Rust `test_retrieval_quality.rs`
+was a DIFFERENT, superseded instrument (seeded a synthetic corpus, measured `compile_context`); it
+could not consume the anchor/strata/split 262 fixture. Owner chose to **promote the Python instrument
+as the gate** (`scripts/retrieval_sweep.py --gate`) + a thin Rust `#[ignore]` shim
+(`tests/e2e/test_retrieval_quality_gate.rs`) that shells to it, and **retire the synthetic Rust
+instrument + stale fixtures loudly**. One validated ruler; no second 262 implementation to re-validate.
+
+**Live GREEN evidence (gate run `t20-gate-20260612-081155`, orchestrator-driven):**
+- dense_views_on: MRR@3 0.743 / MRR@10 0.743 / nDCG@3 0.755 / cand-recall@50 0.796 / no_match 0.92 —
+  reproduces T11 §2 exactly; all above floors (0.64/0.64/0.64/0.68/0.88, each below the T11
+  single-view-dense number with a recorded margin so the gate is robust to the dense_views flag state).
+- alpha0_control: 0.000 across the board → 100% MRR crater (canary ≥50% required).
+- GATE: PASS (all 6 assertions). Measured `find_skill` latency p95 375.3ms < 500ms SLO (mean 282.7,
+  p50 266.4, n=137 — real wall-clock, persisted artifact; the script's original placeholder note was
+  replaced with genuine timing per the no-fakes rule).
+- Live stack restored to default env (RETRIEVAL_ALPHA/DENSE_VIEWS unset), /health 200, real query
+  verified post-run (`prohibit-concurrent-cargo-ops-across-agents` 0.749).
 
 ## Local Context
 

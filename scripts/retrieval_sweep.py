@@ -37,6 +37,7 @@ Usage
 """
 import argparse
 import json
+import math
 import os
 import sys
 import time
@@ -307,8 +308,13 @@ def _compute_arm_metrics(
         qid = q["id"]
         rel_set = {q["anchor"]} | set(q.get("relevant", []))
 
-        # Query at mrr_limit for ranking metrics.
+        # Query at mrr_limit for ranking metrics. Time the real HTTP round-trip
+        # (wall-clock ms) so the gate's latency artifact carries measured numbers,
+        # not a placeholder. This is the user-facing find_skill latency at the
+        # default ranking depth — the same call T11 §3 reported p95=369ms for.
+        _t0 = time.perf_counter()
         mrr_matches = _find_skill_with_scores(q["text"], mrr_limit)
+        latency_ms = (time.perf_counter() - _t0) * 1000.0
         mrr_names = [m["name"] for m in mrr_matches]
 
         # Query at candidate_limit for candidate-recall.
@@ -353,6 +359,7 @@ def _compute_arm_metrics(
             "recall_at3": _metrics.recall_at_k(mrr_names, rel_set, 3),
             "precision_at1": _metrics.precision_at_1(mrr_names, rel_set),
             "candidate_recall": cand_recall,
+            "latency_ms": round(latency_ms, 3),
             "top3_names": mrr_names[:3],
             "relevant_set": sorted(rel_set),
         }
@@ -527,23 +534,61 @@ def _run_gate(args: argparse.Namespace) -> None:
     # We record the per-query metrics (rank / rr / ndcg) as the latency-adjacent
     # data; the orchestrator Unit B (live gate run) will populate the real latency
     # values when it executes with instrumented timing.
+    # Real measured per-query find_skill latency for the dense_views_on arm
+    # (wall-clock ms around the live HTTP round-trip — see _compute_arm_metrics).
+    # Fail loud if timing is missing: a latency artifact without measured numbers
+    # is a fake, and the whole point of this artifact is to give the cited p95 a
+    # real source (T11-VALIDATION-REPORT.md §3 erratum).
+    latency_samples_ms = [
+        row["latency_ms"]
+        for row in baseline_arm.get("per_query", [])
+        if row.get("latency_ms") is not None
+    ]
+    if not latency_samples_ms:
+        print(
+            "GATE INFRA ERROR: dense_views_on arm produced no per-query latency "
+            "samples — the latency artifact would be empty. Aborting (no fakes).",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+
+    _sorted_ms = sorted(latency_samples_ms)
+
+    def _pct(samples_sorted: list[float], pct: float) -> float:
+        """Nearest-rank percentile (pct in [0,100]) over a sorted sample list."""
+        if not samples_sorted:
+            return 0.0
+        rank = max(1, math.ceil(pct / 100.0 * len(samples_sorted)))
+        return samples_sorted[rank - 1]
+
     latency_artifact = {
         "run_id": args.run_id,
         "arm": "dense_views_on",
         "fixture": str(fixture_path),
         "split": args.split,
         "candidate_limit": args.candidate_limit,
+        "measured": True,
+        "n_queries": len(latency_samples_ms),
+        "find_skill_limit": args.limit,
+        "latency_ms": {
+            "mean": round(sum(latency_samples_ms) / len(latency_samples_ms), 3),
+            "p50": round(_pct(_sorted_ms, 50), 3),
+            "p95": round(_pct(_sorted_ms, 95), 3),
+            "p99": round(_pct(_sorted_ms, 99), 3),
+            "min": round(_sorted_ms[0], 3),
+            "max": round(_sorted_ms[-1], 3),
+        },
         "note": (
-            "Per-query latency in ms is populated by the live gate run (Unit B). "
-            "This artifact records the query IDs and anchor metrics so they can be "
-            "joined against the live timing data. "
-            "T11 measured p95=369ms for this arm (T11-VALIDATION-REPORT.md §3)."
+            "Measured wall-clock ms around the live find_skill HTTP round-trip at "
+            "find_skill_limit depth, one sample per positive query. Source artifact "
+            "for the p95 cited in T11-VALIDATION-REPORT.md §3 (T11 reported p95=369ms)."
         ),
         "per_query": [
             {
                 "id": row["id"],
                 "kind": row.get("kind"),
                 "anchor": row.get("anchor"),
+                "latency_ms": row.get("latency_ms"),
                 "rr_at3": row.get("rr"),
                 "ndcg_at3": row.get("ndcg_at3"),
                 "candidate_recall": row.get("candidate_recall"),

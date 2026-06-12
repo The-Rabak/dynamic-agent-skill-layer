@@ -158,7 +158,16 @@ table both state 108/137 (+9 gold found vs snapshot_dense's 99/137).  The correc
 error; the `candidate_recall_at_limit` metric value (0.7956 = 109/137) is correct and unchanged.
 The sign-test (p=0.0074) and all verdict statements in §4 are unaffected.
 
-**Latency artifact:** the raw per-query latency for the `dense_views_on` arm (the source of the
-cited p95 369ms) will be persisted at `tests/e2e/reports/t11/latency_<run-id>.json` when the live
-gate runs (`scripts/retrieval_sweep.py --gate`).  The orchestrator Unit B (T20 live run) populates
-this artifact.  The format and path are defined in the `_run_gate` function of `retrieval_sweep.py`.
+**Latency artifact — now persisted with measured numbers (T20 live gate run, 2026-06-12):** the raw
+per-query `find_skill` latency for the `dense_views_on` arm is persisted at
+`tests/e2e/reports/t11/latency_t20-gate-20260612-081155.json` (137 queries, find_skill_limit=10,
+wall-clock ms around the live HTTP round-trip). Measured: **mean 282.7ms, p50 266.4ms, p95 375.3ms,
+p99 421.4ms, min 219.4ms, max 527.3ms.** This independently reproduces and sources the §3 claim
+(p95 369ms; the re-measured 375ms is within run-to-run noise) and confirms p95 < 500ms SLO. The
+companion gate report `gate_t20-gate-20260612-081155.json` records all six floor assertions PASS and
+the α=0 crater at 100% (alignment canary fires).
+
+**Live gate reproduction (T20):** the promoted gate reproduced the §2 dense_views_on anchor-only
+numbers EXACTLY on the live 262 stack — MRR@3 0.743, MRR@10 0.743, nDCG@3 0.755, cand-recall@50
+0.796, no_match 0.92 — and α=0 cratered to 0.000 across the board. The validated instrument is now
+the gate.
