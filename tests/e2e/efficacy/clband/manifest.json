@@ -10,8 +10,16 @@
   },
   "_protocol_ref": "docs/plans/2026-06-12-t14-cl-acquisition-band-plan.md",
   "_exclusions": [
-    {"context_id_short": "aefcf2fa", "name": "Molly House", "reason": "REAL published board game (Wehrlegig 2024) - evaluator mis-flagged as invented; OFF-arm purity violated"},
-    {"context_id_short": "888535be", "name": "emoji base-13", "reason": "scored 28 but sentinels are emoji - extraction/embedding garbling confound excluded by design"}
+    {
+      "context_id_short": "aefcf2fa",
+      "name": "Molly House",
+      "reason": "REAL published board game (Wehrlegig 2024) - evaluator mis-flagged as invented; OFF-arm purity violated"
+    },
+    {
+      "context_id_short": "888535be",
+      "name": "emoji base-13",
+      "reason": "scored 28 but sentinels are emoji - extraction/embedding garbling confound excluded by design"
+    }
   ],
   "contexts": [
     {
@@ -22,13 +30,51 @@
       "sub_category": "Operational Procedures",
       "gist": "Fictional flywheel-manufacturing multi-agent system: Assembly Technician Agent B's numbered workflow, workaround protocols, mandatory spin test, communication rules",
       "n_tasks": 12,
-      "task_depths": [2,2,2,2,2,2,2,2,2,2,2,2],
+      "task_depths": [
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
       "ctx_chars": 4154,
-      "sentinels": ["Flywheel Manufacturing Multi-Agent System", "Scatterbrained Improviser", "spin test", "WORKAROUND"],
+      "sentinels": [
+        "Flywheel Manufacturing Multi-Agent System",
+        "Scatterbrained Improviser",
+        "spin test",
+        "WORKAROUND"
+      ],
       "_sentinel_tiers_note": "T22 two-tier split. sentinels_document = system-name tier (REPORTED, not gating; the preference channel never emits these). sentinels_operative = the constants/rules Session B actually needs, derived VERBATIM from verifiers/flywheel-assembly.sh; this is the GATING tier (fidelity_gate.sh gates on it).",
-      "sentinels_document": ["Flywheel Manufacturing Multi-Agent System", "Scatterbrained Improviser", "WORKAROUND"],
-      "sentinels_operative": ["next size up", "extra torque", "firm shake", "retest", "spin test", "Validation Engineer", "Forklift"],
-      "eval_scores": {"invented": 5, "off_fails": 5, "on_winnable": 5, "extractable": 5, "det_verifiable": 5, "sibling_quality": 4, "total": 29},
+      "sentinels_document": [
+        "Flywheel Manufacturing Multi-Agent System",
+        "Scatterbrained Improviser",
+        "WORKAROUND"
+      ],
+      "sentinels_operative": [
+        "next size up",
+        "extra torque",
+        "firm shake",
+        "retest",
+        "spin test",
+        "Validation Engineer",
+        "Forklift"
+      ],
+      "eval_scores": {
+        "invented": 5,
+        "off_fails": 5,
+        "on_winnable": 5,
+        "extractable": 5,
+        "det_verifiable": 5,
+        "sibling_quality": 4,
+        "total": 29
+      },
       "why": "Smallest context (4.2k) with the most flat siblings (12): maximum extraction-fidelity odds for the FIRST live proof of teach->extract->inject->verify; 11 held-out siblings leave room for the OFF pre-gate to reject some"
     },
     {
@@ -39,13 +85,41 @@
       "sub_category": "Programming Syntax",
       "gist": "Fully invented 'Aether' programming language with bespoke keywords (conduit, flow, fork, swirl, Fractures) and strict response-format rules",
       "n_tasks": 3,
-      "task_depths": [2,4,6],
+      "task_depths": [
+        2,
+        4,
+        6
+      ],
       "ctx_chars": 37203,
-      "sentinels": ["conduit", "swirl", "Turbulence Alert", "Fracture"],
+      "sentinels": [
+        "conduit",
+        "swirl",
+        "Turbulence Alert",
+        "Fracture"
+      ],
       "_sentinel_tiers_note": "T22 two-tier split. The SMOKE teach session is the depth-2 TRANSLATE sibling (Python->Aether), so sentinels_operative are the invented keyword mappings that translate sibling needs (verifiers/aether-python-translate.sh): conduit/flow/fork/swirl + the '<<' assignment. 'Turbulence Alert' belongs to the depth-4 review sibling and is NOT taught here, so it sits in the document (reported) tier only.",
-      "sentinels_document": ["Aether", "conduit", "swirl", "Fracture"],
-      "sentinels_operative": ["conduit", "flow", "fork", "swirl", "<<"],
-      "eval_scores": {"invented": 5, "off_fails": 5, "on_winnable": 5, "extractable": 5, "det_verifiable": 5, "sibling_quality": 4, "total": 29},
+      "sentinels_document": [
+        "Aether",
+        "conduit",
+        "swirl",
+        "Fracture"
+      ],
+      "sentinels_operative": [
+        "conduit",
+        "flow",
+        "fork",
+        "swirl",
+        "<<"
+      ],
+      "eval_scores": {
+        "invented": 5,
+        "off_fails": 5,
+        "on_winnable": 5,
+        "extractable": 5,
+        "det_verifiable": 5,
+        "sibling_quality": 4,
+        "total": 29
+      },
       "why": "The coding-native flagship at the LARGE end of the context range (37k): smoke spans both size extremes so extraction fidelity is proven across the band's whole envelope; multi-turn siblings exercise the turn-stub handling"
     },
     {
@@ -56,11 +130,53 @@
       "sub_category": "Operational Procedures",
       "gist": "Invented semiconductor-facility Material Handler SOPs (ESD wrist strap, cart weight limit, UV cycle between cleanroom zones, IMS-before-move) tested under adversarial operator pressure",
       "n_tasks": 7,
-      "task_depths": [2,2,2,2,2,2,2],
+      "task_depths": [
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
       "ctx_chars": 13276,
-      "sentinels": ["bake-out oven", "wrist strap", "UV sanitization cycle"],
-      "eval_scores": {"invented": 5, "off_fails": 5, "on_winnable": 5, "extractable": 5, "det_verifiable": 5, "sibling_quality": 5, "total": 30},
-      "why": "Highest-scoring candidate (30/30): binary fail-if rubrics, 7 siblings each applying the SAME rules under different social pressure - measures rule-retention against exactly the drift skills are supposed to prevent"
+      "sentinels": [
+        "bake-out oven",
+        "wrist strap",
+        "UV sanitization cycle"
+      ],
+      "eval_scores": {
+        "invented": 5,
+        "off_fails": 5,
+        "on_winnable": 5,
+        "extractable": 5,
+        "det_verifiable": 5,
+        "sibling_quality": 5,
+        "total": 30
+      },
+      "why": "Highest-scoring candidate (30/30): binary fail-if rubrics, 7 siblings each applying the SAME rules under different social pressure - measures rule-retention against exactly the drift skills are supposed to prevent",
+      "sentinels_operative": [
+        "<1 megaohm",
+        "50 pounds",
+        "BEFORE physically moving",
+        "10-minute UV sanitization cycle",
+        "bake-out oven",
+        "$500,000",
+        "one lot at a time"
+      ],
+      "sentinels_document": [
+        "Material Handler Agent",
+        "Inventory and Logistics Coordinator"
+      ],
+      "_clband_instruments": {
+        "doc_file": "system.md",
+        "teach_sibling_id": "4eec22bd-6e52-49e2-bd73-1e727c632600",
+        "measured_siblings": [
+          "clband-material-handler-sops-07812b91",
+          "clband-material-handler-sops-e537cb6b"
+        ],
+        "verifier": "verifiers/material-handler-sops.sh"
+      }
     },
     {
       "context_id": "d04a3814-daa4-4703-bb0d-3bc9558ff55c",
@@ -70,11 +186,56 @@
       "sub_category": "Workflow Orchestration",
       "gist": "Invented multi-agent news-verification pipeline: SIA role with rigid JSON output schema, Domain Trust Score formula, escalation thresholds",
       "n_tasks": 7,
-      "task_depths": [2,2,2,2,2,2,2],
+      "task_depths": [
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
       "ctx_chars": 10087,
-      "sentinels": ["Source Integrity Agent", "domain_trust_score", "escalation"],
-      "eval_scores": {"invented": 5, "off_fails": 5, "on_winnable": 5, "extractable": 5, "det_verifiable": 5, "sibling_quality": 4, "total": 29},
-      "why": "JSON-schema + numeric-formula rules give the most machine-checkable verifiers in the band; compositional pipeline shape maps to DS-028"
+      "sentinels": [
+        "Source Integrity Agent",
+        "domain_trust_score",
+        "escalation"
+      ],
+      "eval_scores": {
+        "invented": 5,
+        "off_fails": 5,
+        "on_winnable": 5,
+        "extractable": 5,
+        "det_verifiable": 5,
+        "sibling_quality": 4,
+        "total": 29
+      },
+      "why": "JSON-schema + numeric-formula rules give the most machine-checkable verifiers in the band; compositional pipeline shape maps to DS-028",
+      "sentinels_operative": [
+        "domain_trust_score",
+        "calculation_basis",
+        "PASS | FAIL | INCOMPLETE",
+        "MATCH | MISMATCH | MISSING",
+        "INTACT | TAMPERED | ABSENT",
+        "NONE | LOW | MEDIUM | HIGH | CRITICAL",
+        "next_agent_notes",
+        "Domain_Age_Score",
+        "SSL_Validity"
+      ],
+      "sentinels_document": [
+        "Source Integrity Agent (SIA)",
+        "AO",
+        "FCA"
+      ],
+      "_clband_instruments": {
+        "doc_file": "system.md",
+        "teach_sibling_id": "eaac718f-9161-4f44-a0c6-d8a77cc84436",
+        "measured_siblings": [
+          "clband-source-integrity-agent-c41b6bdf",
+          "clband-source-integrity-agent-59a8c58f"
+        ],
+        "verifier": "verifiers/source-integrity-agent.sh"
+      }
     },
     {
       "context_id": "b2bdc827-6500-4c70-9253-b651ba992af5",
@@ -84,11 +245,59 @@
       "sub_category": "Mathematical Formalism",
       "gist": "Fictional climbing-gym Quartermaster: hold-inventory thresholds (500/Main Wall, 100/Wall 5) with HOLD_OK/HOLD_LOW/HOLD_CRITICAL_LOW status codes at 150%/100% ratios",
       "n_tasks": 10,
-      "task_depths": [2,2,2,2,2,2,2,2,2,2],
+      "task_depths": [
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
       "ctx_chars": 3635,
-      "sentinels": ["HOLD_CRITICAL_LOW", "HOLD_LOW", "HOLD_OK", "Wall 5"],
-      "eval_scores": {"invented": 5, "off_fails": 5, "on_winnable": 5, "extractable": 5, "det_verifiable": 5, "sibling_quality": 4, "total": 29},
-      "why": "Pure numeric-threshold rule application with exact status-code outputs: the cleanest mechanical-derivability case; tiny context (3.6k) + 10 flat siblings"
+      "sentinels": [
+        "HOLD_CRITICAL_LOW",
+        "HOLD_LOW",
+        "HOLD_OK",
+        "Wall 5"
+      ],
+      "eval_scores": {
+        "invented": 5,
+        "off_fails": 5,
+        "on_winnable": 5,
+        "extractable": 5,
+        "det_verifiable": 5,
+        "sibling_quality": 4,
+        "total": 29
+      },
+      "why": "Pure numeric-threshold rule application with exact status-code outputs: the cleanest mechanical-derivability case; tiny context (3.6k) + 10 flat siblings",
+      "sentinels_operative": [
+        "HOLD_CRITICAL_LOW",
+        "HOLD_LOW",
+        "HOLD_OK",
+        "500 holds",
+        "requires exactly 100",
+        "Inventory Status report",
+        "150 percent",
+        "100 percent of requirement"
+      ],
+      "sentinels_document": [
+        "Hold Inventory Agent",
+        "The Quartermaster",
+        "supply chain conscience"
+      ],
+      "_clband_instruments": {
+        "doc_file": "system.md",
+        "teach_sibling_id": "bba75f78-045c-47aa-be1e-e0dae0ddf096",
+        "measured_siblings": [
+          "clband-quartermaster-hold-inventory-f02b9a94",
+          "clband-quartermaster-hold-inventory-2db1bd9f"
+        ],
+        "verifier": "verifiers/quartermaster-hold-inventory.sh"
+      }
     },
     {
       "context_id": "2abca082-b492-4c29-8bd5-71340d6917a4",
@@ -98,11 +307,48 @@
       "sub_category": "Game Mechanics",
       "gist": "Invented 'Dartman' two-player chess-board game with custom pieces (Dartman, 1x1/1x2 Deflectors), starting positions, and win conditions distinct from chess",
       "n_tasks": 4,
-      "task_depths": [2,4,6,8],
+      "task_depths": [
+        2,
+        4,
+        6,
+        8
+      ],
       "ctx_chars": 40511,
-      "sentinels": ["Dartman", "Deflector"],
-      "eval_scores": {"invented": 4, "off_fails": 5, "on_winnable": 5, "extractable": 5, "det_verifiable": 4, "sibling_quality": 4, "total": 27},
-      "why": "Game-state reasoning over invented rules; the model's chess priors actively mislead (the default-contradicts-convention property); deepest multi-turn chain (depth 8) stress-tests turn-stub handling"
+      "sentinels": [
+        "Dartman",
+        "Deflector"
+      ],
+      "eval_scores": {
+        "invented": 4,
+        "off_fails": 5,
+        "on_winnable": 5,
+        "extractable": 5,
+        "det_verifiable": 4,
+        "sibling_quality": 4,
+        "total": 27
+      },
+      "why": "Game-state reasoning over invented rules; the model's chess priors actively mislead (the default-contradicts-convention property); deepest multi-turn chain (depth 8) stress-tests turn-stub handling",
+      "sentinels_operative": [
+        "P2",
+        "Y1",
+        "Y2",
+        "stopping point",
+        "P2 (b,7)",
+        "Y2 (a,8) and (a,7)",
+        "line of fire"
+      ],
+      "sentinels_document": [
+        "Dartman",
+        "Deflector"
+      ],
+      "_clband_instruments": {
+        "doc_file": "context.md",
+        "teach_sibling_id": "1467df2d-91f7-412f-b605-a3c0015366c4",
+        "measured_siblings": [
+          "clband-dartman-game-5be8df73"
+        ],
+        "verifier": "verifiers/dartman-game.sh"
+      }
     },
     {
       "context_id": "a2c7d39b-506a-4f9b-b3d5-0b54b32a5f55",
@@ -112,11 +358,46 @@
       "sub_category": "Programming Syntax",
       "gist": "Invented minimal 'EZLang' teaching language (var/set, func with, no break, .ez files): OFF reliably hallucinates Python/JS syntax",
       "n_tasks": 3,
-      "task_depths": [2,4,6],
+      "task_depths": [
+        2,
+        4,
+        6
+      ],
       "ctx_chars": 34179,
-      "sentinels": ["EZLang", ".ez", "func"],
-      "eval_scores": {"invented": 5, "off_fails": 4, "on_winnable": 5, "extractable": 5, "det_verifiable": 4, "sibling_quality": 4, "total": 27},
-      "why": "Second invented language: the model's strong programming priors actively contradict EZLang's deliberate restrictions (no break, English-like keywords) - tests negative-transfer resistance (DS-029 shape)"
+      "sentinels": [
+        "EZLang",
+        ".ez",
+        "func"
+      ],
+      "eval_scores": {
+        "invented": 5,
+        "off_fails": 4,
+        "on_winnable": 5,
+        "extractable": 5,
+        "det_verifiable": 4,
+        "sibling_quality": 4,
+        "total": 27
+      },
+      "why": "Second invented language: the model's strong programming priors actively contradict EZLang's deliberate restrictions (no break, English-like keywords) - tests negative-transfer resistance (DS-029 shape)",
+      "sentinels_operative": [
+        "split",
+        "toNumber",
+        "writeFile with",
+        "func",
+        "var"
+      ],
+      "sentinels_document": [
+        "EZLang",
+        ".ez"
+      ],
+      "_clband_instruments": {
+        "doc_file": "context.md",
+        "teach_sibling_id": "be956d3a-784f-4b39-a1b9-f67beef52b0e",
+        "measured_siblings": [
+          "clband-ezlang-language-b2628a97"
+        ],
+        "verifier": "verifiers/ezlang-language.sh"
+      }
     },
     {
       "context_id": "c0bcb15a-4b0a-4322-a63f-795720edb40e",
@@ -126,11 +407,48 @@
       "sub_category": "Technical Standards",
       "gist": "Fictional DryWave 3000 dehumidifier manual + InfoAID persona: RH target ranges per room type, operating modes, placement rules, UK-English structured output",
       "n_tasks": 3,
-      "task_depths": [2,4,6],
+      "task_depths": [
+        2,
+        4,
+        6
+      ],
       "ctx_chars": 49500,
-      "sentinels": ["DryWave 3000", "InfoAID"],
-      "eval_scores": {"invented": 5, "off_fails": 4, "on_winnable": 5, "extractable": 5, "det_verifiable": 4, "sibling_quality": 4, "total": 27},
-      "why": "Invented product spec at the largest context size in the band (49.5k): the upper-bound extraction-fidelity probe; plausible-sounding specs are maximally tempting for OFF to hallucinate confidently"
+      "sentinels": [
+        "DryWave 3000",
+        "InfoAID"
+      ],
+      "eval_scores": {
+        "invented": 5,
+        "off_fails": 4,
+        "on_winnable": 5,
+        "extractable": 5,
+        "det_verifiable": 4,
+        "sibling_quality": 4,
+        "total": 27
+      },
+      "why": "Invented product spec at the largest context size in the band (49.5k): the upper-bound extraction-fidelity probe; plausible-sounding specs are maximally tempting for OFF to hallucinate confidently",
+      "sentinels_operative": [
+        "Maintaining humidity below 40% for extended periods",
+        "human discomfort",
+        "wood materials contracting",
+        "below 35% RH",
+        "should not be operated in Continuous mode",
+        "AUTO mode",
+        "45\u201350%",
+        "external calibrated hygrometer"
+      ],
+      "sentinels_document": [
+        "DryWave 3000",
+        "InfoAID"
+      ],
+      "_clband_instruments": {
+        "doc_file": "context.md",
+        "teach_sibling_id": "f1b8b1f8-2914-4d7a-8342-b2df7e438a58",
+        "measured_siblings": [
+          "clband-drywave-3000-manual-b7dd8397"
+        ],
+        "verifier": "verifiers/drywave-3000-manual.sh"
+      }
     },
     {
       "context_id": "651405bd-d4da-4fd9-9a08-d2cf4cdb1db6",
@@ -140,11 +458,47 @@
       "sub_category": "Legal & Regulatory",
       "gist": "Fictional '123 Corp' HR policy assistant 'Jeffrey': invented accrual rates (1.54 hours/pay-period), section numbers (7.01/7.02/7.07), holiday observation logic",
       "n_tasks": 3,
-      "task_depths": [2,4,6],
+      "task_depths": [
+        2,
+        4,
+        6
+      ],
       "ctx_chars": 18266,
-      "sentinels": ["123 Corp", "Jeffrey", "1.54"],
-      "eval_scores": {"invented": 4, "off_fails": 4, "on_winnable": 5, "extractable": 5, "det_verifiable": 4, "sibling_quality": 4, "total": 26},
-      "why": "Policy-lookup shape with invented numeric constants and section references: the closest analogue to real-world 'company convention' skills, the layer's actual production use case"
+      "sentinels": [
+        "123 Corp",
+        "Jeffrey",
+        "1.54"
+      ],
+      "eval_scores": {
+        "invented": 4,
+        "off_fails": 4,
+        "on_winnable": 5,
+        "extractable": 5,
+        "det_verifiable": 4,
+        "sibling_quality": 4,
+        "total": 26
+      },
+      "why": "Policy-lookup shape with invented numeric constants and section references: the closest analogue to real-world 'company convention' skills, the layer's actual production use case",
+      "sentinels_operative": [
+        "two (2) hours",
+        "diagnosis",
+        "prognosis",
+        "medical certification",
+        "7.02"
+      ],
+      "sentinels_document": [
+        "123 Corp",
+        "Jeffrey",
+        "1.54"
+      ],
+      "_clband_instruments": {
+        "doc_file": "context.md",
+        "teach_sibling_id": "238bfec6-5ce0-4858-aa0f-4ed718baca9b",
+        "measured_siblings": [
+          "clband-123corp-hr-policy-361e77fa"
+        ],
+        "verifier": "verifiers/123corp-hr-policy.sh"
+      }
     },
     {
       "context_id": "886449e2-6e73-419a-8dfa-287d6c13e2fe",
@@ -154,11 +508,53 @@
       "sub_category": "Operational Procedures",
       "gist": "Fictional 14-agent Disaster Probability Modeling System: Agent M's report-composition rules (schema version, input-verification gate, mandatory section structure, posterior-authority rule)",
       "n_tasks": 4,
-      "task_depths": [2,2,2,2],
+      "task_depths": [
+        2,
+        2,
+        2,
+        2
+      ],
       "ctx_chars": 6035,
-      "sentinels": ["DPMS", "Agent M", "RISK_CLASSIFICATION", "VIOLATION_CODES"],
-      "eval_scores": {"invented": 5, "off_fails": 5, "on_winnable": 5, "extractable": 5, "det_verifiable": 5, "sibling_quality": 4, "total": 29},
-      "why": "Multi-section report-structure rules with an authority-precedence rule (Agent F posterior wins): tests structural fidelity (DS-026 shape) in a small, flat-sibling context"
+      "sentinels": [
+        "DPMS",
+        "Agent M",
+        "RISK_CLASSIFICATION",
+        "VIOLATION_CODES"
+      ],
+      "eval_scores": {
+        "invented": 5,
+        "off_fails": 5,
+        "on_winnable": 5,
+        "extractable": 5,
+        "det_verifiable": 5,
+        "sibling_quality": 4,
+        "total": 29
+      },
+      "why": "Multi-section report-structure rules with an authority-precedence rule (Agent F posterior wins): tests structural fidelity (DS-026 shape) in a small, flat-sibling context",
+      "sentinels_operative": [
+        "all required sections",
+        "schema compliance",
+        "DPMS",
+        "Bayesian Update",
+        "POSTERIOR_DISTRIBUTION",
+        "RISK_CLASSIFICATION",
+        "VIOLATION_CODES",
+        "Orchestrator"
+      ],
+      "sentinels_document": [
+        "Agent M: Report Composer & Formatter Agent - DPMS",
+        "Disaster Probability Modeling System",
+        "14-agent system"
+      ],
+      "_clband_instruments": {
+        "doc_file": "system.md",
+        "teach_sibling_id": "161c909e-02a2-417d-a455-6ce3c2f76acd",
+        "measured_siblings": [
+          "clband-dpms-agent-m-efb00c4a",
+          "clband-dpms-agent-m-198ef190"
+        ],
+        "verifier": "verifiers/dpms-agent-m.sh"
+      }
     },
     {
       "context_id": "d4867db7-1cc3-48ed-a93d-91d472a0d582",
@@ -168,10 +564,24 @@
       "sub_category": "Instructional Procedures",
       "gist": "Fictional Shelby's brand recipe assistant: absolute allergen bans, 15-SKU proprietary product list, prep-time cap, strict plain-text format",
       "n_tasks": 3,
-      "task_depths": [2,4,6],
+      "task_depths": [
+        2,
+        4,
+        6
+      ],
       "ctx_chars": 42136,
-      "sentinels": ["Shelby"],
-      "eval_scores": {"invented": 4, "off_fails": 4, "on_winnable": 5, "extractable": 5, "det_verifiable": 4, "sibling_quality": 4, "total": 26},
+      "sentinels": [
+        "Shelby"
+      ],
+      "eval_scores": {
+        "invented": 4,
+        "off_fails": 4,
+        "on_winnable": 5,
+        "extractable": 5,
+        "det_verifiable": 4,
+        "sibling_quality": 4,
+        "total": 26
+      },
       "why": "First substitute if a full-band task fails the OFF pre-gate"
     },
     {
@@ -182,10 +592,28 @@
       "sub_category": "Workflow Orchestration",
       "gist": "Invented podcast-scriptwriting orchestrator: Agent 04 produces segment maps with timing that must sum exactly to episode length, never draft scripts",
       "n_tasks": 6,
-      "task_depths": [2,2,2,2,2,2],
+      "task_depths": [
+        2,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
       "ctx_chars": 4001,
-      "sentinels": ["Agent 04", "segment map"],
-      "eval_scores": {"invented": 4, "off_fails": 3, "on_winnable": 4, "extractable": 5, "det_verifiable": 5, "sibling_quality": 5, "total": 26},
+      "sentinels": [
+        "Agent 04",
+        "segment map"
+      ],
+      "eval_scores": {
+        "invented": 4,
+        "off_fails": 3,
+        "on_winnable": 4,
+        "extractable": 5,
+        "det_verifiable": 5,
+        "sibling_quality": 5,
+        "total": 26
+      },
       "why": "Second substitute; off_fails=3 is the weakest in the pool, so it sits behind Shelby's"
     },
     {
@@ -196,10 +624,25 @@
       "sub_category": "Game Mechanics",
       "gist": "'Micro Moonshine' Prohibition-era bootlegger board game (crew cards, contracts, VP formulas, solo bot)",
       "n_tasks": 3,
-      "task_depths": [2,4,6],
+      "task_depths": [
+        2,
+        4,
+        6
+      ],
       "ctx_chars": 20500,
-      "sentinels": ["Micro Moonshine", "Bootlegger"],
-      "eval_scores": {"invented": 4, "off_fails": 5, "on_winnable": 4, "extractable": 5, "det_verifiable": 4, "sibling_quality": 4, "total": 26},
+      "sentinels": [
+        "Micro Moonshine",
+        "Bootlegger"
+      ],
+      "eval_scores": {
+        "invented": 4,
+        "off_fails": 5,
+        "on_winnable": 4,
+        "extractable": 5,
+        "det_verifiable": 4,
+        "sibling_quality": 4,
+        "total": 26
+      },
       "why": "Third substitute; REALITY UNVERIFIED (may be a real small-press game) - use only if the OFF pre-gate confirms discrimination"
     }
   ]

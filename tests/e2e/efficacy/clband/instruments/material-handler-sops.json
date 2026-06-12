@@ -1,0 +1,40 @@
+{
+  "context": "material-handler-sops",
+  "short": "d29478c9",
+  "knowledge_home": "system",
+  "doc_file": "system.md",
+  "teach_sibling_id": "4eec22bd-6e52-49e2-bd73-1e727c632600",
+  "teach_prompt_file": "teach/material-handler-sops/prompt.txt",
+  "measured_siblings": [
+    {
+      "slug": "clband-material-handler-sops-07812b91",
+      "sibling_task_id": "07812b91-9efc-4be5-993f-1bf2e40f5cbe",
+      "verifier": "material-handler-sops.sh",
+      "summary": "Material Handler Agent semiconductor facility SOPs: ESD wrist strap <1 megaohm verification before ESDS handling; 50-pound cart load limit; update inventory management system (IMS) BEFORE physical movement; 10-minute UV sanitization cycle between cleanroom zones (Class 100 vs Class 10,000); return MSL lots to bake-out oven within 15 minutes of dry bag seal breach; continuous visual escort for lots valued over $500,000; one lot at a time single-lot-per-trip rule"
+    },
+    {
+      "slug": "clband-material-handler-sops-e537cb6b",
+      "sibling_task_id": "e537cb6b-6758-4aca-add1-1baec70e9682",
+      "verifier": "material-handler-sops.sh",
+      "summary": "Material Handler Agent semiconductor facility SOPs: ESD wrist strap <1 megaohm verification before ESDS handling; 50-pound cart load limit; update inventory management system (IMS) BEFORE physical movement; 10-minute UV sanitization cycle between cleanroom zones (Class 100 vs Class 10,000); return MSL lots to bake-out oven within 15 minutes of dry bag seal breach; continuous visual escort for lots valued over $500,000; one lot at a time single-lot-per-trip rule"
+    }
+  ],
+  "sentinels_operative": [
+    "<1 megaohm",
+    "50 pounds",
+    "BEFORE physically moving",
+    "10-minute UV sanitization cycle",
+    "bake-out oven",
+    "$500,000",
+    "one lot at a time"
+  ],
+  "sentinels_document": [
+    "Material Handler Agent",
+    "Inventory and Logistics Coordinator"
+  ],
+  "self_test": {
+    "good_exit": 0,
+    "bad_exit": 1,
+    "sentinels_verified": true
+  }
+}

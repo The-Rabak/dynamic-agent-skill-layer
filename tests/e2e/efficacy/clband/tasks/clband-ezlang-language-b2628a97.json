@@ -1,0 +1,32 @@
+{
+  "task_id": "clband-ezlang-language-b2628a97",
+  "title": "EZLang program explanation + write-to-file extension (depth-4 held-out)",
+  "_clband": {
+    "context": "ezlang-language",
+    "sibling_task_id": "b2628a97-a17c-4059-86cc-17cb294238ab",
+    "measured_without_prior_turns": true,
+    "note": "Depth-4 nested sibling; prior_turns[1].content (the EZLang time-checker program) is inlined in the prompt frame so the task is self-contained with no prior_turns reference. The inline snippet is the assistant response from the depth-2 turn, byte-for-byte from tasks.json."
+  },
+  "invented_rule": {
+    "summary": "EZLang language syntax: global functions called with 'funcName with arg and arg' (split, toNumber, writeFile with, print with, sleep with), variables declared with 'var'/'set', functions defined with 'func name with param =', and 'break' is undefined — while loops exit via flag variable",
+    "corpus_skill_slug": "PENDING-UNTIL-EXTRACTION",
+    "corpus_skill_id": "PENDING-UNTIL-EXTRACTION",
+    "absent_from_pretraining_rationale": "EZLang is a fully invented minimal language. Its global function call syntax ('funcName with arg'), variable syntax ('var'/'set'), function definition syntax ('func name with param ='), and the absence of 'break' directly contradict Python/JS/any-mainstream-language habits. An agent without the EZLang spec defaults to Python idioms: 'def', 'int()', '.split()', 'open()'/'f.write()', 'break' — all of which fail the verifier."
+  },
+  "prompt": "You are a coding assistant for the EZLang programming language. A user has been working with the following EZLang program:\n\n```ez\n// timeChecker.ez\nvar times = []  // Store all checked times\nvar targetTime = \"17:30:00\"  // 5:30 PM in 24-hour format\n\n// Convert time string to seconds for easy comparison\nfunc timeToSeconds with timeStr = {\n    var parts = split with timeStr and \":\"\n    var hours = toNumber with 0 in parts\n    var minutes = toNumber with 1 in parts\n    var seconds = toNumber with 2 in parts\n    return hours * 3600 + minutes * 60 + seconds\n}\n\n// Get just the time part from now string (assumes format like \"2023-10-05 14:30:00\")\nfunc getTimePart = {\n    var fullTime = now\n    var parts = split with fullTime and \" \"\n    return 1 in parts  // Time is after the space\n}\n\nvar targetSeconds = timeToSeconds with targetTime\nvar shouldContinue = true\n\nwhile shouldContinue {\n    var currentTime = now\n    print with currentTime\n    set times = times + [currentTime]  // Add to list\n    \n    var timePart = getTimePart\n    var currentSeconds = timeToSeconds with timePart\n    if currentSeconds greater than or equals targetSeconds {\n        set shouldContinue = false  // Stop at or after 5:30 PM\n    } else {\n        sleep with 1800  // Wait 30 minutes (1800 seconds)\n    }\n}\n\nprint with \"All checked times:\"\nfor time in times {\n    print with time  // Print each stored time\n}\n```\n\nCan you explain that program more in depth, and point out where in the documentation for the global functions. And how would I add all of this to a text file after\n\nWrite your complete response to a file named `solution.md` in the current working directory. Output only that file.",
+  "workspace": {
+    "kind": "scratch",
+    "base_ref": null,
+    "setup": []
+  },
+  "verifier": {
+    "command": "tests/e2e/efficacy/clband/verifiers/ezlang-language.sh",
+    "contract": "Invoked as `<command> <workspace_dir>`. Exit 0 == invented rule OBEYED. Pure deterministic inspection of solution.md; no network, no LLM."
+  },
+  "expected": {
+    "on": "pass",
+    "off": "fail",
+    "placebo": "fail",
+    "sensitivity_note": "If ON fails with the rule-bearing skill attribution-confirmed injected, that is INSTRUMENT-FAILURE(injection/obedience). OFF is expected to default to Python idioms (def/int()/split()/open()/break) that fail the verifier."
+  }
+}

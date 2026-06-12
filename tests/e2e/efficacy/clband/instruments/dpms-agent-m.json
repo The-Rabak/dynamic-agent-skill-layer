@@ -1,0 +1,52 @@
+{
+  "context": "dpms-agent-m",
+  "short": "886449e2",
+  "knowledge_home": "system",
+  "doc_file": "system.md",
+  "teach_sibling_id": "161c909e-02a2-417d-a455-6ce3c2f76acd",
+  "teach_prompt_file": "teach/dpms-agent-m/prompt.txt",
+  "measured_siblings": [
+    {
+      "slug": "clband-dpms-agent-m-efb00c4a",
+      "sibling_task_id": "efb00c4a-be92-4d0c-a840-80d6911791e4",
+      "verifier": "dpms-agent-m.sh",
+      "summary": "Disaster Probability Modeling System (DPMS): Agent M report-composition rules — input-verification gate (verify all 10 sections before proceeding), DPMS schema version 4.2 compliance, Agent F Bayesian Update posterior as authoritative probability source, M-WARN-01 warning when probability differences exceed 0.01, submit through Orchestrator only, include RISK_CLASSIFICATION and VIOLATION_CODES in report"
+    },
+    {
+      "slug": "clband-dpms-agent-m-198ef190",
+      "sibling_task_id": "198ef190-0e42-44d3-b674-32a7ddc84f0b",
+      "verifier": "dpms-agent-m.sh",
+      "summary": "Disaster Probability Modeling System (DPMS): Agent M report-composition rules — input-verification gate (verify all 10 sections before proceeding), DPMS schema version 4.2 compliance, Agent F Bayesian Update posterior as authoritative probability source, M-WARN-01 warning when probability differences exceed 0.01, submit through Orchestrator only, include RISK_CLASSIFICATION and VIOLATION_CODES in report"
+    }
+  ],
+  "sentinels_operative": [
+    "all required sections",
+    "schema compliance",
+    "DPMS",
+    "Bayesian Update",
+    "POSTERIOR_DISTRIBUTION",
+    "RISK_CLASSIFICATION",
+    "VIOLATION_CODES",
+    "Orchestrator"
+  ],
+  "sentinels_document": [
+    "Agent M: Report Composer & Formatter Agent - DPMS",
+    "Disaster Probability Modeling System",
+    "14-agent system"
+  ],
+  "sentinel_grep_evidence": {
+    "all required sections": "system.md:32 — 'contain all required sections, maintain internal consistency'",
+    "schema compliance": "system.md:30,107 — 'ensuring schema compliance' and 'validate schema compliance'",
+    "DPMS": "system.md:1,101 — '# Agent M: Report Composer & Formatter Agent - DPMS' and '{{SYSTEM_METADATA}} (DPMS version, ...'",
+    "Bayesian Update": "system.md:16 — '6. **F: Bayesian Update** - performs posterior distribution calculation'",
+    "POSTERIOR_DISTRIBUTION": "system.md:76 — '{{POSTERIOR_DISTRIBUTION}} (Final parametric distribution)'",
+    "RISK_CLASSIFICATION": "system.md:39 — '{{RISK_CLASSIFICATION}} (low/moderate/elevated/critical)'",
+    "VIOLATION_CODES": "system.md:47 — '{{VIOLATION_CODES}} (Structured error/warning codes)'",
+    "Orchestrator": "system.md:11,30 — '**A: Orchestrator** - coordinates all operations' and 'submission to the Orchestrator for approval'"
+  },
+  "self_test": {
+    "good_exit": 0,
+    "bad_exit": 1,
+    "sentinels_verified": true
+  }
+}

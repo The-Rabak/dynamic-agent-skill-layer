@@ -1,0 +1,33 @@
+{
+  "context": "123corp-hr-policy",
+  "short": "651405bd",
+  "knowledge_home": "user",
+  "doc_file": "context.md",
+  "teach_sibling_id": "238bfec6-5ce0-4858-aa0f-4ed718baca9b",
+  "teach_prompt_file": "teach/123corp-hr-policy/prompt.txt",
+  "measured_siblings": [
+    {
+      "slug": "clband-123corp-hr-policy-361e77fa",
+      "sibling_task_id": "361e77fa-7705-4185-9117-5da763f64af0",
+      "verifier": "123corp-hr-policy.sh",
+      "summary": "123 Corp HR policy assistant 'Jeffrey': section 7.02 sick leave rules — medical certification may be required; medical-attention cases require diagnosis, prognosis, and work limitations letter; full-time employees accrue 2 hours of sick leave per pay period; ~10 months (20 pay periods) to accumulate one week (40 hours) of sick pay"
+    }
+  ],
+  "sentinels_operative": [
+    "two (2) hours",
+    "diagnosis",
+    "prognosis",
+    "medical certification",
+    "7.02"
+  ],
+  "sentinels_document": [
+    "123 Corp",
+    "Jeffrey",
+    "1.54"
+  ],
+  "self_test": {
+    "good_exit": 0,
+    "bad_exit": 1,
+    "sentinels_verified": true
+  }
+}

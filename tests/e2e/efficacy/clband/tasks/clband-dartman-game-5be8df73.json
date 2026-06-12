@@ -1,0 +1,32 @@
+{
+  "task_id": "clband-dartman-game-5be8df73",
+  "title": "Dartman game winning-move and blocking analysis (depth-8 held-out)",
+  "_clband": {
+    "context": "dartman-game",
+    "sibling_task_id": "5be8df73-61c1-4938-b4e7-d1b48cefedf3",
+    "measured_without_prior_turns": true,
+    "note": "Depth-8 sibling starts with 'Ignore previous moves, let's start a new game of Dartman' and provides a fully self-contained board layout in the question itself. No prior_turns are needed; the question is self-contained by design. Prior_turns from tasks.json contain reference assistant answers used for verifier/judge authoring only — never shown to any solve arm."
+  },
+  "invented_rule": {
+    "summary": "Dartman two-player board game rules: pieces P1/X1/X2 (Player 1) and P2/Y1/Y2 (Player 2); Dartman (P1/P2) moves with momentum — slides until hitting own deflector or board edge, cannot use opposing deflector as stopping point; 1x2 Deflector must stay vertical; win condition Player 2 = P2 at (b,7), Y1 at (b,8), Y2 at (a,8) and (a,7); Dartman cannot enter line of fire of opposing Dartman without a deflector between them",
+    "corpus_skill_slug": "PENDING-UNTIL-EXTRACTION",
+    "corpus_skill_id": "PENDING-UNTIL-EXTRACTION",
+    "absent_from_pretraining_rationale": "Dartman is a fully invented game with no real-world equivalent. Its piece names (P1/X1/X2/P2/Y1/Y2), momentum-based movement rule (Dartman slides until hitting own deflector or board edge and cannot stop at opposing deflectors), specific win conditions, and coordinate notation are all fabricated. A model defaulting to chess priors will use king/queen/rook/knight notation and chess movement rules, producing wrong piece labels, wrong movement semantics, and wrong win conditions. The OFF arm has no basis for the P2/(b,7) win layout or the line-of-fire illegality rule."
+  },
+  "prompt": "You are an expert assistant for the game of Dartman. Apply the rules of the Dartman game exactly.\n\nIgnore previous moves, let's start a new game of Dartman. In this board, Player 2 is one move away from winning. What is the winning move, and what are the two moves that Player 1 could make to block the winning move? What are the pros and cons of each of the two options? Show diagrams for the starting point, the winning move, and the two moves that could block it.\nP1: (a,2)\nX1: (e,2)\nX2: (h,2) and (h,1)\nP2: (f,7)\nY1: (b,8)\nY2: (a,8) and (a,7)\n\nWrite your complete response to a file named `solution.md` in the current working directory. Output only that file.",
+  "workspace": {
+    "kind": "scratch",
+    "base_ref": null,
+    "setup": []
+  },
+  "verifier": {
+    "command": "tests/e2e/efficacy/clband/verifiers/dartman-game.sh",
+    "contract": "Invoked as `<command> <workspace_dir>`. Exit 0 == invented rule OBEYED. Pure deterministic inspection of solution.md; no network, no LLM."
+  },
+  "expected": {
+    "on": "pass",
+    "off": "fail",
+    "placebo": "fail",
+    "sensitivity_note": "If ON fails with the rule-bearing skill attribution-confirmed injected, that is INSTRUMENT-FAILURE(injection/obedience). The model's chess priors actively mislead (uses king/queen/rook notation instead of P1/P2/X1/X2/Y1/Y2), so OFF is expected to fail at check 1 (wrong piece labels)."
+  }
+}

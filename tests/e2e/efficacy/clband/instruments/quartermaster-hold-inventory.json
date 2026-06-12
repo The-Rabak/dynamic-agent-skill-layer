@@ -1,0 +1,42 @@
+{
+  "context": "quartermaster-hold-inventory",
+  "short": "b2bdc827",
+  "knowledge_home": "system",
+  "doc_file": "system.md",
+  "teach_sibling_id": "bba75f78-045c-47aa-be1e-e0dae0ddf096",
+  "teach_prompt_file": "teach/quartermaster-hold-inventory/prompt.txt",
+  "measured_siblings": [
+    {
+      "slug": "clband-quartermaster-hold-inventory-f02b9a94",
+      "sibling_task_id": "f02b9a94-faf4-4eeb-9434-0bcc9768a337",
+      "verifier": "quartermaster-hold-inventory.sh",
+      "summary": "Hold Inventory Agent (The Quartermaster): fixed consumption 500 holds per Main Wall and 100 holds for Wall 5 (Boulder of the Week); three-tier status codes HOLD_OK (>=150%), HOLD_LOW (100-149%), HOLD_CRITICAL_LOW (<100%); HOLD_CRITICAL_LOW is a hard stop — plan must not be authorized; produce an Inventory Status report with numerical required-vs-available breakdown"
+    },
+    {
+      "slug": "clband-quartermaster-hold-inventory-2db1bd9f",
+      "sibling_task_id": "2db1bd9f-c999-42dc-b6f1-db1e370682af",
+      "verifier": "quartermaster-hold-inventory.sh",
+      "summary": "Hold Inventory Agent (The Quartermaster): fixed consumption 500 holds per Main Wall and 100 holds for Wall 5 (Boulder of the Week); three-tier status codes HOLD_OK (>=150%), HOLD_LOW (100-149%), HOLD_CRITICAL_LOW (<100%); HOLD_CRITICAL_LOW is a hard stop — plan must not be authorized; produce an Inventory Status report with numerical required-vs-available breakdown"
+    }
+  ],
+  "sentinels_operative": [
+    "HOLD_CRITICAL_LOW",
+    "HOLD_LOW",
+    "HOLD_OK",
+    "500 holds",
+    "requires exactly 100",
+    "Inventory Status report",
+    "150 percent",
+    "100 percent of requirement"
+  ],
+  "sentinels_document": [
+    "Hold Inventory Agent",
+    "The Quartermaster",
+    "supply chain conscience"
+  ],
+  "self_test": {
+    "good_exit": 0,
+    "bad_exit": 1,
+    "sentinels_verified": true
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "context": "ezlang-language",
+  "short": "a2c7d39b",
+  "knowledge_home": "user",
+  "doc_file": "context.md",
+  "teach_sibling_id": "be956d3a-784f-4b39-a1b9-f67beef52b0e",
+  "teach_prompt_file": "teach/ezlang-language/prompt.txt",
+  "measured_siblings": [
+    {
+      "slug": "clband-ezlang-language-b2628a97",
+      "sibling_task_id": "b2628a97-a17c-4059-86cc-17cb294238ab",
+      "verifier": "ezlang-language.sh",
+      "summary": "EZLang language syntax: global functions called with 'funcName with arg and arg' (split, toNumber, writeFile with, print with, sleep with), variables declared with 'var'/'set', functions defined with 'func name with param =', and 'break' is undefined — while loops exit via flag variable"
+    }
+  ],
+  "sentinels_operative": ["split", "toNumber", "writeFile with", "func", "var"],
+  "sentinels_document": ["EZLang", ".ez"],
+  "self_test": {
+    "good_exit": 0,
+    "bad_exit": 1,
+    "sentinels_verified": true
+  }
+}

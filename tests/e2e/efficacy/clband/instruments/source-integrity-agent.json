@@ -1,0 +1,43 @@
+{
+  "context": "source-integrity-agent",
+  "short": "d04a3814",
+  "knowledge_home": "system",
+  "doc_file": "system.md",
+  "teach_sibling_id": "eaac718f-9161-4f44-a0c6-d8a77cc84436",
+  "teach_prompt_file": "teach/source-integrity-agent/prompt.txt",
+  "measured_siblings": [
+    {
+      "slug": "clband-source-integrity-agent-c41b6bdf",
+      "sibling_task_id": "c41b6bdf-425e-4f9e-ab24-6397622f428f",
+      "verifier": "source-integrity-agent.sh",
+      "summary": "Source Integrity Agent (SIA) structured JSON output schema: domain_trust_score (score, calculation_basis, justification) computed via Trust Score=(Domain_Age_Score×0.4)+(SSL_Validity×0.3)+(DNS_Consistency×0.2)+(Metadata_Integrity×0.1); metadata_validation.status=PASS|FAIL|INCOMPLETE; EXIF_integrity=INTACT|TAMPERED|ABSENT; spoofing_detection.risk_level=NONE|LOW|MEDIUM|HIGH|CRITICAL; next_agent_notes with to_FCA and to_AO; WHOIS privacy protection deducts -15 points; unavailable fields stated as MISSING"
+    },
+    {
+      "slug": "clband-source-integrity-agent-59a8c58f",
+      "sibling_task_id": "59a8c58f-7c6b-4499-ad03-9a93aa03d621",
+      "verifier": "source-integrity-agent.sh",
+      "summary": "Source Integrity Agent (SIA) structured JSON output schema: domain_trust_score (score, calculation_basis, justification) computed via Trust Score=(Domain_Age_Score×0.4)+(SSL_Validity×0.3)+(DNS_Consistency×0.2)+(Metadata_Integrity×0.1); metadata_validation.status=PASS|FAIL|INCOMPLETE; EXIF_integrity=INTACT|TAMPERED|ABSENT; spoofing_detection.risk_level=NONE|LOW|MEDIUM|HIGH|CRITICAL; next_agent_notes with to_FCA and to_AO; WHOIS privacy protection deducts -15 points; unavailable fields stated as MISSING"
+    }
+  ],
+  "sentinels_operative": [
+    "domain_trust_score",
+    "calculation_basis",
+    "PASS | FAIL | INCOMPLETE",
+    "MATCH | MISMATCH | MISSING",
+    "INTACT | TAMPERED | ABSENT",
+    "NONE | LOW | MEDIUM | HIGH | CRITICAL",
+    "next_agent_notes",
+    "Domain_Age_Score",
+    "SSL_Validity"
+  ],
+  "sentinels_document": [
+    "Source Integrity Agent (SIA)",
+    "AO",
+    "FCA"
+  ],
+  "self_test": {
+    "good_exit": 0,
+    "bad_exit": 1,
+    "sentinels_verified": true
+  }
+}

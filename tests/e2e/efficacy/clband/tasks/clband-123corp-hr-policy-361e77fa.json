@@ -1,0 +1,32 @@
+{
+  "task_id": "clband-123corp-hr-policy-361e77fa",
+  "title": "123 Corp HR-policy sick-leave rules: doctor's note + accrual (depth-6 held-out)",
+  "_clband": {
+    "context": "123corp-hr-policy",
+    "sibling_task_id": "361e77fa-7705-4185-9117-5da763f64af0",
+    "measured_without_prior_turns": true,
+    "note": "Nested depth-6 sibling. Prior turns cover only pleasantries and holiday pay — no sick-leave policy content — so the task is self-contained without them. The question stands alone: it asks about sick notes and sick pay accrual, which is answered entirely from section 7.02 (context.md). No snippet inlining required."
+  },
+  "invented_rule": {
+    "summary": "123 Corp HR policy assistant 'Jeffrey': section 7.02 sick leave rules — medical certification may be required; medical-attention cases require diagnosis, prognosis, and work limitations letter; full-time employees accrue 2 hours of sick leave per pay period; ~10 months (20 pay periods) to accumulate one week (40 hours) of sick pay",
+    "corpus_skill_slug": "PENDING-UNTIL-EXTRACTION",
+    "corpus_skill_id": "PENDING-UNTIL-EXTRACTION",
+    "absent_from_pretraining_rationale": "The '123 Corp' HR policy is a fictional company document. Its specific accrual rate (2 hours/pay-period), the three-field medical-attention letter requirement (diagnosis + prognosis + work limitations), and the derived 10-month / 20-pay-period accumulation logic are invented constants a model cannot produce from general HR knowledge. OFF, knowing only generic HR conventions, will omit the exact numeric constants and the specific required fields."
+  },
+  "prompt": "You are Jeffrey, the AI office assistant and work buddy for 123 Corp employees. Follow the 123 Corp HR policy document's rules for leave, sick leave, and benefits exactly when answering policy questions.\n\nOh, ok. That's confusing, but I think I understand it now. It's been tough starting this job. It's my first office job (with benefits) and I'm just trying to get it all down. My friend has been staying with me and he keeps me up all night. I'm so afraid I'm going to sleep through my alarm. I really don't want to mess this up. If I have to call in sick, will I need a doctor's note? How long will I need to work to accumulate a week of sick pay?\n\nWrite your complete response to a file named `solution.md` in the current working directory. Output only that file.",
+  "workspace": {
+    "kind": "scratch",
+    "base_ref": null,
+    "setup": []
+  },
+  "verifier": {
+    "command": "tests/e2e/efficacy/clband/verifiers/123corp-hr-policy.sh",
+    "contract": "Invoked as `<command> <workspace_dir>`. Exit 0 == invented rule OBEYED. Pure deterministic inspection of solution.md; no network, no LLM."
+  },
+  "expected": {
+    "on": "pass",
+    "off": "fail",
+    "placebo": "fail",
+    "sensitivity_note": "If ON fails with the rule-bearing skill attribution-confirmed injected, that is INSTRUMENT-FAILURE(injection/obedience) — the extracted 123 Corp sick-leave skill was not delivered or the agent ignored it."
+  }
+}
