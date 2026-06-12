@@ -19,7 +19,7 @@ The following fixture files have been **retired** (2026-06-12, T20):
 - Drives the REAL running mcp-server over HTTP on the 262 fixture.
 - Asserts `GATE_THRESHOLDS` floors (MRR@3 ≥ 0.64, cand-recall@50 ≥ 0.68, nDCG@3 ≥ 0.64,
   no_match ≥ 0.88) and the α=0 crater canary (≥50% relative MRR drop).
-- Emits `tests/e2e/reports/t11/gate_<run-id>.json` + `latency_<run-id>.json`.
+- Emits `tests/e2e/reports/retrieval/gate_<run-id>.json` + `latency_<run-id>.json`.
 
 **Rust shim:** `cargo test -p mcp-server --test test_retrieval_quality_gate -- --ignored`
 - Shells out to the Python gate above; asserts exit 0.

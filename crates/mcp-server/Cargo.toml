@@ -123,6 +123,7 @@ required-features = ["test-utils"]
 [[test]]
 name = "test_retrieval_quality_gate"
 path = "../../tests/e2e/test_retrieval_quality_gate.rs"
+required-features = ["test-utils"]
 
 [[test]]
 name = "test_brutal_probes"

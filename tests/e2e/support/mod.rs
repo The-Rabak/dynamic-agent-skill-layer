@@ -1,5 +1,6 @@
 // Shared across e2e test binaries; #[path]-included per-binary, so any helper a given binary
 // doesn't exercise is dead_code only as a per-binary compilation artifact, not a real orphan.
+// Review for a genuine orphan before deleting any helper only one non-gate binary uses.
 #![allow(dead_code)]
 
 // Reusable fault-injection harness for the brutal real-infra E2E suite.

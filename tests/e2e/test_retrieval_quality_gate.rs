@@ -12,6 +12,12 @@
 //! cargo test -p mcp-server --features test-utils --test test_retrieval_quality_gate -- --ignored
 //! ```
 //!
+//! Note: `Command::output()` (line ~51) has no internal timeout.  If the gate
+//! deadlocks (e.g. server unresponsive), the test thread blocks indefinitely;
+//! the test-runner's own timeout is the safety net.  Acceptable for an
+//! `#[ignore]` live-infra test; add a thread+timeout wrapper if a hung gate
+//! becomes a real CI problem.
+//!
 //! Requires:
 //!   - live containers (mcp-server at 127.0.0.1:3001)
 //!   - `python3` on PATH

@@ -218,6 +218,23 @@ def sign_test(n_a_better: int, n_b_better: int) -> float:
 
 # ── Score-distribution histogram ─────────────────────────────────────────────
 
+def percentile_nearest_rank(sorted_samples: list, p: float) -> float:
+    """Nearest-rank percentile over an already-sorted sample list.
+
+    Uses the nearest-rank formula: rank = ceil(p/100 * n), clamped to [1, n].
+    Returns 0.0 for an empty list.  Matches the formula used historically in
+    retrieval_quality_live.py's latency percentile reporting.
+
+    Args:
+        sorted_samples: list of numeric values sorted in ascending order.
+        p:              percentile in [0, 100] (e.g. 95 for p95).
+    """
+    if not sorted_samples:
+        return 0.0
+    rank = max(1, math.ceil(p / 100.0 * len(sorted_samples)))
+    return sorted_samples[rank - 1]
+
+
 def histogram(scores: Sequence[float], bins: int = 10) -> dict:
     """Bucket float scores into `bins` equal-width buckets and return stats.
 
@@ -263,11 +280,6 @@ def histogram(scores: Sequence[float], bins: int = 10) -> dict:
             idx = min(int((s - lo) / step), bins - 1)
             counts[idx] += 1
 
-    def _percentile(p: float) -> float:
-        """Nearest-rank percentile (same method as retrieval_quality_live.py)."""
-        idx = max(0, min(n - 1, int(math.ceil(p / 100.0 * n)) - 1))
-        return sorted_scores[idx]
-
     total = sum(sorted_scores)
     return {
         "counts": counts,
@@ -275,9 +287,9 @@ def histogram(scores: Sequence[float], bins: int = 10) -> dict:
         "min": lo,
         "max": hi,
         "mean": total / n,
-        "median": _percentile(50),
-        "p10": _percentile(10),
-        "p90": _percentile(90),
+        "median": percentile_nearest_rank(sorted_scores, 50),
+        "p10": percentile_nearest_rank(sorted_scores, 10),
+        "p90": percentile_nearest_rank(sorted_scores, 90),
     }
 
 
@@ -327,8 +339,9 @@ def crater_check(baseline_mrr: float, control_mrr: float) -> dict:
 #     b) DOES fire on a genuine regression (meaningful drop below the worst measured arm)
 #
 #   Each floor = T11 single-view measured value − margin.
-#   Margin is 0.04 for MRR/nDCG (≈6% relative slack below the single-view baseline),
-#   0.04 for cand-recall (≈6% relative), and 0.04 for no_match (absolute).
+#   Margins are per-metric (see the per-line comments): mrr_at3 0.046, mrr_at10 0.046,
+#   ndcg_at3 0.056, cand-recall 0.043, no_match 0.04 — roughly 0.043–0.056 of slack
+#   below each single-view measured value.
 GATE_THRESHOLDS: dict[str, float] = {
     # T11 measured single-view dense: 0.686.  Floor = 0.686 − 0.046 = 0.640.
     "mrr_at3": 0.64,
@@ -374,8 +387,7 @@ def gate_decision(baseline_metrics: dict, alpha0_metrics: dict) -> dict:
         passes = got >= floor
         if not passes:
             failures.append(
-                f"{metric_key}: {got:.4f} < floor {floor:.4f} "
-                f"(T11 single-view baseline {floor + 0.04:.3f})"
+                f"{metric_key}: {got:.4f} < floor {floor:.4f}"
             )
         assertions.append({
             "metric": metric_key,
@@ -572,6 +584,30 @@ def _run_self_tests() -> int:
     p = sign_test(10, 0)
     expected_p = 2.0 * (0.5 ** 10)
     ok = _assert(abs(p - expected_p) < 1e-9, f"sign_test: 10 vs 0 → {expected_p:.6f}", f"got {p:.6f}")
+    failures += 0 if ok else 1
+
+    # ── percentile_nearest_rank ────────────────────────────────────────────
+    print("\n-- percentile_nearest_rank --")
+
+    # Empty list → 0.0.
+    ok = _assert(percentile_nearest_rank([], 50) == 0.0, "percentile_nearest_rank: empty list → 0.0")
+    failures += 0 if ok else 1
+
+    # p50 of [1, 2, 3, 4] = rank ceil(2.0)=2 → value at index 1 = 2.
+    ok = _assert(percentile_nearest_rank([1, 2, 3, 4], 50) == 2, "percentile_nearest_rank: p50 of [1,2,3,4] → 2")
+    failures += 0 if ok else 1
+
+    # p100 of [10, 20, 30] = rank ceil(3.0)=3 → value at index 2 = 30.
+    ok = _assert(percentile_nearest_rank([10, 20, 30], 100) == 30, "percentile_nearest_rank: p100 → max element")
+    failures += 0 if ok else 1
+
+    # p0 of [10, 20, 30] = rank max(1, ceil(0))=1 → value at index 0 = 10.
+    ok = _assert(percentile_nearest_rank([10, 20, 30], 0) == 10, "percentile_nearest_rank: p0 → first element")
+    failures += 0 if ok else 1
+
+    # p95 of 100 equally-spaced samples: rank=ceil(95)=95 → 95th element (0-indexed: 94).
+    samples_100 = list(range(1, 101))
+    ok = _assert(percentile_nearest_rank(samples_100, 95) == 95, "percentile_nearest_rank: p95 of 1..100 → 95")
     failures += 0 if ok else 1
 
     # ── histogram ──────────────────────────────────────────────────────────

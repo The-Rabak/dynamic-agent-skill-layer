@@ -2,8 +2,8 @@
 ticket_id: T18
 title: Priming instrument — session-start stratum, pre-registered priming metrics, negative control
 kind: measurement
-status: blocked
-status_note: "Blocked on T20 (shared measurement-lib home must exist first). T10/T11 deps are completed."
+status: ready
+status_note: "Ready: T10/T11/T20 all completed (T20 landed 2026-06-12); index already shows ready."
 plan_ref: docs/plans/2026-06-08-feat-v1-7-local-hybrid-skilldag-retrieval-plan.md
 tickets_ref: docs/tickets/2026-06-08-v1-7-local-hybrid-skilldag-retrieval/index.md
 architecture_ref: "explicit-handoff: parent plan ## Agent usefulness targets; T11 instrument-first discipline (tests/e2e/reports/t11/T11-VALIDATION-REPORT.md)"

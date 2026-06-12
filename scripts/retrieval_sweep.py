@@ -37,7 +37,6 @@ Usage
 """
 import argparse
 import json
-import math
 import os
 import sys
 import time
@@ -66,7 +65,8 @@ MCP_URL = "http://127.0.0.1:3001/mcp"
 HEALTH_URL = "http://127.0.0.1:3001/health"
 JUDGE_MODEL = "claude-sonnet-4-6"
 FIXTURE_DEFAULT = "tests/fixtures/retrieval_quality_262_corpus_labeled.json"
-REPORT_DIR_DEFAULT = Path("tests/e2e/reports/t11")
+# Live gate-output home. The frozen T11 validation evidence (report + committed gate/latency JSONs) stays under tests/e2e/reports/t11/.
+REPORT_DIR_DEFAULT = Path("tests/e2e/reports/retrieval")
 
 # ── Arm configuration table ───────────────────────────────────────────────────
 # Each entry: (label, env-override dict).
@@ -251,8 +251,10 @@ def _find_skill_with_scores(prompt: str, limit: int) -> list[dict]:
 def _judge_query(query_text: str, candidates: list[dict]) -> dict[str, bool]:
     """Batch-judge candidates with the REAL claude CLI.
 
-    Delegates to retrieval_quality_live.judge_query to keep relevance judgements
-    consistent across T04 and T11 — no duplicated subprocess invocation.
+    Thin wrapper over ``retrieval_quality_live.judge_query`` so that relevance
+    judgements share a single subprocess invocation path.  Keeping the call
+    here rather than inlining it preserves a seam that sweep callers can mock
+    in unit tests without reaching into the live module.
 
     Args:
         query_text: the user query string.
@@ -466,171 +468,183 @@ def _run_gate(args: argparse.Namespace) -> None:
         flush=True,
     )
 
-    # ── Arm 1: dense_views_on (baseline, produces latency artifact) ───────────
-    gate_arms = [
-        ("dense_views_on", {**_QWEN, "RETRIEVAL_DENSE_VIEWS": "true"}),
-        ("alpha0_control", {**_QWEN, "RETRIEVAL_ALPHA": "0.0"}),
-    ]
+    # Derive gate arms from CONFIGS so env-override changes propagate automatically.
+    # CONFIGS order keeps alpha0_control last — that order is preserved by the filter.
+    gate_arms = [(l, e) for l, e in CONFIGS if l in {"dense_views_on", "alpha0_control"}]
 
     arm_results: dict[str, dict] = {}
     verdict_cache: dict = {}
 
-    for label, overrides in gate_arms:
-        print(f"\n########## GATE ARM: {label}  {overrides} ##########", flush=True)
+    # try/finally guarantees the mcp-server is restored to the default env after the
+    # gate regardless of outcome — PASS, FAIL, or infra error.  The last gate arm
+    # (alpha0_control) leaves the server at RETRIEVAL_ALPHA=0.0 (a deliberately
+    # crippled state); without this restore any subsequent test against the same
+    # containers would run on a degraded server and silently mis-measure.  The
+    # finally block MUST NOT call sys.exit or return — Python's SystemExit (raised
+    # by sys.exit) propagates through a bare finally, so all three exit paths below
+    # (exit 0, 1, 2) still fire with their original codes after the cleanup runs.
+    try:
+        for label, overrides in gate_arms:
+            print(f"\n########## GATE ARM: {label}  {overrides} ##########", flush=True)
 
-        _sweep.set_env(overrides)
+            _sweep.set_env(overrides)
 
-        # Both gate arms are mcp-server-only knobs (RETRIEVAL_DENSE_VIEWS and
-        # RETRIEVAL_ALPHA do not change the Qdrant/graph-builder side); use reboot_mcp.
-        print(f"  reboot_mcp ({label}) ...", flush=True)
+            # Both gate arms are mcp-server-only knobs (RETRIEVAL_DENSE_VIEWS and
+            # RETRIEVAL_ALPHA do not change the Qdrant/graph-builder side); use reboot_mcp.
+            print(f"  reboot_mcp ({label}) ...", flush=True)
+            _sweep.reboot_mcp()
+
+            print(f"  polling /health for readiness (stuck-deadline={args.health_stuck_deadline:.0f}s) ...", flush=True)
+            _poll_health_until_ready(
+                health_url=HEALTH_URL,
+                stuck_deadline_s=args.health_stuck_deadline,
+            )
+
+            arm_metrics = _compute_arm_metrics(
+                positives=positives,
+                negatives=negatives,
+                mrr_limit=args.limit,
+                candidate_limit=args.candidate_limit,
+                use_judge=False,  # anchor-only: deterministic for CI, no LLM judge
+                verdict_cache=verdict_cache,
+            )
+            arm_results[label] = {
+                "label": label,
+                "env_overrides": overrides,
+                "metrics": arm_metrics,
+            }
+
+            m = arm_metrics
+            print(
+                f"  MRR@3={m['mrr_at3']:.3f}  MRR@10={m['mrr_at10']:.3f}  "
+                f"nDCG@3={m['ndcg_at3']:.3f}  cand_recall@{args.candidate_limit}={m['candidate_recall_at_limit']:.3f}  "
+                f"no_match_prec={m['no_match_precision']}",
+                flush=True,
+            )
+
+        # ── Gate decision ─────────────────────────────────────────────────────────
+        baseline_arm = arm_results.get("dense_views_on", {}).get("metrics", {})
+        alpha0_arm = arm_results.get("alpha0_control", {}).get("metrics", {})
+
+        if not baseline_arm:
+            print("GATE INFRA ERROR: dense_views_on arm metrics missing.", file=sys.stderr)
+            sys.exit(2)
+        if not alpha0_arm:
+            print("GATE INFRA ERROR: alpha0_control arm metrics missing.", file=sys.stderr)
+            sys.exit(2)
+
+        gate_result = _metrics.gate_decision(baseline_arm, alpha0_arm)
+
+        # ── Latency artifact ──────────────────────────────────────────────────────
+        # Persist raw per-query latency for the dense_views_on arm so the cited
+        # p95 369ms (T11-VALIDATION-REPORT.md §3) has a source artifact.
+        # Real measured per-query find_skill latency for the dense_views_on arm
+        # (wall-clock ms around the live HTTP round-trip — see _compute_arm_metrics).
+        # Fail loud if timing is missing: a latency artifact without measured numbers
+        # is a fake, and the whole point of this artifact is to give the cited p95 a
+        # real source (T11-VALIDATION-REPORT.md §3 erratum).
+        latency_samples_ms = [
+            row["latency_ms"]
+            for row in baseline_arm.get("per_query", [])
+            if row.get("latency_ms") is not None
+        ]
+        if not latency_samples_ms:
+            print(
+                "GATE INFRA ERROR: dense_views_on arm produced no per-query latency "
+                "samples — the latency artifact would be empty. Aborting (no fakes).",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+
+        _sorted_ms = sorted(latency_samples_ms)
+
+        latency_artifact = {
+            "run_id": args.run_id,
+            "arm": "dense_views_on",
+            "fixture": str(fixture_path),
+            "split": args.split,
+            "candidate_limit": args.candidate_limit,
+            "measured": True,
+            "n_queries": len(latency_samples_ms),
+            "find_skill_limit": args.limit,
+            "latency_ms": {
+                "mean": round(sum(latency_samples_ms) / len(latency_samples_ms), 3),
+                "p50": round(_metrics.percentile_nearest_rank(_sorted_ms, 50), 3),
+                "p95": round(_metrics.percentile_nearest_rank(_sorted_ms, 95), 3),
+                "p99": round(_metrics.percentile_nearest_rank(_sorted_ms, 99), 3),
+                "min": round(_sorted_ms[0], 3),
+                "max": round(_sorted_ms[-1], 3),
+            },
+            "note": (
+                "Measured wall-clock ms around the live find_skill HTTP round-trip at "
+                "find_skill_limit depth, one sample per positive query. Source artifact "
+                "for the p95 cited in T11-VALIDATION-REPORT.md §3 (T11 reported p95=369ms)."
+            ),
+            "per_query": [
+                {
+                    "id": row["id"],
+                    "kind": row.get("kind"),
+                    "anchor": row.get("anchor"),
+                    "latency_ms": row.get("latency_ms"),
+                    "rr_at3": row.get("rr"),
+                    "ndcg_at3": row.get("ndcg_at3"),
+                    "candidate_recall": row.get("candidate_recall"),
+                }
+                for row in baseline_arm.get("per_query", [])
+            ],
+        }
+
+        # ── Emit gate report ──────────────────────────────────────────────────────
+        out_dir = Path(args.out_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        gate_report = {
+            "run_id": args.run_id,
+            "mode": "gate",
+            "fixture": str(fixture_path),
+            "split": args.split,
+            "candidate_limit": args.candidate_limit,
+            "thresholds": _metrics.GATE_THRESHOLDS,
+            "arms": arm_results,
+            "gate_decision": gate_result,
+            "latency_artifact_path": str(out_dir / f"latency_{args.run_id}.json"),
+        }
+
+        gate_path = out_dir / f"gate_{args.run_id}.json"
+        gate_path.write_text(json.dumps(gate_report, indent=1))
+
+        latency_path = out_dir / f"latency_{args.run_id}.json"
+        latency_path.write_text(json.dumps(latency_artifact, indent=1))
+
+        print(f"\ngate report:    {gate_path}")
+        print(f"latency artifact: {latency_path}")
+
+        # ── Print verdict and exit ────────────────────────────────────────────────
+        if gate_result["passed"]:
+            print("\nGATE: PASS")
+            sys.exit(0)
+        else:
+            print("\nGATE: FAIL", file=sys.stderr)
+            for failure in gate_result["failures"]:
+                print(f"  FAILED: {failure}", file=sys.stderr)
+            sys.exit(1)
+
+    finally:
+        # Restore the mcp-server to the default env unconditionally.  This runs
+        # whether the gate PASSed, FAILed, or hit an infra error — including when
+        # sys.exit raises SystemExit.  Python re-raises SystemExit after finally,
+        # so the original exit code is preserved.  Do NOT add return/sys.exit here.
+        _sweep.set_env({**_QWEN})
         _sweep.reboot_mcp()
-
-        print(f"  polling /health for readiness (stuck-deadline={args.health_stuck_deadline:.0f}s) ...", flush=True)
         _poll_health_until_ready(
             health_url=HEALTH_URL,
             stuck_deadline_s=args.health_stuck_deadline,
         )
-
-        arm_metrics = _compute_arm_metrics(
-            positives=positives,
-            negatives=negatives,
-            mrr_limit=args.limit,
-            candidate_limit=args.candidate_limit,
-            use_judge=False,  # anchor-only: deterministic for CI, no LLM judge
-            verdict_cache=verdict_cache,
-        )
-        arm_results[label] = {
-            "label": label,
-            "env_overrides": overrides,
-            "metrics": arm_metrics,
-        }
-
-        m = arm_metrics
         print(
-            f"  MRR@3={m['mrr_at3']:.3f}  MRR@10={m['mrr_at10']:.3f}  "
-            f"nDCG@3={m['ndcg_at3']:.3f}  cand_recall@{args.candidate_limit}={m['candidate_recall_at_limit']:.3f}  "
-            f"no_match_prec={m['no_match_precision']}",
+            "  [gate] restored mcp-server to default env "
+            "(RETRIEVAL_ALPHA/DENSE_VIEWS cleared)",
             flush=True,
         )
-
-    # ── Gate decision ─────────────────────────────────────────────────────────
-    baseline_arm = arm_results.get("dense_views_on", {}).get("metrics", {})
-    alpha0_arm = arm_results.get("alpha0_control", {}).get("metrics", {})
-
-    if not baseline_arm:
-        print("GATE INFRA ERROR: dense_views_on arm metrics missing.", file=sys.stderr)
-        sys.exit(2)
-    if not alpha0_arm:
-        print("GATE INFRA ERROR: alpha0_control arm metrics missing.", file=sys.stderr)
-        sys.exit(2)
-
-    gate_result = _metrics.gate_decision(baseline_arm, alpha0_arm)
-
-    # ── Latency artifact ──────────────────────────────────────────────────────
-    # Persist raw per-query latency for the dense_views_on arm so the cited
-    # p95 369ms (T11-VALIDATION-REPORT.md §3) has a source artifact.
-    # The per_query rows carry no wall-clock latency from this script (the HTTP
-    # round-trip is in _find_skill_with_scores which does not time itself).
-    # We record the per-query metrics (rank / rr / ndcg) as the latency-adjacent
-    # data; the orchestrator Unit B (live gate run) will populate the real latency
-    # values when it executes with instrumented timing.
-    # Real measured per-query find_skill latency for the dense_views_on arm
-    # (wall-clock ms around the live HTTP round-trip — see _compute_arm_metrics).
-    # Fail loud if timing is missing: a latency artifact without measured numbers
-    # is a fake, and the whole point of this artifact is to give the cited p95 a
-    # real source (T11-VALIDATION-REPORT.md §3 erratum).
-    latency_samples_ms = [
-        row["latency_ms"]
-        for row in baseline_arm.get("per_query", [])
-        if row.get("latency_ms") is not None
-    ]
-    if not latency_samples_ms:
-        print(
-            "GATE INFRA ERROR: dense_views_on arm produced no per-query latency "
-            "samples — the latency artifact would be empty. Aborting (no fakes).",
-            file=sys.stderr,
-        )
-        sys.exit(2)
-
-    _sorted_ms = sorted(latency_samples_ms)
-
-    def _pct(samples_sorted: list[float], pct: float) -> float:
-        """Nearest-rank percentile (pct in [0,100]) over a sorted sample list."""
-        if not samples_sorted:
-            return 0.0
-        rank = max(1, math.ceil(pct / 100.0 * len(samples_sorted)))
-        return samples_sorted[rank - 1]
-
-    latency_artifact = {
-        "run_id": args.run_id,
-        "arm": "dense_views_on",
-        "fixture": str(fixture_path),
-        "split": args.split,
-        "candidate_limit": args.candidate_limit,
-        "measured": True,
-        "n_queries": len(latency_samples_ms),
-        "find_skill_limit": args.limit,
-        "latency_ms": {
-            "mean": round(sum(latency_samples_ms) / len(latency_samples_ms), 3),
-            "p50": round(_pct(_sorted_ms, 50), 3),
-            "p95": round(_pct(_sorted_ms, 95), 3),
-            "p99": round(_pct(_sorted_ms, 99), 3),
-            "min": round(_sorted_ms[0], 3),
-            "max": round(_sorted_ms[-1], 3),
-        },
-        "note": (
-            "Measured wall-clock ms around the live find_skill HTTP round-trip at "
-            "find_skill_limit depth, one sample per positive query. Source artifact "
-            "for the p95 cited in T11-VALIDATION-REPORT.md §3 (T11 reported p95=369ms)."
-        ),
-        "per_query": [
-            {
-                "id": row["id"],
-                "kind": row.get("kind"),
-                "anchor": row.get("anchor"),
-                "latency_ms": row.get("latency_ms"),
-                "rr_at3": row.get("rr"),
-                "ndcg_at3": row.get("ndcg_at3"),
-                "candidate_recall": row.get("candidate_recall"),
-            }
-            for row in baseline_arm.get("per_query", [])
-        ],
-    }
-
-    # ── Emit gate report ──────────────────────────────────────────────────────
-    out_dir = Path(args.out_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    gate_report = {
-        "run_id": args.run_id,
-        "mode": "gate",
-        "fixture": str(fixture_path),
-        "split": args.split,
-        "candidate_limit": args.candidate_limit,
-        "thresholds": _metrics.GATE_THRESHOLDS,
-        "arms": arm_results,
-        "gate_decision": gate_result,
-        "latency_artifact_path": str(out_dir / f"latency_{args.run_id}.json"),
-    }
-
-    gate_path = out_dir / f"gate_{args.run_id}.json"
-    gate_path.write_text(json.dumps(gate_report, indent=1))
-
-    latency_path = out_dir / f"latency_{args.run_id}.json"
-    latency_path.write_text(json.dumps(latency_artifact, indent=1))
-
-    print(f"\ngate report:    {gate_path}")
-    print(f"latency artifact: {latency_path}")
-
-    # ── Print verdict and exit ────────────────────────────────────────────────
-    if gate_result["passed"]:
-        print("\nGATE: PASS")
-        sys.exit(0)
-    else:
-        print("\nGATE: FAIL", file=sys.stderr)
-        for failure in gate_result["failures"]:
-            print(f"  FAILED: {failure}", file=sys.stderr)
-        sys.exit(1)
 
 
 def main() -> None:

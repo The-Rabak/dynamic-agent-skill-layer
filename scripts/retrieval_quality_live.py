@@ -320,7 +320,7 @@ def _latency_stats(latencies_ms: list[float]) -> dict:
 # ─── main ────────────────────────────────────────────────────────────────────
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--fixture", default="tests/fixtures/retrieval_quality_234_corpus_labeled.json")
+    ap.add_argument("--fixture", default="tests/fixtures/retrieval_quality_262_corpus_labeled.json")
     ap.add_argument("--limit", type=int, default=10, help="find_skill depth for MRR")
     ap.add_argument("--split", choices=["tuning", "held_out", "all"], default="all")
     ap.add_argument("--verdict-cache", default="tests/e2e/reports/retrieval_234_live_verdicts.json")

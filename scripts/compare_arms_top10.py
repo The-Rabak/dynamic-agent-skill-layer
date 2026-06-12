@@ -12,7 +12,7 @@ import urllib.request
 from pathlib import Path
 
 MCP_URL = "http://127.0.0.1:3001/mcp"
-FIXTURE = "tests/fixtures/retrieval_quality_234_corpus_labeled.json"
+FIXTURE = "tests/fixtures/retrieval_quality_262_corpus_labeled.json"
 LIMIT = 10
 
 

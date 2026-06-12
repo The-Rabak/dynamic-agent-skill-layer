@@ -1,6 +1,7 @@
 // Suppress dead-code warnings: these functions are public test-support APIs
 // intended for use by sibling slice tests (DS-005 and peers), not just the
 // smoke test. The compiler cannot see those future call sites yet.
+// Review for a genuine orphan before deleting any helper only one non-gate binary uses.
 #![allow(dead_code)]
 
 /// PG/Qdrant drift injection helpers for the real-infra E2E harness.
