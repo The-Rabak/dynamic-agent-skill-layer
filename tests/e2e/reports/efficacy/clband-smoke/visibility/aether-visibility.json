@@ -1,0 +1,178 @@
+{
+  "context": "aether",
+  "event_type_distribution": {
+    "AssistantMessage": 3,
+    "FileEdit": 1,
+    "Metadata": 11,
+    "ToolCall": 2,
+    "ToolResult": 2,
+    "UserMessage": 1
+  },
+  "events_total": 20,
+  "haystack_chars": {
+    "full_session_grounding_text": 38826,
+    "prose_visible_session_text": 1338
+  },
+  "malformed_lines": 0,
+  "per_window": [
+    {
+      "dropped_entries": 1,
+      "entries_after_sanitize": 4,
+      "entries_before_sanitize": 5,
+      "event_indices": 20,
+      "preamble_prepended": true,
+      "preamble_survived_sanitizer": false,
+      "window": 0,
+      "window_full_haystack_chars": 39913,
+      "window_prose_visible_chars": 1338
+    }
+  ],
+  "preamble": {
+    "approx_tokens": 19,
+    "carries_any_document_sentinel": false,
+    "carries_any_operative_sentinel": false,
+    "preferences_detected": 0,
+    "text": "[Project facts]\nRepo: projects\nKey paths: dynamic-agent-skill-layer/tests",
+    "text_chars": 73
+  },
+  "preamble_drop": {
+    "windows_total": 1,
+    "windows_with_preamble_dropped_by_suspicious_speaker_filter": 1
+  },
+  "segmentation_token_budget": 40960,
+  "sentinel_visibility": [
+    {
+      "carrier_event_types": {
+        "AssistantMessage": 1,
+        "ToolCall": 1,
+        "ToolResult": 1,
+        "UserMessage": 1
+      },
+      "in_full_session_haystack": true,
+      "invisible_lost_in_flat_transcript": false,
+      "sentinel": "conduit",
+      "tier": "document",
+      "visible_to_prose_extractor": true
+    },
+    {
+      "carrier_event_types": {
+        "ToolResult": 1,
+        "UserMessage": 1
+      },
+      "in_full_session_haystack": true,
+      "invisible_lost_in_flat_transcript": false,
+      "sentinel": "swirl",
+      "tier": "document",
+      "visible_to_prose_extractor": true
+    },
+    {
+      "carrier_event_types": {},
+      "in_full_session_haystack": false,
+      "invisible_lost_in_flat_transcript": false,
+      "sentinel": "Turbulence Alert",
+      "tier": "document",
+      "visible_to_prose_extractor": false
+    },
+    {
+      "carrier_event_types": {
+        "ToolResult": 1
+      },
+      "in_full_session_haystack": true,
+      "invisible_lost_in_flat_transcript": true,
+      "sentinel": "Fracture",
+      "tier": "document",
+      "visible_to_prose_extractor": false
+    },
+    {
+      "carrier_event_types": {},
+      "in_full_session_haystack": false,
+      "invisible_lost_in_flat_transcript": false,
+      "sentinel": "Turbulence Alert",
+      "tier": "operative",
+      "visible_to_prose_extractor": false
+    },
+    {
+      "carrier_event_types": {
+        "ToolResult": 1
+      },
+      "in_full_session_haystack": true,
+      "invisible_lost_in_flat_transcript": true,
+      "sentinel": "Cause",
+      "tier": "operative",
+      "visible_to_prose_extractor": false
+    },
+    {
+      "carrier_event_types": {},
+      "in_full_session_haystack": false,
+      "invisible_lost_in_flat_transcript": false,
+      "sentinel": "Corrected Code",
+      "tier": "operative",
+      "visible_to_prose_extractor": false
+    },
+    {
+      "carrier_event_types": {
+        "ToolResult": 1
+      },
+      "in_full_session_haystack": true,
+      "invisible_lost_in_flat_transcript": true,
+      "sentinel": "outer",
+      "tier": "operative",
+      "visible_to_prose_extractor": false
+    },
+    {
+      "carrier_event_types": {
+        "AssistantMessage": 1,
+        "ToolCall": 1,
+        "ToolResult": 1,
+        "UserMessage": 1
+      },
+      "in_full_session_haystack": true,
+      "invisible_lost_in_flat_transcript": false,
+      "sentinel": "conduit",
+      "tier": "operative",
+      "visible_to_prose_extractor": true
+    },
+    {
+      "carrier_event_types": {
+        "ToolResult": 1,
+        "UserMessage": 1
+      },
+      "in_full_session_haystack": true,
+      "invisible_lost_in_flat_transcript": false,
+      "sentinel": "swirl",
+      "tier": "operative",
+      "visible_to_prose_extractor": true
+    },
+    {
+      "carrier_event_types": {
+        "ToolResult": 1,
+        "UserMessage": 1
+      },
+      "in_full_session_haystack": true,
+      "invisible_lost_in_flat_transcript": false,
+      "sentinel": "fork",
+      "tier": "operative",
+      "visible_to_prose_extractor": true
+    },
+    {
+      "carrier_event_types": {
+        "AssistantMessage": 1,
+        "ToolCall": 1,
+        "ToolResult": 1,
+        "UserMessage": 1
+      },
+      "in_full_session_haystack": true,
+      "invisible_lost_in_flat_transcript": false,
+      "sentinel": "flow",
+      "tier": "operative",
+      "visible_to_prose_extractor": true
+    }
+  ],
+  "summary": {
+    "document_tier_visible_to_prose": "2/4",
+    "operative_tier_visible_to_prose": "4/8"
+  },
+  "transcript": "tests/e2e/reports/efficacy/clband-smoke/transcripts/aether-language.jsonl",
+  "unit": "T22-A-forensics",
+  "windows": 1
+}

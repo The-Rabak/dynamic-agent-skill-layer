@@ -1,0 +1,209 @@
+{
+  "context": "flywheel",
+  "event_type_distribution": {
+    "AssistantMessage": 3,
+    "FileEdit": 1,
+    "Metadata": 11,
+    "ToolCall": 2,
+    "ToolResult": 2,
+    "UserMessage": 1
+  },
+  "events_total": 20,
+  "haystack_chars": {
+    "full_session_grounding_text": 15224,
+    "prose_visible_session_text": 6266
+  },
+  "malformed_lines": 0,
+  "per_window": [
+    {
+      "dropped_entries": 1,
+      "entries_after_sanitize": 4,
+      "entries_before_sanitize": 5,
+      "event_indices": 20,
+      "preamble_prepended": true,
+      "preamble_survived_sanitizer": false,
+      "window": 0,
+      "window_full_haystack_chars": 19096,
+      "window_prose_visible_chars": 6266
+    }
+  ],
+  "preamble": {
+    "approx_tokens": 145,
+    "carries_any_document_sentinel": false,
+    "carries_any_operative_sentinel": false,
+    "preferences_detected": 9,
+    "text": "[Project facts]\nRepo: projects\nKey paths: dynamic-agent-skill-layer/tests\n\n[Standing user preferences]\n- Use the FW-2025-0118 batch.\n- Rotor is pristine—do not modify.\n- Use the torque callout on Sketch v2.\n- Notes: Rotor perfect; do not modify.\n- Bearing installation: Press or tap into rotor bore using drift; avoid side load.\n- Artifact 3 — Warehouse Parts Bin Manifest (Agent E)\n- - Fasteners: M8x20 (MISPRINTED label) — do not use if sketch requires 25 mm; verify length with ruler\n- Use the official sketch and documents provided.\n- Do not remove any mandatory checks.",
+    "text_chars": 580
+  },
+  "preamble_drop": {
+    "windows_total": 1,
+    "windows_with_preamble_dropped_by_suspicious_speaker_filter": 1
+  },
+  "segmentation_token_budget": 40960,
+  "sentinel_visibility": [
+    {
+      "carrier_event_types": {
+        "ToolResult": 1,
+        "UserMessage": 1
+      },
+      "in_full_session_haystack": true,
+      "invisible_lost_in_flat_transcript": false,
+      "sentinel": "Flywheel Manufacturing Multi-Agent System",
+      "tier": "document",
+      "visible_to_prose_extractor": true
+    },
+    {
+      "carrier_event_types": {
+        "ToolResult": 1
+      },
+      "in_full_session_haystack": true,
+      "invisible_lost_in_flat_transcript": true,
+      "sentinel": "Scatterbrained Improviser",
+      "tier": "document",
+      "visible_to_prose_extractor": false
+    },
+    {
+      "carrier_event_types": {
+        "AssistantMessage": 1,
+        "ToolCall": 1,
+        "ToolResult": 1,
+        "UserMessage": 1
+      },
+      "in_full_session_haystack": true,
+      "invisible_lost_in_flat_transcript": false,
+      "sentinel": "spin test",
+      "tier": "document",
+      "visible_to_prose_extractor": true
+    },
+    {
+      "carrier_event_types": {
+        "AssistantMessage": 1,
+        "ToolCall": 1,
+        "ToolResult": 1,
+        "UserMessage": 1
+      },
+      "in_full_session_haystack": true,
+      "invisible_lost_in_flat_transcript": false,
+      "sentinel": "WORKAROUND",
+      "tier": "document",
+      "visible_to_prose_extractor": true
+    },
+    {
+      "carrier_event_types": {
+        "AssistantMessage": 1,
+        "ToolCall": 1,
+        "ToolResult": 1
+      },
+      "in_full_session_haystack": true,
+      "invisible_lost_in_flat_transcript": false,
+      "sentinel": "next size up",
+      "tier": "operative",
+      "visible_to_prose_extractor": true
+    },
+    {
+      "carrier_event_types": {
+        "ToolResult": 1
+      },
+      "in_full_session_haystack": true,
+      "invisible_lost_in_flat_transcript": true,
+      "sentinel": "extra torque",
+      "tier": "operative",
+      "visible_to_prose_extractor": false
+    },
+    {
+      "carrier_event_types": {
+        "AssistantMessage": 1,
+        "ToolCall": 1,
+        "ToolResult": 1,
+        "UserMessage": 1
+      },
+      "in_full_session_haystack": true,
+      "invisible_lost_in_flat_transcript": false,
+      "sentinel": "firm shake",
+      "tier": "operative",
+      "visible_to_prose_extractor": true
+    },
+    {
+      "carrier_event_types": {
+        "AssistantMessage": 1,
+        "ToolCall": 1,
+        "ToolResult": 1,
+        "UserMessage": 1
+      },
+      "in_full_session_haystack": true,
+      "invisible_lost_in_flat_transcript": false,
+      "sentinel": "retest",
+      "tier": "operative",
+      "visible_to_prose_extractor": true
+    },
+    {
+      "carrier_event_types": {
+        "AssistantMessage": 1,
+        "ToolCall": 1,
+        "ToolResult": 1,
+        "UserMessage": 1
+      },
+      "in_full_session_haystack": true,
+      "invisible_lost_in_flat_transcript": false,
+      "sentinel": "spin test",
+      "tier": "operative",
+      "visible_to_prose_extractor": true
+    },
+    {
+      "carrier_event_types": {
+        "ToolCall": 1,
+        "ToolResult": 1,
+        "UserMessage": 1
+      },
+      "in_full_session_haystack": true,
+      "invisible_lost_in_flat_transcript": false,
+      "sentinel": "Validation Engineer",
+      "tier": "operative",
+      "visible_to_prose_extractor": true
+    },
+    {
+      "carrier_event_types": {
+        "AssistantMessage": 1,
+        "ToolCall": 1,
+        "ToolResult": 1,
+        "UserMessage": 1
+      },
+      "in_full_session_haystack": true,
+      "invisible_lost_in_flat_transcript": false,
+      "sentinel": "Agent C",
+      "tier": "operative",
+      "visible_to_prose_extractor": true
+    },
+    {
+      "carrier_event_types": {
+        "ToolCall": 1,
+        "ToolResult": 1,
+        "UserMessage": 1
+      },
+      "in_full_session_haystack": true,
+      "invisible_lost_in_flat_transcript": false,
+      "sentinel": "Forklift",
+      "tier": "operative",
+      "visible_to_prose_extractor": true
+    },
+    {
+      "carrier_event_types": {
+        "ToolCall": 1,
+        "ToolResult": 1,
+        "UserMessage": 1
+      },
+      "in_full_session_haystack": true,
+      "invisible_lost_in_flat_transcript": false,
+      "sentinel": "Agent D",
+      "tier": "operative",
+      "visible_to_prose_extractor": true
+    }
+  ],
+  "summary": {
+    "document_tier_visible_to_prose": "3/4",
+    "operative_tier_visible_to_prose": "8/9"
+  },
+  "transcript": "tests/e2e/reports/efficacy/clband-smoke/transcripts/flywheel-assembly-agent.jsonl",
+  "unit": "T22-A-forensics",
+  "windows": 1
+}
