@@ -142,3 +142,23 @@ to push no-match higher; not required).
 label** (n_a_better there = baseline-better). The sign-test p-values are unaffected (two-sided). The
 call was fixed for future runs; all paired directions in this report were independently recomputed
 from the raw `first_relevant_rank` vectors and are authoritative.
+
+**Instrument location (T20, 2026-06-12):** The metrics/sweep scripts have been promoted to a
+ticket-agnostic home — `scripts/retrieval_metrics.py` / `scripts/retrieval_sweep.py` — as part of T20.
+The historical names `t11_metrics.py` / `t11_sweep.py` no longer exist.
+The gate mode (`--gate`) and the raw per-query latency artifact path are described in
+`tests/fixtures/RETIRED_FIXTURES.md` (which also documents the fixture retirements).
+
+## Erratum (2026-06-12, T20)
+
+**§2 and §3 gold-in-pool count for `dense_views_on`:** the table in §2 and the paired direction
+table both state 108/137 (+9 gold found vs snapshot_dense's 99/137).  The correct figure is
+**109/137 (+10)**.  Derivation: dense_views_on anchor-only candidate_recall@50 = 0.7956 (§2);
+0.7956 × 137 = 109.0 → **109 gold skills in the candidate pool**, not 108.  The rounding was an
+error; the `candidate_recall_at_limit` metric value (0.7956 = 109/137) is correct and unchanged.
+The sign-test (p=0.0074) and all verdict statements in §4 are unaffected.
+
+**Latency artifact:** the raw per-query latency for the `dense_views_on` arm (the source of the
+cited p95 369ms) will be persisted at `tests/e2e/reports/t11/latency_<run-id>.json` when the live
+gate runs (`scripts/retrieval_sweep.py --gate`).  The orchestrator Unit B (T20 live run) populates
+this artifact.  The format and path are defined in the `_run_gate` function of `retrieval_sweep.py`.

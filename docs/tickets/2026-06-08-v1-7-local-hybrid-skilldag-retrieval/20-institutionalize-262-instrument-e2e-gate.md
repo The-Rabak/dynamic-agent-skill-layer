@@ -13,11 +13,12 @@ dependency_type: none
 serves:
   - One ruler, the validated one, wired into the automated gate — so future corpus/fixture drift is caught by CI, not by the next assessment
 files:
-  - tests/e2e/quality/labeled_corpus.rs
-  - tests/e2e/test_retrieval_quality.rs
-  - tests/fixtures/
-  - scripts/t11_metrics.py
-  - scripts/t11_sweep.py
+  - tests/e2e/quality/labeled_corpus.rs  # DELETED (T20 — superseded by Python gate)
+  - tests/e2e/test_retrieval_quality.rs  # DELETED (T20 — superseded by test_retrieval_quality_gate.rs)
+  - tests/e2e/test_retrieval_quality_gate.rs  # NEW (T20 — thin Rust shim to Python gate)
+  - tests/fixtures/  # stale fixtures retired; RETIRED_FIXTURES.md tombstone added
+  - scripts/retrieval_metrics.py  # renamed from t11_metrics.py (T20)
+  - scripts/retrieval_sweep.py    # renamed from t11_sweep.py; --gate mode added (T20)
   - tests/e2e/reports/t11/T11-VALIDATION-REPORT.md
 test_command: "full e2e quality suite green on the 262 fixture against the live stack, with the α=0 canary cratering"
 tdd_mode: ralph
@@ -44,10 +45,10 @@ instrument lives only in `scripts/t11_*`, while the automated e2e gate
 - **α=0 canary as a permanent test:** an `--ignored` live test that boots the server with
   `RETRIEVAL_ALPHA=0` and asserts the crater (≥50% relative MRR drop). If the fixture ever drifts
   out of alignment with the corpus, this is the test that screams.
-- **Promote the scripts:** `scripts/t11_metrics.py` / `scripts/t11_sweep.py` are permanent
-  measurement infrastructure named after a closed ticket; T12/T14/T18 are about to import them.
-  Rename to a ticket-agnostic shared home (e.g. `scripts/retrieval_metrics.py` /
-  `scripts/retrieval_sweep.py`), update all references (tickets, reports, docs), keep `--self-test`.
+- **Promote the scripts:** `scripts/t11_metrics.py` / `scripts/t11_sweep.py` renamed to
+  `scripts/retrieval_metrics.py` / `scripts/retrieval_sweep.py` (T20, 2026-06-12).
+  All references updated; `--self-test` green; historical session logs under
+  `docs/execution-sessions/work-2026-06-11-192727-T11/` left untouched (immutable).
 - **Close the two evidence gaps the follow-up assessment found in T11's report:**
   - Re-measure dense-views latency on the live server and PERSIST the raw per-query latency artifact
     (the cited p95 369ms currently has no source artifact in `tests/e2e/reports/t11/`).

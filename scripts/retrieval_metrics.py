@@ -1,15 +1,12 @@
 #!/usr/bin/env python3
-"""T11 measurement instruments — pure metric functions for the hybrid-vs-dense re-sweep.
+"""Retrieval measurement instruments — pure metric functions for the 262-corpus sweep/gate.
 
 WHY this module exists
 ----------------------
-The prior sweep (T04) returned identical MRR@3 = 0.767 across ALL backends
-(snapshot_dense / snapshot_hybrid / qdrant_hybrid).  The root cause:
-
-  1. At 262-skill corpus scale, the ranking brain (eq.3 dense cosine) is the
-     same for every arm.  Only *candidate generation* differs between backends,
-     so only *candidate-recall* can move — not top-3 ranking.
-  2. MRR@3 is quantized to {1, 0.5, 0.33, 0} and saturated (no signal left).
+The T11 sweep (2026-06-11) revealed that at 262-skill corpus scale the ranking
+brain (eq.3 dense cosine) is identical across all backends; only *candidate
+generation* differs.  That means only *candidate-recall* can move — not top-3
+ranking, which is quantized and saturated.
 
 The instruments required to produce a real verdict are therefore:
   - candidate_recall_at_limit  — the ONLY metric candidate-gen can move
@@ -18,10 +15,13 @@ The instruments required to produce a real verdict are therefore:
   - α=0 crater check — proves the fixture can discriminate at all; if α=0
     does NOT crater MRR the fixture is broken, not the backend
 
-All functions are pure (no I/O, no server calls, no state).  The live sweep
-orchestrator (t11_sweep.py) calls these after collecting server responses.
+The module also exposes ``GATE_THRESHOLDS`` (used by ``retrieval_sweep.py
+--gate``) and supports gate-decision self-tests via ``--self-test``.
 
-Formulas match scripts/retrieval_quality_live.py exactly so T11 numbers are
+All functions are pure (no I/O, no server calls, no state).  The live sweep
+orchestrator (retrieval_sweep.py) calls these after collecting server responses.
+
+Formulas match scripts/retrieval_quality_live.py exactly so numbers are
 comparable to the existing quality history.
 """
 import argparse
@@ -313,6 +313,105 @@ def crater_check(baseline_mrr: float, control_mrr: float) -> dict:
     }
 
 
+# ── Gate thresholds + decision ───────────────────────────────────────────────
+
+# Floors derived from T11-measured anchor-only numbers (T11-VALIDATION-REPORT.md §2).
+#
+# Rationale for floor placement:
+#   The T11 sweep measured two distinct dense operating points:
+#     - dense_views ON  (current default): MRR@3 0.743, cand-recall@50 0.796, nDCG@3 0.755, no_match 0.92
+#     - single-view dense (flag OFF):      MRR@3 0.686, cand-recall@50 0.723, nDCG@3 0.696
+#
+#   Floors are set BELOW the single-view dense numbers so the gate:
+#     a) does not fire when dense_views is temporarily OFF (floor robustness)
+#     b) DOES fire on a genuine regression (meaningful drop below the worst measured arm)
+#
+#   Each floor = T11 single-view measured value − margin.
+#   Margin is 0.04 for MRR/nDCG (≈6% relative slack below the single-view baseline),
+#   0.04 for cand-recall (≈6% relative), and 0.04 for no_match (absolute).
+GATE_THRESHOLDS: dict[str, float] = {
+    # T11 measured single-view dense: 0.686.  Floor = 0.686 − 0.046 = 0.640.
+    "mrr_at3": 0.64,
+    # T11 measured single-view dense: 0.686 (MRR@3 == MRR@10 for every arm —
+    # first relevant hit is always top-3 or absent from top-10; floor matches mrr_at3).
+    "mrr_at10": 0.64,
+    # T11 measured single-view dense: 0.696.  Floor = 0.696 − 0.056 = 0.640.
+    "ndcg_at3": 0.64,
+    # T11 measured single-view dense: 0.723.  Floor = 0.723 − 0.043 = 0.680.
+    # This is the LEVER metric; extra care to keep the floor meaningful.
+    "candidate_recall_at_limit": 0.68,
+    # T11 measured (all arms): 0.92.  Floor = 0.92 − 0.04 = 0.880.
+    "no_match_precision": 0.88,
+}
+
+
+def gate_decision(baseline_metrics: dict, alpha0_metrics: dict) -> dict:
+    """Evaluate whether a gate run passes all floor assertions and the α=0 crater canary.
+
+    ``baseline_metrics`` is the metric dict from the baseline/dense_views arm as
+    returned by ``_compute_arm_metrics`` (keys: mrr_at3, mrr_at10, ndcg_at3,
+    candidate_recall_at_limit, no_match_precision).  ``alpha0_metrics`` only needs
+    the ``mrr_at3`` key.
+
+    Each floor in ``GATE_THRESHOLDS`` is compared against the corresponding metric.
+    The α=0 crater is checked via ``crater_check`` (≥50% relative MRR drop).
+
+    Returns a dict with:
+        passed    — True iff ALL floor assertions AND the crater canary pass.
+        failures  — list of failure descriptions (empty when passed is True).
+        assertions — per-assertion pass/fail records for the JSON gate report.
+    """
+    failures: list[str] = []
+    assertions: list[dict] = []
+
+    for metric_key, floor in GATE_THRESHOLDS.items():
+        got = baseline_metrics.get(metric_key)
+        if got is None:
+            msg = f"{metric_key}: missing from arm metrics (cannot evaluate floor {floor})"
+            failures.append(msg)
+            assertions.append({"metric": metric_key, "floor": floor, "got": None, "passed": False, "detail": msg})
+            continue
+        passes = got >= floor
+        if not passes:
+            failures.append(
+                f"{metric_key}: {got:.4f} < floor {floor:.4f} "
+                f"(T11 single-view baseline {floor + 0.04:.3f})"
+            )
+        assertions.append({
+            "metric": metric_key,
+            "floor": floor,
+            "got": round(got, 6),
+            "passed": passes,
+        })
+
+    # α=0 crater canary: if it does NOT crater MRR ≥50%, the fixture has drifted
+    # and every gate verdict is void — treat as a gate failure.
+    baseline_mrr = baseline_metrics.get("mrr_at3", 0.0)
+    alpha0_mrr = alpha0_metrics.get("mrr_at3", 0.0)
+    crater = crater_check(baseline_mrr, alpha0_mrr)
+    crater_passes = crater["craters"]
+    if not crater_passes:
+        failures.append(
+            f"alpha0_crater: MRR relative drop {crater['rel_drop']:.3f} < 0.50 "
+            f"(baseline {baseline_mrr:.4f}, alpha0 {alpha0_mrr:.4f}). "
+            f"Fixture may have drifted — gate verdict is void."
+        )
+    assertions.append({
+        "metric": "alpha0_crater",
+        "required_rel_drop": 0.50,
+        "baseline_mrr": baseline_mrr,
+        "alpha0_mrr": alpha0_mrr,
+        "rel_drop": crater["rel_drop"],
+        "passed": crater_passes,
+    })
+
+    return {
+        "passed": len(failures) == 0,
+        "failures": failures,
+        "assertions": assertions,
+    }
+
+
 # ── Self-test ─────────────────────────────────────────────────────────────────
 
 def _assert(condition: bool, label: str, detail: str = "") -> bool:
@@ -325,7 +424,7 @@ def _assert(condition: bool, label: str, detail: str = "") -> bool:
 
 def _run_self_tests() -> int:
     """Run all self-test cases.  Return 0 if all pass, 1 if any fail."""
-    print("=== t11_metrics self-test ===")
+    print("=== retrieval_metrics self-test ===")
     failures = 0
 
     # ── reciprocal_rank / mrr_at_k ─────────────────────────────────────────
@@ -523,6 +622,63 @@ def _run_self_tests() -> int:
     failures += 0 if ok else 1
 
     # ── summary ────────────────────────────────────────────────────────────
+    # ── gate_decision ──────────────────────────────────────────────────────
+    print("\n-- gate_decision --")
+
+    # Arm above all floors + craters properly → PASS.
+    synthetic_above = {
+        "mrr_at3": 0.70,
+        "mrr_at10": 0.70,
+        "ndcg_at3": 0.70,
+        "candidate_recall_at_limit": 0.75,
+        "no_match_precision": 0.93,
+    }
+    synthetic_alpha0 = {"mrr_at3": 0.05}
+    result = gate_decision(synthetic_above, synthetic_alpha0)
+    ok = _assert(
+        result["passed"] is True,
+        "gate_decision: all-above floors + 93% crater → PASS",
+        f"passed={result['passed']} failures={result['failures']}",
+    )
+    failures += 0 if ok else 1
+
+    # Arm with one metric below floor → FAIL.
+    synthetic_below = {
+        "mrr_at3": 0.60,   # below floor of 0.64
+        "mrr_at10": 0.70,
+        "ndcg_at3": 0.70,
+        "candidate_recall_at_limit": 0.75,
+        "no_match_precision": 0.93,
+    }
+    result = gate_decision(synthetic_below, synthetic_alpha0)
+    ok = _assert(
+        result["passed"] is False and any("mrr_at3" in f for f in result["failures"]),
+        "gate_decision: mrr_at3 below floor → FAIL with mrr_at3 in failures",
+        f"passed={result['passed']} failures={result['failures']}",
+    )
+    failures += 0 if ok else 1
+
+    # α=0 crater canary: only 10% relative MRR drop (far below the 50% threshold) → canary FAIL.
+    synthetic_no_crater = {"mrr_at3": 0.75}   # only 6% drop from 0.70
+    result = gate_decision(synthetic_above, synthetic_no_crater)
+    ok = _assert(
+        result["passed"] is False and any("alpha0_crater" in f for f in result["failures"]),
+        "gate_decision: 6% crater far below 50% threshold → FAIL with alpha0_crater in failures",
+        f"passed={result['passed']} failures={result['failures']}",
+    )
+    failures += 0 if ok else 1
+
+    # α=0 100% crater (real T11 result) → canary PASS.
+    synthetic_full_crater = {"mrr_at3": 0.000}
+    result = gate_decision(synthetic_above, synthetic_full_crater)
+    ok = _assert(
+        result["passed"] is True,
+        "gate_decision: 100% crater → canary PASS, overall PASS",
+        f"passed={result['passed']} failures={result['failures']}",
+    )
+    failures += 0 if ok else 1
+
+    # ── summary ────────────────────────────────────────────────────────────
     print(f"\n{'=' * 40}")
     if failures == 0:
         print("ALL TESTS PASSED")
@@ -534,7 +690,7 @@ def _run_self_tests() -> int:
 def main() -> None:
     """CLI entry point.  Only ``--self-test`` is meaningful for this module."""
     ap = argparse.ArgumentParser(
-        description="T11 pure metric functions.  Run --self-test to validate."
+        description="Retrieval pure metric functions.  Run --self-test to validate."
     )
     ap.add_argument(
         "--self-test",

@@ -26,7 +26,7 @@ grading. Drive or read the real artifacts; reward observed evidence, never "writ
   `n_a_better`/`n_b_better` labeling caveat documented in the report §6).
 - `tests/fixtures/retrieval_quality_262_corpus_labeled.json` + `scripts/build_t11_fixture.py` +
   `tests/e2e/reports/t11/fixture_build_summary.json` — judge the anti-circularity discipline yourself.
-- `scripts/t11_metrics.py` (run `--self-test`), `scripts/t11_sweep.py` (the /health-gated orchestrator).
+- `scripts/retrieval_metrics.py` (run `--self-test`), `scripts/retrieval_sweep.py` (the /health-gated orchestrator; renamed from `t11_metrics.py`/`t11_sweep.py` by T20).
 - `docs/reference/retrieval-contract.md` (§0 V1.7 delta) + `docs/assessments/2026-06-11-v1-7-retrieval-contract-measured.md` (§8 added).
 - `docs/tickets/.../11-*.md` (ACs all checked) and `docs/tickets/.../12-*.md` (## Rethink section).
 - Git: `git log --oneline` for `4bdd76b` (T11 close) and `7fe8912` (dense-views default flip).
