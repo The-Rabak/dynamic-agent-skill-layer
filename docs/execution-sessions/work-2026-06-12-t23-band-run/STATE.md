@@ -123,6 +123,28 @@ dataset_sha: b28a5832a09b0d96c0cf4c22e90d7c60ede25b80
   orchestrator MERGES `instruments/<name>.json` sentinels into manifest.json + re-verifies (the gate).
   teach_delivery.py generalized to be data-driven from instruments/<name>.json `doc_file`.
 
+## Live-run findings (Unit C, 2026-06-13)
+- **Canary (context #1 material-handler-sops) — full path runs; fidelity RED = GENUINE partial-extraction
+  failure (correct exclusion).** OFF pre-gate: both siblings OFF=loss (real discrimination). Teach rc=0
+  (252 KB transcript). Extract: 25 drafts. Fidelity gate: 3/7 operative sentinels "missing" → RED →
+  INSTRUMENT-FAILURE(extraction), band CONTINUED (corpus stayed 262, no scope created — auto-gate never
+  fired). **Diagnosis (grep + the authoritative verifier run against the concatenated drafts):** 6/7
+  rules SURVIVED — 4 verbatim + 2 REWORDED (`50 pounds`→`50 lb`; `10-minute UV sanitization cycle`→
+  `UV transfer chamber 10-min cycle`) that the EXACT-substring sentinel gate false-negatived — but
+  `<1 megaohm` (wrist-strap resistance) was **GENUINELY DROPPED**. The real verifier ALSO fails on the
+  drafts (on the megaohm check), so ON would get the same value-less drafts and fail in Session B →
+  **excluding material-handler is CORRECT.** This is real extraction fidelity loss of a hyper-specific
+  numeric value (a refinement of T22: taught-capture preserves rules/procedures but can still drop the
+  most-specific constants the deterministic verifier requires). NO mid-run protocol change; pre-reg intact.
+- **Unit D classification method (per fidelity-RED context):** run `verifiers/<name>.sh` against the
+  concatenated accepted drafts (`scope/.skills/**/*.pending`, persisted, never deleted). Verifier FAILS
+  too → genuine extraction gap (correct exclusion). Verifier PASSES → strict-sentinel FALSE-NEGATIVE
+  (context was measurable; recoverable via a verifier-based fidelity gate re-run). Report this per
+  excluded context; recommend a verifier-based fidelity gate for any re-run.
+- **Watch-item:** if MOST contexts fidelity-fail on genuine value-drops, the band yields little/no
+  efficacy data → the honest verdict is INSTRUMENT-FAILURE(extraction)-dominated + the per-context
+  genuine-gap-vs-false-negative split (NOT a gate bug to silently fix). The owner decides any re-run.
+
 ## Build status (Units A + B, 2026-06-13)
 - Unit 0: COMMITTED (9be303b).
 - Unit B core BUILT + validated: `scope_rebuild.py` (canary PASS live), `test_scope_rebuild.py`
