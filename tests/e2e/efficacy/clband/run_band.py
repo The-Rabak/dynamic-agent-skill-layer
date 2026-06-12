@@ -270,7 +270,10 @@ def extract_and_gate(name: str, transcript: Path, ctx_dir: Path) -> dict:
     require_health("retrieval readiness poll")
     instr = load_instruments(name)
     query = instr["measured_siblings"][0]["summary"]
-    res = sr.wait_retrievable(name, query, timeout_s=420)
+    try:
+        res = sr.wait_retrievable(name, query, timeout_s=420)
+    except TimeoutError as e:
+        raise HarnessStop(f"{name}: accepted skills never became retrievable — {e}")
     result["retrievable"] = bool(res.get("skill_names"))
     result["retrieval_probe"] = {"skill_names": res.get("skill_names"), "status": res.get("raw", {}).get("status")}
     print(f"    retrievable: {result['retrievable']} {res.get('skill_names')}", flush=True)
@@ -330,6 +333,10 @@ def session_b(name: str, slug: str, placebo_donor: str, ctx_dir: Path, off_outco
 
 def resolve_roster(requested: list[str] | None) -> list[str]:
     return list(requested) if requested else list(FULL_CONTEXTS)
+
+
+def _has_instruments(name: str) -> bool:
+    return (CLBAND / "instruments" / f"{name}.json").exists()
 
 
 def run_pass1_context(name: str, ck: dict) -> str:
@@ -401,16 +408,25 @@ def run_band(requested: list[str] | None) -> int:
             print(f"\n*** HARNESS STOP: {e} — checkpoint preserved for morning resume ***", flush=True)
             return 2
         if status == "off_pregate_failed":
-            # The ONLY substitution path: swap in the next alternate in place.
-            if alt_idx < len(ALTERNATES):
-                alt = ALTERNATES[alt_idx]; alt_idx += 1
-                print(f"  [substitute] {name} lost all siblings to OFF pre-gate -> alternate {alt}", flush=True)
-                roster[i] = alt
+            # Substitution path: swap in the next alternate that HAS committed instruments.
+            # (Unit A instrumented the 8 full contexts only; an un-instrumented alternate cannot
+            # be measured, so the band continues with fewer contexts rather than STOPPING — N is
+            # still well-powered at up to 12 measured siblings.)
+            sub = None
+            while alt_idx < len(ALTERNATES):
+                cand = ALTERNATES[alt_idx]; alt_idx += 1
+                if _has_instruments(cand):
+                    sub = cand; break
+                print(f"  [substitute] alternate {cand} has no committed instruments — skipping", flush=True)
+            if sub:
+                print(f"  [substitute] {name} lost all siblings to OFF pre-gate -> alternate {sub}", flush=True)
+                roster[i] = sub
                 ck["roster"] = roster
-                ck["contexts"][name]["substituted_by"] = alt
+                ck["contexts"][name]["substituted_by"] = sub
                 save_checkpoint(ck)
                 continue  # retry the same slot with the alternate
-            print(f"  [substitute] {name} failed OFF pre-gate; no alternates left", flush=True)
+            print(f"  [substitute] {name} failed OFF pre-gate; no instrumented alternate -> "
+                  f"band continues with fewer contexts", flush=True)
             i += 1; continue
         if status == "built":
             built.append(name)
