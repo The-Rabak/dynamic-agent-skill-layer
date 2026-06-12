@@ -154,3 +154,39 @@ from the clband fidelity gate, which FAILED.
   accepted (labeled non-faithful) skills; `draft_acceptance.json`.
 - `docs/execution-sessions/work-2026-06-12-clband-smoke/` — full per-unit session log + STATE.
 - Instruments (committed pre-run): `tests/e2e/efficacy/clband/{verifiers,tasks,judge,fixtures}/`.
+
+---
+
+## Addendum (2026-06-12, post-session forensic re-read) — the diagnosis has THREE components, not one
+
+A follow-up read of the raw worker logs and draft contents shows the headline ("the extractor's
+recurrence+generalization design blocks invented-rule capture") is true but **incomplete**. Three
+separable components, each with its own fix surface (now ticketed as **T22**):
+
+1. **Plumbing — MISSED by this report's body.** The worker logs show
+   `transcript entry dropped: speaker matched suspicious-speaker filter (system impersonation)`
+   firing on **every extraction window of both contexts** (see
+   `logs/worker-flywheel-assembly-agent-200451-s1.log`, `logs/worker-aether-language-200722-s1.log`).
+   Flywheel's knowledge document lives in the SYSTEM prompt (`knowledge_home=system`) — so the prose
+   extractor very plausibly **never saw the rule document at all**, and its dismissals ("every
+   'lesson' is explicitly embedded in the task instructions") were rendered over a stripped
+   transcript. The exact dropped-content accounting is T22 Unit A; until it lands, the body's
+   "extraction-salience is the sole break" claim is over-strong for the flywheel case.
+2. **Worldview — stands, verbatim, and survives visibility.** For aether the spec was a workspace
+   FILE the agent read, and the refusals still came reasoned: "nothing would recur on a future,
+   different task", "no failure/fix cycle, no iteration". The lesson extractor's value system
+   demands recurrence + discovery-through-failure; taught knowledge has neither. This is the
+   production-relevant finding and the core of T22 Unit C.
+3. **Gate leveling — the 11 drafts are better than "non-faithful" suggests.** They came through the
+   **preference/convention detector** and preserved invented operative specifics VERBATIM ("M8x20
+   fasteners carry a misprinted label — verify length with a ruler", "use batch FW-2025-0118",
+   "torque callout in sketch v2"). Verbatim one-shot capture is already in the system's repertoire;
+   the fidelity gate failed on DOCUMENT-level sentinels (system names like "Scatterbrained
+   Improviser") that this channel was never going to emit, while Session B's verifiers need
+   OPERATIVE-level rules. The manifest gains a two-tier sentinel split in T22 Unit D.
+
+**Net effect on the verdict:** NO-GO stands, but the path to GO is narrower than the body implies —
+one deep fix (taught-knowledge candidate class, with a hard dogfood-regression gate), one delivery
+fix (document visibility, harness-side), one gate re-level. The re-run of this smoke remains the GO
+gate. Also carried into T22: a reasoned refusal (assessment + zero candidates) should not be retried
+3× as if it were malformed output.
