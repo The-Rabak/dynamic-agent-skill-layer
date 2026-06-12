@@ -50,8 +50,8 @@ dataset_sha: b28a5832a09b0d96c0cf4c22e90d7c60ede25b80
 |---|------|------|------------------|--------|----------|--------------|
 | 0 | Preflight + pre-reg deltas commit | infra-packet | locks the experiment before any run | completed | 1 | unit-00-preflight.md |
 | 1 | Verifier + rewrite + judge authoring | infra-packet | committed instruments before runs | completed | 1 | unit-01-instruments.md |
-| 2 | OFF pre-gate | fix-item | empirical non-pretraining + discrimination | in_progress | 1 | -- |
-| 3 | Session A teach sessions (2) | infra-packet | genuine capture under isolated scopes | pending | -- | -- |
+| 2 | OFF pre-gate | fix-item | empirical non-pretraining + discrimination | completed | 1 | unit-02-off-pregate.md |
+| 3 | Session A teach sessions (2) | infra-packet | genuine capture under isolated scopes | in_progress | 1 | -- |
 | 4 | Pipeline + human gate + fidelity gate | infra-packet | proves extraction at both sizes | pending | -- | -- |
 | 5 | Session B paired ON/OFF/PLACEBO | infra-packet | end-to-end injection + placebo | pending | -- | -- |
 | 6 | Report + closeout | infra-packet | GO/NO-GO for the full band | pending | -- | -- |

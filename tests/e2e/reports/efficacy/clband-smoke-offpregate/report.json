@@ -1,0 +1,65 @@
+{
+  "run_id": "clband-smoke-offpregate",
+  "verdict": "UNDERPOWERED",
+  "pre_registered_criterion": "ON wins \u2265 7 of 10 paired tasks by sign test, with no catastrophic regression on any single task.",
+  "sign_test_p_value": 1.0,
+  "on_wins": 0,
+  "off_wins": 0,
+  "n_ties": 4,
+  "n_tasks": 4,
+  "arms_used": [
+    "off"
+  ],
+  "max_turns": 30,
+  "per_task_table": [
+    {
+      "task_id": "clband-aether-translate-4768e426",
+      "on_outcome": "n/a",
+      "off_outcome": "loss",
+      "placebo_outcome": "n/a",
+      "paired": "tie",
+      "catastrophic_regression": false,
+      "attribution": []
+    },
+    {
+      "task_id": "clband-aether-turbulence-b0807c2c",
+      "on_outcome": "n/a",
+      "off_outcome": "loss",
+      "placebo_outcome": "n/a",
+      "paired": "tie",
+      "catastrophic_regression": false,
+      "attribution": []
+    },
+    {
+      "task_id": "clband-flywheel-46536e4a",
+      "on_outcome": "n/a",
+      "off_outcome": "loss",
+      "placebo_outcome": "n/a",
+      "paired": "tie",
+      "catastrophic_regression": false,
+      "attribution": []
+    },
+    {
+      "task_id": "clband-flywheel-979ec26a",
+      "on_outcome": "n/a",
+      "off_outcome": "loss",
+      "placebo_outcome": "n/a",
+      "paired": "tie",
+      "catastrophic_regression": false,
+      "attribution": []
+    }
+  ],
+  "on_vs_placebo": {
+    "on_beats_placebo": 0,
+    "placebo_beats_on": 0,
+    "ties": 4
+  },
+  "attribution_per_task": {
+    "clband-aether-translate-4768e426": [],
+    "clband-aether-turbulence-b0807c2c": [],
+    "clband-flywheel-46536e4a": [],
+    "clband-flywheel-979ec26a": []
+  },
+  "verdict_detail": "UNDERPOWERED: ON wins 0, OFF wins 0, ties 4; sign test p=1.0000 \u2014 positive direction but below the pre-registered bar of 7/10. This is a null result: UNDERPOWERED, not 'no effect'.",
+  "catastrophic_regression_tasks": []
+}

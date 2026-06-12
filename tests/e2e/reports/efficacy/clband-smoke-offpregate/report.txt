@@ -1,0 +1,33 @@
+=== T14 Efficacy A/B Run Report ===
+Run ID:   clband-smoke-offpregate
+Arms:     off
+Max turns (stuck-detector, not a cap): 30
+
+Pre-registered criterion (verbatim):
+  "ON wins ≥ 7 of 10 paired tasks by sign test, with no catastrophic regression on any single task."
+
+VERDICT: UNDERPOWERED
+  UNDERPOWERED: ON wins 0, OFF wins 0, ties 4; sign test p=1.0000 — positive direction but below the pre-registered bar of 7/10. This is a null result: UNDERPOWERED, not 'no effect'.
+
+Per-task paired win/loss/tie table:
+  clband-aether-translate-4768e426          ON=n/a   OFF=loss  PLACEBO=n/a   paired=tie
+  clband-aether-turbulence-b0807c2c         ON=n/a   OFF=loss  PLACEBO=n/a   paired=tie
+  clband-flywheel-46536e4a                  ON=n/a   OFF=loss  PLACEBO=n/a   paired=tie
+  clband-flywheel-979ec26a                  ON=n/a   OFF=loss  PLACEBO=n/a   paired=tie
+
+Sign test p-value: 1.0
+
+ON vs PLACEBO comparison:
+  ON wins vs PLACEBO:  0
+  PLACEBO wins vs ON:  0
+  Ties:                4
+
+Attribution per task (retrieval pulls labeled by trigger):
+  clband-aether-translate-4768e426:
+    (no retrieval pulls recorded)
+  clband-aether-turbulence-b0807c2c:
+    (no retrieval pulls recorded)
+  clband-flywheel-46536e4a:
+    (no retrieval pulls recorded)
+  clband-flywheel-979ec26a:
+    (no retrieval pulls recorded)
