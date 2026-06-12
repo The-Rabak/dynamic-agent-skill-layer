@@ -1,0 +1,56 @@
+{
+  "run_id": "smoke-probe-140528",
+  "verdict": "UNDERPOWERED",
+  "pre_registered_criterion": "ON wins \u2265 7 of 10 paired tasks by sign test, with no catastrophic regression on any single task.",
+  "sign_test_p_value": 1.0,
+  "on_wins": 0,
+  "off_wins": 0,
+  "n_ties": 1,
+  "n_tasks": 1,
+  "arms_used": [
+    "on",
+    "off"
+  ],
+  "max_turns": 30,
+  "per_task_table": [
+    {
+      "task_id": "all-migrations-dual-registration",
+      "on_outcome": "loss",
+      "off_outcome": "loss",
+      "placebo_outcome": "n/a",
+      "paired": "tie",
+      "catastrophic_regression": false,
+      "attribution": [
+        {
+          "trigger": "SessionStart",
+          "tool": "compile_context",
+          "arm": "on",
+          "skills_returned": [],
+          "skill_ids_returned": [],
+          "label": "session_start_priming",
+          "task_id": "all-migrations-dual-registration"
+        }
+      ]
+    }
+  ],
+  "on_vs_placebo": {
+    "on_beats_placebo": 0,
+    "placebo_beats_on": 0,
+    "ties": 1
+  },
+  "attribution_per_task": {
+    "all-migrations-dual-registration": [
+      {
+        "trigger": "SessionStart",
+        "tool": "compile_context",
+        "arm": "on",
+        "skills_returned": [],
+        "skill_ids_returned": [],
+        "label": "session_start_priming",
+        "task_id": "all-migrations-dual-registration"
+      }
+    ]
+  },
+  "verdict_detail": "UNDERPOWERED: ON wins 0, OFF wins 0, ties 1; sign test p=1.0000 \u2014 positive direction but below the pre-registered bar of 7/10. This is a null result: UNDERPOWERED, not 'no effect'.",
+  "catastrophic_regression_tasks": []
+}

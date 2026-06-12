@@ -1,0 +1,33 @@
+=== T14 Efficacy A/B Run Report ===
+Run ID:   smoke-sensitivity-141049
+Arms:     on, off, placebo
+Max turns (stuck-detector, not a cap): 30
+
+Pre-registered criterion (verbatim):
+  "ON wins ≥ 7 of 10 paired tasks by sign test, with no catastrophic regression on any single task."
+
+VERDICT: UNDERPOWERED
+  UNDERPOWERED: ON wins 0, OFF wins 0, ties 3; sign test p=1.0000 — positive direction but below the pre-registered bar of 7/10. This is a null result: UNDERPOWERED, not 'no effect'.
+
+Per-task paired win/loss/tie table:
+  all-migrations-dual-registration          ON=win   OFF=win   PLACEBO=win   paired=tie
+  anthropic-forced-tool-use                 ON=win   OFF=win   PLACEBO=win   paired=tie
+  arcswap-rcu-return-value                  ON=win   OFF=win   PLACEBO=win   paired=tie
+
+Sign test p-value: 1.0
+
+ON vs PLACEBO comparison:
+  ON wins vs PLACEBO:  0
+  PLACEBO wins vs ON:  0
+  Ties:                3
+
+Attribution per task (retrieval pulls labeled by trigger):
+  all-migrations-dual-registration:
+    [session_start_priming] skills=['migration-file-unwired-from-registry', 'orphaned-migration-file-detection', 'migration-test-triple-update']
+    [session_start_priming] skills=[]
+  anthropic-forced-tool-use:
+    [session_start_priming] skills=['anthropic-api-forced-tool-use-for-structured-json', 'serde-default-swallows-missing-llm-output-field', 'ollama-thinking-model-think-false-structured-json']
+    [session_start_priming] skills=[]
+  arcswap-rcu-return-value:
+    [session_start_priming] skills=['arcswap-rcu-use-return-value-not-closure-mutation', 'boot-time-arc-snapshot-never-refreshed']
+    [session_start_priming] skills=[]

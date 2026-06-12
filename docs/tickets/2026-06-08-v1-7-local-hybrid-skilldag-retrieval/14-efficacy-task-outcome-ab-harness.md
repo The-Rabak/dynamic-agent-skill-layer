@@ -2,7 +2,8 @@
 ticket_id: T14
 title: Prove the system is USEFUL — task-outcome A/B harness (layer ON vs OFF)
 kind: efficacy
-status: ready
+status: in_progress
+status_note_2026_06_12_smoke: "BATCH 16 SCOPED WORK DONE (build + smoke; owner chose full run = follow-up; session work-2026-06-12-122502-T14, commits efa04ea + 099ab0d + this). Harness VALIDATED end-to-end on the live stack (9/9 Sonnet solves; materialize→live-injection-over-HTTP→solve→deterministic verifier→attribution→PASS/FAIL/UNDERPOWERED gate reusing T20 sign_test). Pre-registration LOCKED before data. SMOKE FINDINGS (docs/assessments/2026-06-12-t14-efficacy-harness-smoke.md): (1) P1 — the invented-rule battery does NOT discriminate against Sonnet: OFF wins even with a non-leaking prompt because the rules are within the model's default competence (the OFF-side α=0 control does not crater); (2) P1 — the production compile_context priming path no_matches verbose prompts (qwen3 floor + length dilution); only focused queries retrieve. FULL ≥10-task efficacy run DEFERRED — blocked on: re-author the battery for genuine non-pretrained discrimination + an OFF-only pre-gate; ON injection-query strategy / qwen3 floor recalibration; ≥10 real .pending drafts. No efficacy verdict claimed (honest, not spun)."
 status_note: "Unblocked 2026-06-12: T10 and T13 are both completed. Restructure 2026-06-12 sequences T14 BEFORE T12's ranker work — it measures the honest baseline with the T11-validated dense-views default-ON config, and its per-pull attribution scopes T12's investment (T12 AC cites it). Amended: one invented-rule positive-control task (see Scope)."
 plan_ref: docs/plans/2026-06-08-feat-v1-7-local-hybrid-skilldag-retrieval-plan.md
 tickets_ref: docs/tickets/2026-06-08-v1-7-local-hybrid-skilldag-retrieval/index.md

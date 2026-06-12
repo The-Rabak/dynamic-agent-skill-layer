@@ -711,6 +711,461 @@ def build_dry_run_plan(
     return plans
 
 
+# ── Live run (Unit 4 — orchestrator-serialized) ────────────────────────────────
+#
+# Injection mode: HARNESS-MEDIATED.  The harness calls the live mcp-server's
+# compile_context over HTTP and prepends its output to the ON prompt.  This is
+# functionally identical to the production SessionStart hook (which injects
+# compile_context output as additional context) but does not depend on the
+# claude-code hook DSL working in a given CLI version, and it yields EXACT
+# attribution — the harness knows precisely which skills/ids it injected.
+# Every arm still drives the REAL mcp-server over HTTP (standing rule honored).
+#
+#   ON      — inject compile_context(task_prompt, scratch_repo_path)
+#   OFF     — no injection
+#   PLACEBO — inject compile_context(FIXED UNRELATED prompt) → matched-mass but
+#             IRRELEVANT real skills (explicitly-labeled measurement control)
+
+# A fixed, deliberately unrelated prompt for the PLACEBO arm: it pulls real
+# skills of similar mass that are irrelevant to any invented-rule coding task.
+PLACEBO_UNRELATED_PROMPT = (
+    "summarize the quarterly marketing budget spreadsheet and draft a friendly "
+    "email to the events team about the office holiday party schedule"
+)
+
+_MCP_ENDPOINT_PATH = "/mcp"
+
+
+def compile_context_http(
+    server_url: str,
+    prompt: str,
+    session_id: str,
+    repo_path: str,
+    timeout_s: int = 60,
+) -> dict[str, Any]:
+    """Call the live mcp-server compile_context tool over HTTP (real measurement).
+
+    Returns a dict: {additional_context: str, skill_names: [..], skill_ids: [..],
+    raw: <parsed result>}.  Fails loud (raises) on transport error — no silent
+    fallback to an empty injection.
+
+    Args:
+        server_url:  base URL of the live mcp-server (e.g. http://127.0.0.1:3001).
+        prompt:      the prompt to compile context for.
+        session_id:  session id for the call.
+        repo_path:   repo_path scope argument.
+        timeout_s:   stuck-detector timeout (NOT a work cap).
+    """
+    import urllib.request
+
+    body = json.dumps({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {
+            "name": "compile_context",
+            "arguments": {"prompt": prompt, "session_id": session_id, "repo_path": repo_path},
+        },
+    }).encode()
+    req = urllib.request.Request(
+        server_url.rstrip("/") + _MCP_ENDPOINT_PATH,
+        data=body,
+        headers={
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/event-stream",
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=timeout_s) as resp:
+        payload = resp.read().decode()
+
+    # The endpoint may return a plain JSON body or an SSE-framed body. Extract the
+    # JSON object either way.
+    parsed = _extract_jsonrpc_result(payload)
+    result = parsed.get("result", {})
+    additional_context = result.get("additional_context", "") or ""
+    skill_names = _extract_skill_names(additional_context)
+    skill_ids = result.get("skill_ids", []) or result.get("skill_ids_returned", []) or []
+    return {
+        "additional_context": additional_context,
+        "skill_names": skill_names,
+        "skill_ids": skill_ids,
+        "raw": result,
+    }
+
+
+def _extract_jsonrpc_result(payload: str) -> dict[str, Any]:
+    """Parse a JSON-RPC response body that may be plain JSON or SSE-framed."""
+    payload = payload.strip()
+    if payload.startswith("{"):
+        return json.loads(payload)
+    # SSE framing: find the first `data: {...}` line.
+    for line in payload.splitlines():
+        line = line.strip()
+        if line.startswith("data:"):
+            candidate = line[len("data:"):].strip()
+            if candidate.startswith("{"):
+                return json.loads(candidate)
+    raise ValueError(f"could not extract JSON-RPC result from response: {payload[:200]!r}")
+
+
+def find_skill_http(
+    server_url: str,
+    prompt: str,
+    limit: int = 5,
+    timeout_s: int = 60,
+) -> dict[str, Any]:
+    """Call the live mcp-server find_skill tool over HTTP (T11-validated surface).
+
+    Returns {matches: [...], status, reason_code, injected_text, skill_names, skill_ids}.
+    `injected_text` is a markdown context block synthesized from the matches so it
+    can be prepended to a solve prompt the same way compile_context output is.
+    Fails loud (raises) on transport error.
+    """
+    import urllib.request
+
+    body = json.dumps({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {"name": "find_skill", "arguments": {"prompt": prompt, "limit": limit}},
+    }).encode()
+    req = urllib.request.Request(
+        server_url.rstrip("/") + _MCP_ENDPOINT_PATH,
+        data=body,
+        headers={"Content-Type": "application/json", "Accept": "application/json, text/event-stream"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=timeout_s) as resp:
+        result = _extract_jsonrpc_result(resp.read().decode())["result"]
+
+    matches = result.get("matches", []) or []
+    names = [m.get("name", "?") for m in matches]
+    ids = [m.get("skill_id") or m.get("id") for m in matches if (m.get("skill_id") or m.get("id"))]
+    injected_text = _format_find_skill_context(matches)
+    return {
+        "matches": matches,
+        "status": result.get("status"),
+        "reason_code": result.get("reason_code"),
+        "injected_text": injected_text,
+        "skill_names": names,
+        "skill_ids": ids,
+    }
+
+
+def _format_find_skill_context(matches: list[dict[str, Any]]) -> str:
+    """Synthesize a compiled-context-style markdown block from find_skill matches."""
+    if not matches:
+        return ""
+    lines = ["# Retrieved Skills"]
+    for m in matches:
+        lines.append(f"\n## Skill: {m.get('name', '?')}")
+        desc = m.get("description") or m.get("summary") or ""
+        if desc:
+            lines.append(f"- Description: {desc}")
+        body = m.get("body") or m.get("procedures") or ""
+        if body:
+            lines.append(f"- Detail: {str(body)[:1200]}")
+    return "\n".join(lines)
+
+
+def _extract_skill_names(additional_context: str) -> list[str]:
+    """Pull the injected skill names from a compiled-context markdown block."""
+    names: list[str] = []
+    for line in additional_context.splitlines():
+        line = line.strip()
+        if line.startswith("## Skill:"):
+            names.append(line[len("## Skill:"):].strip())
+    return names
+
+
+def materialize_workspace(spec: dict[str, Any], dest: Path) -> None:
+    """Create a fresh task workspace by running the spec's setup commands in `dest`.
+
+    Fails loud (raises CalledProcessError) if any setup command fails — a broken
+    workspace must not silently produce a fake solve.
+
+    Args:
+        spec: validated task spec dict.
+        dest: target workspace directory (created if absent).
+    """
+    dest.mkdir(parents=True, exist_ok=True)
+    setup_cmds = spec.get("workspace", {}).get("setup", []) or []
+    for cmd in setup_cmds:
+        subprocess.run(cmd, shell=True, cwd=str(dest), check=True)
+
+
+def run_claude_solve(
+    prompt: str,
+    workspace_dir: Path,
+    model: str,
+    max_turns: int,
+    timeout_s: int,
+) -> dict[str, Any]:
+    """Run one claude-code solve in `workspace_dir` (cwd = workspace).
+
+    The agent edits files in the workspace; the verifier inspects them afterward.
+    Uses --print (non-interactive) + --dangerously-skip-permissions so the agent
+    can write without prompting. The prompt is passed on STDIN, NOT positionally:
+    `--add-dir` is greedy and would otherwise swallow a positional prompt as a
+    second directory ("Input must be provided ..." error). `max_turns`/`timeout_s`
+    are stuck-detectors, not work caps — recorded in the report.
+
+    Returns a dict: {exit_code, stdout_tail, timed_out}.  Does NOT raise on a
+    non-zero solve — a failed solve is a legitimate (loss) outcome to be verified.
+
+    Args:
+        prompt:        the full prompt (already includes any injected context).
+        workspace_dir: the materialized workspace (also the cwd).
+        model:         claude model (owner chose Sonnet).
+        max_turns:     claude-code --max-turns (stuck detector).
+        timeout_s:     wall-clock stuck-detector for the subprocess.
+    """
+    cmd = [
+        "claude",
+        "--print",
+        "--dangerously-skip-permissions",
+        "--model", model,
+        "--max-turns", str(max_turns),
+        "--add-dir", str(workspace_dir),
+    ]
+    try:
+        proc = subprocess.run(
+            cmd,
+            cwd=str(workspace_dir),
+            capture_output=True,
+            text=True,
+            timeout=timeout_s,
+            input=prompt,
+        )
+        tail = (proc.stdout or "")[-2000:]
+        return {"exit_code": proc.returncode, "stdout_tail": tail, "timed_out": False}
+    except subprocess.TimeoutExpired:
+        return {"exit_code": -2, "stdout_tail": "(solve timed out)", "timed_out": True}
+
+
+def _select_inject_query_text(spec: dict[str, Any], inject_query: str) -> str:
+    """Pick the retrieval query text for an arm per --inject-query.
+
+    prompt  → the full task prompt (production-faithful; may no_match if verbose).
+    summary → the invented_rule.summary (focused; the positive-control/sensitivity
+              configuration — this hands the rule-bearing skill to the agent).
+    title   → the task title (focused).
+    """
+    if inject_query == "summary":
+        return spec["invented_rule"]["summary"]
+    if inject_query == "title":
+        return spec["title"]
+    return spec["prompt"]
+
+
+def _retrieve_injection(
+    server_url: str,
+    query_text: str,
+    inject_via: str,
+    run_id: str,
+    session_tag: str,
+) -> dict[str, Any]:
+    """Retrieve injected context via the chosen live tool. Returns dict with
+    injected_text, skill_names, skill_ids, tool, status."""
+    if inject_via == "find_skill":
+        fs = find_skill_http(server_url=server_url, prompt=query_text)
+        return {
+            "injected_text": fs["injected_text"],
+            "skill_names": fs["skill_names"],
+            "skill_ids": fs["skill_ids"],
+            "tool": "find_skill",
+            "status": fs["status"],
+        }
+    cc = compile_context_http(
+        server_url=server_url,
+        prompt=query_text,
+        session_id=f"{run_id}-{session_tag}",
+        repo_path=f"/tmp/t14-{run_id}-{session_tag}",
+    )
+    return {
+        "injected_text": cc["additional_context"],
+        "skill_names": cc["skill_names"],
+        "skill_ids": cc["skill_ids"],
+        "tool": "compile_context",
+        "status": cc["raw"].get("status"),
+    }
+
+
+def build_injection(
+    arm: str,
+    spec: dict[str, Any],
+    server_url: str,
+    run_id: str,
+    inject_via: str = "compile_context",
+    inject_query: str = "prompt",
+) -> dict[str, Any]:
+    """Build the per-arm injected context + attribution for one task.
+
+    ON      → retrieve(inject_query text of the task) via inject_via tool.
+    OFF     → no injection (empty).
+    PLACEBO → retrieve(FIXED unrelated prompt) via inject_via → matched-mass
+              IRRELEVANT real skills (explicitly-labeled measurement control).
+
+    The inject_via / inject_query knobs are recorded in attribution so the report
+    states exactly how the ON arm was fed (production compile_context-on-prompt vs
+    a focused positive-control query). Returns {injected_text, attribution:[pull]}.
+    """
+    task_id = spec["task_id"]
+    if arm == "off":
+        return {"injected_text": "", "attribution": []}
+
+    if arm == "on":
+        query_text = _select_inject_query_text(spec, inject_query)
+        r = _retrieve_injection(server_url, query_text, inject_via, run_id, f"{task_id}-on")
+        pull = {
+            "trigger": "SessionStart", "tool": r["tool"], "arm": "on",
+            "inject_via": inject_via, "inject_query": inject_query,
+            "retrieval_status": r["status"],
+            "skills_returned": r["skill_names"], "skill_ids_returned": r["skill_ids"],
+        }
+        return {"injected_text": r["injected_text"],
+                "attribution": parse_retrieval_attribution({"retrieval_pulls": [pull]})}
+
+    if arm == "placebo":
+        r = _retrieve_injection(server_url, PLACEBO_UNRELATED_PROMPT, inject_via, run_id, f"{task_id}-placebo")
+        pull = {
+            "trigger": "SessionStart", "tool": r["tool"], "arm": "placebo",
+            "placebo_control": True, "placebo_unrelated_prompt": PLACEBO_UNRELATED_PROMPT,
+            "inject_via": inject_via, "retrieval_status": r["status"],
+            "skills_returned": r["skill_names"], "skill_ids_returned": r["skill_ids"],
+        }
+        return {"injected_text": r["injected_text"],
+                "attribution": parse_retrieval_attribution({"retrieval_pulls": [pull]})}
+
+    raise ValueError(f"unknown arm: {arm}")
+
+
+def _compose_arm_prompt(base_prompt: str, injected_text: str) -> str:
+    """Prepend injected skill context (if any) to the base task prompt."""
+    if not injected_text.strip():
+        return base_prompt
+    return (
+        "The following project-specific skills were retrieved as potentially "
+        "relevant context:\n\n"
+        f"{injected_text}\n\n"
+        "---\n\n"
+        f"{base_prompt}"
+    )
+
+
+def run_live(args: argparse.Namespace) -> int:
+    """Execute the real solve loop over the live stack (orchestrator-serialized).
+
+    For each task (up to --max-tasks) and each arm: materialize a fresh workspace,
+    build the arm injection from the live server, run the claude solve, run the
+    deterministic verifier, and record the paired outcome + attribution.  Then
+    aggregate → gate → report.
+
+    Returns 0 if the report was produced (regardless of the efficacy verdict),
+    non-zero on an infrastructure failure that prevents an honest run.
+    """
+    tasks_dir = Path(args.tasks)
+    if not tasks_dir.is_dir():
+        print(f"ERROR: --tasks directory not found: {tasks_dir}", file=sys.stderr)
+        return 1
+    specs = load_task_specs(tasks_dir)
+    if args.max_tasks is not None:
+        specs = specs[: args.max_tasks]
+
+    arms = args.arms
+    print(f"\n=== T14 Efficacy A/B — LIVE RUN ({args.run_id}) ===", flush=True)
+    print(f"Server:    {args.server_url}", flush=True)
+    print(f"Tasks:     {len(specs)} (arms: {', '.join(arms)})", flush=True)
+    print(f"Model:     {args.model}", flush=True)
+    print(f"Inject:    via={args.inject_via} query={args.inject_query}", flush=True)
+    if args.inject_query == "summary":
+        print(
+            "  NOTE: inject_query=summary is the POSITIVE-CONTROL/sensitivity "
+            "configuration (hands the rule-bearing skill to ON), NOT the production "
+            "compile_context-on-prompt priming path.",
+            flush=True,
+        )
+    print(f"Max turns: {args.max_turns} (stuck-detector, NOT a work cap)", flush=True)
+    if args.max_tasks is not None and args.max_tasks < EXPECTED_TASK_COUNT:
+        print(
+            f"NOTE: SMOKE RUN — {len(specs)} of {EXPECTED_TASK_COUNT} tasks. "
+            f"The pre-registered {PASS_THRESHOLD}/{EXPECTED_TASK_COUNT} verdict is NOT "
+            f"claimable from a partial run; this proves the harness end-to-end.",
+            flush=True,
+        )
+    print(flush=True)
+
+    per_task_results: list[dict[str, Any]] = []
+    for spec in specs:
+        task_id = spec["task_id"]
+        print(f"── Task: {task_id} ──────────────────────────────────────", flush=True)
+        arm_outcomes: dict[str, Any] = {}
+        arm_attribution: list[dict[str, Any]] = []
+        for arm in arms:
+            with _temp_workspace_dir() as ws_base:
+                ws = ws_base / f"{task_id}__{arm}"
+                materialize_workspace(spec, ws)
+                injection = build_injection(
+                    arm, spec, args.server_url, args.run_id,
+                    inject_via=args.inject_via, inject_query=args.inject_query,
+                )
+                arm_prompt = _compose_arm_prompt(spec["prompt"], injection["injected_text"])
+                solve = run_claude_solve(
+                    prompt=arm_prompt,
+                    workspace_dir=ws,
+                    model=args.model,
+                    max_turns=args.max_turns,
+                    timeout_s=args.solve_timeout,
+                )
+                verdict = run_verifier(spec["verifier"]["command"], ws)
+            arm_outcomes[arm] = verdict["outcome"]
+            injected_ids = []
+            for pull in injection["attribution"]:
+                injected_ids += pull.get("skill_ids_returned", [])
+                pull["task_id"] = task_id
+            if arm in ("on", "placebo"):
+                arm_attribution += injection["attribution"]
+            n_skills = sum(len(p.get("skills_returned", [])) for p in injection["attribution"])
+            print(
+                f"  [{arm.upper():8s}] solve_exit={solve['exit_code']:>3} "
+                f"verifier={verdict['outcome']:5s} injected_skills={n_skills}  "
+                f"{verdict['verifier_reason'][:70]}",
+                flush=True,
+            )
+
+        on_id = spec["invented_rule"]["corpus_skill_id"]
+        on_attr = [p for p in arm_attribution if p.get("arm") == "on"]
+        rule_injected = attribution_confirms_skill_injected(on_attr, on_id)
+        instrument_failure = (arm_outcomes.get("on") == "loss") and rule_injected
+
+        per_task_results.append({
+            "task_id": task_id,
+            "on_outcome": arm_outcomes.get("on", "n/a"),
+            "off_outcome": arm_outcomes.get("off", "n/a"),
+            "placebo_outcome": arm_outcomes.get("placebo", "n/a"),
+            "catastrophic_regression": False,
+            "attribution": arm_attribution,
+            "instrument_failure": instrument_failure,
+            "exact_rule_skill_injected": rule_injected,
+        })
+        print(flush=True)
+
+    verdict_summary = classify_efficacy_verdict(per_task_results)
+    report = render_efficacy_report({
+        "run_id": args.run_id,
+        "per_task_results": per_task_results,
+        "verdict_summary": verdict_summary,
+        "arms_used": arms,
+        "max_turns": args.max_turns,
+    })
+    out_dir = Path(args.output_dir) / args.run_id
+    write_efficacy_report(report, out_dir)
+    print(f"\nVERDICT: {verdict_summary['verdict']}", flush=True)
+    print(f"  {verdict_summary.get('detail', '')}", flush=True)
+    return 0
+
+
 # ── Main CLI ───────────────────────────────────────────────────────────────────
 
 def _dry_run(args: argparse.Namespace) -> int:
@@ -993,6 +1448,59 @@ def main() -> None:
         help="Base directory for run output (default: tests/e2e/reports/efficacy/).",
     )
     ap.add_argument(
+        "--server-url",
+        dest="server_url",
+        default="http://127.0.0.1:3001",
+        help="Base URL of the live mcp-server (default: http://127.0.0.1:3001).",
+    )
+    ap.add_argument(
+        "--model",
+        default="sonnet",
+        help="claude-code model for solves (owner chose Sonnet).",
+    )
+    ap.add_argument(
+        "--inject-via",
+        dest="inject_via",
+        choices=["compile_context", "find_skill"],
+        default="compile_context",
+        help=(
+            "Live tool used to retrieve the ON/placebo injection. compile_context = "
+            "production SessionStart priming path; find_skill = the T11-validated "
+            "agent retrieval surface."
+        ),
+    )
+    ap.add_argument(
+        "--inject-query",
+        dest="inject_query",
+        choices=["prompt", "summary", "title"],
+        default="prompt",
+        help=(
+            "Which task text the ON arm retrieves on. prompt = production-faithful "
+            "(may no_match if verbose); summary/title = focused positive-control "
+            "(hands the rule-bearing skill to ON; sensitivity check)."
+        ),
+    )
+    ap.add_argument(
+        "--max-tasks",
+        dest="max_tasks",
+        type=int,
+        default=None,
+        help=(
+            "Limit the live run to the first N tasks (smoke run). A partial run "
+            "CANNOT claim the pre-registered 7/10 verdict — it proves the harness."
+        ),
+    )
+    ap.add_argument(
+        "--solve-timeout",
+        dest="solve_timeout",
+        type=int,
+        default=900,
+        help=(
+            "Per-solve wall-clock stuck-detector in seconds (NOT a work cap). "
+            "Scratch invented-rule tasks finish in minutes; this only fires on a hang."
+        ),
+    )
+    ap.add_argument(
         "--self-test",
         action="store_true",
         help="Run module self-tests and exit.",
@@ -1006,24 +1514,8 @@ def main() -> None:
     if args.dry_run:
         sys.exit(_dry_run(args))
 
-    # Live run path: validate args then hand off.
-    # (The actual solve loop is run by the orchestrator in Unit 4, serialized.)
-    tasks_dir = Path(args.tasks)
-    if not tasks_dir.is_dir():
-        print(f"ERROR: --tasks directory not found: {tasks_dir}", file=sys.stderr)
-        sys.exit(1)
-    specs = load_task_specs(tasks_dir)
-    print(
-        f"T14 efficacy run: {len(specs)} task(s), arms={args.arms}, "
-        f"run-id={args.run_id}",
-        flush=True,
-    )
-    print(
-        "Live solve loop not yet implemented (Unit 4 orchestrator). "
-        "Use --dry-run to validate the plan.",
-        file=sys.stderr,
-    )
-    sys.exit(1)
+    # Live run path (Unit 4 — orchestrator-serialized): real solves over the live stack.
+    sys.exit(run_live(args))
 
 
 if __name__ == "__main__":

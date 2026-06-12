@@ -1,0 +1,24 @@
+=== T14 Efficacy A/B Run Report ===
+Run ID:   smoke-probe-140528
+Arms:     on, off
+Max turns (stuck-detector, not a cap): 30
+
+Pre-registered criterion (verbatim):
+  "ON wins ≥ 7 of 10 paired tasks by sign test, with no catastrophic regression on any single task."
+
+VERDICT: UNDERPOWERED
+  UNDERPOWERED: ON wins 0, OFF wins 0, ties 1; sign test p=1.0000 — positive direction but below the pre-registered bar of 7/10. This is a null result: UNDERPOWERED, not 'no effect'.
+
+Per-task paired win/loss/tie table:
+  all-migrations-dual-registration          ON=loss  OFF=loss  PLACEBO=n/a   paired=tie
+
+Sign test p-value: 1.0
+
+ON vs PLACEBO comparison:
+  ON wins vs PLACEBO:  0
+  PLACEBO wins vs ON:  0
+  Ties:                1
+
+Attribution per task (retrieval pulls labeled by trigger):
+  all-migrations-dual-registration:
+    [session_start_priming] skills=[]

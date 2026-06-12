@@ -1,0 +1,257 @@
+{
+  "run_id": "smoke-sensitivity-141049",
+  "verdict": "UNDERPOWERED",
+  "pre_registered_criterion": "ON wins \u2265 7 of 10 paired tasks by sign test, with no catastrophic regression on any single task.",
+  "sign_test_p_value": 1.0,
+  "on_wins": 0,
+  "off_wins": 0,
+  "n_ties": 3,
+  "n_tasks": 3,
+  "arms_used": [
+    "on",
+    "off",
+    "placebo"
+  ],
+  "max_turns": 30,
+  "per_task_table": [
+    {
+      "task_id": "all-migrations-dual-registration",
+      "on_outcome": "win",
+      "off_outcome": "win",
+      "placebo_outcome": "win",
+      "paired": "tie",
+      "catastrophic_regression": false,
+      "attribution": [
+        {
+          "trigger": "SessionStart",
+          "tool": "find_skill",
+          "arm": "on",
+          "inject_via": "find_skill",
+          "inject_query": "summary",
+          "retrieval_status": "ok",
+          "skills_returned": [
+            "migration-file-unwired-from-registry",
+            "orphaned-migration-file-detection",
+            "migration-test-triple-update"
+          ],
+          "skill_ids_returned": [
+            "7d94b1fa-2784-43f8-b125-a130f4586c65",
+            "a3c4daae-ee47-48fc-824d-179c8fbc22d2",
+            "4c0fd708-69bc-47f8-9da0-56ab1d51ce46"
+          ],
+          "label": "session_start_priming",
+          "task_id": "all-migrations-dual-registration"
+        },
+        {
+          "trigger": "SessionStart",
+          "tool": "find_skill",
+          "arm": "placebo",
+          "placebo_control": true,
+          "placebo_unrelated_prompt": "summarize the quarterly marketing budget spreadsheet and draft a friendly email to the events team about the office holiday party schedule",
+          "inject_via": "find_skill",
+          "retrieval_status": "no_match",
+          "skills_returned": [],
+          "skill_ids_returned": [],
+          "label": "session_start_priming",
+          "task_id": "all-migrations-dual-registration"
+        }
+      ]
+    },
+    {
+      "task_id": "anthropic-forced-tool-use",
+      "on_outcome": "win",
+      "off_outcome": "win",
+      "placebo_outcome": "win",
+      "paired": "tie",
+      "catastrophic_regression": false,
+      "attribution": [
+        {
+          "trigger": "SessionStart",
+          "tool": "find_skill",
+          "arm": "on",
+          "inject_via": "find_skill",
+          "inject_query": "summary",
+          "retrieval_status": "ok",
+          "skills_returned": [
+            "anthropic-api-forced-tool-use-for-structured-json",
+            "serde-default-swallows-missing-llm-output-field",
+            "ollama-thinking-model-think-false-structured-json"
+          ],
+          "skill_ids_returned": [
+            "5bab5349-3508-42b0-bebb-5445f864c302",
+            "ebcdcb2a-e8e6-492d-a2b2-e3ebaba8b35e",
+            "f3cc56e7-94e2-400f-a491-34336389630a"
+          ],
+          "label": "session_start_priming",
+          "task_id": "anthropic-forced-tool-use"
+        },
+        {
+          "trigger": "SessionStart",
+          "tool": "find_skill",
+          "arm": "placebo",
+          "placebo_control": true,
+          "placebo_unrelated_prompt": "summarize the quarterly marketing budget spreadsheet and draft a friendly email to the events team about the office holiday party schedule",
+          "inject_via": "find_skill",
+          "retrieval_status": "no_match",
+          "skills_returned": [],
+          "skill_ids_returned": [],
+          "label": "session_start_priming",
+          "task_id": "anthropic-forced-tool-use"
+        }
+      ]
+    },
+    {
+      "task_id": "arcswap-rcu-return-value",
+      "on_outcome": "win",
+      "off_outcome": "win",
+      "placebo_outcome": "win",
+      "paired": "tie",
+      "catastrophic_regression": false,
+      "attribution": [
+        {
+          "trigger": "SessionStart",
+          "tool": "find_skill",
+          "arm": "on",
+          "inject_via": "find_skill",
+          "inject_query": "summary",
+          "retrieval_status": "ok",
+          "skills_returned": [
+            "arcswap-rcu-use-return-value-not-closure-mutation",
+            "boot-time-arc-snapshot-never-refreshed"
+          ],
+          "skill_ids_returned": [
+            "49319f72-c248-4969-861f-12424f7802b2",
+            "a044d04c-f509-4ca1-aad8-0da603a5d5cc"
+          ],
+          "label": "session_start_priming",
+          "task_id": "arcswap-rcu-return-value"
+        },
+        {
+          "trigger": "SessionStart",
+          "tool": "find_skill",
+          "arm": "placebo",
+          "placebo_control": true,
+          "placebo_unrelated_prompt": "summarize the quarterly marketing budget spreadsheet and draft a friendly email to the events team about the office holiday party schedule",
+          "inject_via": "find_skill",
+          "retrieval_status": "no_match",
+          "skills_returned": [],
+          "skill_ids_returned": [],
+          "label": "session_start_priming",
+          "task_id": "arcswap-rcu-return-value"
+        }
+      ]
+    }
+  ],
+  "on_vs_placebo": {
+    "on_beats_placebo": 0,
+    "placebo_beats_on": 0,
+    "ties": 3
+  },
+  "attribution_per_task": {
+    "all-migrations-dual-registration": [
+      {
+        "trigger": "SessionStart",
+        "tool": "find_skill",
+        "arm": "on",
+        "inject_via": "find_skill",
+        "inject_query": "summary",
+        "retrieval_status": "ok",
+        "skills_returned": [
+          "migration-file-unwired-from-registry",
+          "orphaned-migration-file-detection",
+          "migration-test-triple-update"
+        ],
+        "skill_ids_returned": [
+          "7d94b1fa-2784-43f8-b125-a130f4586c65",
+          "a3c4daae-ee47-48fc-824d-179c8fbc22d2",
+          "4c0fd708-69bc-47f8-9da0-56ab1d51ce46"
+        ],
+        "label": "session_start_priming",
+        "task_id": "all-migrations-dual-registration"
+      },
+      {
+        "trigger": "SessionStart",
+        "tool": "find_skill",
+        "arm": "placebo",
+        "placebo_control": true,
+        "placebo_unrelated_prompt": "summarize the quarterly marketing budget spreadsheet and draft a friendly email to the events team about the office holiday party schedule",
+        "inject_via": "find_skill",
+        "retrieval_status": "no_match",
+        "skills_returned": [],
+        "skill_ids_returned": [],
+        "label": "session_start_priming",
+        "task_id": "all-migrations-dual-registration"
+      }
+    ],
+    "anthropic-forced-tool-use": [
+      {
+        "trigger": "SessionStart",
+        "tool": "find_skill",
+        "arm": "on",
+        "inject_via": "find_skill",
+        "inject_query": "summary",
+        "retrieval_status": "ok",
+        "skills_returned": [
+          "anthropic-api-forced-tool-use-for-structured-json",
+          "serde-default-swallows-missing-llm-output-field",
+          "ollama-thinking-model-think-false-structured-json"
+        ],
+        "skill_ids_returned": [
+          "5bab5349-3508-42b0-bebb-5445f864c302",
+          "ebcdcb2a-e8e6-492d-a2b2-e3ebaba8b35e",
+          "f3cc56e7-94e2-400f-a491-34336389630a"
+        ],
+        "label": "session_start_priming",
+        "task_id": "anthropic-forced-tool-use"
+      },
+      {
+        "trigger": "SessionStart",
+        "tool": "find_skill",
+        "arm": "placebo",
+        "placebo_control": true,
+        "placebo_unrelated_prompt": "summarize the quarterly marketing budget spreadsheet and draft a friendly email to the events team about the office holiday party schedule",
+        "inject_via": "find_skill",
+        "retrieval_status": "no_match",
+        "skills_returned": [],
+        "skill_ids_returned": [],
+        "label": "session_start_priming",
+        "task_id": "anthropic-forced-tool-use"
+      }
+    ],
+    "arcswap-rcu-return-value": [
+      {
+        "trigger": "SessionStart",
+        "tool": "find_skill",
+        "arm": "on",
+        "inject_via": "find_skill",
+        "inject_query": "summary",
+        "retrieval_status": "ok",
+        "skills_returned": [
+          "arcswap-rcu-use-return-value-not-closure-mutation",
+          "boot-time-arc-snapshot-never-refreshed"
+        ],
+        "skill_ids_returned": [
+          "49319f72-c248-4969-861f-12424f7802b2",
+          "a044d04c-f509-4ca1-aad8-0da603a5d5cc"
+        ],
+        "label": "session_start_priming",
+        "task_id": "arcswap-rcu-return-value"
+      },
+      {
+        "trigger": "SessionStart",
+        "tool": "find_skill",
+        "arm": "placebo",
+        "placebo_control": true,
+        "placebo_unrelated_prompt": "summarize the quarterly marketing budget spreadsheet and draft a friendly email to the events team about the office holiday party schedule",
+        "inject_via": "find_skill",
+        "retrieval_status": "no_match",
+        "skills_returned": [],
+        "skill_ids_returned": [],
+        "label": "session_start_priming",
+        "task_id": "arcswap-rcu-return-value"
+      }
+    ]
+  },
+  "verdict_detail": "UNDERPOWERED: ON wins 0, OFF wins 0, ties 3; sign test p=1.0000 \u2014 positive direction but below the pre-registered bar of 7/10. This is a null result: UNDERPOWERED, not 'no effect'.",
+  "catastrophic_regression_tasks": []
+}

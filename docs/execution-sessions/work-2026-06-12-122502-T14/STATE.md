@@ -7,9 +7,9 @@ tickets_ref: docs/tickets/2026-06-08-v1-7-local-hybrid-skilldag-retrieval/index.
 source_packet_ref: "promoted from todo #205 (P0)"
 brainstorm_ref: null
 started: 2026-06-12T12:25:02Z
-status: in_progress
+status: completed
 execution_shape: vertical-slices
-current_unit: 3
+current_unit: 5
 total_units: 5
 session_id: work-2026-06-12-122502-T14
 ---
@@ -58,8 +58,16 @@ session_id: work-2026-06-12-122502-T14
 | 1 | Pre-registration + harness contract + task-spec schema | tracer-bullet | Integrity gate: locks the criterion before any data; defines the task-spec + verifier contract everything else consumes | completed | 1 | commit efa04ea |
 | 2 | Invented-rule task battery (10 specs from real T10 skills) | expansion | The measurable tasks: real corpus rule + deterministic verifier per task | completed | 1+orch fix | unit-02 |
 | 3 | 3-arm A/B runner + scoring + attribution + gate + draft-acceptance scorer | expansion | The harness code that drives the real server and emits the PASS/FAIL/UNDERPOWERED verdict | completed | 2 | unit-03 |
-| 4 | Live smoke run (2-3 tasks x ON/OFF/placebo, serial, orchestrator) | hardening | e2e proof the harness moves end-to-end on the real stack + discrimination check | in_progress | -- | -- |
-| 5 | Schedule full run follow-up + assessment doc + index/ticket/STATE update + commit | hardening | Honest handoff; keeps the source artifacts truthful | pending | -- | -- |
+| 4 | Live smoke run + live-loop impl (orchestrator, serialized) | hardening | e2e proof the harness moves end-to-end + OFF-side α=0 check | completed | 1 | unit-04 |
+| 5 | Assessment doc + index/ticket/STATE update + commit (full run = follow-up) | hardening | Honest handoff; keeps the source artifacts truthful | completed | 1 | this STATE + assessment |
+
+## Outcome (2026-06-12)
+Harness VALIDATED end-to-end (9/9 live solves). Efficacy NOT measured — the smoke's OFF-side α=0 control
+revealed the invented-rule battery does not discriminate against Sonnet (OFF wins even with non-leaking
+prompts; the rules are within the model's default competence). Full ≥10-task run DEFERRED to a follow-up,
+blocked on: (1) re-author the battery for genuine non-pretrained discrimination + an OFF-only pre-gate;
+(2) ON injection-query strategy / qwen3 compile_context floor recalibration; (3) ≥10 real `.pending`
+drafts for the acceptance scorer. See docs/assessments/2026-06-12-t14-efficacy-harness-smoke.md.
 
 ## Learnings Brief
 _No learnings yet._
