@@ -11,7 +11,7 @@ go_evidence_ref: docs/assessments/2026-06-12-t14-clband-smoke.md (T22 RESOLUTION
 started: 2026-06-12
 status: in_progress
 execution_shape: infra-track
-current_unit: A
+current_unit: C
 total_units: 5
 session_id: work-2026-06-12-t23-band-run
 solver_checkpoint: "claude-code 2.1.175, --model sonnet (smoke was 2.1.173 — solver bump; OFF pre-gate re-runs per context per plan §1 expiry rule, so auto-handled)"
@@ -73,9 +73,9 @@ dataset_sha: b28a5832a09b0d96c0cf4c22e90d7c60ede25b80
 | # | Unit | Kind | Serves / Unlocks | Status | Attempts | Session File |
 |---|------|------|------------------|--------|----------|--------------|
 | 0 | Pre-registration amendment (auto-gate, roster lock, unattended policy) | infra-packet | Legal foundation — amendment lands BEFORE first band datum | completed | 1 | unit-0-preregistration.md |
-| A | Instruments at scale (8 contexts: verifiers ≥5 checks + fixtures + de-ref rewrites + operative sentinels) | infra-packet | Per-context measurement eligibility; sentinel verification gate | pending | -- | unit-A-instruments.md |
-| B | Band orchestrator + auto-gate + scope-guard tests (run_band.py, Steps 0–5, resumable) | infra-packet | The driver; the safety boundary | pending | -- | unit-B-orchestrator.md |
-| C | The overnight run (context #1 canary → 2–8; dogfood re-probe) | infra-packet | The paired efficacy data | pending | -- | unit-C-overnight-run.md |
+| A | Instruments at scale (8 contexts: verifiers ≥5 checks + fixtures + de-ref rewrites + operative sentinels) | infra-packet | Per-context measurement eligibility; sentinel verification gate | completed (dddeb82) | 1 | unit-A-instruments.md |
+| B | Band orchestrator + auto-gate + scope-guard tests (run_band.py, Steps 0–5, resumable) | infra-packet | The driver; the safety boundary | completed (bb14c03,032f040) | 1 | unit-B-orchestrator.md |
+| C | The overnight run (context #1 canary → 2–8; dogfood re-probe) | infra-packet | The paired efficacy data | in_progress | 1 | unit-C-overnight-run.md |
 | D | Morning report (verdict vs LOCKED pre-reg + secondaries + attribution + closeout) | infra-packet | The verdict; assessment + closeout | pending | -- | unit-D-morning-report.md |
 
 ## Owner decisions ALREADY MADE (do not re-ask)
@@ -97,4 +97,37 @@ dataset_sha: b28a5832a09b0d96c0cf4c22e90d7c60ede25b80
 - T23 registered as Batch 18, status ready, depends_on T22 ✅.
 
 ## Learnings Brief
-_No learnings yet (Unit 0 in progress)._
+- [scope-mechanism] **The ON-arm retrieval path is LIVE-PROVEN (canary PASS).** The proven recipe
+  (smoke DP-2 Option A): clband skills live in named volume `dynamic-agent-skill-layer_test-project-skills`
+  at `/skills/project/clband-<name>/{.git,.skills/...}`; volume writes go via one-off
+  `docker run --rm -v <vol>:/skills/project alpine` (service mounts are `:ro`). The `.git` marker makes
+  `compile_context repo_path=/skills/project/clband-<name>` resolve to that subdir; retrieval filters by
+  `source_path.starts_with(scope_path)` → returns ONLY that scope's skills (dogfood + other clband
+  scopes excluded). graph-builder POLLS the volume (~15s) → full rebuild → PG/Qdrant → Redis
+  `graph.rebuilt` → mcp-server `reload_and_swap` (ArcSwap, NO restart). Validated end-to-end with a
+  throwaway canary (write→accept→retrieve isolated→remove→restore 262). `scope_rebuild.py --canary`.
+- [gotcha] compile_context returns `status=duplicate_suppressed` for a repeated (session_id, prompt)
+  pair → readiness polls MUST vary session per attempt (fixed in `wait_retrievable`). Real Session B
+  uses unique per-task session ids, so measurement is unaffected.
+- [retrieval] `find_skill` is UNSCOPED (hardcoded `retrieve(prompt, None)`) → ON/PLACEBO MUST inject via
+  `compile_context` with a clband `repo_path`. PLACEBO = a DIFFERENT context's clband scope (matched
+  mass), trivially available because Pass 1 builds all scopes before Pass 2 measures.
+- [design] run_band.py is TWO-PASS: Pass 1 builds each context's scope (Step 0 OFF pre-gate → teach →
+  extract → fidelity gate → auto-gate accept → rebuild → wait_retrievable); Pass 2 measures surviving
+  siblings (ON own-scope + PLACEBO donor-scope; OFF REUSED from the Step-0 pre-gate = identical bare
+  solve). Context #1 = the live canary for the full path. Checkpointed/resumable per (context, step).
+- [safety] The AUTO-GATE scope guard (`assert_clband_path`) rejects any path not under
+  `/skills/project/clband-<...>/` (dogfood/global/production) → fail loud. 24 unit tests green.
+- [build] Unit A instruments are 8 PARALLEL sonnet execution-agents (file-disjoint per context),
+  each self-testing its verifier (good=0/bad=1) + grep-verifying operative sentinels verbatim. The
+  orchestrator MERGES `instruments/<name>.json` sentinels into manifest.json + re-verifies (the gate).
+  teach_delivery.py generalized to be data-driven from instruments/<name>.json `doc_file`.
+
+## Build status (Units A + B, 2026-06-13)
+- Unit 0: COMMITTED (9be303b).
+- Unit B core BUILT + validated: `scope_rebuild.py` (canary PASS live), `test_scope_rebuild.py`
+  (24 green), `run_band.py` (compiles/imports; --plan pending all instruments), teach_delivery
+  generalized. Pending: merge Unit-A sentinels → manifest.json + re-verify + `--plan` + commit.
+- Unit A: 5/8 instrument agents done (material-handler-sops, ezlang-language, 123corp-hr-policy,
+  drywave-3000-manual, quartermaster-hold-inventory) — all self-tested good=0/bad=1, sentinels
+  grep-verified. 3 running (source-integrity-agent, dpms-agent-m, dartman-game).
