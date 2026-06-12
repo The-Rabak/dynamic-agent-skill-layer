@@ -1,0 +1,30 @@
+{
+  "task_id": "claude-cli-fence-stripping",
+  "title": "Strip triple-backtick JSON fences from claude CLI --output-format json before parsing",
+  "invented_rule": {
+    "summary": "When using `claude --print --output-format json`, the assistant text in the `.result` field is wrapped in triple-backtick json fences that must be stripped before JSON.parse(); omitting the strip causes a SyntaxError or corrupt parse.",
+    "corpus_skill_slug": "claude-cli-headless-json-fence-stripping",
+    "corpus_skill_id": "73fdf717-a77d-4d9c-8e73-0d3e18ae46f8",
+    "absent_from_pretraining_rationale": "The specific behavior that `claude --output-format json` wraps the assistant reply in markdown code fences inside the `.result` string is an observed claude-code CLI implementation detail, not documented in standard API/SDK docs. A generic solver writing code to consume the claude CLI JSON output would likely call JSON.parse() directly on `.result` without fence-stripping, since the outer envelope is already JSON and the inner payload was requested as JSON."
+  },
+  "prompt": "Write a Python function `parse_claude_cli_output(raw_stdout: str) -> dict` in `src/claude_parser.py` that:\n1. Parses the outer JSON envelope (the struct with `type`, `result`, etc.).\n2. Extracts the `.result` field (a string).\n3. Strips any leading/trailing triple-backtick fences (e.g. ` ```json ` ... ` ``` `) from the result string.\n4. Parses and returns the inner JSON payload as a Python dict.\n\nThe function must handle both the fenced case (when `.result` is wrapped in backtick fences) and the unfenced case (when `.result` is already clean JSON).",
+  "workspace": {
+    "kind": "scratch",
+    "base_ref": null,
+    "setup": [
+      "mkdir -p src",
+      "touch src/__init__.py",
+      "cat > src/claude_parser_stub.py << 'PYEOF'\n# Stub showing what NOT to do (the bug):\ndef parse_claude_cli_output_buggy(raw_stdout: str) -> dict:\n    import json\n    envelope = json.loads(raw_stdout)\n    # BUG: does not strip fences; will raise SyntaxError when fences are present\n    return json.loads(envelope[\"result\"])\nPYEOF"
+    ]
+  },
+  "verifier": {
+    "command": "tests/e2e/efficacy/verifiers/claude-cli-fence-stripping.sh",
+    "contract": "Invoked as `<command> <workspace_dir>`. Exit 0 == invented rule OBEYED (task win). Non-zero == rule NOT obeyed. MUST print a one-line human reason to stdout. NO network, NO LLM — pure deterministic inspection of the produced workspace/diff."
+  },
+  "expected": {
+    "on": "pass",
+    "off": "fail",
+    "placebo": "fail",
+    "sensitivity_note": "If ON fails this with the rule injected (attribution confirms the pull), that is INSTRUMENT-FAILURE."
+  }
+}

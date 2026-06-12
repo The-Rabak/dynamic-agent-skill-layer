@@ -1,0 +1,30 @@
+{
+  "task_id": "all-migrations-dual-registration",
+  "title": "Register a new database migration in BOTH the file set and the MIGRATIONS array",
+  "invented_rule": {
+    "summary": "Every migration SQL file must be wired into BOTH the per-migration const/identifier AND the MIGRATIONS slice/array; an SQL file that exists on disk but is absent from the array silently never applies on boot.",
+    "corpus_skill_slug": "all-migrations-must-be-registered-in-both-the-preference",
+    "corpus_skill_id": "ca229ea9-96fb-44e4-87d7-c7bf46804d33",
+    "absent_from_pretraining_rationale": "The explicit dual-registration requirement (const + MIGRATIONS array, both required) is a project-specific convention enforced in this codebase's postgres.rs migration runner. Generic best-practice knowledge of SQL migrations teaches file-based auto-discovery (e.g. Flyway, Diesel migrations dir-scan), not a compile-time array registration pattern where a file on disk can be permanently silently skipped if not array-wired."
+  },
+  "prompt": "The file `migrations/012_add_skill_tags_index.sql` has been created with content:\n\n```sql\nCREATE INDEX IF NOT EXISTS idx_skills_tags ON skills USING GIN(tags);\n```\n\nThe migration runner in `src/postgres.rs` uses an explicit `MIGRATIONS` static array and individual `const` identifiers, not directory scanning. Your task is to wire this new migration so it will actually run on boot. Edit `src/postgres.rs` to register migration `012` properly. The file already contains migrations 001 through 011 as a pattern to follow.",
+  "workspace": {
+    "kind": "scratch",
+    "base_ref": null,
+    "setup": [
+      "mkdir -p migrations src",
+      "cat > migrations/012_add_skill_tags_index.sql << 'SQLEOF'\nCREATE INDEX IF NOT EXISTS idx_skills_tags ON skills USING GIN(tags);\nSQLEOF",
+      "cat > src/postgres.rs << 'RSEOF'\n// Migration runner — explicit compile-time registration only.\n// IMPORTANT: migrations are NOT dir-scanned; every new SQL file MUST be\n// wired into BOTH a const identifier AND the MIGRATIONS slice below.\n\nconst M001: &str = include_str!(\"../migrations/001_initial_schema.sql\");\nconst M002: &str = include_str!(\"../migrations/002_add_sessions_table.sql\");\nconst M003: &str = include_str!(\"../migrations/003_add_skills_table.sql\");\nconst M004: &str = include_str!(\"../migrations/004_session_logs.sql\");\nconst M005: &str = include_str!(\"../migrations/005_add_embeddings_table.sql\");\nconst M006: &str = include_str!(\"../migrations/006_add_skill_graph_edges.sql\");\nconst M007: &str = include_str!(\"../migrations/007_write_ahead_log.sql\");\nconst M008: &str = include_str!(\"../migrations/008_add_skill_embeddings_cache.sql\");\nconst M009: &str = include_str!(\"../migrations/009_add_usage_counters.sql\");\nconst M010: &str = include_str!(\"../migrations/010_add_skill_views.sql\");\nconst M011: &str = include_str!(\"../migrations/011_add_skill_embeddings.sql\");\n\npub static MIGRATIONS: &[(&str, &str)] = &[\n    (\"001_initial_schema\", M001),\n    (\"002_add_sessions_table\", M002),\n    (\"003_add_skills_table\", M003),\n    (\"004_session_logs\", M004),\n    (\"005_add_embeddings_table\", M005),\n    (\"006_add_skill_graph_edges\", M006),\n    (\"007_write_ahead_log\", M007),\n    (\"008_add_skill_embeddings_cache\", M008),\n    (\"009_add_usage_counters\", M009),\n    (\"010_add_skill_views\", M010),\n    (\"011_add_skill_embeddings\", M011),\n];\nRSEOF"
+    ]
+  },
+  "verifier": {
+    "command": "tests/e2e/efficacy/verifiers/all-migrations-dual-registration.sh",
+    "contract": "Invoked as `<command> <workspace_dir>`. Exit 0 == invented rule OBEYED (task win). Non-zero == rule NOT obeyed. MUST print a one-line human reason to stdout. NO network, NO LLM — pure deterministic inspection of the produced workspace/diff."
+  },
+  "expected": {
+    "on": "pass",
+    "off": "fail",
+    "placebo": "fail",
+    "sensitivity_note": "If ON fails this with the rule injected (attribution confirms the pull), that is INSTRUMENT-FAILURE."
+  }
+}

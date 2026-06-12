@@ -1,0 +1,30 @@
+{
+  "task_id": "env-var-fail-loud-all-binaries",
+  "title": "Apply fail-loud env-var validation to the maintenance binary, not just the server binary",
+  "invented_rule": {
+    "summary": "Fail-loud env-var validation must be applied at every production binary entry point (every main.rs), not only at the server binary; a silent fallback to a hardcoded localhost default — especially one pointing at a test-infrastructure port like 15432 — is a category-1 violation.",
+    "corpus_skill_slug": "apply-fail-loud-env-var-checks-to-all-binaries-not-just-the-server",
+    "corpus_skill_id": "d776c274-37a9-406d-a7e7-9fdb7846e941",
+    "absent_from_pretraining_rationale": "The rule that ALL workspace binaries must have the same fail-loud discipline — and the specific callout that port 15432 is a test-infrastructure port that signals the wrong fallback — is derived from a concrete production incident in this project. A generic Rust best-practices solver would likely apply fail-loud only to the 'main server' binary and leave batch/offline binaries with their existing defaults, since this pattern is not covered by standard Rust documentation or style guides."
+  },
+  "prompt": "The workspace has two binary crates: `server` and `maintenance`. The `server` binary already uses `std::env::var(\"DATABASE_URL\").expect(\"DATABASE_URL must be set\")`. But `maintenance/src/main.rs` silently falls back to a hardcoded localhost URL:\n\n```rust\nlet db_url = std::env::var(\"DATABASE_URL\")\n    .unwrap_or_else(|_| \"postgres://admin:secret@localhost:15432/skills\".to_string());\n```\n\nPort 15432 is the test-only docker-compose port — this default silently connects to the test database in production. Fix `maintenance/src/main.rs` so it fails loud if `DATABASE_URL` is absent, matching the server binary's discipline.",
+  "workspace": {
+    "kind": "scratch",
+    "base_ref": null,
+    "setup": [
+      "mkdir -p server/src maintenance/src",
+      "cat > server/src/main.rs << 'RSEOF'\nfn main() {\n    // Server correctly fails loud on missing DATABASE_URL\n    let db_url = std::env::var(\"DATABASE_URL\")\n        .expect(\"DATABASE_URL must be set\");\n    println!(\"Server connecting to: {}\", db_url);\n}\nRSEOF",
+      "cat > maintenance/src/main.rs << 'RSEOF'\nfn main() {\n    // BUG: silently falls back to the test-only docker-compose port 15432\n    let db_url = std::env::var(\"DATABASE_URL\")\n        .unwrap_or_else(|_| \"postgres://admin:secret@localhost:15432/skills\".to_string());\n    println!(\"Maintenance connecting to: {}\", db_url);\n}\nRSEOF"
+    ]
+  },
+  "verifier": {
+    "command": "tests/e2e/efficacy/verifiers/env-var-fail-loud-all-binaries.sh",
+    "contract": "Invoked as `<command> <workspace_dir>`. Exit 0 == invented rule OBEYED (task win). Non-zero == rule NOT obeyed. MUST print a one-line human reason to stdout. NO network, NO LLM — pure deterministic inspection of the produced workspace/diff."
+  },
+  "expected": {
+    "on": "pass",
+    "off": "fail",
+    "placebo": "fail",
+    "sensitivity_note": "If ON fails this with the rule injected (attribution confirms the pull), that is INSTRUMENT-FAILURE."
+  }
+}

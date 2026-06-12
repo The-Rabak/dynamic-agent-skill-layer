@@ -9,7 +9,7 @@ brainstorm_ref: null
 started: 2026-06-12T12:25:02Z
 status: in_progress
 execution_shape: vertical-slices
-current_unit: 0
+current_unit: 3
 total_units: 5
 session_id: work-2026-06-12-122502-T14
 ---
@@ -55,10 +55,10 @@ session_id: work-2026-06-12-122502-T14
 ## Work Status
 | # | Unit | Kind | Serves / Unlocks | Status | Attempts | Session File |
 |---|------|------|------------------|--------|----------|--------------|
-| 1 | Pre-registration + harness contract + task-spec schema | tracer-bullet | Integrity gate: locks the criterion before any data; defines the task-spec + verifier contract everything else consumes | pending | -- | -- |
-| 2 | Invented-rule task battery (>=10 specs from real T10 skills) | expansion | The measurable tasks: real corpus rule + deterministic verifier per task | pending | -- | -- |
-| 3 | 3-arm A/B runner + scoring + attribution + gate + draft-acceptance scorer | expansion | The harness code that drives the real server and emits the PASS/FAIL/UNDERPOWERED verdict | pending | -- | -- |
-| 4 | Live smoke run (2-3 tasks x ON/OFF/placebo, serial, orchestrator) | hardening | e2e proof the harness moves end-to-end on the real stack + discrimination check | pending | -- | -- |
+| 1 | Pre-registration + harness contract + task-spec schema | tracer-bullet | Integrity gate: locks the criterion before any data; defines the task-spec + verifier contract everything else consumes | completed | 1 | commit efa04ea |
+| 2 | Invented-rule task battery (10 specs from real T10 skills) | expansion | The measurable tasks: real corpus rule + deterministic verifier per task | completed | 1+orch fix | unit-02 |
+| 3 | 3-arm A/B runner + scoring + attribution + gate + draft-acceptance scorer | expansion | The harness code that drives the real server and emits the PASS/FAIL/UNDERPOWERED verdict | completed | 2 | unit-03 |
+| 4 | Live smoke run (2-3 tasks x ON/OFF/placebo, serial, orchestrator) | hardening | e2e proof the harness moves end-to-end on the real stack + discrimination check | in_progress | -- | -- |
 | 5 | Schedule full run follow-up + assessment doc + index/ticket/STATE update + commit | hardening | Honest handoff; keeps the source artifacts truthful | pending | -- | -- |
 
 ## Learnings Brief

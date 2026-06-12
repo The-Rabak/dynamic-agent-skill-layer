@@ -1,0 +1,29 @@
+{
+  "task_id": "backend-selector-fail-loud",
+  "title": "Make a backend selector arm fail loud instead of silently delegating to another arm",
+  "invented_rule": {
+    "summary": "Every arm of a backend/strategy selector must either implement its own real path or return an explicit error/unreachable — a 'not yet implemented' arm that silently clones another arm's result mislabels callers and is a correctness violation.",
+    "corpus_skill_slug": "backend-selector-arm-must-fail-loud-not-passthrough",
+    "corpus_skill_id": "9835e70f-3047-4504-9d4e-41853b804b1a",
+    "absent_from_pretraining_rationale": "While fail-fast is a general principle, the specific pattern of an enum-matched backend selector arm silently delegating by cloning another arm's result (vs returning Err/unreachable) is a project-discovered failure mode not encoded in generic Rust style guides or LLM pretraining. A generic solver would likely leave the silent delegation in place as 'harmless' or add a TODO comment, not replace it with a typed error return."
+  },
+  "prompt": "In `src/retrieval.rs`, the `search` function dispatches on `RetrievalBackend`. The `QdrantHybrid` arm is not yet implemented and currently clones the dense results silently:\n\n```rust\nRetrievalBackend::QdrantHybrid => dense_results.clone(),\n```\n\nThis means callers using `QdrantHybrid` silently receive dense results without any indication that hybrid search was NOT performed — a correctness violation.\n\nFix the `QdrantHybrid` arm so that callers receive an explicit error when hybrid search is not yet available, rather than silently getting dense results. Do not implement actual hybrid search logic.",
+  "workspace": {
+    "kind": "scratch",
+    "base_ref": null,
+    "setup": [
+      "mkdir -p src",
+      "cat > src/retrieval.rs << 'RSEOF'\nuse std::fmt;\n\n#[derive(Debug, Clone, PartialEq)]\npub enum RetrievalBackend {\n    SnapshotDense,\n    QdrantHybrid,\n}\n\n#[derive(Debug)]\npub struct SearchError(pub String);\n\nimpl fmt::Display for SearchError {\n    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {\n        write!(f, \"SearchError: {}\", self.0)\n    }\n}\n\n/// Search for skills using the configured backend.\n/// Every backend arm must either implement its own real path or fail loud;\n/// silent delegation to another arm mislabels results.\npub fn search(\n    backend: &RetrievalBackend,\n    query: &str,\n) -> Result<Vec<String>, SearchError> {\n    let dense_results = vec![format!(\"dense:{}\", query)];\n    match backend {\n        RetrievalBackend::SnapshotDense => Ok(dense_results),\n        // BUG: silently clones dense results — callers believe they got hybrid results\n        RetrievalBackend::QdrantHybrid => Ok(dense_results.clone()),\n    }\n}\nRSEOF"
+    ]
+  },
+  "verifier": {
+    "command": "tests/e2e/efficacy/verifiers/backend-selector-fail-loud.sh",
+    "contract": "Invoked as `<command> <workspace_dir>`. Exit 0 == invented rule OBEYED (task win). Non-zero == rule NOT obeyed. MUST print a one-line human reason to stdout. NO network, NO LLM — pure deterministic inspection of the produced workspace/diff."
+  },
+  "expected": {
+    "on": "pass",
+    "off": "fail",
+    "placebo": "fail",
+    "sensitivity_note": "If ON fails this with the rule injected (attribution confirms the pull), that is INSTRUMENT-FAILURE."
+  }
+}

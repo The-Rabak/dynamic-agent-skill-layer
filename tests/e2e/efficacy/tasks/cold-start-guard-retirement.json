@@ -1,0 +1,29 @@
+{
+  "task_id": "cold-start-guard-retirement",
+  "title": "Add a cold-start guard to the retirement worker to exclude never-used items",
+  "invented_rule": {
+    "summary": "In periodic workers that retire items by usage threshold, items with zero historical usage must be excluded from retirement candidates — 'never used' is ambiguous with 'newly seeded', and mass-retiring everything on first boot after a DB reset is a correctness violation.",
+    "corpus_skill_slug": "cold-start-guard-for-retirement-workers",
+    "corpus_skill_id": "6e46aae8-1adf-4974-97b1-2320f37715a2",
+    "absent_from_pretraining_rationale": "The cold-start guard pattern — excluding never-used (zero-usage-count) items from retirement candidates to prevent mass-deletion on first deployment — is a project-discovered failure mode, not a documented database or worker pattern. A generic solver would likely implement a simple 'usage < threshold' query and consider it done, missing the edge case that items with zero usage are new (not abandoned) on first boot."
+  },
+  "prompt": "In `src/retirement_worker.py`, the `get_retirement_candidates` function retrieves skills whose usage count falls below the retirement threshold. On first deployment after a fresh DB import, this causes mass-deletion of all newly-seeded skills (they have zero usage, which is below any threshold).\n\nAdd the cold-start guard: modify the query so that skills with zero total usage are NEVER returned as retirement candidates, regardless of the threshold. Skills must have at least one recorded usage event before they can be considered for retirement.",
+  "workspace": {
+    "kind": "scratch",
+    "base_ref": null,
+    "setup": [
+      "mkdir -p src",
+      "cat > src/retirement_worker.py << 'PYEOF'\n\"\"\"Retirement worker: periodically retires low-usage skills.\"\"\"\n\ndef get_retirement_candidates(conn, threshold: int) -> list:\n    \"\"\"\n    Return skills whose usage count is below the threshold.\n\n    BUG: This also returns skills with zero usage (newly seeded items),\n    causing mass-deletion on first boot after a DB reset.\n    \"\"\"\n    rows = conn.execute(\n        \"SELECT skill_id, total_usage_count FROM skills \"\n        \"WHERE total_usage_count < %s\",\n        (threshold,)\n    ).fetchall()\n    return [r[0] for r in rows]\nPYEOF"
+    ]
+  },
+  "verifier": {
+    "command": "tests/e2e/efficacy/verifiers/cold-start-guard-retirement.sh",
+    "contract": "Invoked as `<command> <workspace_dir>`. Exit 0 == invented rule OBEYED (task win). Non-zero == rule NOT obeyed. MUST print a one-line human reason to stdout. NO network, NO LLM — pure deterministic inspection of the produced workspace/diff."
+  },
+  "expected": {
+    "on": "pass",
+    "off": "fail",
+    "placebo": "fail",
+    "sensitivity_note": "If ON fails this with the rule injected (attribution confirms the pull), that is INSTRUMENT-FAILURE."
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "task_id": "rrf-score-not-exposed",
+  "title": "Expose the pre-fusion relevance score, not the RRF rank artifact, from find_skill",
+  "invented_rule": {
+    "summary": "The RRF fusion value (1/(rrf_k+rank)) is an ordering function only — it must never be exposed as the public relevance score; the pre-fusion semantic/relevance score must be preserved on the candidate struct and used as the exposed score.",
+    "corpus_skill_slug": "diagnose-rrf-artifact-score-exposure",
+    "corpus_skill_id": "ff166fb6-353e-40ed-a9bb-a9dce68c63c3",
+    "absent_from_pretraining_rationale": "The failure mode — that RRF fusion overwrites the candidate's score field with 1/(rrf_k+rank) producing only 2-3 discrete values — is diagnosed from live observation in this project's retrieval stack. A generic solver implementing find_skill or a retrieval function would naturally use the fusion score as the exposed value since it is the final computed score, not knowing that the project requires the pre-fusion semantic relevance to be preserved separately."
+  },
+  "prompt": "In `src/retrieval_fusion.py`, the `fuse_and_rank` function performs Reciprocal Rank Fusion (RRF) and returns `ScoredSkill` objects. Currently, it overwrites each candidate's `score` with the RRF value:\n\n```python\ncandidate.score = 1.0 / (rrf_k + rank)\n```\n\nThis means every returned skill has a score like 0.016 or 0.011 — discrete RRF rank artifacts, not meaningful relevance values. A 0.9-cosine match and a 0.5-cosine match at the same rank get identical scores.\n\nFix `fuse_and_rank` so that:\n1. The `ScoredSkill.score` field holds the pre-fusion semantic/relevance score (already available as `candidate.semantic_score`).\n2. RRF is used only for ordering — store it in `candidate.fusion_rank_score` or use it only as the sort key.\n3. The returned list is still sorted by RRF rank (highest RRF first), but `score` reflects actual relevance.",
+  "workspace": {
+    "kind": "scratch",
+    "base_ref": null,
+    "setup": [
+      "mkdir -p src",
+      "cat > src/retrieval_fusion.py << 'PYEOF'\n\"\"\"Retrieval fusion: RRF over multiple candidate lists.\"\"\"\nfrom dataclasses import dataclass, field\nfrom typing import List\n\n\n@dataclass\nclass ScoredSkill:\n    skill_id: str\n    name: str\n    semantic_score: float  # pre-fusion cosine/relevance score\n    score: float = 0.0     # public-facing score (must be relevance, not RRF)\n    fusion_rank_score: float = 0.0  # internal sort key\n\n\nRRF_K = 60\n\n\ndef fuse_and_rank(candidate_lists: List[List[ScoredSkill]]) -> List[ScoredSkill]:\n    \"\"\"\n    Fuse multiple ranked candidate lists using Reciprocal Rank Fusion.\n\n    BUG: overwrites candidate.score with the RRF rank artifact value\n    (1/(rrf_k+rank)), producing only 2-3 discrete score values regardless\n    of actual semantic relevance.\n    \"\"\"\n    rrf_scores: dict = {}\n    candidates: dict = {}\n\n    for ranked_list in candidate_lists:\n        for rank, candidate in enumerate(ranked_list, start=1):\n            rrf_val = 1.0 / (RRF_K + rank)\n            rrf_scores[candidate.skill_id] = rrf_scores.get(candidate.skill_id, 0.0) + rrf_val\n            candidates[candidate.skill_id] = candidate\n\n    result = sorted(candidates.values(), key=lambda c: rrf_scores[c.skill_id], reverse=True)\n    for c in result:\n        # BUG: exposes the RRF rank artifact as the public score\n        c.score = rrf_scores[c.skill_id]\n    return result\nPYEOF"
+    ]
+  },
+  "verifier": {
+    "command": "tests/e2e/efficacy/verifiers/rrf-score-not-exposed.sh",
+    "contract": "Invoked as `<command> <workspace_dir>`. Exit 0 == invented rule OBEYED (task win). Non-zero == rule NOT obeyed. MUST print a one-line human reason to stdout. NO network, NO LLM — pure deterministic inspection of the produced workspace/diff."
+  },
+  "expected": {
+    "on": "pass",
+    "off": "fail",
+    "placebo": "fail",
+    "sensitivity_note": "If ON fails this with the rule injected (attribution confirms the pull), that is INSTRUMENT-FAILURE."
+  }
+}

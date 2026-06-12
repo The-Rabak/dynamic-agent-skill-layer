@@ -1,0 +1,31 @@
+{
+  "task_id": "cargo-required-features-check",
+  "title": "Add --features flag to cargo test invocations for targets with required-features",
+  "invented_rule": {
+    "summary": "cargo test --all-targets silently skips integration test targets that declare required-features in Cargo.toml; every cargo test invocation for such a package must explicitly pass --features <feature> or the tests silently do not run, giving a false-green signal.",
+    "corpus_skill_slug": "cargo-all-targets-silently-skips-required-features",
+    "corpus_skill_id": "1f3a12ae-2593-48c9-bdcf-e8a930340219",
+    "absent_from_pretraining_rationale": "The specific behavior that cargo --all-targets silently skips required-features targets (exit 0, no compilation, no tests run) is a non-obvious cargo quirk. Pretraining on general Rust/cargo documentation would not reliably surface that --all-targets is incomplete for required-features tests, and a generic solver fixing a CI script would not know to audit for this silent omission."
+  },
+  "prompt": "The CI script `ci.sh` runs cargo tests for the `mcp-server` crate. The `Cargo.toml` shows that the integration test target `test_live_data_plane_roundtrip` has `required-features = [\"test-utils\"]`. The current script runs:\n\n```bash\ncargo test -p mcp-server --test test_live_data_plane_roundtrip -- --ignored\n```\n\nThis silently exits 0 without compiling or running any tests because the `test-utils` feature is not passed. Fix `ci.sh` so the integration tests actually compile and run.",
+  "workspace": {
+    "kind": "scratch",
+    "base_ref": null,
+    "setup": [
+      "mkdir -p src",
+      "cat > Cargo.toml << 'TOMLEOF'\n[package]\nname = \"mcp-server\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[features]\ntest-utils = []\n\n[[test]]\nname = \"test_live_data_plane_roundtrip\"\npath = \"tests/test_live_data_plane_roundtrip.rs\"\nrequired-features = [\"test-utils\"]\nTOMLEOF",
+      "cat > ci.sh << 'SHEOF'\n#!/usr/bin/env bash\nset -euo pipefail\n# Run live integration tests\ncargo test -p mcp-server --test test_live_data_plane_roundtrip -- --ignored\nSHEOF",
+      "chmod +x ci.sh"
+    ]
+  },
+  "verifier": {
+    "command": "tests/e2e/efficacy/verifiers/cargo-required-features-check.sh",
+    "contract": "Invoked as `<command> <workspace_dir>`. Exit 0 == invented rule OBEYED (task win). Non-zero == rule NOT obeyed. MUST print a one-line human reason to stdout. NO network, NO LLM — pure deterministic inspection of the produced workspace/diff."
+  },
+  "expected": {
+    "on": "pass",
+    "off": "fail",
+    "placebo": "fail",
+    "sensitivity_note": "If ON fails this with the rule injected (attribution confirms the pull), that is INSTRUMENT-FAILURE."
+  }
+}

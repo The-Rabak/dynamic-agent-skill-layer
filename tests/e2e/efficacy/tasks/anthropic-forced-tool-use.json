@@ -1,0 +1,29 @@
+{
+  "task_id": "anthropic-forced-tool-use",
+  "title": "Use forced tool_use for structured JSON output from the Anthropic Messages API",
+  "invented_rule": {
+    "summary": "When calling the Anthropic Messages API and requiring structured JSON output, the request must use forced tool_use (tool_choice set to force a named tool) — never rely on parsing free-text content blocks, which are brittle and unvalidated.",
+    "corpus_skill_slug": "anthropic-api-forced-tool-use-for-structured-json",
+    "corpus_skill_id": "5bab5349-3508-42b0-bebb-5445f864c302",
+    "absent_from_pretraining_rationale": "While the Anthropic API supports tool_use, the project-specific rule that ALL structured JSON extraction via the Anthropic API must use forced tool_use (not free-text parsing) is a hard-learned lesson from this codebase. A generic solver asked to 'make this return structured JSON' would likely add instructions like 'respond with JSON only' to the system prompt and parse the text content block, which is the naive approach and fails on any model response with markdown, explanation, or formatting."
+  },
+  "prompt": "In `src/extractor.py`, the `extract_skills` function calls the Anthropic Messages API and parses the response. Currently it parses the text content block as JSON:\n\n```python\nresponse = client.messages.create(\n    model=\"claude-sonnet-4-6\",\n    max_tokens=4096,\n    system=\"Extract skills as JSON array...\",\n    messages=[{\"role\": \"user\", \"content\": transcript}]\n)\nresult = json.loads(response.content[0].text)  # brittle\n```\n\nRewrite `extract_skills` to use forced tool_use instead of text-block parsing. Define a tool with an appropriate input_schema for the skills extraction output, force it via tool_choice, and extract the structured output from the tool_use content block.",
+  "workspace": {
+    "kind": "scratch",
+    "base_ref": null,
+    "setup": [
+      "mkdir -p src",
+      "cat > src/extractor.py << 'PYEOF'\n\"\"\"Skill extractor using the Anthropic Messages API.\"\"\"\nimport json\n\n\ndef extract_skills(client, transcript: str) -> list:\n    \"\"\"\n    Extract skill candidates from a transcript using the Anthropic API.\n\n    BUG: parses free-text content block as JSON — brittle, fails on any\n    model response that includes explanation or markdown formatting.\n    The project rule requires forced tool_use for reliable structured output.\n    \"\"\"\n    response = client.messages.create(\n        model=\"claude-sonnet-4-6\",\n        max_tokens=4096,\n        system=\"Extract skills as a JSON array. Return only the JSON array, no explanation.\",\n        messages=[{\"role\": \"user\", \"content\": transcript}]\n    )\n    # BUG: parsing text block — not tool_use\n    return json.loads(response.content[0].text)\nPYEOF"
+    ]
+  },
+  "verifier": {
+    "command": "tests/e2e/efficacy/verifiers/anthropic-forced-tool-use.sh",
+    "contract": "Invoked as `<command> <workspace_dir>`. Exit 0 == invented rule OBEYED (task win). Non-zero == rule NOT obeyed. MUST print a one-line human reason to stdout. NO network, NO LLM — pure deterministic inspection of the produced workspace/diff."
+  },
+  "expected": {
+    "on": "pass",
+    "off": "fail",
+    "placebo": "fail",
+    "sensitivity_note": "If ON fails this with the rule injected (attribution confirms the pull), that is INSTRUMENT-FAILURE."
+  }
+}

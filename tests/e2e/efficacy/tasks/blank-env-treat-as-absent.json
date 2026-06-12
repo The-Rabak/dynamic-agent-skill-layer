@@ -1,0 +1,29 @@
+{
+  "task_id": "blank-env-treat-as-absent",
+  "title": "Treat a blank docker-compose ${VAR:-} env var as absent (not as the empty-string value)",
+  "invented_rule": {
+    "summary": "docker-compose ${VAR:-} emits Ok(\"\") (empty string) to the container — not Err(NotPresent) — so callers must explicitly filter empty strings to treat blank the same as absent; a reader that treats Ok(\"\") as a valid value silently uses an empty string as the configured value.",
+    "corpus_skill_slug": "blank-docker-compose-env-var-rust-empty-string",
+    "corpus_skill_id": "fa3244d6-53b0-46a3-b32d-a35348398f9a",
+    "absent_from_pretraining_rationale": "The docker-compose ${VAR:-} blank-equals-absent rule is a discovered interaction between docker-compose's env passthrough syntax and Rust's std::env::var — it is not covered in standard Rust or docker-compose documentation. A generic solver would likely check only Err(NotPresent) and not Ok(\"\"), since the normal mental model for 'optional environment variable' is that absence means the variable is not set at all."
+  },
+  "prompt": "In `src/config.rs`, the `embed_model` function reads the optional `OLLAMA_EMBED_MODEL` environment variable to determine which embedding model to use, defaulting to `\"qwen3-embedding:4b\"` if not set.\n\nThe docker-compose file uses `${OLLAMA_EMBED_MODEL:-}` for optional passthrough, which emits `Ok(\"\")` (empty string) when the host variable is unset — NOT `Err(NotPresent)`.\n\nThe current implementation only handles `Err(NotPresent)`:\n\n```rust\npub fn embed_model() -> String {\n    std::env::var(\"OLLAMA_EMBED_MODEL\")\n        .unwrap_or_else(|_| \"qwen3-embedding:4b\".to_string())\n}\n```\n\nThis silently uses an empty string as the model name when the variable is set-but-blank. Fix `embed_model` so that both missing AND blank values fall back to the default `\"qwen3-embedding:4b\"`.",
+  "workspace": {
+    "kind": "scratch",
+    "base_ref": null,
+    "setup": [
+      "mkdir -p src",
+      "cat > src/config.rs << 'RSEOF'\n/// Return the configured Ollama embedding model name.\n///\n/// Reads OLLAMA_EMBED_MODEL from the environment. Falls back to the default\n/// when the variable is absent. Docker-compose uses ${OLLAMA_EMBED_MODEL:-}\n/// for optional passthrough, which emits Ok(\"\") when the host var is unset.\n///\n/// BUG: only handles Err (absent), not Ok(\"\") (blank-but-set).\n/// The docker-compose passthrough means Ok(\"\") must be treated as absent.\npub fn embed_model() -> String {\n    std::env::var(\"OLLAMA_EMBED_MODEL\")\n        .unwrap_or_else(|_| \"qwen3-embedding:4b\".to_string())\n}\nRSEOF"
+    ]
+  },
+  "verifier": {
+    "command": "tests/e2e/efficacy/verifiers/blank-env-treat-as-absent.sh",
+    "contract": "Invoked as `<command> <workspace_dir>`. Exit 0 == invented rule OBEYED (task win). Non-zero == rule NOT obeyed. MUST print a one-line human reason to stdout. NO network, NO LLM — pure deterministic inspection of the produced workspace/diff."
+  },
+  "expected": {
+    "on": "pass",
+    "off": "fail",
+    "placebo": "fail",
+    "sensitivity_note": "If ON fails this with the rule injected (attribution confirms the pull), that is INSTRUMENT-FAILURE."
+  }
+}

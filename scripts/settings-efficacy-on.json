@@ -1,0 +1,47 @@
+{
+  "_comment": "T14 efficacy A/B — ON arm settings. Wires compile_context hooks against the live mcp-server (http://127.0.0.1:3001/mcp). Shape mirrors scripts/swebench/settings-swebench.json. SessionEnd capture is intentionally OFF to avoid contaminating the corpus during measured runs.",
+  "mcpServers": {
+    "skill-layer": {
+      "type": "http",
+      "url": "http://127.0.0.1:3001/mcp"
+    }
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "type": "mcp_tool",
+        "server": "skill-layer",
+        "tool_name": "compile_context",
+        "arguments": {
+          "prompt": "{{initial_prompt}}",
+          "session_id": "{{session_id}}",
+          "repo_path": "{{repo_path}}"
+        },
+        "result_policy": {
+          "inject_additional_context_on": ["ok", "degraded"],
+          "suppress_duplicate_on_healthy": ["ok", "no_match"],
+          "retry_on": [],
+          "ignore_on": ["duplicate_suppressed", "degraded"]
+        }
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "type": "mcp_tool",
+        "server": "skill-layer",
+        "tool_name": "compile_context",
+        "arguments": {
+          "prompt": "{{prompt}}",
+          "session_id": "{{session_id}}",
+          "repo_path": "{{repo_path}}"
+        },
+        "result_policy": {
+          "inject_additional_context_on": ["ok"],
+          "suppress_duplicate_on_healthy": ["ok", "no_match"],
+          "retry_on": ["degraded"],
+          "ignore_on": ["duplicate_suppressed"]
+        }
+      }
+    ]
+  }
+}

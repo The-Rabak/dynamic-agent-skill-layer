@@ -1,0 +1,75 @@
+{
+  "_comment": [
+    "T14 efficacy A/B — PLACEBO arm settings.",
+    "",
+    "MEASUREMENT CONTROL — NOT A PRODUCTION FAKE.",
+    "This settings file is an explicitly-labeled experimental control in the T14",
+    "A/B harness. It injects matched-token-mass IRRELEVANT skill context (from a",
+    "mismatched scope/corpus path) so that any benefit of the ON arm can be",
+    "separated from 'any extra context helps' vs 'relevant skills help'.",
+    "",
+    "The server is still the REAL mcp-server (http://127.0.0.1:3001); the mismatch",
+    "is achieved via the scope/repo_path pointing at a directory that has a",
+    "separately-managed corpus of deliberately mismatched skills. This is NOT a",
+    "silent fallback — it is a labeled A/B control arm and must be recorded as such",
+    "in every run report.",
+    "",
+    "If no placebo corpus exists, the harness must fail loud rather than silently",
+    "serve the correct corpus. The operator must provision the placebo corpus before",
+    "running a live efficacy sweep.",
+    "",
+    "PLACEBO_CORPUS_PATH env var overrides the repo_path argument sent to compile_context.",
+    "Default: a nonexistent path that will cause the server to return no_match for",
+    "every query, making the arm effectively 'zero irrelevant context' — which is the",
+    "conservative placebo (safest control). A richer placebo (real but mismatched skills)",
+    "can be configured by setting PLACEBO_CORPUS_PATH to a directory with a different",
+    "project's skill corpus.",
+    "",
+    "Interpretation: if PLACEBO arm performs similarly to ON, the benefit comes from",
+    "'any extra context' not from 'skill-layer-relevant skills' — a negative signal for T12."
+  ],
+  "mcpServers": {
+    "skill-layer": {
+      "type": "http",
+      "url": "http://127.0.0.1:3001/mcp"
+    }
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "type": "mcp_tool",
+        "server": "skill-layer",
+        "tool_name": "compile_context",
+        "arguments": {
+          "prompt": "{{initial_prompt}}",
+          "session_id": "{{session_id}}",
+          "repo_path": "${PLACEBO_CORPUS_PATH:-/nonexistent/placebo/corpus/path}"
+        },
+        "result_policy": {
+          "inject_additional_context_on": ["ok", "degraded"],
+          "suppress_duplicate_on_healthy": ["ok", "no_match"],
+          "retry_on": [],
+          "ignore_on": ["duplicate_suppressed", "degraded", "no_match"]
+        }
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "type": "mcp_tool",
+        "server": "skill-layer",
+        "tool_name": "compile_context",
+        "arguments": {
+          "prompt": "{{prompt}}",
+          "session_id": "{{session_id}}",
+          "repo_path": "${PLACEBO_CORPUS_PATH:-/nonexistent/placebo/corpus/path}"
+        },
+        "result_policy": {
+          "inject_additional_context_on": ["ok"],
+          "suppress_duplicate_on_healthy": ["ok", "no_match"],
+          "retry_on": ["degraded"],
+          "ignore_on": ["duplicate_suppressed", "no_match"]
+        }
+      }
+    ]
+  }
+}

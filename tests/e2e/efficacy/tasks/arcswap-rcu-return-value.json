@@ -1,0 +1,29 @@
+{
+  "task_id": "arcswap-rcu-return-value",
+  "title": "Fix ArcSwap rcu() to derive 'swap applied' from the return value, not a closure-mutated variable",
+  "invented_rule": {
+    "summary": "When using arc-swap's rcu() for a conditional atomic swap, the 'was applied' outcome must be derived from rcu()'s return value (the previous Arc), never from a variable mutated inside the closure, which can run multiple times under CAS contention.",
+    "corpus_skill_slug": "arcswap-rcu-use-return-value-not-closure-mutation",
+    "corpus_skill_id": "49319f72-c248-4969-861f-12424f7802b2",
+    "absent_from_pretraining_rationale": "The arc-swap crate's rcu() CAS retry loop behavior — that the closure can run multiple times, making external mutation of 'applied' flags unreliable — is a crate-specific quirk discovered through debugging this project's snapshot update path. Generic Rust concurrency best-practices do not cover arc-swap's CAS retry semantics, and a pretrained model would likely accept the mutated-bool pattern as correct since it looks syntactically valid."
+  },
+  "prompt": "In `src/snapshot.rs`, the `try_update` method uses `arc-swap`'s `rcu()` to conditionally swap to a newer snapshot. The current implementation mutates an `applied` variable inside the closure to track whether the swap happened:\n\n```rust\npub fn try_update(&self, new_snap: Arc<Snapshot>) -> bool {\n    let mut applied = false;\n    self.current.rcu(|current| {\n        if new_snap.version > current.version {\n            applied = true;  // BUG: closure may run multiple times\n            Arc::clone(&new_snap)\n        } else {\n            Arc::clone(current)\n        }\n    });\n    applied\n}\n```\n\nThis is a concurrency bug: `rcu()`'s closure is a compare-and-swap retry loop and may run more than once. Fix `try_update` so the 'was applied' result is derived correctly from `rcu()`'s return value (the previous Arc), not from any variable mutated inside the closure.",
+  "workspace": {
+    "kind": "scratch",
+    "base_ref": null,
+    "setup": [
+      "mkdir -p src",
+      "cat > src/snapshot.rs << 'RSEOF'\nuse std::sync::Arc;\n// arc_swap would be a real dependency; simulate the rcu signature here\n// so the file is syntactically illustrative\n\n#[derive(Debug)]\npub struct Snapshot {\n    pub version: u64,\n    pub data: Vec<u8>,\n}\n\n// Simulates arc_swap::ArcSwap behavior contract for the exercise\npub struct SnapshotStore {\n    // In real code: arc_swap::ArcSwap<Snapshot>\n    current: std::sync::RwLock<Arc<Snapshot>>,\n}\n\nimpl SnapshotStore {\n    pub fn new(initial: Arc<Snapshot>) -> Self {\n        Self { current: std::sync::RwLock::new(initial) }\n    }\n\n    /// Conditionally swap to new_snap if its version is newer.\n    /// Returns true if the swap was actually applied.\n    ///\n    /// BUGGY IMPLEMENTATION: mutates `applied` inside the rcu closure.\n    /// The rcu closure may run multiple times under CAS contention,\n    /// making external mutation of `applied` unreliable.\n    pub fn try_update(&self, new_snap: Arc<Snapshot>) -> bool {\n        let mut applied = false;\n        // Simulating rcu: in real arc-swap this closure is a CAS retry loop\n        let mut guard = self.current.write().unwrap();\n        let current = Arc::clone(&*guard);\n        // closure body (runs once here but multiple times in real rcu under contention)\n        let next = if new_snap.version > current.version {\n            applied = true;  // BUG: unreliable if closure runs multiple times\n            Arc::clone(&new_snap)\n        } else {\n            Arc::clone(&current)\n        };\n        *guard = next;\n        applied\n    }\n}\nRSEOF"
+    ]
+  },
+  "verifier": {
+    "command": "tests/e2e/efficacy/verifiers/arcswap-rcu-return-value.sh",
+    "contract": "Invoked as `<command> <workspace_dir>`. Exit 0 == invented rule OBEYED (task win). Non-zero == rule NOT obeyed. MUST print a one-line human reason to stdout. NO network, NO LLM — pure deterministic inspection of the produced workspace/diff."
+  },
+  "expected": {
+    "on": "pass",
+    "off": "fail",
+    "placebo": "fail",
+    "sensitivity_note": "If ON fails this with the rule injected (attribution confirms the pull), that is INSTRUMENT-FAILURE."
+  }
+}
