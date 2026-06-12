@@ -60,6 +60,32 @@ Every artifact proves correctness; none proves efficacy. The whole value proposi
 - A null/negative delta is documented honestly with raw data — not hidden or gamed.
 - No changing the pre-registered criterion after data exists; a criterion change voids the run.
 
+## Pre-Registration (LOCKED 2026-06-12 — committed BEFORE any measured run; changing it after data exists VOIDS the run)
+
+Owner decisions (session work-2026-06-12-122502-T14):
+
+- **Design — invented-rule battery.** Each task requires a project-specific rule/procedure that (a) exists
+  as a skill in the T10 262-corpus and (b) is verifiably absent from model pretraining. Outcome is scored
+  by a **deterministic rule-obeyed verifier** (a committed script/assertion), not an LLM judgment of
+  general "quality." This is the least-confoundable design and makes the α=0-analogue sensitivity per-task.
+- **Arms (paired per task):** `ON` (skill layer `compile_context` hooks against the live mcp-server) /
+  `OFF` (identical agent, no skill-layer hooks) / `PLACEBO` (matched-token-mass irrelevant skill context
+  served on the real stack, explicitly labeled as a measurement control — never a silent fallback).
+- **Pass criterion (verbatim, the report must cite this string):**
+  > **"ON wins ≥ 7 of 10 paired tasks by sign test, with no catastrophic regression on any single task."**
+- **Three honest outcomes:** **PASS** (≥7/10 ON wins, no catastrophic regression) / **UNDERPOWERED**
+  (positive direction but below the bar, or the sign test cannot distinguish the arms at N) / **FAIL**
+  (ON ≤ OFF). A null result is reported as UNDERPOWERED, not spun as either PASS or "no effect."
+- **INSTRUMENT-FAILURE (per-task sensitivity / α=0 analogue):** if `ON` fails a task whose invented rule is
+  present in the corpus AND attribution shows it was injected, the harness/injection path is broken →
+  report **INSTRUMENT-FAILURE**; **no efficacy verdict may be claimed** from the remaining tasks until fixed.
+- **Concentration reading (pre-registered):** if ON wins ONLY the hardest non-pretrained tasks, that is
+  reported as "value concentrates in non-pretrained knowledge" — the strongest T12 / CL-bench signal.
+- **Solve driver:** `claude-code` on Sonnet, reusing the `scripts/swebench/settings-swebench.json` hook
+  wiring; runs are **serialized by the orchestrator** (standing rule: no concurrent heavy actions).
+- **Catastrophic regression (defined):** any task where `ON` obeys the rule strictly worse than `OFF` AND
+  the ON solve introduces a verifier-detected harmful action the OFF solve did not (not merely a tie loss).
+
 ## Acceptance Criteria
 
 - [ ] Pass/fail criterion pre-registered in this ticket before any measured run; the final report cites it verbatim.
