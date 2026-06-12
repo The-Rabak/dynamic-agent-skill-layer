@@ -169,6 +169,59 @@ band runs (plan §5).
 - [ ] Release gate includes an explicit, justified efficacy threshold; run reports PASS / FAIL / UNDERPOWERED.
 - [ ] If the delta is null/negative/underpowered, documented in `docs/assessments/` with raw data.
 
+### CL Acquisition-Band AUTO-GATE Amendment (LOCKED 2026-06-12 — committed BEFORE the first band datum; executed by T23, session work-2026-06-12-t23-band-run)
+
+This amendment is legitimate **only because it lands before any paired band data exists** (the same
+window in which the deltas above were locked; after the first band datum, nothing here may change or
+the affected run VOIDS). It governs the FULL 8-context band run (the smoke produced no efficacy data,
+so nothing is voided). Owner decision (2026-06-12, post-T22 GO): the band runs **fully automated and
+unattended** — the owner will not manually review the ~150 benchmark `.pending` drafts the band
+produces. The human gate is replaced, for the benchmark scopes only, by a pre-registered
+auto-acceptance policy.
+
+1. **`gate_mode = auto-accept-all`, `clband-*` benchmark scopes ONLY.** In the band run, plan §4
+   Step 2's human gate is replaced by programmatic acceptance: **every** extracted `.pending` draft
+   in a context's `clband-<name>` scope is accepted via the REAL acceptance action (rename
+   `SKILL.md.pending` → `SKILL.md`, the structural definition in
+   `scripts/efficacy_draft_acceptance.py`), followed by the real scope rebuild. Acceptance is uniform
+   across all contexts and all arms; no draft is filtered. The production human gate and the 262
+   **dogfood corpus are UNTOUCHED** — auto-accept fires only after a hard assertion that the target
+   path lies inside a `clband-*` scope, and fails loud on any non-clband path. A post-run dogfood
+   re-probe (corpus reads exactly 262, zero leakage) is a T23 acceptance criterion.
+2. **Why accept-all, not a filter.** Any selective auto-filter would place an unvalidated judge
+   inside the measured pipeline — unreproducible and confounding. Accept-all is the reproducible
+   policy AND a conservative one: the ON arm faces the **unpruned** draft set (possible retrieval
+   dilution / draft-count inflation — 19 drafts/context at the T22 smoke re-run), so if ON wins
+   anyway the result is conservative relative to a human-gated production deployment.
+3. **`gate_mode` recorded verbatim.** Every run report (and the morning verdict) cites
+   `gate_mode=auto-accept-all (clband-* scopes only)` verbatim, and the auto-gate log lists every
+   acceptance with its scope assertion. The reader can always tell the band's gate policy from
+   production's.
+4. **Roster + substitution unchanged from the deltas above.** The 8 full contexts + 3 ordered
+   alternates (plan §3) are fixed; the ONLY substitution path is a context losing all siblings to the
+   OFF pre-gate (plan §4 Step 0) → next alternate (A1→A2→A3). No change after paired data exists.
+5. **Unattended continue/stop policy (pre-committed).** Overnight there is no STOP-and-ask:
+   - HARNESS-LEVEL breakage (process crash, scope leak, `/health` failure, dataset-sha drift,
+     auto-gate scope-guard trip) ⇒ STOP, preserve state + the last (context, step) checkpoint, write
+     a morning stop report. The run is resumable without re-burning completed work.
+   - Per-context INSTRUMENT-FAILURE (fidelity gate RED, or ON failing a sibling with
+     attribution-confirmed injection) ⇒ record with the taxonomy (extraction vs injection/obedience),
+     that context yields no efficacy point, and the band CONTINUES (contexts are independent).
+   - An OFF pre-gate PASS (non-discriminating sibling) ⇒ drop that sibling; a context losing ALL
+     siblings ⇒ substitute the next alternate (the only substitution path, per item 4).
+   - Standing laws hold: no fakes (fail loud); measurement drives the REAL mcp-server over HTTP;
+     heavy actions serialized by the orchestrator; never delete this run's outputs; never truncate
+     graph_state; drain-until-done (no arbitrary time/token caps).
+6. **Solver checkpoint re-pin.** The band runs on `claude-code 2.1.175, --model sonnet` (the smoke
+   used 2.1.173 — a solver bump). Per the plan §1 expiry rule a solver change re-runs the OFF
+   pre-gate before results are comparable; the band runs the OFF pre-gate fresh per context (plan §4
+   Step 0), so this is satisfied by construction. Dataset sha
+   `b28a5832a09b0d96c0cf4c22e90d7c60ede25b80` (fetch re-verifies on use; fails loud on drift).
+
+This amendment changes ONLY the band's gate policy (human → auto-accept-all, clband scopes only) and
+pre-commits the unattended run policy. It does NOT touch the ≥7/10 sign-test criterion, the
+INSTRUMENT-FAILURE taxonomy, the roster, the instruments, or the dogfood/production gates.
+
 ## Local Context
 
 - WHY source: plan `## Non-Goals` names efficacy as downstream; owner decision 2026-06-09 promoted it into the V1.7 ticket set.

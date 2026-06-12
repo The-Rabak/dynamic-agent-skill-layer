@@ -106,8 +106,18 @@ session under the context's scope.
 
 **Step 2 — Pipeline.** Real extraction on the captured session (`EXTRACT_SESSION_PROVIDER=
 claude-code`, the proven richer extractor; an optional local-provider arm on the same transcripts
-is a free measurement of the 2.6× density gap) → `.pending` drafts → **human gate** → corpus +
+is a free measurement of the 2.6× density gap) → `.pending` drafts → **gate** → corpus +
 rebuild for the scope. The drafts also feed T14's ≥10-real-drafts acceptance criterion.
+
+> **Gate mode (T23 automated band run, amended 2026-06-12 BEFORE any band datum):** for the
+> unattended overnight band the human gate is replaced by `gate_mode=auto-accept-all`, **`clband-*`
+> benchmark scopes ONLY** — every `.pending` draft in the context's `clband-<name>` scope is accepted
+> via the REAL acceptance action (rename `SKILL.md.pending` → `SKILL.md`) + real scope rebuild, behind
+> a hard `clband-*` scope-guard assertion (fail loud on any non-clband path). The production human
+> gate and the 262 dogfood corpus are UNCHANGED. See the LOCKED "CL Acquisition-Band AUTO-GATE
+> Amendment" in `docs/tickets/2026-06-08-v1-7-local-hybrid-skilldag-retrieval/14-efficacy-task-outcome-ab-harness.md`
+> for the full pre-registration (gate policy, accept-all rationale, unattended continue/stop policy,
+> `gate_mode` recorded verbatim). The smoke (plan §5) used the human gate; the band uses auto-accept-all.
 
 **Step 3 — Fidelity gate (deterministic, before any measured solve).** All manifest sentinels for
 the context must appear across the scope's accepted skill texts (`grep`-level check, committed
