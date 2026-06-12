@@ -529,6 +529,9 @@ pub async fn run_orchestration(
         source_session_id: session_id,
         provider: provider_name.to_owned(),
         candidates: final_candidates,
+        // Aggregate of many windows; per-window assessments were already consumed by the
+        // prose-window retry logic. The aggregated draft result carries no single assessment.
+        assessment: None,
     };
 
     let draft_paths =
@@ -627,26 +630,42 @@ enum ProseWindowAttemptOutcome {
 /// after a model reload. It is therefore treated as retryable, not a hard error.
 /// `ExtractionError::ProviderUnavailable` is a network/infra failure and is NOT
 /// retried — a retry cannot fix a dead connection.
+/// Returns `true` when the provider surfaced a non-empty Step-1 assessment — the signal that an
+/// empty candidates list is a DELIBERATE refusal (the model judged nothing durable) rather than a
+/// malformed/empty parse. T22: lets the orchestrator stop retrying reasoned refusals.
+fn has_reasoned_assessment(assessment: &Option<String>) -> bool {
+    assessment
+        .as_deref()
+        .map(|s| !s.trim().is_empty())
+        .unwrap_or(false)
+}
+
 fn classify_prose_attempt(
-    result: Result<Vec<ExtractedSkillCandidate>, OrchestrationError>,
+    result: Result<(Vec<ExtractedSkillCandidate>, bool), OrchestrationError>,
     window_content_chars: usize,
 ) -> ProseWindowAttemptOutcome {
     match result {
         // Model returned candidates — done.
-        Ok(candidates) if !candidates.is_empty() => {
+        Ok((candidates, _)) if !candidates.is_empty() => {
             ProseWindowAttemptOutcome::Candidates(candidates)
         }
 
-        // Model returned zero candidates from a substantive window — suspicious,
-        // retry unless the window is trivially small.
-        Ok(_empty) if window_content_chars >= PROSE_WINDOW_SUBSTANTIVE_CONTENT_CHARS => {
+        // Reasoned refusal (T22): the model returned well-formed output WITH a non-empty
+        // assessment and an empty candidates list — it looked and deliberately judged nothing
+        // durable. This is a DISTINCT outcome from malformed/empty parse output: accept it, do
+        // NOT burn identical retries on a deliberate decision (temperature=0 reproduces it).
+        Ok((empty, true)) => ProseWindowAttemptOutcome::Candidates(empty),
+
+        // Zero candidates with NO assessment from a substantive window — suspicious (e.g. a cold
+        // gemma4:12b returning a bare `{}` with no chain-of-thought). Retry.
+        Ok((_empty, false)) if window_content_chars >= PROSE_WINDOW_SUBSTANTIVE_CONTENT_CHARS => {
             ProseWindowAttemptOutcome::EmptyOrMalformed {
-                reason: "model returned zero candidates".to_owned(),
+                reason: "model returned zero candidates and no assessment".to_owned(),
             }
         }
 
         // Zero candidates from a trivial window — plausible, accept.
-        Ok(empty) => ProseWindowAttemptOutcome::Candidates(empty),
+        Ok((empty, _)) => ProseWindowAttemptOutcome::Candidates(empty),
 
         // JSON parse failure on a substantive window — cold-start or KV-cache hiccup.
         // Treat as retryable: the same prompt succeeds reliably once the model is warm.
@@ -721,7 +740,7 @@ async fn extract_prose_window(
     let first_result = prose_extractor
         .extract(&transcript)
         .await
-        .map(|r| r.candidates)
+        .map(|r| (r.candidates, has_reasoned_assessment(&r.assessment)))
         .map_err(OrchestrationError::EpisodeExtraction);
 
     match classify_prose_attempt(first_result, window_content_chars) {
@@ -753,7 +772,7 @@ async fn extract_prose_window(
         let retry_result = prose_extractor
             .extract(&transcript)
             .await
-            .map(|r| r.candidates)
+            .map(|r| (r.candidates, has_reasoned_assessment(&r.assessment)))
             .map_err(OrchestrationError::EpisodeExtraction);
 
         match classify_prose_attempt(retry_result, window_content_chars) {
@@ -1017,6 +1036,7 @@ mod tests {
                 source_session_id: DomainId::new_unchecked("prose-fake"),
                 provider: "fake-prose".to_owned(),
                 candidates: self.candidates.clone(),
+                assessment: None,
             })
         }
     }
@@ -1089,6 +1109,46 @@ mod tests {
                 source_session_id: DomainId::new_unchecked("flaky-fake"),
                 provider: "flaky-fake".to_owned(),
                 candidates,
+                // No assessment: models a cold-start bare `{}` (retryable), NOT a reasoned refusal.
+                assessment: None,
+            })
+        }
+    }
+
+    /// Prose extractor that returns zero candidates WITH a non-empty Step-1 assessment on
+    /// every call — models a DELIBERATE, reasoned refusal (the model looked and judged nothing
+    /// durable). T22: the orchestrator must accept this without burning identical retries.
+    struct RefusingProseExtractor {
+        call_count: Arc<std::sync::atomic::AtomicUsize>,
+    }
+
+    impl RefusingProseExtractor {
+        fn new() -> Arc<Self> {
+            Arc::new(Self {
+                call_count: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            })
+        }
+
+        fn times_called(&self) -> usize {
+            self.call_count.load(std::sync::atomic::Ordering::SeqCst)
+        }
+    }
+
+    #[async_trait]
+    impl TranscriptSkillExtractionService for RefusingProseExtractor {
+        async fn extract(
+            &self,
+            _transcript: &SessionTranscript,
+        ) -> Result<ExtractionResult, ExtractionError> {
+            self.call_count
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(ExtractionResult {
+                source_session_id: DomainId::new_unchecked("refusing-fake"),
+                provider: "refusing-fake".to_owned(),
+                candidates: vec![],
+                assessment: Some(
+                    "This is a manufacturing roleplay with no durable software lesson.".to_owned(),
+                ),
             })
         }
     }
@@ -1138,6 +1198,7 @@ mod tests {
                     source_session_id: DomainId::new_unchecked("flaky-parse-fake"),
                     provider: "flaky-parse-fake".to_owned(),
                     candidates: self.recovery_candidates.clone(),
+                    assessment: None,
                 })
             }
         }
@@ -2190,6 +2251,74 @@ mod tests {
             "prose extractor must be called at least twice (initial + 1 retry); \
              got call_count={}",
             call_count
+        );
+    }
+
+    /// T22: proves a substantive window that returns zero candidates WITH a reasoned
+    /// assessment (a deliberate refusal) is accepted WITHOUT retry — the 3x identical-retry
+    /// burn observed in the clband smoke is gone. Distinct from the empty-no-assessment case
+    /// (a cold-start `{}`), which still retries.
+    #[tokio::test]
+    async fn prose_extractor_does_not_retry_reasoned_refusal_from_substantive_window() {
+        // A substantive window (well above PROSE_WINDOW_SUBSTANTIVE_CONTENT_CHARS).
+        let events = vec![
+            SessionEvent::UserMessage {
+                index: 0,
+                content: "You are Agent B in the Flywheel Manufacturing Multi-Agent System. \
+                          Follow the workaround protocols and the mandatory spin test before \
+                          routing the note to the Validation Engineer."
+                    .to_owned(),
+            },
+            SessionEvent::AssistantMessage {
+                index: 1,
+                content: "Understood — I will apply the next-size-up wrench workaround, give it a \
+                          firm shake and retest, run the spin test, and hand off to the Forklift \
+                          Operator."
+                    .to_owned(),
+            },
+        ];
+
+        let session_id = DomainId::new_unchecked("refusal-no-retry");
+        let sandbox = sandbox_dir("refusal-no-retry");
+        let draft_writer = PendingDraftWriter::new_unbounded_for_tests(vec![sandbox.clone()]);
+        let request = inline_request("refusal-no-retry");
+
+        let refusing_extractor = RefusingProseExtractor::new();
+
+        let config = OrchestrationConfig {
+            segmentation: SegmentationConfig::new(1_000_000, 3),
+            map_concurrency: 1,
+            reduce_similarity_threshold: REDUCE_SIMILARITY_THRESHOLD,
+            ..OrchestrationConfig::default()
+        };
+
+        let report = run_orchestration(
+            session_id,
+            &events,
+            &config,
+            None,
+            Arc::new(EchoLabelerFake),
+            refusing_extractor.clone(),
+            Arc::new(DeterministicEmbedderFake),
+            PrefixEquivalenceFake::never_equivalent(),
+            FixedSynthesisPassFake::noop(),
+            &draft_writer,
+            &request,
+            "test-provider",
+        )
+        .await
+        .expect("orchestration must succeed on a reasoned refusal (empty result is valid)");
+
+        assert_eq!(
+            report.final_candidate_count, 0,
+            "a reasoned refusal yields zero candidates"
+        );
+        // The decisive assertion: exactly ONE call, no retries on a deliberate refusal.
+        assert_eq!(
+            refusing_extractor.times_called(),
+            1,
+            "a reasoned refusal (assessment + empty) must NOT be retried; got {} calls",
+            refusing_extractor.times_called()
         );
     }
 

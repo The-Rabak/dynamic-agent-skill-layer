@@ -1,0 +1,44 @@
+---
+name: bracket-operations-with-explicit-pre-and-post-checks
+description: 'Every non-trivial operation should be surrounded by two explicit verification gates: (1) a pre-condition gate that confirms all prerequisites actually exist in the current system state before the operation begins, and (2) a post-condition gate that enumerates each intended target or outcome and confirms it was actually achieved. This bracket pattern recurred in three distinct forms across the session: verifying a root cause still holds before applying a fix (pre), ensuring prerequisite data/components are present before running a task that depends on them (pre), and enumerating intended targets after execution and checking each one was processed (post). Neither gate is optional.'
+tags:
+- verification
+- completeness
+- correctness
+- pre-condition
+- post-condition
+type: principle
+origin: session_extraction
+source_session_id: dogfood-regress-0-off
+source_provider: claude-code
+created_at: 2026-06-12T18:49:44.534612663+00:00
+warning_at: 2026-07-12T18:49:44.534612663+00:00
+expires_at: 2026-09-10T18:49:44.534612663+00:00
+generality: general
+use_when:
+- Before implementing any fix, migration, or refactor that was diagnosed from prior analysis
+- Before executing a task that asserts correctness against external data, components, or infrastructure
+- After any batch operation that must cover a known set of targets (files, records, services)
+avoid_when:
+- Trivial single-step operations with no external dependencies and immediately observable outputs
+invariants:
+- The set of preconditions verified before an operation must match the full dependency set the operation actually relies on
+- The set of outcomes verified after an operation must match the full intended target set, not a sample
+produces:
+- Explicit confirmation that prerequisites hold before work begins
+- Explicit per-target outcome verification after work completes
+evidence:
+- 'Skill 1: verify diagnosed root cause still holds before implementing a fix (pre-condition gate)'
+- 'Skill 4: ensure prerequisite data/components exist before executing a task that depends on them (pre-condition gate)'
+- 'Skill 5: enumerate intended targets explicitly and verify each one was actually processed (post-condition gate)'
+---
+
+# bracket-operations-with-explicit-pre-and-post-checks
+
+Every non-trivial operation should be surrounded by two explicit verification gates: (1) a pre-condition gate that confirms all prerequisites actually exist in the current system state before the operation begins, and (2) a post-condition gate that enumerates each intended target or outcome and confirms it was actually achieved. This bracket pattern recurred in three distinct forms across the session: verifying a root cause still holds before applying a fix (pre), ensuring prerequisite data/components are present before running a task that depends on them (pre), and enumerating intended targets after execution and checking each one was processed (post). Neither gate is optional.
+
+## Procedures
+- Before acting: list all preconditions the operation depends on (data present, root cause confirmed, config valid) and verify each holds in the current state.
+- After acting: list all intended targets or outcomes and verify each was actually achieved — do not rely on exit codes or absence of exceptions.
+- Treat any unverified precondition or unconfirmed outcome as a latent defect, not a minor gap.
+

@@ -1,0 +1,42 @@
+---
+name: Never Accept a Proxy Signal as Proof of the Real Invariant
+description: 'Two distinct skills share the same underlying failure mode: accepting a correlated side-effect or surrogate signal as evidence that the real invariant holds. Skill 1 warns that updating one coupled layer while leaving others untouched creates a false sense of consistency. Skill 4 warns that asserting a version bump instead of asserting the retrieved content itself creates a false green in tests. Both are instances of proxy verification — checking something adjacent to the actual condition rather than the condition itself. The session-spanning lesson is: always verify the primary invariant directly; never let a correlated proxy stand in for the real check.'
+tags:
+- verification
+- testing
+- correctness
+- false-positive
+- invariants
+type: anti_pattern
+origin: session_extraction
+source_session_id: dogfood-regress-2-on
+source_provider: claude-code
+created_at: 2026-06-12T19:00:52.502019542+00:00
+warning_at: 2026-07-12T19:00:52.502019542+00:00
+expires_at: 2026-09-10T19:00:52.502019542+00:00
+generality: general
+use_when:
+- Writing or reviewing test assertions for any system with indirect observable state
+- Verifying that a multi-layer change was applied correctly
+- Any time the only available check is a version number, counter, flag, or other derived value rather than the actual data/behavior under test
+avoid_when:
+- The proxy IS the canonical invariant by definition (e.g., a monotonic counter whose value is itself the contract)
+invariants:
+- Every assertion must exercise the actual condition it purports to verify, not a correlated observable
+produces:
+- Test suites that catch real regressions instead of false-greening on stale proxies
+- Change sets that are complete across all coupled layers
+evidence:
+- 'Skill 1: treat all coupled layers as a single atomic unit — partial layer update is a proxy for full consistency'
+- 'Skill 4: assert on retrieved content itself, not on a version bump that is merely correlated with successful retrieval'
+---
+
+# Never Accept a Proxy Signal as Proof of the Real Invariant
+
+Two distinct skills share the same underlying failure mode: accepting a correlated side-effect or surrogate signal as evidence that the real invariant holds. Skill 1 warns that updating one coupled layer while leaving others untouched creates a false sense of consistency. Skill 4 warns that asserting a version bump instead of asserting the retrieved content itself creates a false green in tests. Both are instances of proxy verification — checking something adjacent to the actual condition rather than the condition itself. The session-spanning lesson is: always verify the primary invariant directly; never let a correlated proxy stand in for the real check.
+
+## Procedures
+- Identify the actual invariant that must hold (e.g., content is retrievable; all coupled layers are consistent).
+- Trace your assertion or check directly to that invariant — not to a version field, a count, a flag, or any other derived/correlated value.
+- If the proxy is all that's available, treat that as a gap and surface it rather than accepting a weaker check.
+

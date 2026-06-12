@@ -587,6 +587,13 @@ pub struct ExtractionResult {
     pub source_session_id: DomainId,
     pub candidates: Vec<ExtractedSkillCandidate>,
     pub provider: String,
+    /// The model's Step-1 assess-first judgement (`assessment` field of the structured
+    /// response), when the provider parsed one. `Some(reasoned text)` with an empty
+    /// `candidates` is a DELIBERATE refusal — the model looked and judged nothing durable —
+    /// which the orchestrator distinguishes from a malformed/empty parse (which it retries).
+    /// `None` when the provider does not surface an assessment. T22.
+    #[serde(default)]
+    pub assessment: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

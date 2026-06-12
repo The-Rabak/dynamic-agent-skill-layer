@@ -90,6 +90,7 @@ mod tests {
             source_session_id: transcript.session_id,
             candidates: vec![candidate],
             provider: "claude".to_owned(),
+            assessment: None,
         };
 
         assert_eq!(result.candidates[0].name, "weighted-rrf");

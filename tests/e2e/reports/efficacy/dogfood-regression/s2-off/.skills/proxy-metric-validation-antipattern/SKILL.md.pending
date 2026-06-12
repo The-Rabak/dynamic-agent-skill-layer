@@ -1,0 +1,46 @@
+---
+name: proxy-metric-validation-antipattern
+description: 'Using indirect signals — version counters, single-layer checks, surface-level status codes — as stand-ins for real correctness validation produces false greens. The proxy can succeed while the underlying invariant silently fails. Validation must always target the actual invariant directly: real content retrievability, all coupled layers agreeing, the substantive outcome — not a metric that merely correlates with it.'
+tags:
+- testing
+- validation
+- invariants
+- assertions
+- correctness
+type: anti_pattern
+origin: session_extraction
+source_session_id: dogfood-regress-2-off
+source_provider: claude-code
+created_at: 2026-06-12T18:58:50.471477095+00:00
+warning_at: 2026-07-12T18:58:50.471477095+00:00
+expires_at: 2026-09-10T18:58:50.471477095+00:00
+generality: general
+generality_rationale: 'Applies to any system with layered or indirect state: databases, caches, distributed indices, configuration registries, content pipelines.'
+use_when:
+- Writing or reviewing tests for systems with layered state (caches, indices, storage backends).
+- Adding assertions after a version bump, schema migration, or retrieval-path change.
+- Validating system state after any change that affects multiple coupled components.
+- Reviewing test suites that only assert on counters, flags, or status fields.
+avoid_when:
+- The proxy IS the actual invariant (e.g. a counter is literally the thing being tested, not a stand-in for content).
+invariants:
+- Every assertion must be falsifiable by the exact failure mode it is meant to catch.
+- A test that passes even when retrieval/content/state is degraded is not a valid test.
+produces:
+- Test suites where a failure in retrieval, consistency, or content surfaces immediately as a red test.
+- Elimination of false-green test coverage.
+evidence:
+- 'Skill 1: multi-layer invariant validation — a single-layer check is a proxy for full-system consistency.'
+- 'Skill 4: assert on retrieved content, not version counter — a version bump is a proxy for actual retrievability.'
+---
+
+# proxy-metric-validation-antipattern
+
+Using indirect signals — version counters, single-layer checks, surface-level status codes — as stand-ins for real correctness validation produces false greens. The proxy can succeed while the underlying invariant silently fails. Validation must always target the actual invariant directly: real content retrievability, all coupled layers agreeing, the substantive outcome — not a metric that merely correlates with it.
+
+## Procedures
+- Identify the true invariant that must hold (e.g. 'content is actually retrievable', 'all coupled layers are consistent').
+- Assert directly on that invariant, not on a metric that usually correlates with it (e.g. a version counter, a top-level status code).
+- When multiple layers must agree, write assertions that exercise every layer, not just the outermost or most convenient one.
+- After any refactor or integration change, re-verify that assertions still target the real invariant and have not drifted to proxy signals.
+

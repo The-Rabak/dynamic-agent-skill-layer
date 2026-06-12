@@ -92,6 +92,7 @@ impl TranscriptSkillExtractionService for SuccessfulExtractor {
         Ok(ExtractionResult {
             source_session_id: transcript.session_id.clone(),
             provider: "claude".to_owned(),
+            assessment: None,
             candidates: vec![ExtractedSkillCandidate {
                 name: "Rust File IO Setup".to_owned(),
                 description: "Reusable setup for safe file reading/writing in Rust.".to_owned(),
@@ -378,6 +379,7 @@ fn providers_emit_same_contract_shape() {
     let claude_result = ExtractionResult {
         source_session_id: session_id.clone(),
         provider: "claude".to_owned(),
+        assessment: None,
         candidates: vec![ExtractedSkillCandidate {
             name: "sample".to_owned(),
             description: "desc".to_owned(),
@@ -394,6 +396,7 @@ fn providers_emit_same_contract_shape() {
     let ollama_result = ExtractionResult {
         source_session_id: session_id,
         provider: "ollama".to_owned(),
+        assessment: None,
         candidates: claude_result.candidates.clone(),
     };
 

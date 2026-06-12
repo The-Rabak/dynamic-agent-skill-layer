@@ -1,0 +1,45 @@
+---
+name: Complete Context is a Hard Prerequisite Before Any Action
+description: 'Skills 2 and 3 converge on a single meta-rule: the agent must hold complete context before it is permitted to act. Skill 3 requires reading every implementation plan up to the current version, walking every logic path, and inspecting every interface. Skill 2 requires treating the full system context as the active dynamic layer for all decisions. Together they assert that partial context — knowing only the immediate file, only the current plan, or only the runtime state — is categorically insufficient and will lead to decisions that are locally sensible but globally broken. The session-spanning principle is: completeness of understanding is a non-negotiable gate, not an optimization.'
+tags:
+- context
+- autonomous-agent
+- upfront-reading
+- decision-making
+type: principle
+origin: session_extraction
+source_session_id: dogfood-regress-2-on
+source_provider: claude-code
+created_at: 2026-06-12T19:00:52.503450430+00:00
+warning_at: 2026-07-12T19:00:52.503450430+00:00
+expires_at: 2026-09-10T19:00:52.503450430+00:00
+generality: general
+use_when:
+- Beginning any new feature or fix in an unfamiliar or partially-known codebase
+- Operating as an autonomous agent where course-correction mid-task is expensive
+- Any task where multiple subsystems, interfaces, or versioned plans are involved
+avoid_when:
+- Purely mechanical, fully self-contained edits where no coupling exists and no plan documents are relevant
+invariants:
+- Context must be complete — not 'good enough' — before the first substantive action is taken
+requires:
+- Access to all versioned implementation plans
+- Ability to trace interfaces and logic paths across the full codebase
+produces:
+- Decisions that are globally consistent rather than locally plausible
+- Changes that do not silently break coupled subsystems discovered only after the fact
+evidence:
+- 'Skill 2: use the provided system context as the active dynamic layer for all decisions'
+- 'Skill 3: read all implementation plans up to the current version, walk every logic path, inspect every interface'
+---
+
+# Complete Context is a Hard Prerequisite Before Any Action
+
+Skills 2 and 3 converge on a single meta-rule: the agent must hold complete context before it is permitted to act. Skill 3 requires reading every implementation plan up to the current version, walking every logic path, and inspecting every interface. Skill 2 requires treating the full system context as the active dynamic layer for all decisions. Together they assert that partial context — knowing only the immediate file, only the current plan, or only the runtime state — is categorically insufficient and will lead to decisions that are locally sensible but globally broken. The session-spanning principle is: completeness of understanding is a non-negotiable gate, not an optimization.
+
+## Procedures
+- Before starting any feature, fix, or refactor: read all versioned implementation plans, not just the latest diff.
+- Walk every logic path that the change touches, including downstream consumers and upstream producers.
+- Load and hold the full system context (interfaces, invariants, coupling points) as the active frame for all subsequent decisions.
+- Treat any decision made from partial context as provisional until the missing context is acquired.
+

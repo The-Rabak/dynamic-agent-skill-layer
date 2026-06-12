@@ -64,10 +64,23 @@ session_id: work-2026-06-12-t22-teach-path
 ## Work Status
 | # | Unit | Kind | Serves / Unlocks | Status | Attempts | Session File |
 |---|------|------|------------------|--------|----------|--------------|
-| A | Forensics — visibility map | infra-packet | Apportion blame B vs C; evidence base | in_progress | 1 | unit-A-forensics.md |
-| B | Harness document delivery | infra-packet | Doc verifiably reaches extraction windows | pending | -- | -- |
-| C | Taught-knowledge candidate class + refusal≠malformed | infra-packet | Verbatim capture; the core | pending | -- | -- |
-| D | Two-tier sentinels + full smoke re-run | infra-packet | GO gate; GO/NO-GO recommendation | pending | -- | -- |
+| A | Forensics — visibility map | infra-packet | Apportion blame B vs C; evidence base | completed (671b412) | 1 | unit-A-forensics.md |
+| B | Harness document delivery | infra-packet | Doc verifiably reaches extraction windows | completed (360f7cd) | 1 | unit-B-delivery.md |
+| C | Taught-knowledge candidate class + refusal≠malformed | infra-packet | Verbatim capture; the core | code+tests green; dogfood regression running; DP-1 next | 1 | unit-C-taught-capture.md |
+| D | Two-tier sentinels + full smoke re-run | infra-packet | GO gate; GO/NO-GO recommendation | manifest+gate ready; smoke re-run pending DP-1 | -- | -- |
+
+## Unit C implementation status (pre-regression)
+- Change 1 (taught-knowledge prompt): `EXTRACT_TEACH_CAPTURE` (default ON) injects a TAUGHT KNOWLEDGE
+  section into both prompts (text/JSON + system) + an abstraction exception for taught literals.
+  `=off` reproduces the pre-T22 prompt byte-for-byte. prompt_contract.rs.
+- Change 2 (refusal≠malformed): `ExtractionResult.assessment` threaded (ollama/claude/claude-code);
+  orchestrator `classify_prose_attempt` accepts a reasoned refusal (empty + assessment) WITHOUT retry;
+  cold-start empty (no assessment) + malformed JSON still retry. New test
+  `prose_extractor_does_not_retry_reasoned_refusal_from_substantive_window` green.
+- Unit tests: infrastructure 219 + 4 new ; session-extractor 184 + 1 new ; domain 13 — all green.
+- Unit D ready: manifest two-tier sentinels (operative derived from verifiers) + fidelity_gate.sh
+  gates on operative / reports document. Gate mechanics validated: OLD flywheel drafts FAIL 7/7
+  operative (the exact T22 failure). run_smoke_rerun.sh written (replay-based).
 
 ## Owner decision points (STOP and ask)
 1. Unit C default: EXTRACT_TEACH_CAPTURE default-ON vs env-gated (after regression diff is in).

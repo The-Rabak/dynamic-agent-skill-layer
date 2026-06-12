@@ -1,0 +1,23 @@
+---
+name: When a system enforces invariants across multiple coupled (preference)
+description: 'Standing user preference: When a system enforces invariants across multiple coupled layers, ensure all layers are consistently validated together rather than in isolation.'
+tags:
+- preference
+- convention
+origin: session_extraction
+source_session_id: dogfood-regress-2-off
+source_provider: claude-code
+created_at: 2026-06-12T18:58:50.470067458+00:00
+warning_at: 2026-07-12T18:58:50.470067458+00:00
+expires_at: 2026-09-10T18:58:50.470067458+00:00
+generality: uncertain
+generality_rationale: Detected as a standing user directive; generality inferred from scope signals.
+---
+
+# When a system enforces invariants across multiple coupled (preference)
+
+Standing user preference: When a system enforces invariants across multiple coupled layers, ensure all layers are consistently validated together rather than in isolation.
+
+## Conventions
+- When a system enforces invariants across multiple coupled layers, ensure all layers are consistently validated together rather than in isolation.
+

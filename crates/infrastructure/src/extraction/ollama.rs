@@ -197,6 +197,7 @@ impl TranscriptSkillExtractionService for OllamaExtractor {
             source_session_id: transcript.session_id.clone(),
             candidates: parsed.candidates,
             provider: "ollama".to_owned(),
+            assessment: parsed.assessment,
         })
     }
 }

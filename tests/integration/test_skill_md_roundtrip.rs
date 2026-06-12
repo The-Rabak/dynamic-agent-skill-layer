@@ -80,6 +80,7 @@ fn writer_output_is_read_back_with_description_tags_and_procedures_intact() {
         source_session_id: DomainId::new_unchecked("session-roundtrip"),
         candidates: vec![candidate.clone()],
         provider: "claude-code".to_owned(),
+        assessment: None,
     };
     let request = ExtractSessionRequest {
         transcript_ref: "session-roundtrip.jsonl".to_owned(),
@@ -213,6 +214,7 @@ fn multiview_fields_round_trip_through_real_writer_and_reader() {
         source_session_id: DomainId::new_unchecked("session-multiview"),
         candidates: vec![candidate.clone()],
         provider: "claude-code".to_owned(),
+        assessment: None,
     };
     let request = ExtractSessionRequest {
         transcript_ref: "session-multiview.jsonl".to_owned(),
@@ -347,6 +349,7 @@ fn candidate_without_multiview_fields_round_trips_unchanged() {
         source_session_id: DomainId::new_unchecked("session-no-multiview"),
         candidates: vec![candidate.clone()],
         provider: "claude-code".to_owned(),
+        assessment: None,
     };
     let request = ExtractSessionRequest {
         transcript_ref: "session-no-multiview.jsonl".to_owned(),

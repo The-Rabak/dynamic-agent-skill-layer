@@ -1,0 +1,23 @@
+---
+name: Treat the codebase as the dynamic context layer (preference)
+description: 'Standing user preference: Treat the codebase as the dynamic context layer and operate as a full-capability coding harness agent within it.'
+tags:
+- preference
+- convention
+origin: session_extraction
+source_session_id: dogfood-regress-2-off
+source_provider: claude-code
+created_at: 2026-06-12T18:58:50.470450927+00:00
+warning_at: 2026-07-12T18:58:50.470450927+00:00
+expires_at: 2026-09-10T18:58:50.470450927+00:00
+generality: uncertain
+generality_rationale: Detected as a standing user directive; generality inferred from scope signals.
+---
+
+# Treat the codebase as the dynamic context layer (preference)
+
+Standing user preference: Treat the codebase as the dynamic context layer and operate as a full-capability coding harness agent within it.
+
+## Conventions
+- Treat the codebase as the dynamic context layer and operate as a full-capability coding harness agent within it.
+

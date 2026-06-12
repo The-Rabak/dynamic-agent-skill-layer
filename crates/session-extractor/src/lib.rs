@@ -1458,6 +1458,7 @@ mod tests {
             Ok(ExtractionResult {
                 source_session_id: DomainId::new_unchecked("lib-test"),
                 provider: "ollama".to_owned(),
+                assessment: None,
                 candidates: vec![ExtractedSkillCandidate {
                     name: "lib-skill".to_owned(),
                     description: "desc".to_owned(),

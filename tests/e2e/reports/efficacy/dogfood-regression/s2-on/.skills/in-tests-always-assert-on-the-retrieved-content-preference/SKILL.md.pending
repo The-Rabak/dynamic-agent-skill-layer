@@ -1,0 +1,23 @@
+---
+name: In tests, always assert on the retrieved content (preference)
+description: 'Standing user preference: In tests, always assert on the retrieved content itself — asserting only that a version number bumped is a false green when retrieval status is degraded; content retrievability must be verified directly.'
+tags:
+- preference
+- convention
+origin: session_extraction
+source_session_id: dogfood-regress-2-on
+source_provider: claude-code
+created_at: 2026-06-12T19:00:52.501435109+00:00
+warning_at: 2026-07-12T19:00:52.501435109+00:00
+expires_at: 2026-09-10T19:00:52.501435109+00:00
+generality: uncertain
+generality_rationale: Detected as a standing user directive; generality inferred from scope signals.
+---
+
+# In tests, always assert on the retrieved content (preference)
+
+Standing user preference: In tests, always assert on the retrieved content itself — asserting only that a version number bumped is a false green when retrieval status is degraded; content retrievability must be verified directly.
+
+## Conventions
+- In tests, always assert on the retrieved content itself — asserting only that a version number bumped is a false green when retrieval status is degraded; content retrievability must be verified directly.
+

@@ -1,0 +1,49 @@
+---
+name: comprehension-before-commitment
+description: 'Before writing any code or making any architectural decision, build a complete mental model of the system: read all versioned plans up to the current version, trace every relevant logic path, identify all component interfaces, and understand how every piece fits together. Commitment (writing code, opening PRs, merging) on partial context produces implementations that violate existing contracts, miss edge cases, or duplicate logic already handled elsewhere.'
+tags:
+- process
+- architecture
+- implementation
+- onboarding
+- planning
+type: principle
+origin: session_extraction
+source_session_id: dogfood-regress-2-off
+source_provider: claude-code
+created_at: 2026-06-12T18:58:50.472269864+00:00
+warning_at: 2026-07-12T18:58:50.472269864+00:00
+expires_at: 2026-09-10T18:58:50.472269864+00:00
+generality: general
+generality_rationale: Applies to any multi-version, multi-component engineering project regardless of language or domain.
+use_when:
+- Starting implementation of a feature described in a versioned plan.
+- Modifying a subsystem that has multiple callers or downstream dependents.
+- Joining an existing codebase mid-stream to implement the next phase of a long-running plan.
+- Any task where the prompt says 'implement', 'add', 'change', or 'refactor' without a narrow, self-contained scope.
+avoid_when:
+- Purely additive, isolated changes (e.g. a new top-level utility with no dependents) where no existing contract can be violated.
+invariants:
+- No implementation step begins before all prior versioned plans are read and understood.
+- Every interface touched must be traced to all its callers before modification.
+requires:
+- Access to all versioned plan files and the full codebase.
+produces:
+- Implementations that respect existing contracts and do not introduce regressions at integration points.
+- Earlier detection of conflicting assumptions across plan versions.
+evidence:
+- 'Skill 2: treat the codebase as the dynamic context layer — understanding must be live, not assumed.'
+- 'Skill 3: read all versioned plans, trace every logic path, review every corner before implementing.'
+---
+
+# comprehension-before-commitment
+
+Before writing any code or making any architectural decision, build a complete mental model of the system: read all versioned plans up to the current version, trace every relevant logic path, identify all component interfaces, and understand how every piece fits together. Commitment (writing code, opening PRs, merging) on partial context produces implementations that violate existing contracts, miss edge cases, or duplicate logic already handled elsewhere.
+
+## Procedures
+- Read all versioned plan documents in order before writing a single line.
+- Grep / read every file that touches the interface you are about to change.
+- Trace the request/data flow end-to-end across all layers before deciding where to add logic.
+- Identify every caller of any function or type you intend to modify.
+- Only after the full picture is clear, commit to an implementation approach.
+

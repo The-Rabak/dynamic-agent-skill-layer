@@ -1,0 +1,55 @@
+---
+name: 'User-controlled agent orchestration: no automatic chaining or conflict-risk parallelism'
+description: 'When orchestrating multiple agent tasks, default to explicit, conservative scheduling: (1) check for shared file edits before running tasks in parallel — a single shared file mandates sequential execution; (2) never automatically trigger downstream phases (reviews, deploys, follow-on tickets) after a task completes — gate every phase transition on explicit user action. The overarching rule: the user owns the workflow rhythm; the agent owns individual task execution.'
+tags:
+- orchestration
+- agent-tasks
+- parallelism
+- workflow
+- user-control
+type: principle
+origin: session_extraction
+source_session_id: dogfood-regress-1-off
+source_provider: claude-code
+created_at: 2026-06-12T18:56:15.287100186+00:00
+warning_at: 2026-07-12T18:56:15.287100186+00:00
+expires_at: 2026-09-10T18:56:15.287100186+00:00
+generality: general
+generality_rationale: 'Both source skills are instances of the same meta-rule: conservatively yield workflow control back to the user rather than automatically chaining or parallelizing operations.'
+use_when:
+- Scheduling two or more agent tasks that touch overlapping areas of the codebase
+- Deciding whether to auto-run a review, deploy, or follow-on step after task completion
+- Any multi-step workflow where the user has not explicitly pre-approved the full chain
+avoid_when:
+- Tasks are provably isolated (separate repos, separate directories with no shared files) AND the user has pre-approved parallel execution
+tools:
+- TaskCreate
+- TaskGet
+- TaskList
+invariants:
+- Never let automatic chaining silently advance the workflow past a completed task without user acknowledgement.
+- Never parallelize tasks that share even one output file.
+requires:
+- Knowledge of which files each pending task will edit (via plan, diff preview, or task spec)
+produces:
+- A sequenced or parallelized task queue that respects file-conflict safety
+- Explicit stopping points between workflow phases for user review
+evidence:
+- 'Skill 1: check for shared files before parallelizing — if overlap, run sequentially'
+- 'Skill 2: do not auto-run review after ticket execution — user triggers it manually on the whole branch'
+---
+
+# User-controlled agent orchestration: no automatic chaining or conflict-risk parallelism
+
+When orchestrating multiple agent tasks, default to explicit, conservative scheduling: (1) check for shared file edits before running tasks in parallel — a single shared file mandates sequential execution; (2) never automatically trigger downstream phases (reviews, deploys, follow-on tickets) after a task completes — gate every phase transition on explicit user action. The overarching rule: the user owns the workflow rhythm; the agent owns individual task execution.
+
+## Procedures
+- Before scheduling N tasks, enumerate the files each task is expected to edit.
+- If any two tasks share at least one file, run them sequentially regardless of theoretical independence.
+- After a task completes, stop and surface the result; do not automatically queue the next logical phase (e.g., review, merge, deploy).
+- Wait for explicit user instruction before advancing to the next workflow stage.
+
+## Conventions
+- Sequential > parallel whenever file overlap exists or is uncertain.
+- Phase transitions (execute → review, review → merge) are always user-initiated.
+

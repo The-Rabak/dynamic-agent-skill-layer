@@ -226,12 +226,13 @@ impl TranscriptSkillExtractionService for ClaudeExtractor {
             },
         };
 
-        let candidates = self.post_messages(&request).await?;
+        let (candidates, assessment) = self.post_messages(&request).await?;
 
         Ok(ExtractionResult {
             source_session_id: transcript.session_id.clone(),
             candidates,
             provider: "claude".to_owned(),
+            assessment,
         })
     }
 }
@@ -243,7 +244,7 @@ impl ClaudeExtractor {
     async fn post_messages(
         &self,
         request: &MessagesRequest<'_>,
-    ) -> Result<Vec<domain::ExtractedSkillCandidate>, ExtractionError> {
+    ) -> Result<(Vec<domain::ExtractedSkillCandidate>, Option<String>), ExtractionError> {
         crate::extraction::http::acquire_claude_rate_limit().await?;
 
         let send_request = async {
@@ -305,7 +306,7 @@ impl ClaudeExtractor {
             tool_input.assessment.as_deref(),
         );
 
-        Ok(tool_input.candidates)
+        Ok((tool_input.candidates, tool_input.assessment))
     }
 }
 

@@ -1,0 +1,23 @@
+---
+name: Before scheduling two agent tasks in parallel, check (preference)
+description: 'Standing user preference: Before scheduling two agent tasks in parallel, check whether they edit any of the same files; if they share even one file, run them sequentially to avoid conflicting commits.'
+tags:
+- preference
+- convention
+origin: session_extraction
+source_session_id: dogfood-regress-1-off
+source_provider: claude-code
+created_at: 2026-06-12T18:56:15.286342427+00:00
+warning_at: 2026-07-12T18:56:15.286342427+00:00
+expires_at: 2026-09-10T18:56:15.286342427+00:00
+generality: general
+generality_rationale: Detected as a standing user directive; generality inferred from scope signals.
+---
+
+# Before scheduling two agent tasks in parallel, check (preference)
+
+Standing user preference: Before scheduling two agent tasks in parallel, check whether they edit any of the same files; if they share even one file, run them sequentially to avoid conflicting commits.
+
+## Conventions
+- Before scheduling two agent tasks in parallel, check whether they edit any of the same files; if they share even one file, run them sequentially to avoid conflicting commits.
+

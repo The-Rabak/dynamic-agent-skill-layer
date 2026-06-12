@@ -58,6 +58,7 @@ fn pending_writer_emits_lifecycle_frontmatter_with_provenance() {
         source_session_id: DomainId::new_unchecked("session-123"),
         candidates: vec![sample_candidate("Rust File IO Setup")],
         provider: "claude".to_owned(),
+        assessment: None,
     };
 
     let written_paths = writer
@@ -110,6 +111,7 @@ fn pending_writer_uses_shared_lifecycle_policy_defaults() {
         source_session_id: DomainId::new_unchecked("session-shared-policy"),
         candidates: vec![sample_candidate("Shared Lifecycle Policy Skill")],
         provider: "claude".to_owned(),
+        assessment: None,
     };
 
     let written_paths = writer
@@ -279,6 +281,7 @@ fn rejected_tombstone_blocks_reproposal_until_tombstone_pruning() {
         source_session_id: DomainId::new_unchecked("session-456"),
         candidates: vec![sample_candidate("Rust File IO Setup")],
         provider: "claude".to_owned(),
+        assessment: None,
     };
 
     let blocked_write = writer.write_pending_drafts(
@@ -369,6 +372,7 @@ fn malformed_rejected_tombstone_is_pruned_and_unblocks_reproposal() {
         source_session_id: DomainId::new_unchecked("session-789"),
         candidates: vec![sample_candidate("Rust File IO Setup")],
         provider: "claude".to_owned(),
+        assessment: None,
     };
 
     let blocked_write = writer.write_pending_drafts(

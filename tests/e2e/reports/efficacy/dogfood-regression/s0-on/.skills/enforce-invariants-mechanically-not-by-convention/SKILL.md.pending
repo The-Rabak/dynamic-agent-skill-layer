@@ -1,0 +1,42 @@
+---
+name: Enforce invariants mechanically, not by convention
+description: When the system has a correctness requirement — co-occurring fields, a real infrastructure dependency, a server that must be actively running before requests arrive — enforce it through explicit, mechanical means (code assertions, required config, active polling, concrete wiring). Never rely on convention, documentation, naming, or assumed ambient behavior to maintain the invariant; implicit reliance silently fails.
+tags:
+- invariants
+- explicitness
+- fail-loud
+- wiring
+type: principle
+origin: session_extraction
+source_session_id: dogfood-regress-0-on
+source_provider: claude-code
+created_at: 2026-06-12T18:55:30.080180057+00:00
+warning_at: 2026-07-12T18:55:30.080180057+00:00
+expires_at: 2026-09-10T18:55:30.080180057+00:00
+generality: general
+use_when:
+- Designing a struct or enum with fields that are meaningless in isolation
+- Setting up infrastructure or external service dependencies for tests or production
+- Spawning async tasks that downstream code will immediately interact with
+- Any situation where 'it should just work by convention' is the only enforcement
+avoid_when:
+- The invariant is already enforced at the type level with no runtime path to violate it
+invariants:
+- Every correctness requirement must have an explicit enforcement point that triggers on violation, not merely a convention that could silently be ignored.
+produces:
+- Loud, localized failure at the seam when an invariant is violated, rather than silent misbehavior downstream
+evidence:
+- 'Skill 3: enforce co-occurring fields explicitly in state machines'
+- 'Skill 6: use real Docker Compose infrastructure, never stubs'
+- 'Skill 9: ensure async server task is actively polled before sending requests'
+---
+
+# Enforce invariants mechanically, not by convention
+
+When the system has a correctness requirement — co-occurring fields, a real infrastructure dependency, a server that must be actively running before requests arrive — enforce it through explicit, mechanical means (code assertions, required config, active polling, concrete wiring). Never rely on convention, documentation, naming, or assumed ambient behavior to maintain the invariant; implicit reliance silently fails.
+
+## Procedures
+- For state machine or orchestrator fields that must co-occur, encode the invariant as a type-level constraint or an explicit assertion that fires at construction/transition time.
+- For infrastructure dependencies, always wire to the real service (Docker Compose, live socket) rather than a placeholder or simulated stand-in.
+- For async dependencies (e.g. a server that must be ready), actively poll or await the readiness condition — never assume the task is reachable just because it was spawned.
+

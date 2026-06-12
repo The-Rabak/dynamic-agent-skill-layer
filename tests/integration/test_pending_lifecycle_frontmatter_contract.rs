@@ -61,6 +61,7 @@ fn pending_frontmatter_includes_created_warning_and_expiry_timestamps() {
         source_session_id: DomainId::new_unchecked("session-123"),
         candidates: vec![sample_candidate("Rust File IO Setup")],
         provider: "claude".to_owned(),
+        assessment: None,
     };
 
     let written_paths = writer
@@ -111,6 +112,7 @@ fn pending_writer_batch_failure_does_not_leave_partial_drafts() {
             sample_candidate("Blocked Skill"),
         ],
         provider: "claude".to_owned(),
+        assessment: None,
     };
 
     let write_result =
@@ -151,6 +153,7 @@ fn pending_frontmatter_serializes_multiline_and_special_characters_safely() {
             ..Default::default()
         }],
         provider: "claude".to_owned(),
+        assessment: None,
     };
 
     let written_paths = writer

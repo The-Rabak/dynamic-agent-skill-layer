@@ -104,6 +104,7 @@ impl TranscriptSkillExtractionService for InlineSuccessExtractor {
         Ok(ExtractionResult {
             source_session_id: transcript.session_id.clone(),
             provider: "claude".to_owned(),
+            assessment: None,
             candidates: vec![ExtractedSkillCandidate {
                 name: "Session Extract Inline Workflow".to_owned(),
                 description: "Validated inline transcript extraction flow.".to_owned(),

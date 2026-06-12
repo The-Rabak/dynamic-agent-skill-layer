@@ -1,0 +1,23 @@
+---
+name: Before implementing, read all versioned plans up to (preference)
+description: 'Standing user preference: Before implementing, read all versioned plans up to the latest implemented version, trace every logic path, review every corner of the repo, and understand all interfaces and how all components fit together.'
+tags:
+- preference
+- convention
+origin: session_extraction
+source_session_id: dogfood-regress-2-off
+source_provider: claude-code
+created_at: 2026-06-12T18:58:50.470758707+00:00
+warning_at: 2026-07-12T18:58:50.470758707+00:00
+expires_at: 2026-09-10T18:58:50.470758707+00:00
+generality: uncertain
+generality_rationale: Detected as a standing user directive; generality inferred from scope signals.
+---
+
+# Before implementing, read all versioned plans up to (preference)
+
+Standing user preference: Before implementing, read all versioned plans up to the latest implemented version, trace every logic path, review every corner of the repo, and understand all interfaces and how all components fit together.
+
+## Conventions
+- Before implementing, read all versioned plans up to the latest implemented version, trace every logic path, review every corner of the repo, and understand all interfaces and how all components fit together.
+

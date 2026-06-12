@@ -1,0 +1,23 @@
+---
+name: When a system enforces invariants across multiple coupled (preference)
+description: 'Standing user preference: When a system enforces invariants across multiple coupled layers, treat all affected layers as a single atomic unit of change — updating one layer must be propagated consistently across all coupled layers.'
+tags:
+- preference
+- convention
+origin: session_extraction
+source_session_id: dogfood-regress-2-on
+source_provider: claude-code
+created_at: 2026-06-12T19:00:52.499605169+00:00
+warning_at: 2026-07-12T19:00:52.499605169+00:00
+expires_at: 2026-09-10T19:00:52.499605169+00:00
+generality: uncertain
+generality_rationale: Detected as a standing user directive; generality inferred from scope signals.
+---
+
+# When a system enforces invariants across multiple coupled (preference)
+
+Standing user preference: When a system enforces invariants across multiple coupled layers, treat all affected layers as a single atomic unit of change — updating one layer must be propagated consistently across all coupled layers.
+
+## Conventions
+- When a system enforces invariants across multiple coupled layers, treat all affected layers as a single atomic unit of change — updating one layer must be propagated consistently across all coupled layers.
+

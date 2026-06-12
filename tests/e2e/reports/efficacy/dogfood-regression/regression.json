@@ -1,0 +1,382 @@
+{
+ "results": [
+  {
+   "transcript": "/home/rabak/.claude/projects/-home-rabak-projects-dynamic-agent-skill-layer/273eadb7-8e33-4b9b-8b5a-1db3a2b32779.jsonl",
+   "off": {
+    "arm": "off",
+    "scope": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/dogfood-regression/s0-off",
+    "n_drafts": 11,
+    "elapsed_s": 481.9,
+    "drafts": [
+     {
+      "name": "Always enumerate intended targets explicitly and verify each (preference)",
+      "description": "Standing user preference: Always enumerate intended targets explicitly and verify each one was actually processed \u2014 a zero exit code is not sufficient proof of complete coverage.",
+      "skill_type": "",
+      "body_chars": 1105
+     },
+     {
+      "name": "Be fully honest and transparent at all times; (preference)",
+      "description": "Standing user preference: Be fully honest and transparent at all times; never mislead, obscure, or misrepresent information.",
+      "skill_type": "",
+      "body_chars": 915
+     },
+     {
+      "name": "Before implementing any fix from an aged issue (preference)",
+      "description": "Standing user preference: Before implementing any fix from an aged issue or todo, verify the diagnosed root cause still holds in the current codebase \u2014 the fix may already exist or the real gap may have shifted.",
+      "skill_type": "",
+      "body_chars": 1178
+     },
+     {
+      "name": "Ensure all prerequisite dependencies (e.g. retrieved skills, data (preference)",
+      "description": "Standing user preference: Ensure all prerequisite dependencies (e.g. retrieved skills, data, or components) exist before executing a task that depends on them; do not run a task that asserts efficacy against resources that do not yet exist.",
+      "skill_type": "",
+      "body_chars": 1303
+     },
+     {
+      "name": "In tokio tests that spawn an axum/hyper server (preference)",
+      "description": "Standing user preference: In tokio tests that spawn an axum/hyper server, be aware that externally sent requests (e.g. curl or script POSTs) will silently time out if the spawned server task is never polled; use a proper async test harness that ensures the server task actually runs.",
+      "skill_type": "",
+      "body_chars": 1394
+     },
+     {
+      "name": "Proceed autonomously to full completion without pausing for (preference)",
+      "description": "Standing user preference: Proceed autonomously to full completion without pausing for human approval gates \u2014 do not stop until the work is correct and functioning end-to-end.",
+      "skill_type": "",
+      "body_chars": 1093
+     },
+     {
+      "name": "Use real infrastructure (docker compose setup) for all (preference)",
+      "description": "Standing user preference: Use real infrastructure (docker compose setup) for all non-unit-test code paths; no placeholders, stubs, or fake implementations.",
+      "skill_type": "",
+      "body_chars": 1026
+     },
+     {
+      "name": "When designing orchestration or state machines, treat field (preference)",
+      "description": "Standing user preference: When designing orchestration or state machines, treat field combinations that must always co-occur as atomic invariants \u2014 enforce them structurally and never allow partial or inconsistent state.",
+      "skill_type": "",
+      "body_chars": 1231
+     },
+     {
+      "name": "bracket-operations-with-explicit-pre-and-post-checks",
+      "description": "Every non-trivial operation should be surrounded by two explicit verification gates: (1) a pre-condition gate that confirms all prerequisites actually exist in the current system state before the operation begins, and (2) a post-condition gate that enumerates each intended target or outcome and confirms it was actually achieved. This bracket pattern recurred in three distinct forms across the session: verifying a root cause still holds before applying a fix (pre), ensuring prerequisite data/components are present before running a task that depends on them (pre), and enumerating intended targets after execution and checking each one was processed (post). Neither gate is optional.",
+      "skill_type": "principle",
+      "body_chars": 3432
+     },
+     {
+      "name": "enforce-invariants-structurally-not-procedurally",
+      "description": "When a correctness constraint can be made structurally unviolable \u2014 through data-type design, infrastructure wiring, or explicit enumeration \u2014 prefer that over relying on discipline at runtime. This principle surfaced in three distinct forms: encoding co-occurring fields as atomic invariants in state machines so partial/inconsistent state cannot be represented; using real infrastructure so fake or stub paths cannot silently substitute for real ones; and enumerating all intended targets explicitly so coverage gaps are forced to be visible rather than silently absent. In each case, the structural approach eliminates an entire class of silent violation that a procedural check could only catch after the fact.",
+      "skill_type": "principle",
+      "body_chars": 3676
+     },
+     {
+      "name": "silent-success-is-not-success",
+      "description": "A recurring failure mode across the session: treating the absence of an error signal \u2014 zero exit code, no exception thrown, no timeout logged \u2014 as positive confirmation that work completed correctly and completely. The pattern surfaced in at least three forms: trusting a zero exit code as proof of full target coverage, trusting that a spawned server task 'ran' because no error appeared, and trusting that an aged diagnosis still matches the current root cause. The correct posture is that absence of error is neutral; positive confirmation requires an explicit, observable outcome for each intended target.",
+      "skill_type": "anti_pattern",
+      "body_chars": 2979
+     }
+    ]
+   },
+   "on": {
+    "arm": "on",
+    "scope": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/dogfood-regression/s0-on",
+    "n_drafts": 12,
+    "elapsed_s": 345.4,
+    "drafts": [
+     {
+      "name": "Always be honest and accurate; never fabricate, omit (preference)",
+      "description": "Standing user preference: Always be honest and accurate; never fabricate, omit, or obscure findings.",
+      "skill_type": "",
+      "body_chars": 856
+     },
+     {
+      "name": "Always enumerate intended targets explicitly and verify each (preference)",
+      "description": "Standing user preference: Always enumerate intended targets explicitly and verify each one was actually processed \u2014 a clean exit code alone is not sufficient confirmation.",
+      "skill_type": "",
+      "body_chars": 1083
+     },
+     {
+      "name": "Always use the project's Docker Compose setup for (preference)",
+      "description": "Standing user preference: Always use the project's Docker Compose setup for real infrastructure; never substitute placeholders, stubs, or simulated services.",
+      "skill_type": "",
+      "body_chars": 1022
+     },
+     {
+      "name": "Before implementing any fix from an aged issue (preference)",
+      "description": "Standing user preference: Before implementing any fix from an aged issue or todo, verify the diagnosed root cause still holds in the current codebase \u2014 the fix may already be present or the real gap may have shifted.",
+      "skill_type": "",
+      "body_chars": 1192
+     },
+     {
+      "name": "Drive work on a branch to full completion (preference)",
+      "description": "Standing user preference: Drive work on a branch to full completion \u2014 functionally correct and visually polished \u2014 without stopping partway.",
+      "skill_type": "",
+      "body_chars": 954
+     },
+     {
+      "name": "Enforce invariants mechanically, not by convention",
+      "description": "When the system has a correctness requirement \u2014 co-occurring fields, a real infrastructure dependency, a server that must be actively running before requests arrive \u2014 enforce it through explicit, mechanical means (code assertions, required config, active polling, concrete wiring). Never rely on convention, documentation, naming, or assumed ambient behavior to maintain the invariant; implicit reliance silently fails.",
+      "skill_type": "principle",
+      "body_chars": 2763
+     },
+     {
+      "name": "In async tests (e.g. tokio) that spawn a (preference)",
+      "description": "Standing user preference: In async tests (e.g. tokio) that spawn a server (e.g. axum/hyper), ensure the server task is actively polled before sending external requests; an unpolled server task causes requests to silently time out.",
+      "skill_type": "",
+      "body_chars": 1222
+     },
+     {
+      "name": "Sequence todos and tickets so that prerequisite artefacts (preference)",
+      "description": "Standing user preference: Sequence todos and tickets so that prerequisite artefacts (e.g. retrieved skills, curated datasets) are fully available before any ticket that depends on them is executed.",
+      "skill_type": "",
+      "body_chars": 1157
+     },
+     {
+      "name": "Treat tasks as atomic \u2014 prerequisite-first, enumerated, completed",
+      "description": "Tasks must be treated as atomic units with three properties: (1) all prerequisite artefacts and conditions are confirmed in place before execution begins, (2) every intended target is explicitly enumerated up front and verified afterward, and (3) the task is driven all the way to verified completion without pausing unnecessarily mid-stream. Partial execution, assumed completion, or mid-task confirmation pauses all introduce the same failure mode: work that appears done but isn't.",
+      "skill_type": "best_practice",
+      "body_chars": 3106
+     },
+     {
+      "name": "Verify actual current state before acting",
+      "description": "Before taking any consequential action \u2014 applying a fix, assuming a process completed, or relying on a prior assumption \u2014 always verify the actual current state of the system. Do not assume that expected conditions still hold, that a prior step succeeded silently, or that historical context (aged todos, prior runs) reflects today's reality.",
+      "skill_type": "principle",
+      "body_chars": 2375
+     },
+     {
+      "name": "When a state machine or orchestrator has fields (preference)",
+      "description": "Standing user preference: When a state machine or orchestrator has fields that must always co-occur, enforce that invariant explicitly rather than relying on convention.",
+      "skill_type": "",
+      "body_chars": 1053
+     },
+     {
+      "name": "When the approach has already been fully reasoned (preference)",
+      "description": "Standing user preference: When the approach has already been fully reasoned through, proceed to complete implementation without pausing for confirmation at intermediate steps.",
+      "skill_type": "",
+      "body_chars": 1075
+     }
+    ]
+   },
+   "diff": {
+    "n_off": 11,
+    "n_on": 12,
+    "delta": 1,
+    "only_off": [
+     "Be fully honest and transparent at all times; (preference)",
+     "Ensure all prerequisite dependencies (e.g. retrieved skills, data (preference)",
+     "In tokio tests that spawn an axum/hyper server (preference)",
+     "Proceed autonomously to full completion without pausing for (preference)",
+     "Use real infrastructure (docker compose setup) for all (preference)",
+     "When designing orchestration or state machines, treat field (preference)",
+     "bracket-operations-with-explicit-pre-and-post-checks",
+     "enforce-invariants-structurally-not-procedurally",
+     "silent-success-is-not-success"
+    ],
+    "only_on": [
+     "Always be honest and accurate; never fabricate, omit (preference)",
+     "Always use the project's Docker Compose setup for (preference)",
+     "Drive work on a branch to full completion (preference)",
+     "Enforce invariants mechanically, not by convention",
+     "In async tests (e.g. tokio) that spawn a (preference)",
+     "Sequence todos and tickets so that prerequisite artefacts (preference)",
+     "Treat tasks as atomic \u2014 prerequisite-first, enumerated, completed",
+     "Verify actual current state before acting",
+     "When a state machine or orchestrator has fields (preference)",
+     "When the approach has already been fully reasoned (preference)"
+    ],
+    "shared": 2
+   }
+  },
+  {
+   "transcript": "/home/rabak/.claude/projects/-home-rabak-projects-dynamic-agent-skill-layer/52894a16-2417-4741-8855-0fabc5e26bb9.jsonl",
+   "off": {
+    "arm": "off",
+    "scope": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/dogfood-regression/s1-off",
+    "n_drafts": 3,
+    "elapsed_s": 45.1,
+    "drafts": [
+     {
+      "name": "Before scheduling two agent tasks in parallel, check (preference)",
+      "description": "Standing user preference: Before scheduling two agent tasks in parallel, check whether they edit any of the same files; if they share even one file, run them sequentially to avoid conflicting commits.",
+      "skill_type": "",
+      "body_chars": 1155
+     },
+     {
+      "name": "Do not automatically run a review after ticket (preference)",
+      "description": "Standing user preference: Do not automatically run a review after ticket execution; the user will run the review manually on the whole branch when ready.",
+      "skill_type": "",
+      "body_chars": 1004
+     },
+     {
+      "name": "User-controlled agent orchestration: no automatic chaining or conflict-risk parallelism",
+      "description": "When orchestrating multiple agent tasks, default to explicit, conservative scheduling: (1) check for shared file edits before running tasks in parallel \u2014 a single shared file mandates sequential execution; (2) never automatically trigger downstream phases (reviews, deploys, follow-on tickets) after a task completes \u2014 gate every phase transition on explicit user action. The overarching rule: the user owns the workflow rhythm; the agent owns individual task execution.",
+      "skill_type": "principle",
+      "body_chars": 3400
+     }
+    ]
+   },
+   "on": {
+    "arm": "on",
+    "scope": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/dogfood-regression/s1-on",
+    "n_drafts": 3,
+    "elapsed_s": 48.4,
+    "drafts": [
+     {
+      "name": "Before scheduling two agent tasks in parallel, check (preference)",
+      "description": "Standing user preference: Before scheduling two agent tasks in parallel, check whether they edit any of the same files; if they share even one file, run them sequentially to avoid conflicting commits.",
+      "skill_type": "",
+      "body_chars": 1154
+     },
+     {
+      "name": "Do not automatically run a review after ticket (preference)",
+      "description": "Standing user preference: Do not automatically run a review after ticket execution completes; the user will run the review manually on the whole branch later.",
+      "skill_type": "",
+      "body_chars": 1018
+     },
+     {
+      "name": "Restrained autonomous orchestration \u2014 defer sequencing and chaining to the user",
+      "description": "When driving a multi-step or multi-agent workflow, the agent must not eagerly decide how steps are sequenced, parallelized, or chained. Both the decision to run tasks in parallel (checking for shared state first) and the decision to trigger downstream steps (e.g. review after ticket work) must either follow an explicit user preference or be held for user approval. Default to the most conservative, least-surprising posture: sequential, and stop at the natural end of the requested scope.",
+      "skill_type": "principle",
+      "body_chars": 3410
+     }
+    ]
+   },
+   "diff": {
+    "n_off": 3,
+    "n_on": 3,
+    "delta": 0,
+    "only_off": [
+     "User-controlled agent orchestration: no automatic chaining or conflict-risk parallelism"
+    ],
+    "only_on": [
+     "Restrained autonomous orchestration \u2014 defer sequencing and chaining to the user"
+    ],
+    "shared": 2
+   }
+  },
+  {
+   "transcript": "/home/rabak/.claude/projects/-home-rabak-projects-dynamic-agent-skill-layer/254281af-315c-4d0a-93de-6e184a75fddf.jsonl",
+   "off": {
+    "arm": "off",
+    "scope": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/dogfood-regression/s2-off",
+    "n_drafts": 7,
+    "elapsed_s": 106.6,
+    "drafts": [
+     {
+      "name": "Always assert on retrieved content itself in tests (preference)",
+      "description": "Standing user preference: Always assert on retrieved content itself in tests \u2014 a version-bump assertion alone is a false green when retrieval status is degraded; verify that content was actually retrievable, not just that a version counter changed.",
+      "skill_type": "",
+      "body_chars": 1297
+     },
+     {
+      "name": "Before implementing, read all versioned plans up to (preference)",
+      "description": "Standing user preference: Before implementing, read all versioned plans up to the latest implemented version, trace every logic path, review every corner of the repo, and understand all interfaces and how all components fit together.",
+      "skill_type": "",
+      "body_chars": 1254
+     },
+     {
+      "name": "Treat the codebase as the dynamic context layer (preference)",
+      "description": "Standing user preference: Treat the codebase as the dynamic context layer and operate as a full-capability coding harness agent within it.",
+      "skill_type": "",
+      "body_chars": 961
+     },
+     {
+      "name": "When a system enforces invariants across multiple coupled (preference)",
+      "description": "Standing user preference: When a system enforces invariants across multiple coupled layers, ensure all layers are consistently validated together rather than in isolation.",
+      "skill_type": "",
+      "body_chars": 1080
+     },
+     {
+      "name": "comprehension-before-commitment",
+      "description": "Before writing any code or making any architectural decision, build a complete mental model of the system: read all versioned plans up to the current version, trace every relevant logic path, identify all component interfaces, and understand how every piece fits together. Commitment (writing code, opening PRs, merging) on partial context produces implementations that violate existing contracts, miss edge cases, or duplicate logic already handled elsewhere.",
+      "skill_type": "principle",
+      "body_chars": 3066
+     },
+     {
+      "name": "full-fidelity-in-both-understanding-and-validation",
+      "description": "Shortcuts in comprehension and shortcuts in validation produce the same failure mode: the system appears correct while a real violation goes undetected. Full-fidelity understanding (read all plans, trace all paths, understand all interfaces) and full-fidelity validation (assert on real content, validate all coupled layers) are two expressions of a single discipline: never accept a partial view as a complete one. Gaps in either phase are silent \u2014 they feel like green until the production failure reveals them.",
+      "skill_type": "principle",
+      "body_chars": 3572
+     },
+     {
+      "name": "proxy-metric-validation-antipattern",
+      "description": "Using indirect signals \u2014 version counters, single-layer checks, surface-level status codes \u2014 as stand-ins for real correctness validation produces false greens. The proxy can succeed while the underlying invariant silently fails. Validation must always target the actual invariant directly: real content retrievability, all coupled layers agreeing, the substantive outcome \u2014 not a metric that merely correlates with it.",
+      "skill_type": "anti_pattern",
+      "body_chars": 3067
+     }
+    ]
+   },
+   "on": {
+    "arm": "on",
+    "scope": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/dogfood-regression/s2-on",
+    "n_drafts": 7,
+    "elapsed_s": 121.9,
+    "drafts": [
+     {
+      "name": "Before working on any feature or fix, read (preference)",
+      "description": "Standing user preference: Before working on any feature or fix, read all implementation plans up to the current version, walk every logic path, inspect every interface, and understand the full codebase rather than reasoning from a partial view.",
+      "skill_type": "",
+      "body_chars": 1268
+     },
+     {
+      "name": "Complete Context is a Hard Prerequisite Before Any Action",
+      "description": "Skills 2 and 3 converge on a single meta-rule: the agent must hold complete context before it is permitted to act. Skill 3 requires reading every implementation plan up to the current version, walking every logic path, and inspecting every interface. Skill 2 requires treating the full system context as the active dynamic layer for all decisions. Together they assert that partial context \u2014 knowing only the immediate file, only the current plan, or only the runtime state \u2014 is categorically insufficient and will lead to decisions that are locally sensible but globally broken. The session-spanning principle is: completeness of understanding is a non-negotiable gate, not an optimization.",
+      "skill_type": "principle",
+      "body_chars": 3342
+     },
+     {
+      "name": "In tests, always assert on the retrieved content (preference)",
+      "description": "Standing user preference: In tests, always assert on the retrieved content itself \u2014 asserting only that a version number bumped is a false green when retrieval status is degraded; content retrievability must be verified directly.",
+      "skill_type": "",
+      "body_chars": 1235
+     },
+     {
+      "name": "Never Accept a Proxy Signal as Proof of the Real Invariant",
+      "description": "Two distinct skills share the same underlying failure mode: accepting a correlated side-effect or surrogate signal as evidence that the real invariant holds. Skill 1 warns that updating one coupled layer while leaving others untouched creates a false sense of consistency. Skill 4 warns that asserting a version bump instead of asserting the retrieved content itself creates a false green in tests. Both are instances of proxy verification \u2014 checking something adjacent to the actual condition rather than the condition itself. The session-spanning lesson is: always verify the primary invariant directly; never let a correlated proxy stand in for the real check.",
+      "skill_type": "anti_pattern",
+      "body_chars": 3162
+     },
+     {
+      "name": "Operate as an autonomous coding harness agent, using (preference)",
+      "description": "Standing user preference: Operate as an autonomous coding harness agent, using the provided system context as the active dynamic layer for all decisions and actions.",
+      "skill_type": "",
+      "body_chars": 1051
+     },
+     {
+      "name": "Partial Compliance Equals Non-Compliance",
+      "description": "Skills 1, 3, and 4 each instantiate the same high-altitude rule in a different engineering phase: partial adherence to a requirement is treated as a failure, not a partial success. In implementation (skill 1), updating one coupled layer while leaving others unchanged violates the invariant just as completely as updating none. In pre-work preparation (skill 3), reading some plans or some paths is not better-than-nothing \u2014 the missed paths are exactly where bugs hide. In testing (skill 4), asserting one observable proxy when the full content must be verified gives the same false confidence as no assertion. The session-spanning principle: wherever a completeness requirement exists, there is no partial credit \u2014 you are either complete or you are wrong.",
+      "skill_type": "principle",
+      "body_chars": 3084
+     },
+     {
+      "name": "When a system enforces invariants across multiple coupled (preference)",
+      "description": "Standing user preference: When a system enforces invariants across multiple coupled layers, treat all affected layers as a single atomic unit of change \u2014 updating one layer must be propagated consistently across all coupled layers.",
+      "skill_type": "",
+      "body_chars": 1259
+     }
+    ]
+   },
+   "diff": {
+    "n_off": 7,
+    "n_on": 7,
+    "delta": 0,
+    "only_off": [
+     "Always assert on retrieved content itself in tests (preference)",
+     "Before implementing, read all versioned plans up to (preference)",
+     "Treat the codebase as the dynamic context layer (preference)",
+     "comprehension-before-commitment",
+     "full-fidelity-in-both-understanding-and-validation",
+     "proxy-metric-validation-antipattern"
+    ],
+    "only_on": [
+     "Before working on any feature or fix, read (preference)",
+     "Complete Context is a Hard Prerequisite Before Any Action",
+     "In tests, always assert on the retrieved content (preference)",
+     "Never Accept a Proxy Signal as Proof of the Real Invariant",
+     "Operate as an autonomous coding harness agent, using (preference)",
+     "Partial Compliance Equals Non-Compliance"
+    ],
+    "shared": 1
+   }
+  }
+ ]
+}

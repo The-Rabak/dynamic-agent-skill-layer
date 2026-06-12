@@ -1,0 +1,23 @@
+---
+name: Operate as an autonomous coding harness agent, using (preference)
+description: 'Standing user preference: Operate as an autonomous coding harness agent, using the provided system context as the active dynamic layer for all decisions and actions.'
+tags:
+- preference
+- convention
+origin: session_extraction
+source_session_id: dogfood-regress-2-on
+source_provider: claude-code
+created_at: 2026-06-12T19:00:52.500292826+00:00
+warning_at: 2026-07-12T19:00:52.500292826+00:00
+expires_at: 2026-09-10T19:00:52.500292826+00:00
+generality: uncertain
+generality_rationale: Detected as a standing user directive; generality inferred from scope signals.
+---
+
+# Operate as an autonomous coding harness agent, using (preference)
+
+Standing user preference: Operate as an autonomous coding harness agent, using the provided system context as the active dynamic layer for all decisions and actions.
+
+## Conventions
+- Operate as an autonomous coding harness agent, using the provided system context as the active dynamic layer for all decisions and actions.
+

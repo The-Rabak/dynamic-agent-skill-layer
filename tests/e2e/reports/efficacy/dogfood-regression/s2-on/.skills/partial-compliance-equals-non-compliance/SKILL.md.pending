@@ -1,0 +1,41 @@
+---
+name: Partial Compliance Equals Non-Compliance
+description: 'Skills 1, 3, and 4 each instantiate the same high-altitude rule in a different engineering phase: partial adherence to a requirement is treated as a failure, not a partial success. In implementation (skill 1), updating one coupled layer while leaving others unchanged violates the invariant just as completely as updating none. In pre-work preparation (skill 3), reading some plans or some paths is not better-than-nothing — the missed paths are exactly where bugs hide. In testing (skill 4), asserting one observable proxy when the full content must be verified gives the same false confidence as no assertion. The session-spanning principle: wherever a completeness requirement exists, there is no partial credit — you are either complete or you are wrong.'
+tags:
+- completeness
+- rigor
+- no-shortcuts
+- correctness
+- thoroughness
+type: principle
+origin: session_extraction
+source_session_id: dogfood-regress-2-on
+source_provider: claude-code
+created_at: 2026-06-12T19:00:52.504359080+00:00
+warning_at: 2026-07-12T19:00:52.504359080+00:00
+expires_at: 2026-09-10T19:00:52.504359080+00:00
+generality: general
+use_when:
+- Any multi-component change where coupling exists across layers
+- Pre-work context gathering before a feature or fix
+- Writing tests for systems that have both direct and indirect observables
+invariants:
+- Completeness requirements admit no partial satisfaction — the boundary is binary
+produces:
+- Changes and tests that are correct in all dimensions they claim to cover
+- Explicit, visible gaps instead of hidden partial compliance
+evidence:
+- 'Skill 1: all coupled layers must be updated atomically — one layer updated = invariant still broken'
+- 'Skill 3: every plan, every logic path, every interface must be read — partial reading is insufficient'
+- 'Skill 4: content retrievability must be verified directly — version bump assertion is an incomplete check'
+---
+
+# Partial Compliance Equals Non-Compliance
+
+Skills 1, 3, and 4 each instantiate the same high-altitude rule in a different engineering phase: partial adherence to a requirement is treated as a failure, not a partial success. In implementation (skill 1), updating one coupled layer while leaving others unchanged violates the invariant just as completely as updating none. In pre-work preparation (skill 3), reading some plans or some paths is not better-than-nothing — the missed paths are exactly where bugs hide. In testing (skill 4), asserting one observable proxy when the full content must be verified gives the same false confidence as no assertion. The session-spanning principle: wherever a completeness requirement exists, there is no partial credit — you are either complete or you are wrong.
+
+## Procedures
+- For each requirement or invariant, define its completion boundary explicitly before starting.
+- Treat any gap within that boundary (unread plan, unchecked layer, untested observable) as a full violation, not a minor omission.
+- Surface gaps loudly rather than accepting partial work as 'good enough for now'.
+

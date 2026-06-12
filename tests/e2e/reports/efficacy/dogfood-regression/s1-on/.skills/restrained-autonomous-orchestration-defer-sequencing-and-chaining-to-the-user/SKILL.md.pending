@@ -1,0 +1,47 @@
+---
+name: Restrained autonomous orchestration — defer sequencing and chaining to the user
+description: 'When driving a multi-step or multi-agent workflow, the agent must not eagerly decide how steps are sequenced, parallelized, or chained. Both the decision to run tasks in parallel (checking for shared state first) and the decision to trigger downstream steps (e.g. review after ticket work) must either follow an explicit user preference or be held for user approval. Default to the most conservative, least-surprising posture: sequential, and stop at the natural end of the requested scope.'
+tags:
+- orchestration
+- autonomy
+- workflow
+- parallelism
+- sequencing
+type: principle
+origin: session_extraction
+source_session_id: dogfood-regress-1-on
+source_provider: claude-code
+created_at: 2026-06-12T18:57:03.763284821+00:00
+warning_at: 2026-07-12T18:57:03.763284821+00:00
+expires_at: 2026-09-10T18:57:03.763284821+00:00
+generality: general
+generality_rationale: 'Both source skills are instances of the same underlying principle: the agent must not unilaterally decide the shape of workflow orchestration. One instance concerns parallelism (spatial decomposition), the other concerns chaining (temporal sequencing) — both reduce to ''defer orchestration decisions to the user unless explicitly delegated''.'
+use_when:
+- Scheduling or sequencing multiple agent tasks within a session
+- A workflow step has just completed and there is an obvious follow-on action (review, lint, deploy)
+- Deciding whether to run tasks in parallel to save time
+avoid_when:
+- The user has explicitly pre-authorized the full pipeline end-to-end in the same prompt
+invariants:
+- Parallelism is only safe when tasks have no shared files or shared mutable state.
+- The user — not the agent — decides when downstream workflow phases are triggered.
+produces:
+- Conflict-free parallel execution when tasks are provably disjoint
+- Predictable, user-controlled workflow progression
+evidence:
+- 'Skill 1: Before scheduling two agent tasks in parallel, check whether they edit any of the same files; if they share even one file, run them sequentially.'
+- 'Skill 2: Do not automatically run a review after ticket execution completes; the user will run the review manually on the whole branch later.'
+---
+
+# Restrained autonomous orchestration — defer sequencing and chaining to the user
+
+When driving a multi-step or multi-agent workflow, the agent must not eagerly decide how steps are sequenced, parallelized, or chained. Both the decision to run tasks in parallel (checking for shared state first) and the decision to trigger downstream steps (e.g. review after ticket work) must either follow an explicit user preference or be held for user approval. Default to the most conservative, least-surprising posture: sequential, and stop at the natural end of the requested scope.
+
+## Procedures
+- Before parallelizing any two agent tasks, check whether they touch overlapping files or shared state; if yes, serialize them.
+- After completing a discrete workflow step (e.g. ticket execution), stop — do not automatically trigger the next logical step (e.g. code review, deploy, merge) unless the user explicitly requested it.
+- When in doubt about scope of autonomous follow-on action, surface the decision to the user rather than acting.
+
+## Conventions
+- Treat 'next logical step' intuitions as prompts to ask, not as instructions to act.
+

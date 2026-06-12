@@ -177,7 +177,7 @@ impl TranscriptSkillExtractionService for ClaudeCodeExtractor {
 
         // timeout_ms == 0 → no bound: a background extraction must run to
         // completion, never be cut off by an arbitrary timer.
-        let candidates = if self.config.timeout_ms == 0 {
+        let (candidates, assessment) = if self.config.timeout_ms == 0 {
             self.invoke_cli(&prompt).await?
         } else {
             timeout(
@@ -194,6 +194,7 @@ impl TranscriptSkillExtractionService for ClaudeCodeExtractor {
             source_session_id: transcript.session_id.clone(),
             candidates,
             provider: "claude-code".to_owned(),
+            assessment,
         })
     }
 }
@@ -210,7 +211,7 @@ impl ClaudeCodeExtractor {
     async fn invoke_cli(
         &self,
         prompt: &str,
-    ) -> Result<Vec<domain::ExtractedSkillCandidate>, ExtractionError> {
+    ) -> Result<(Vec<domain::ExtractedSkillCandidate>, Option<String>), ExtractionError> {
         let stdout = spawn_claude_stdout(&self.config, prompt).await?;
         parse_cli_output(&stdout)
     }
@@ -456,7 +457,7 @@ pub(crate) fn extract_result_text(raw_stdout: &str) -> Result<String, Extraction
 /// and actionable.
 pub(crate) fn parse_cli_output(
     raw_stdout: &str,
-) -> Result<Vec<domain::ExtractedSkillCandidate>, ExtractionError> {
+) -> Result<(Vec<domain::ExtractedSkillCandidate>, Option<String>), ExtractionError> {
     // Unwrap the success envelope and strip fences via the shared helper, then
     // parse the candidate list from the inner JSON string. The envelope-finding
     // logic lives in `extract_result_text` so the seam text transport
@@ -472,7 +473,7 @@ pub(crate) fn parse_cli_output(
             body.candidates.len(),
             body.assessment.as_deref(),
         );
-        return Ok(body.candidates);
+        return Ok((body.candidates, body.assessment));
     }
 
     // Fallback: the model occasionally wraps its reply in prose despite instructions.
@@ -505,7 +506,7 @@ pub(crate) fn parse_cli_output(
         body.candidates.len(),
         body.assessment.as_deref(),
     );
-    Ok(body.candidates)
+    Ok((body.candidates, body.assessment))
 }
 
 /// Strips leading/trailing markdown code fences from a string.
@@ -594,7 +595,7 @@ mod tests {
             "result": fenced_result,
         });
         let raw = envelope.to_string();
-        let candidates = parse_cli_output(&raw).expect("must parse successfully");
+        let (candidates, _assessment) = parse_cli_output(&raw).expect("must parse successfully");
         assert!(candidates.is_empty());
     }
 
@@ -619,9 +620,33 @@ mod tests {
             "is_error": false,
             "result": fenced,
         });
-        let candidates = parse_cli_output(&envelope.to_string()).expect("must parse candidate");
+        let (candidates, _assessment) =
+            parse_cli_output(&envelope.to_string()).expect("must parse candidate");
         assert_eq!(candidates.len(), 1);
         assert_eq!(candidates[0].name, "test-skill");
+    }
+
+    #[test]
+    fn parse_cli_output_surfaces_reasoned_assessment() {
+        // T22: a reasoned refusal (assessment present, candidates empty) must surface the
+        // assessment so the orchestrator can distinguish it from malformed/empty output.
+        let result_json = serde_json::json!({
+            "assessment": "Throwaway exploration; nothing durable to extract.",
+            "candidates": []
+        })
+        .to_string();
+        let envelope = serde_json::json!({
+            "type": "result",
+            "subtype": "success",
+            "is_error": false,
+            "result": result_json,
+        });
+        let (candidates, assessment) = parse_cli_output(&envelope.to_string()).expect("must parse");
+        assert!(candidates.is_empty());
+        assert_eq!(
+            assessment.as_deref(),
+            Some("Throwaway exploration; nothing durable to extract.")
+        );
     }
 
     #[test]
@@ -681,7 +706,7 @@ mod tests {
             "is_error": false,
             "result": result,
         });
-        let candidates =
+        let (candidates, _assessment) =
             parse_cli_output(&envelope.to_string()).expect("prose-wrapped JSON must parse");
         assert!(candidates.is_empty());
     }
@@ -709,7 +734,7 @@ mod tests {
             "is_error": false,
             "result": result_json,
         });
-        let candidates = parse_cli_output(&envelope.to_string())
+        let (candidates, _assessment) = parse_cli_output(&envelope.to_string())
             .expect("candidate with } in string fields must parse without loss");
         assert_eq!(candidates.len(), 1);
         assert_eq!(candidates[0].name, "brace-skill");
@@ -906,7 +931,7 @@ mod tests {
 
         // invoke_cli directly so we can pass an oversized prompt without going
         // through the transcript size-validation path.
-        let result = extractor
+        let (result, _assessment) = extractor
             .invoke_cli(&large_prompt)
             .await
             .expect("stdout-before-stdin fake CLI must complete without deadlock");

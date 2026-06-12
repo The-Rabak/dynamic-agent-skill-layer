@@ -1,0 +1,41 @@
+---
+name: Verify actual current state before acting
+description: Before taking any consequential action — applying a fix, assuming a process completed, or relying on a prior assumption — always verify the actual current state of the system. Do not assume that expected conditions still hold, that a prior step succeeded silently, or that historical context (aged todos, prior runs) reflects today's reality.
+tags:
+- verification
+- correctness
+- pre-condition
+type: principle
+origin: session_extraction
+source_session_id: dogfood-regress-0-on
+source_provider: claude-code
+created_at: 2026-06-12T18:55:30.079582815+00:00
+warning_at: 2026-07-12T18:55:30.079582815+00:00
+expires_at: 2026-09-10T18:55:30.079582815+00:00
+generality: general
+use_when:
+- Implementing a fix referenced in an existing issue or aged todo
+- Running any operation over a set of targets (files, records, services)
+- Relying on an assumption established in a previous session or episode
+- Reporting findings or status to the user
+avoid_when:
+- The system was just freshly initialized and state is fully determined by the current session
+invariants:
+- An observation of actual state must precede any action whose correctness depends on that state.
+produces:
+- Confidence that the action is still necessary and correctly targeted
+evidence:
+- 'Skill 1: verify root cause before fixing aged issue'
+- 'Skill 5: enumerate and verify each intended target was processed'
+- 'Skill 2: always be honest/accurate — implies grounding claims in observed reality'
+---
+
+# Verify actual current state before acting
+
+Before taking any consequential action — applying a fix, assuming a process completed, or relying on a prior assumption — always verify the actual current state of the system. Do not assume that expected conditions still hold, that a prior step succeeded silently, or that historical context (aged todos, prior runs) reflects today's reality.
+
+## Procedures
+- Before applying a fix from any issue or todo, read the current code/state to confirm the root cause still exists and has not already been addressed.
+- After running any batch operation, explicitly enumerate the intended targets and confirm each one was processed — do not rely solely on a clean exit code.
+- When presented with a claim about system state, ground it in a direct observation (file read, log line, test output) before acting on it.
+

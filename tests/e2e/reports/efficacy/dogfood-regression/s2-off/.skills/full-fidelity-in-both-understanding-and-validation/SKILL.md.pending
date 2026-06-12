@@ -1,0 +1,47 @@
+---
+name: full-fidelity-in-both-understanding-and-validation
+description: 'Shortcuts in comprehension and shortcuts in validation produce the same failure mode: the system appears correct while a real violation goes undetected. Full-fidelity understanding (read all plans, trace all paths, understand all interfaces) and full-fidelity validation (assert on real content, validate all coupled layers) are two expressions of a single discipline: never accept a partial view as a complete one. Gaps in either phase are silent — they feel like green until the production failure reveals them.'
+tags:
+- correctness
+- reliability
+- process
+- testing
+- architecture
+type: principle
+origin: session_extraction
+source_session_id: dogfood-regress-2-off
+source_provider: claude-code
+created_at: 2026-06-12T18:58:50.473060422+00:00
+warning_at: 2026-07-12T18:58:50.473060422+00:00
+expires_at: 2026-09-10T18:58:50.473060422+00:00
+generality: general
+generality_rationale: 'Session-spanning meta-principle that unifies the comprehension discipline (skills 2, 3) and the validation discipline (skills 1, 4) under a single failure-mode model: partial coverage silently masquerades as full coverage.'
+use_when:
+- Auditing the completeness of a test suite for a multi-layer system.
+- Performing a pre-implementation review of a complex, multi-plan feature.
+- Any task where silent degradation (partial success counted as full success) is a risk.
+- Code or test review where the reviewer must decide whether coverage is 'good enough'.
+avoid_when:
+- Narrow, stateless utility functions with no side effects and no external couplings, where shallow validation genuinely IS full validation.
+invariants:
+- A partial read of plans or code is equivalent to no read — it creates false confidence.
+- A proxy assertion is equivalent to no assertion — it creates false green.
+produces:
+- Engineering practices where both the design phase and the verification phase are immune to silent partial-correctness failures.
+evidence:
+- 'Skill 1: all coupled layers must be validated together — partial layer coverage is a silent gap.'
+- 'Skill 2: full-capability engagement with the codebase as a dynamic context — partial reads are insufficient.'
+- 'Skill 3: read ALL versioned plans and trace EVERY logic path before implementing.'
+- 'Skill 4: assert on actual retrieved content — a proxy assertion (version counter) is a silent gap.'
+---
+
+# full-fidelity-in-both-understanding-and-validation
+
+Shortcuts in comprehension and shortcuts in validation produce the same failure mode: the system appears correct while a real violation goes undetected. Full-fidelity understanding (read all plans, trace all paths, understand all interfaces) and full-fidelity validation (assert on real content, validate all coupled layers) are two expressions of a single discipline: never accept a partial view as a complete one. Gaps in either phase are silent — they feel like green until the production failure reveals them.
+
+## Procedures
+- Treat both the pre-implementation comprehension pass and the post-implementation assertion suite as complete-coverage requirements — partial is not acceptable in either.
+- When reviewing a PR or test suite, ask: 'Would this pass if the real invariant silently broke?' If yes, the coverage is insufficient.
+- When building a mental model of the system, ask: 'Is there any path, plan version, or coupling I have not traced?' If yes, continue reading before acting.
+- Surface any gap (unread plan, unchecked layer, proxy assertion) explicitly before committing — do not paper over it.
+

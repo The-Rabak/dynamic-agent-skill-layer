@@ -383,6 +383,7 @@ mod tests {
             Ok(ExtractionResult {
                 source_session_id: DomainId::new_unchecked("pool-test"),
                 provider: "claude".to_owned(),
+                assessment: None,
                 candidates: vec![ExtractedSkillCandidate {
                     name: "pool-skill".to_owned(),
                     description: "desc".to_owned(),
@@ -544,6 +545,7 @@ mod tests {
                 Ok(ExtractionResult {
                     source_session_id: DomainId::new_unchecked("requeue-test"),
                     provider: "claude".to_owned(),
+                    assessment: None,
                     candidates: vec![ExtractedSkillCandidate {
                         name: "requeue-skill".to_owned(),
                         description: "desc".to_owned(),

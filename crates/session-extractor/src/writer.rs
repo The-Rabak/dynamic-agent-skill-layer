@@ -774,6 +774,7 @@ mod tests {
             source_session_id: domain::DomainId::new_unchecked("session-123"),
             candidates,
             provider: "test".to_owned(),
+            assessment: None,
         }
     }
 

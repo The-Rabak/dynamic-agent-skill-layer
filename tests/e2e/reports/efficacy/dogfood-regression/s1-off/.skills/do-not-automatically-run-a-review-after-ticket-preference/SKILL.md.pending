@@ -1,0 +1,23 @@
+---
+name: Do not automatically run a review after ticket (preference)
+description: 'Standing user preference: Do not automatically run a review after ticket execution; the user will run the review manually on the whole branch when ready.'
+tags:
+- preference
+- convention
+origin: session_extraction
+source_session_id: dogfood-regress-1-off
+source_provider: claude-code
+created_at: 2026-06-12T18:56:15.286759868+00:00
+warning_at: 2026-07-12T18:56:15.286759868+00:00
+expires_at: 2026-09-10T18:56:15.286759868+00:00
+generality: uncertain
+generality_rationale: Detected as a standing user directive; generality inferred from scope signals.
+---
+
+# Do not automatically run a review after ticket (preference)
+
+Standing user preference: Do not automatically run a review after ticket execution; the user will run the review manually on the whole branch when ready.
+
+## Conventions
+- Do not automatically run a review after ticket execution; the user will run the review manually on the whole branch when ready.
+

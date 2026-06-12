@@ -95,6 +95,7 @@ impl TranscriptSkillExtractionService for StressExtractor {
         Ok(ExtractionResult {
             source_session_id: transcript.session_id.clone(),
             provider: "claude".to_owned(),
+            assessment: None,
             candidates: vec![ExtractedSkillCandidate {
                 name: format!("Stress Extracted Skill {session_label}"),
                 description: "Stress extraction output candidate".to_owned(),

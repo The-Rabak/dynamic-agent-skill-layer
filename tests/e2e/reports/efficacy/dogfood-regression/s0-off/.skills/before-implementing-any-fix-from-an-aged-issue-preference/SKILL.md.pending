@@ -1,0 +1,23 @@
+---
+name: Before implementing any fix from an aged issue (preference)
+description: 'Standing user preference: Before implementing any fix from an aged issue or todo, verify the diagnosed root cause still holds in the current codebase — the fix may already exist or the real gap may have shifted.'
+tags:
+- preference
+- convention
+origin: session_extraction
+source_session_id: dogfood-regress-0-off
+source_provider: claude-code
+created_at: 2026-06-12T18:49:44.530621205+00:00
+warning_at: 2026-07-12T18:49:44.530621205+00:00
+expires_at: 2026-09-10T18:49:44.530621205+00:00
+generality: uncertain
+generality_rationale: Detected as a standing user directive; generality inferred from scope signals.
+---
+
+# Before implementing any fix from an aged issue (preference)
+
+Standing user preference: Before implementing any fix from an aged issue or todo, verify the diagnosed root cause still holds in the current codebase — the fix may already exist or the real gap may have shifted.
+
+## Conventions
+- Before implementing any fix from an aged issue or todo, verify the diagnosed root cause still holds in the current codebase — the fix may already exist or the real gap may have shifted.
+
