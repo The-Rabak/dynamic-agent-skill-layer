@@ -122,6 +122,40 @@ Owner decisions (session work-2026-06-12-122502-T14):
   `tests/e2e/efficacy/clband/manifest.json` (pinned dataset sha, verified sentinels, eval scores);
   contexts re-materialized on demand by `scripts/fetch_clband_contexts.py` (tested 13/13 green).
 
+### CL Acquisition-Band Pre-Registration Deltas (LOCKED 2026-06-12 — committed BEFORE the smoke's first measured run; session work-2026-06-12-clband-smoke)
+
+These fold the protocol plan's §6 deltas into this ticket verbatim-by-reference
+(`docs/plans/2026-06-12-t14-cl-acquisition-band-plan.md` §6). They lock task selection and the
+no-verdict rules before any CL-band run produces data; changing them after band data exists VOIDS
+the affected run (consistent with the LOCKED block above):
+
+1. **Roster fixed.** The band roster (plan §3: 2 smoke + 8 full) and the alternate-substitution order
+   (A1→A2→A3) are fixed. Substitution happens ONLY via a context losing all siblings to the OFF
+   pre-gate (plan §4 Step 0) — never after paired data exists for that context.
+2. **Instruments committed before their run.** Per measured sibling, the deterministic verifier core
+   (≥5 checks), the de-referenced question rewrite, and the claude-CLI judge prompt (verbatim rubrics)
+   are committed to the repo BEFORE that sibling's measured run; verifiers are unit-tested offline on
+   a good/bad fixture pair first (Ralph Red/Green).
+3. **INSTRUMENT-FAILURE taxonomy (two classes, distinct from the organic battery's α=0 analogue):**
+   - `INSTRUMENT-FAILURE(extraction)` — a context whose manifest sentinels fail the post-extraction
+     fidelity gate (plan §4 Step 3). P0 extraction finding with the context size attached; that
+     context yields NO Session B data point and NO "layer doesn't help" reading.
+   - `INSTRUMENT-FAILURE(injection/obedience)` — ON fails a sibling whose rule-bearing skills
+     attribution confirms were injected (plan §4 Step 4). Distinct from the extraction class; blocks
+     any efficacy verdict for that sibling until fixed.
+4. **Solver checkpoint + dataset sha recorded per run** (CL-bench's non-pretrained property is current
+   but expires with future checkpoints). A solver change re-runs the OFF pre-gate before results are
+   comparable. Smoke session: `claude-code 2.1.173, --model sonnet`; dataset sha
+   `b28a5832a09b0d96c0cf4c22e90d7c60ede25b80`.
+5. **Injection mode labeled per run.** Each measured run records whether ON was fed via the focused
+   inject-query workaround (`--inject-query summary`-class, the smoke's Finding-2 mitigation) or the
+   production `compile_context`-on-prompt priming path. The smoke uses the labeled focused workaround;
+   the production path is re-tested after T18/T12 and re-labeled.
+
+**Smoke scope note:** the smoke (contexts #1–2) produces NO efficacy data — its outcomes are
+pipeline-validation findings only; the ≥7/10 criterion stays untouched and unscored until the full
+band runs (plan §5).
+
 - [ ] Pass/fail criterion pre-registered in this ticket before any measured run; the final report cites it verbatim.
 - [ ] Efficacy harness runs the same task set with layer ON and OFF against the live stack, paired per task.
 - [ ] Committed deterministic scoring rubric with the judge prompt (if used) recorded in-repo.
