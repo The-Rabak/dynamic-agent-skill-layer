@@ -1,3 +1,7 @@
+// Shared across e2e test binaries; #[path]-included per-binary, so any helper a given binary
+// doesn't exercise is dead_code only as a per-binary compilation artifact, not a real orphan.
+#![allow(dead_code)]
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -118,10 +122,9 @@ impl ReportBuilder {
         };
         if let Some(existing) = self.sections.iter_mut().find(|s| s.name == section) {
             existing.duration_ms += section_millis;
-            if matches!(action_outcome, ReportOutcome::Failed { .. }) {
-                existing.status = action_outcome;
-            } else if matches!(existing.status, ReportOutcome::Passed)
-                && matches!(action_outcome, ReportOutcome::Skipped { .. })
+            if matches!(action_outcome, ReportOutcome::Failed { .. })
+                || (matches!(existing.status, ReportOutcome::Passed)
+                    && matches!(action_outcome, ReportOutcome::Skipped { .. }))
             {
                 existing.status = action_outcome;
             }

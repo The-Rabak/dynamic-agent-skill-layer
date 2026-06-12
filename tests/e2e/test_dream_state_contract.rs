@@ -36,7 +36,6 @@ use std::path::PathBuf;
 #[path = "../integration/env_guard.rs"]
 mod env_guard;
 #[path = "harness/mod.rs"]
-#[allow(dead_code, unused_imports)]
 mod harness;
 #[path = "report.rs"]
 mod report;
@@ -3009,7 +3008,7 @@ async fn high_qps_compile_context_load_meets_p95_and_error_budget_targets() {
         (min.max(1) * queue_depth * BURST_HEADROOM).max(WARM_SINGLE_CALL_SLO_MS);
     let single_call_within_slo = min <= WARM_SINGLE_CALL_SLO_MS;
     let p95_within_budget = p95 <= burst_p95_budget_ms;
-    let errors_within_budget = degraded_count <= DEGRADED_BUDGET;
+    let errors_within_budget = degraded_count == DEGRADED_BUDGET;
     builder.assert_contract(
         "high_qps_warm_single_call_slo",
         single_call_within_slo,
@@ -3030,7 +3029,7 @@ async fn high_qps_compile_context_load_meets_p95_and_error_budget_targets() {
     builder.assert_contract(
         "high_qps_error_budget",
         errors_within_budget,
-        &format!("degraded_count <= {DEGRADED_BUDGET}"),
+        &format!("degraded_count == {DEGRADED_BUDGET}"),
         &format!("degraded_count={degraded_count} of {total_requests}"),
         "concurrent QPS must stay within the error budget (no Degraded under fault-free load)",
     );

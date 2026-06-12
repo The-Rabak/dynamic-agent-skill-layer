@@ -62,10 +62,11 @@ not wait for the final gate, and T20's full-suite verification run is only meani
 
 ## Acceptance Criteria
 
-- [x] `cargo clippy --workspace --all-targets -- -D warnings` exits 0.
+- [x] `cargo clippy --workspace --all-targets -- -D warnings` exits 0. **(bare form — GREEN)**
+- [x] `cargo clippy --workspace --all-targets --features test-utils -- -D warnings` exits 0. **(Final-Gate form — GREEN, 2nd pass)**
 - [x] `cargo fmt --check` exits 0.
 - [x] Dead code in tests/e2e/harness+support either wired into real use or deleted (decision per
-      item recorded; targeted allows justified inline).
+      item recorded; targeted allows justified inline). **DONE in the 2nd pass — see Open Gap (RESOLVED) below.**
 - [x] Prevention note recorded for the unformatted-commit pattern.
 
 ## Completion Evidence (session work-2026-06-12-012651-T21)
@@ -83,6 +84,44 @@ fmt sweep: 31 diffs across 7 files (graph-builder, infrastructure ×4, mcp-serve
 **Zero behavior change audited:** every non-fmt edit is test/bench/relocation; touched-test regression green (retrieval cosine + mcp-server search_skill_graph suites pass).
 
 **Prevention note (unformatted-commit pattern):** root cause is `cargo fmt` not enforced at commit time. Habit: run `cargo fmt` before staging; optionally a `.git/hooks/pre-commit` running `cargo fmt --check`. No new tool added.
+
+## Open Gap (discovered 2026-06-12, post-commit 25a6b8c) — RESOLVED in 2nd pass (owner-directed "extend now")
+
+**RESOLUTION:** The `--features test-utils` Final-Gate form is now GREEN (orchestrator-verified exit 0).
+Two genuine lints fixed for real (behavior-preserving): `report.rs` `if_same_then_else` → conditions
+merged with `||`; `test_dream_state_contract.rs:3012` `degraded_count <= DEGRADED_BUDGET(=0)` →
+`== ` (intent "must be zero" preserved; report string aligned). The ~60-error shared-harness
+dead-code class fixed via FOUR justified module-root inner `#![allow(dead_code)]` attributes (each
+with a one-line rationale: shared cross-binary `#[path]`-included helpers, per-binary dead_code is a
+compilation artifact not a real orphan) on `tests/e2e/harness/mod.rs`, `tests/e2e/support/mod.rs`,
+`tests/e2e/report.rs`, `tests/integration/env_guard.rs` — NO blanket/crate-level allow, NO per-item
+paper-overs, zero true orphans (every symbol verified cross-binary-referenced). A now-redundant outer
+`#[allow(dead_code, unused_imports)]` on `mod harness` in test_dream_state_contract.rs was removed.
+Zero production crate touched (all changes under `tests/`). Original gap text follows.
+
+---
+
+### Original gap text (pre-resolution)
+
+The first pass closed the BARE gate `cargo clippy --workspace --all-targets -- -D warnings`
+(exit 0) and fmt. But AC#3 targets the `tests/e2e/harness+support` dead-code class
+(QdrantObserver/RedisObserver/run_docker/ScopeEnvGuard/InfraSnapshot/StageLogger/the typed
+request-response structs/the SkillScope enum/the URL+DSN constants/…). That code compiles ONLY
+under `--features test-utils`, and `cargo clippy --workspace --all-targets --features test-utils
+-- -D warnings` is STILL RED — ~60 errors across 12 e2e test binaries, PLUS two genuine non-dead-code
+lints:
+  - `absurd_extreme_comparisons` at `tests/e2e/test_dream_state_contract.rs:3012`
+    (`degraded_count <= DEGRADED_BUDGET` where DEGRADED_BUDGET is the type minimum → the comparison
+    is vacuous; a real test-correctness smell, not formatting).
+  - `clippy::if_same_then_else` (identical-if-blocks) in test_project_scope_container.
+
+Root cause of the dead-code class is the FEATURE DICHOTOMY: each e2e `test_*.rs` binary
+`#[path]`-includes the shared harness modules, so any helper a given binary doesn't exercise trips
+per-binary `dead_code` even though the helper IS used by a sibling binary. These are genuinely shared
+utilities, so the justified fix is a module-scoped `#![allow(dead_code)]` (or `#[allow(dead_code)]`
+on the shared harness modules) WITH a one-line justification — the ticket's scope fence permits a
+targeted, justified allow — plus fixing the two real lints for real. This was deferred for an owner
+scoping decision (extend T21 now vs. follow-up) — see session report.
 
 ## Local Context
 

@@ -1,3 +1,7 @@
+// Shared across e2e test binaries; #[path]-included per-binary, so any helper a given binary
+// doesn't exercise is dead_code only as a per-binary compilation artifact, not a real orphan.
+#![allow(dead_code)]
+
 use std::{
     env,
     ffi::OsString,

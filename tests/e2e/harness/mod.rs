@@ -1,3 +1,7 @@
+// Shared across e2e test binaries; #[path]-included per-binary, so any helper a given binary
+// doesn't exercise is dead_code only as a per-binary compilation artifact, not a real orphan.
+#![allow(dead_code)]
+
 /// Real-infra E2E harness — all tests drive the RUNNING containerized app.
 ///
 /// # Principles (from `docs/reference/e2e-harness-contract.md`)

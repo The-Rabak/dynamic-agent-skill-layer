@@ -38,7 +38,8 @@ session_id: work-2026-06-12-012651-T21
 ## Work Status
 | # | Unit | Kind | Serves / Unlocks | Status | Attempts | Session File |
 |---|------|------|------------------|--------|----------|--------------|
-| 1 | T21 workspace-gates-green | hygiene | honest tree; unblocks T20/T14 full-suite runs | completed | 2 | unit-01-workspace-gates-green.md |
+| 1 | T21 workspace-gates-green (bare gates) | hygiene | honest tree; unblocks T20/T14 full-suite runs | completed | 2 | unit-01-workspace-gates-green.md |
+| 1b | T21 fix-run — test-utils Final-Gate form (AC#3) | hygiene-fix | AC#3 + T20 green-tree premise under Final-Gate form | completed | 2 | unit-01b-test-utils-final-gate.md |
 
 ## RED baseline (captured by orchestrator 2026-06-12)
 - `cargo fmt --check`: RED — 31 diffs across 7 files (graph-builder/src/graph/{edges.rs×6,rebuild.rs×2}, infrastructure/src/{health.rs×3, persistence/embedding_cache.rs×12, persistence/rebuild.rs×3, vector/qdrant.rs×1}, mcp-server/src/lib.rs×4).
