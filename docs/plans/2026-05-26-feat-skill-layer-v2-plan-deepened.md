@@ -16,6 +16,8 @@ research_inputs:
   - SkillLens (arXiv:2605.23899) — 25% negative transfer rate, extractor≠consumer asymmetry, 3-dim quality rubric
   - SkillOpt (arXiv:2605.23904) — 12.8-24.9pp gains, harness-dependent (+24.8 Codex vs +19.1 Claude), cross-harness transfer
   - SkillRAE (arXiv:2605.10114) — scoring formula foundation
+  - CL-bench (arXiv:2602.03587) — context-learning benchmark; frontier models avg 17.2% WITH context in-window; source of the T14 acquisition band
+  - TASM (arXiv:2606.11853) — within-context KV-compression sibling; positioning note in ## References & Research (2026-06-12)
 source_docs:
   tickets: []
   docs: []
@@ -1389,3 +1391,43 @@ _(Unchanged from original plan — paper references at top of document)_
 - SkillOpt (arXiv:2605.23904): Full paper analysis — harness-dependent gains, batch size sweeps, edit budget diminishing returns, optimizer model strength impact, transfer experiments
 - AgentSkills.io: Claude Code + OpenCode + Copilot compatibility verified May 2026
 - Rust crate ecosystem (2026): `failsafe` for circuit breakers, `fred` for Redis streams, `sqlx` for async PG, `rand_chacha` for deterministic RNG, `bincode`/`postcard` for snapshot serialization
+
+### Positioning vs. within-context memory compression (added 2026-06-12 — TASM, arXiv:2606.11853)
+
+TASM (UCAS/ByteDance, ICML 2026) is the nearest published sibling and the useful contrast for V2's
+related-work story. It is **training-free KV-cache compression for many-shot multimodal ICL**:
+task-vector-guided importance scoring, bipartite token *merging* (not pruning), and a two-tier
+memory — compressed GPU **Core Memory** + CPU-offloaded **Latent Bank** with drift-triggered
+(JS-divergence) top-k token retrieval. Same scarcity (context is finite and expensive), one level
+down the stack. **Positioning note only — no V2 scope change.**
+
+**The fork.** Two branches answer the scarcity: *"context in window, compressed"* (TASM) vs.
+*"context distilled into explicit knowledge"* (this project). T14's CL acquisition band
+(`docs/plans/2026-06-12-t14-cl-acquisition-band-plan.md` §8) is the experiment where the branches
+meet: "context distilled to skills" measured against the published "context in window" numbers.
+The honest threat framing — "if many-shot + compression gets cheap, why distill?" — has a
+measurable answer, not a rhetorical one: window costs recur per call while skills amortize; skills
+transfer across sessions/models (survived the nomic→qwen3 migration); skills are inspectable and
+human-governable; and CL-bench shows in-window context yields only 17–24% on hard acquisition
+tasks anyway.
+
+**Independent convergence (strengthens, does not change, V2 design).** TASM's three critiques of
+prior compression map one-to-one onto findings this project earned by live measurement:
+*sample-specific bias* ↔ T11's BM25 verdict (sample-lexical candidate fusion evicted 23 golds);
+*structural destruction* ↔ T09's multi-view win (single-view summary embedding flattens skill
+structure; max-over-views recovers it); *static rigidity* ↔ the verbose-prompt no_match finding
+(static 0.48 floor) that T12's intent-conditional retrieval fixes. Their Core Memory + Latent Bank
+hierarchy is the activation-space twin of the T12 priming design (bounded hot prime + corpus
+behind `find_skill`).
+
+**Differentiators TASM structurally cannot have** (say these loudly when efficacy lands):
+persistent across sessions; self-growing from unlabeled real work (TASM presupposes the
+demonstrations exist — it has no learning loop); human-gated and auditable (KV tensors cannot be
+reviewed); model-agnostic and black-box-compatible (TASM needs white-box KV/attention access —
+impossible over a frontier API); evaluated as uplift-over-*nothing* with placebo + pre-registration
+(TASM's ceiling is full context; ours is not window-bounded).
+
+**One borrowed idea, parked (NOT V2 scope):** TASM's drift-triggered retrieval (re-fetch when the
+attention distribution shifts) has a harness-level analogue — re-prime when conversation embedding
+drifts from the primed set's neighborhood. Candidate for a post-T12 ticket if mid-session priming
+refresh ever earns a measurement; recorded here so the idea has a citation trail, nothing more.
