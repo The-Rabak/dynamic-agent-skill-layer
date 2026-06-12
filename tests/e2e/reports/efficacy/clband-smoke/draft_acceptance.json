@@ -1,0 +1,9 @@
+{
+ "source": "clband flywheel teach session (real captured session)",
+ "real_drafts_produced": 11,
+ "accepted": 11,
+ "total": 11,
+ "acceptance_rate": 1.0,
+ "label": "non-faithful-for-clband (0/4 sentinels); accepted as >=10-real-drafts AC evidence per owner 2026-06-12",
+ "note": "acceptance reflects draft plausibility as general skills, SEPARATE from the clband fidelity gate (which FAILED)."
+}

@@ -1,0 +1,2 @@
+{"timestamp":"2026-06-12T17:04:27.978946Z","level":"INFO","fields":{"message":"structured logging initialized","service":"maintenance-worker","version":"0.1.0","environment":"local","log_format":"json","tracing_ready":true},"target":"infrastructure::logging"}
+Error: Custom { kind: Other, error: "invalid maintenance runtime configuration: no global scope root found in GRAPH_BUILDER_GLOBAL_ROOT — promotion pass requires a global root to write proposals" }

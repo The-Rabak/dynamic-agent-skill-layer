@@ -6,7 +6,7 @@ ticket_file: docs/tickets/2026-06-08-v1-7-local-hybrid-skilldag-retrieval/14-eff
 tickets_ref: docs/tickets/2026-06-08-v1-7-local-hybrid-skilldag-retrieval/index.md
 brainstorm_ref: (none — owner-directed plan is canonical WHY)
 started: 2026-06-12
-status: in_progress
+status: completed
 execution_shape: measured-experiment (plan §4 per-task lifecycle is the unit contract; not vertical-slices)
 current_unit: 0
 total_units: 7
@@ -52,9 +52,9 @@ dataset_sha: b28a5832a09b0d96c0cf4c22e90d7c60ede25b80
 | 1 | Verifier + rewrite + judge authoring | infra-packet | committed instruments before runs | completed | 1 | unit-01-instruments.md |
 | 2 | OFF pre-gate | fix-item | empirical non-pretraining + discrimination | completed | 1 | unit-02-off-pregate.md |
 | 3 | Session A teach sessions (2) | infra-packet | genuine capture under isolated scopes | completed | 1 | unit-03-teach-sessions.md |
-| 4 | Pipeline + human gate + fidelity gate | infra-packet | proves extraction at both sizes | in_progress | 1 | -- |
-| 5 | Session B paired ON/OFF/PLACEBO | infra-packet | end-to-end injection + placebo | pending | -- | -- |
-| 6 | Report + closeout | infra-packet | GO/NO-GO for the full band | pending | -- | -- |
+| 4 | Pipeline + human gate + fidelity gate | infra-packet | proves extraction at both sizes | completed-finding | 1 | unit-04-pipeline-fidelity.md |
+| 5 | Session B paired ON/OFF/PLACEBO | infra-packet | end-to-end injection + placebo | SKIPPED (no rule-bearing skills; fidelity failed) | 0 | -- |
+| 6 | Report + closeout | infra-packet | GO/NO-GO for the full band | completed | 1 | docs/assessments/2026-06-12-t14-clband-smoke.md |
 
 ## Learnings Brief
 - [scope] **DP-2 RESOLVED (owner: Option A).** Isolate clband via marker subdirs under the dogfood

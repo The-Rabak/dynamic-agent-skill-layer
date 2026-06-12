@@ -1,0 +1,17 @@
+# clband smoke fidelity gate (Unit 4) — 2026-06-12T17:10:02Z
+
+## flywheel-assembly-agent (4.2k, 11 drafts)
+=== fidelity gate: flywheel-assembly-agent (7833ca0b) — 11 skill file(s) under tests/e2e/reports/efficacy/clband-smoke/scopes/clband-flywheel-assembly-agent ===
+  MISSING  'Flywheel Manufacturing Multi-Agent System'
+  MISSING  'Scatterbrained Improviser'
+  MISSING  'spin test'
+  MISSING  'WORKAROUND'
+FIDELITY FAIL: 4/4 sentinels missing -> INSTRUMENT-FAILURE(extraction) for flywheel-assembly-agent
+
+## aether-language (33.5k, 0 drafts)
+=== fidelity gate: aether-language (bc874bce) — 0 skill file(s) under tests/e2e/reports/efficacy/clband-smoke/scopes/clband-aether-language ===
+  MISSING  'conduit'
+  MISSING  'swirl'
+  MISSING  'Turbulence Alert'
+  MISSING  'Fracture'
+FIDELITY FAIL: 4/4 sentinels missing -> INSTRUMENT-FAILURE(extraction) for aether-language

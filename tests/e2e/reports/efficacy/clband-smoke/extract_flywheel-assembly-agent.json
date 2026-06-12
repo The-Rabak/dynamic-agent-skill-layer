@@ -1,0 +1,76 @@
+{
+ "context": "flywheel-assembly-agent",
+ "transcript": "tests/e2e/reports/efficacy/clband-smoke/transcripts/flywheel-assembly-agent.jsonl",
+ "scope": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-smoke/scopes/clband-flywheel-assembly-agent",
+ "worker_rc": 0,
+ "elapsed_s": 131.3,
+ "n_drafts": 11,
+ "drafts": [
+  {
+   "name": "Use the torque callout specified in Sketch v2 (preference)",
+   "description": "Standing user preference: Use the torque callout specified in Sketch v2.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-smoke/scopes/clband-flywheel-assembly-agent/.skills/use-the-torque-callout-specified-in-sketch-v2-preference/SKILL.md.pending"
+  },
+  {
+   "name": "Use batch FW-2025-0118 (preference)",
+   "description": "Standing user preference: Use batch FW-2025-0118.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-smoke/scopes/clband-flywheel-assembly-agent/.skills/use-batch-fw-2025-0118-preference/SKILL.md.pending"
+  },
+  {
+   "name": "The rotor is pristine; do not modify it (preference)",
+   "description": "Standing user preference: The rotor is pristine; do not modify it.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-smoke/scopes/clband-flywheel-assembly-agent/.skills/the-rotor-is-pristine-do-not-modify-it-preference/SKILL.md.pending"
+  },
+  {
+   "name": "M8x20 fasteners carry a misprinted label \u2014 do (preference)",
+   "description": "Standing user preference: M8x20 fasteners carry a misprinted label \u2014 do not use them if the sketch requires 25 mm; verify length with a ruler before use.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-smoke/scopes/clband-flywheel-assembly-agent/.skills/m8x20-fasteners-carry-a-misprinted-label-do-preference/SKILL.md.pending"
+  },
+  {
+   "name": "Reference Artifact 3 (Warehouse Parts Bin Manifest, Agent (preference)",
+   "description": "Standing user preference: Reference Artifact 3 (Warehouse Parts Bin Manifest, Agent E) as the relevant parts source.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-smoke/scopes/clband-flywheel-assembly-agent/.skills/reference-artifact-3-warehouse-parts-bin-manifest-agent-preference/SKILL.md.pending"
+  },
+  {
+   "name": "For bearing installation, press or tap into the (preference)",
+   "description": "Standing user preference: For bearing installation, press or tap into the rotor bore using a drift; avoid applying side load.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-smoke/scopes/clband-flywheel-assembly-agent/.skills/for-bearing-installation-press-or-tap-into-the-preference/SKILL.md.pending"
+  },
+  {
+   "name": "Do not remove any mandatory checks (preference)",
+   "description": "Standing user preference: Do not remove any mandatory checks.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-smoke/scopes/clband-flywheel-assembly-agent/.skills/do-not-remove-any-mandatory-checks-preference/SKILL.md.pending"
+  },
+  {
+   "name": "Use only the official sketch and documents provided (preference)",
+   "description": "Standing user preference: Use only the official sketch and documents provided.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-smoke/scopes/clband-flywheel-assembly-agent/.skills/use-only-the-official-sketch-and-documents-provided-preference/SKILL.md.pending"
+  },
+  {
+   "name": "Physically verify specifications before installation \u2014 never trust labels alone",
+   "description": "Before installing any hardware, physically confirm the critical specification (length, diameter, fit, etc.) with direct measurement or observation. Label misprints and mislabeled stock are known failure modes; a ruler or caliper is the ground truth.",
+   "skill_type": "best_practice",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-smoke/scopes/clband-flywheel-assembly-agent/.skills/physically-verify-specifications-before-installation-never-trust-labels-alone/SKILL.md.pending"
+  },
+  {
+   "name": "Preserve existing integrity \u2014 never modify pristine components or remove safeguards",
+   "description": "Components in a pristine state and existing mandatory safeguards must be left untouched. The burden of proof for any modification is extremely high; when in doubt, preserve rather than alter.",
+   "skill_type": "principle",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-smoke/scopes/clband-flywheel-assembly-agent/.skills/preserve-existing-integrity-never-modify-pristine-components-or-remove-safeguards/SKILL.md.pending"
+  },
+  {
+   "name": "Always trace every decision to a named authoritative artifact",
+   "description": "Every specification, part selection, or procedural choice must be anchored to a specifically named, official artifact (sketch revision, batch ID, manifest, etc.). Improvising from memory, using unlabeled defaults, or citing secondary sources is not acceptable.",
+   "skill_type": "principle",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-smoke/scopes/clband-flywheel-assembly-agent/.skills/always-trace-every-decision-to-a-named-authoritative-artifact/SKILL.md.pending"
+  }
+ ]
+}

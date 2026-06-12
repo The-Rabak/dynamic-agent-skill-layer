@@ -69,6 +69,7 @@ def run_worker(scope_dir: Path, logpath: Path):
         # Isolated per-context scope root: drafts land under <scope_dir>/.skills/.
         "SKILL_PROJECT_ROOT": str(scope_dir),
         "GRAPH_BUILDER_PROJECT_ROOT": str(scope_dir),
+        "GRAPH_BUILDER_GLOBAL_ROOT": str(glob_dir),
         "SKILL_GLOBAL_PATHS": str(glob_dir),
         "SKILL_GLOBAL_ALLOWED_ROOTS": f"{scope_dir},{glob_dir}",
         "CLAUDE_TRANSCRIPT_ROOT": str(scope_dir),

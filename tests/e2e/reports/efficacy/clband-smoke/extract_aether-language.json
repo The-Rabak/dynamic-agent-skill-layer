@@ -1,0 +1,9 @@
+{
+ "context": "aether-language",
+ "transcript": "tests/e2e/reports/efficacy/clband-smoke/transcripts/aether-language.jsonl",
+ "scope": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-smoke/scopes/clband-aether-language",
+ "worker_rc": 0,
+ "elapsed_s": 45.0,
+ "n_drafts": 0,
+ "drafts": []
+}
