@@ -1,0 +1,64 @@
+{
+  "gate_mode": "auto-accept-all (clband-* scopes only)",
+  "solver_checkpoint": "claude-code 2.1.175, --model sonnet",
+  "dataset_sha": "b28a5832a09b0d96c0cf4c22e90d7c60ede25b80",
+  "pre_registered_criterion": "ON wins \u2265 7 of 10 paired tasks by sign test, with no catastrophic regression on any single task.",
+  "built_contexts": [
+    "dartman-game"
+  ],
+  "n_measured_siblings": 1,
+  "instrument_failure_extraction": [
+    "material-handler-sops",
+    "source-integrity-agent",
+    "quartermaster-hold-inventory",
+    "drywave-3000-manual",
+    "123corp-hr-policy",
+    "dpms-agent-m"
+  ],
+  "verdict": {
+    "verdict": "INSTRUMENT-FAILURE",
+    "pre_registered_criterion": "ON wins \u2265 7 of 10 paired tasks by sign test, with no catastrophic regression on any single task.",
+    "instrument_failure_tasks": [
+      "clband-dartman-game-5be8df73"
+    ],
+    "sign_test_p_value": null,
+    "on_wins": null,
+    "off_wins": null,
+    "n_ties": null,
+    "n_tasks": 1,
+    "catastrophic_regression_tasks": [],
+    "detail": "INSTRUMENT-FAILURE: the invented-rule skill was attribution-confirmed injected but ON failed the task(s). The injection path is broken. No efficacy verdict may be claimed until the path is fixed."
+  },
+  "rows": [
+    {
+      "slug": "clband-dartman-game-5be8df73",
+      "off_outcome": "loss",
+      "placebo_donor": "dartman-game",
+      "on_outcome": "loss",
+      "on_attribution": {
+        "skill_names": [
+          "dartman-movement-and-line-of-fire-rules",
+          "game-rule-counterintuitive-edge-cases-must-be-applied-exactly",
+          "dartman-game-setup-and-win-conditions"
+        ],
+        "skill_ids": [],
+        "injected_mass_chars": 4887,
+        "status": "ok"
+      },
+      "on_elapsed_s": 1202.1,
+      "rule_injected": true,
+      "instrument_failure_injection": true,
+      "placebo_outcome": "loss",
+      "placebo_attribution": {
+        "donor": "dartman-game",
+        "skill_names": [
+          "dartman-movement-and-line-of-fire-rules",
+          "game-rule-counterintuitive-edge-cases-must-be-applied-exactly",
+          "dartman-game-setup-and-win-conditions"
+        ],
+        "injected_mass_chars": 4887
+      },
+      "placebo_elapsed_s": 1201.6
+    }
+  ]
+}
