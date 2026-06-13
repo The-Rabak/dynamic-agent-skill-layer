@@ -2,7 +2,8 @@
 ticket_id: T23
 title: Automated CL-band run — unattended 8-context band under a pre-registered auto-gate amendment
 kind: execution
-status: ready
+status: completed
+status_note_2026_06_13: "DONE — band ran end-to-end unattended (session work-2026-06-12-t23-band-run; report docs/assessments/2026-06-13-t14-clband-band.md). The orchestration, auto-gate (scope-guarded, 24 unit tests, 0 non-clband paths), scope isolation, and retrieval path all WORKED (canary + dartman both built+retrieved isolated; dogfood re-probe = exactly 262). VERDICT (T14's): INSTRUMENT-FAILURE — 0 clean efficacy points. Breakdown of the 8: 5 GENUINE extraction gaps (verifier-against-drafts confirms ON would fail — verifier-precise specifics dropped: <1 megaohm, MATCH|MISMATCH|MISSING, 40% RH floor, diagnosis/prognosis, M-WARN-01), 1 fidelity-gate FALSE-NEGATIVE (quartermaster — verifier PASSES on drafts; recoverable via a verifier-based gate), 1 non-discriminating (ezlang OFF=win), 1 timeout-confounded+degenerate-placebo (dartman). Binding constraint = EXTRACTION FIDELITY (refines T22: rules/procedures/structure survive, value-precise tokens don't). Recommend: extraction value-preservation ticket + verifier-based fidelity gate + task-design fixes + re-run. NO mid-run protocol change made; pre-registration intact."
 plan_ref: docs/plans/2026-06-08-feat-v1-7-local-hybrid-skilldag-retrieval-plan.md
 tickets_ref: docs/tickets/2026-06-08-v1-7-local-hybrid-skilldag-retrieval/index.md
 architecture_ref: "explicit-handoff: T14 CL-band plan §4 lifecycle + §8 scaling (docs/plans/2026-06-12-t14-cl-acquisition-band-plan.md) + T22 RESOLUTION (docs/assessments/2026-06-12-t14-clband-smoke.md)"

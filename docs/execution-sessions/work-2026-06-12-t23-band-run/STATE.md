@@ -9,10 +9,11 @@ brainstorm_ref: ""
 band_protocol_ref: docs/plans/2026-06-12-t14-cl-acquisition-band-plan.md
 go_evidence_ref: docs/assessments/2026-06-12-t14-clband-smoke.md (T22 RESOLUTION)
 started: 2026-06-12
-status: in_progress
+status: completed
 execution_shape: infra-track
-current_unit: C
+current_unit: 5
 total_units: 5
+outcome: "Band ran end-to-end unattended. VERDICT (T14's, vs LOCKED >=7/10): INSTRUMENT-FAILURE — 0 clean efficacy points; efficacy UNANSWERED. Harness PROVEN (auto-gate scope-guarded, scope isolation, retrieval, canary + dartman built+retrieved, dogfood re-probe = 262 pristine). Binding constraint = EXTRACTION FIDELITY (refines T22): 5/8 genuine extraction gaps (value-precise tokens dropped), 1/8 fidelity-gate false-negative (quartermaster recoverable), 1/8 non-discriminating (ezlang), 1/8 timeout-confounded (dartman). Report docs/assessments/2026-06-13-t14-clband-band.md. NO mid-run protocol change; pre-reg intact. Recommend extraction value-preservation + verifier-based fidelity gate + task-design fixes + re-run."
 session_id: work-2026-06-12-t23-band-run
 solver_checkpoint: "claude-code 2.1.175, --model sonnet (smoke was 2.1.173 — solver bump; OFF pre-gate re-runs per context per plan §1 expiry rule, so auto-handled)"
 dataset_sha: b28a5832a09b0d96c0cf4c22e90d7c60ede25b80
@@ -75,8 +76,8 @@ dataset_sha: b28a5832a09b0d96c0cf4c22e90d7c60ede25b80
 | 0 | Pre-registration amendment (auto-gate, roster lock, unattended policy) | infra-packet | Legal foundation — amendment lands BEFORE first band datum | completed | 1 | unit-0-preregistration.md |
 | A | Instruments at scale (8 contexts: verifiers ≥5 checks + fixtures + de-ref rewrites + operative sentinels) | infra-packet | Per-context measurement eligibility; sentinel verification gate | completed (dddeb82) | 1 | unit-A-instruments.md |
 | B | Band orchestrator + auto-gate + scope-guard tests (run_band.py, Steps 0–5, resumable) | infra-packet | The driver; the safety boundary | completed (bb14c03,032f040) | 1 | unit-B-orchestrator.md |
-| C | The overnight run (context #1 canary → 2–8; dogfood re-probe) | infra-packet | The paired efficacy data | in_progress | 1 | unit-C-overnight-run.md |
-| D | Morning report (verdict vs LOCKED pre-reg + secondaries + attribution + closeout) | infra-packet | The verdict; assessment + closeout | pending | -- | unit-D-morning-report.md |
+| C | The overnight run (context #1 canary → 2–8; dogfood re-probe) | infra-packet | The paired efficacy data | completed — INSTRUMENT-FAILURE | 1 | (run.log + band_results.json + per-context artifacts) |
+| D | Morning report (verdict vs LOCKED pre-reg + secondaries + attribution + closeout) | infra-packet | The verdict; assessment + closeout | completed | 1 | docs/assessments/2026-06-13-t14-clband-band.md |
 
 ## Owner decisions ALREADY MADE (do not re-ask)
 1. GO for the band (2026-06-12).
