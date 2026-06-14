@@ -3,6 +3,7 @@ ticket_id: T12
 title: Trigger-aware retrieval — SessionStart priming mode + freshness slot (mechanism)
 kind: expansion
 status: blocked
+status_note_2026_06_13_priority_rise: "PRIORITY RISE (owner reprioritization post-T23 band): this ticket's FIRST scope item — fix the production compile_context verbose-prompt no_match — is the single highest-value real-usage retrieval fix. Every efficacy run to date (CL smoke, CL band) WORKED AROUND it via focused inject-query mode instead of measuring the real SessionStart path. It is now on the real-usage critical path (T18 instrument → T12 fix → T15 measure-through-the-fixed-path) and BLOCKS T15 (the new primary efficacy gate). The 'sequenced after T14 for attribution' constraint is DISCHARGED — the band yielded ~no attribution; design input is T18's verbose substratum. Depends on T18 only now. Rationale: docs/plans/2026-06-13-v1-7-reprioritization-post-clband.md."
 status_note: "Restructured 2026-06-12: the 2026-06-11 Rethink is now folded into the body (the old contradictory MRR wording is gone). Instrument half split out to T18 (hard dep); #180 cross-project recurrence extracted to T19 (deferred — unmeasurable on a single-project corpus). Sequenced AFTER T14 so per-pull attribution scopes the investment."
 plan_ref: docs/plans/2026-06-08-feat-v1-7-local-hybrid-skilldag-retrieval-plan.md
 tickets_ref: docs/tickets/2026-06-08-v1-7-local-hybrid-skilldag-retrieval/index.md

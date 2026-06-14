@@ -3,13 +3,15 @@ ticket_id: T15
 title: Flagship efficacy proof — SWE-bench Lite compounding self-improvement
 kind: efficacy
 status: blocked
+status_note: "PROMOTED 2026-06-13 to the PRIMARY efficacy gate (owner reprioritization post-T23 band). CL-bench is demoted to an optional secondary stressor — the real thesis is COMPOUNDING on a realistic task distribution, which this ticket measures. NEW hard dep on T12: SWE-bench layer-ON must retrieve through the FIXED production priming path (compile_context), not the focused-inject workaround the CL band was forced into — measuring efficacy through a broken priming path would repeat the band's core mistake. The conditional CL-bench-shaped arm (see Local Context) is now explicitly optional and runs only on T25-cleaned instruments. Rationale: docs/plans/2026-06-13-v1-7-reprioritization-post-clband.md."
 plan_ref: docs/plans/2026-06-08-feat-v1-7-local-hybrid-skilldag-retrieval-plan.md
 tickets_ref: docs/tickets/2026-06-08-v1-7-local-hybrid-skilldag-retrieval/index.md
 architecture_ref: "explicit-handoff: parent plan ## Non-Goals (downstream); promoted into the ticket set per owner decision 2026-06-09"
-source_packet_ref: "promoted from todo #218 (P0)"
+source_packet_ref: "promoted from todo #218 (P0); promoted to primary efficacy gate 2026-06-13 (CL-bench demoted)"
 feature_home: "efficacy harness + SWE-bench integration over the live stack (scripts/swebench)"
 depends_on:
   - T10
+  - T12
   - T14
 dependency_type: hard
 serves:
@@ -58,10 +60,13 @@ The thesis is not "context helps" — it is "the system compounds: it learns fro
 
 - WHY source: plan `## Non-Goals` (downstream); owner decision 2026-06-09 promoted into the V1.7 ticket set.
 - Depends on T10 (corpus) and T14 (A/B harness it extends). Coordinates with T12 (priming attribution).
-- **(Restructure 2026-06-12)** Conditional: if T14's invented-rule positive control shows the layer's
-  value concentrating in non-pretrained knowledge, add a small CL-bench-shaped instance arm here
-  (taught novel procedure → held-out reuse); otherwise the disjoint difference-of-differences stays
-  the sole headline. Full DS-025–030 contracts remain parked until after this ticket either way.
+- **(Restructure 2026-06-12; amended 2026-06-13 post-band)** The disjoint difference-of-differences on
+  a realistic code-task distribution is the PRIMARY headline — full stop. The CL-bench-shaped arm is
+  now an OPTIONAL secondary stressor (not a co-headline): the T23 band showed CL's injected-doc/
+  one-shot/buried-value regime is not real usage and is structurally hard to win. Include it ONLY if
+  (a) you want an adversarial non-pretrained probe alongside the primary, AND (b) T25 has cleaned the
+  CL instruments (verifier-based gate, fixed task-design). Otherwise omit it. Full DS-025–030 contracts
+  remain parked until after this ticket either way.
 
 ## Source
 
