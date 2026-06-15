@@ -561,14 +561,18 @@ impl Default for RetrievalConfig {
             priming_freshness_slots: 1,
             // priming_freshness_window_days: skills ≤30 days old are "fresh".
             priming_freshness_window_days: 30,
-            // priming_max_segments: DEFAULT 1 (single full-prompt embed; query-side
-            // multi-view OFF). T12 Unit 4 measured the multi-view as INERT for
-            // set-coverage@3 (identical 0.0805 at caps 1/2/3/8) while each extra
-            // segment adds a serialized Ollama embed (verbose p95 564ms@1 → 2240ms@8).
-            // The lone active priming lever is the lower floor. The segmentation code
-            // is retained behind this knob for re-evaluation at larger corpus scale /
-            // denser query distributions; raise it to re-enable query-side multi-view.
-            priming_max_segments: 1,
+            // priming_max_segments: query-side multi-view cap. KEPT ON by owner
+            // decision (2026-06-15) — the symmetric twin of T09's doc-side multi-view
+            // win, retained for richer corpora / query distributions.
+            // ⚠️ TWO FLAGS FOR RECONSIDERATION (T12 Unit 4 measured, dogfood 262 corpus):
+            //   1. INERT here: set-coverage@3 is identical (0.0805) at caps 1/2/3/8 —
+            //      multi-view buys nothing on this corpus's session-start distribution.
+            //   2. LATENCY: each segment is a serialized Ollama embed (semaphore), so
+            //      verbose SessionStart p95 = 564ms@1 → 2240ms@8, breaching the 500ms
+            //      budget. A latency solution (parallel/faster embed, or budget revisit)
+            //      is required before a production default-ON flip. Tune via
+            //      RETRIEVAL_PRIMING_MAX_SEGMENTS (1 = single embed, multi-view off).
+            priming_max_segments: query_segments::DEFAULT_MAX_SEGMENTS,
         }
     }
 }
@@ -2908,8 +2912,10 @@ mod tests {
             "priming_freshness_window_days default must be 30"
         );
         assert_eq!(
-            cfg.priming_max_segments, 1,
-            "priming_max_segments default must be 1 (multi-view measured inert in T12 Unit 4)"
+            cfg.priming_max_segments,
+            query_segments::DEFAULT_MAX_SEGMENTS,
+            "priming_max_segments default keeps query-side multi-view ON (owner decision; \
+             measured inert on the 262 corpus + latency flagged for reconsideration)"
         );
     }
 
