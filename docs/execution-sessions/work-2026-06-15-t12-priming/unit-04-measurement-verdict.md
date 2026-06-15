@@ -64,6 +64,31 @@ default-ON in this state.** Two coherent paths for owner choice (see the work me
 kernel is the no_match-elimination (lower Priming floor) IF latency is fixed (cap segments / lazy
 multi-view); the reranking signals (recurrence, freshness, centrality) are all DROPPED on measured deltas.
 
+## Latency-fix iteration (owner gate #1 = "fix multi-view latency, then reconsider")
+Made the segment cap env-tunable (`RETRIEVAL_PRIMING_MAX_SEGMENTS`) and swept caps 1/2/3/8.
+**`embed_batch` already runs concurrently (JoinSet) — the K× latency is the Ollama semaphore
+serializing the per-segment embeds (single model).** Segment-cap curve (primed arm):
+
+| max_segments | cov@3 | no_match | verbose p95 | thin p95 |
+|---|---|---|---|---|
+| 1 (single embed, NO multi-view) | 0.0805 | 0% | **564ms** | 722ms |
+| 2 | 0.0805 | 0% | 788ms | 661ms |
+| 3 | 0.0805 | 0% | 1072ms | 709ms |
+| 8 (original default) | 0.0805 | 0% | 2239ms | 597ms |
+| baseline (Task, T18) | 0.0685 | 13.6% | 560ms | 284ms |
+
+**DECISIVE: query-side multi-view is INERT for coverage (identical 0.0805 at every cap) and only
+adds latency.** → DROP it; default `priming_max_segments = 1`. The lone active priming lever is the
+lower floor (0.30). At cap=1 the verbose p95 (564ms) ≈ the T18 baseline (560ms) — **latency fence NOT
+worsened** (T18 constraint #3 satisfied; the residual >500ms is the inherent long-prompt embed cost
+already present at baseline). Segmentation code retained behind the env knob for larger-corpus re-eval.
+
+## Shippable kernel (data-driven default)
+**Priming = Task path + (a) lower floor 0.30 + (b) bounded N=5, single full-prompt embed; no multi-view,
+no recurrence, no freshness rerank.** Delivers: **no_match 14%→0%** (the motivating production fix — the
+prime is never empty); cov@3 +0.012 (sub the +0.10 bar — honest); freshness hit-rate thin 0.73→0.91
+(floor side-effect); verbose latency ≈ baseline. Unblocks T15 with a working non-empty priming path.
+
 ## Test Results
 - `scripts/t12_priming_sweep.py` ran 3 server configs (default + 2 ablations) over the live server; raw
   per-query artifacts persisted. retrieval_metrics self-test still 56/56. Server restored to default config.
