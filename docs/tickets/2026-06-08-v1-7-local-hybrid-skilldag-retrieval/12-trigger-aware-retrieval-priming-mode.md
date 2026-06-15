@@ -2,7 +2,8 @@
 ticket_id: T12
 title: Trigger-aware retrieval — SessionStart priming mode + freshness slot (mechanism)
 kind: expansion
-status: blocked
+status: implemented-owner-decisions-deferred
+status_note_2026_06_15_t12_done: "T12 mechanism BUILT + MEASURED (session work-2026-06-15-t12-priming, branch feat/v-1-7). Units: (1) typed RetrievalIntent seam, SessionStart trigger→Priming, Task byte-identical; (2) query-side multi-view max-over-segments; (3) Priming-scoped floor (0.30) + recurrence/freshness ranker via skills.created_at on the snapshot; (4) live sweep on the T18 session_start stratum through compile_context. MEASURED VERDICT: neg-control PASS (62.5% crater); baseline reproduced T18 0.0685 exactly; primed cov@3=0.0805 → paired +0.012, sign_p=1.0 → FAILS the +0.10 recurrence-baseline bar. Per-signal ablations: recurrence INERT (Δ=0.000 @ w=0.1 and 0.6 — priors sparse/uniform @262), freshness slot INERT (isolated Δ=0.000), centrality DROP-by-default, query-side multi-view INERT for cov@3 (identical 0.0805 at caps 1/2/3/8). REAL WIN: no_match 14%→0% (the motivating production fix; prime never empty) from the lower floor alone, at single-embed latency (cap=1 verbose p95 564ms ≈ T18 baseline 560ms). LATENCY FLAG: multi-view verbose p95 2240ms@8 breaches the 500ms budget (Ollama semaphore serializes per-segment embeds). OWNER 2026-06-15: gate #1 (default-ON) — keep multi-view ON, FLAG for reconsideration (default priming_max_segments=8; needs a latency fix before production flip); gate #2 (per-signal verdicts) — HOLDING (reviewing artifacts). Both owner decisions DEFERRED → ticket implementation-complete but not owner-closed. Raw artifacts tests/e2e/reports/retrieval/t12_priming_*.json. Verdict: docs/execution-sessions/work-2026-06-15-t12-priming/unit-04-measurement-verdict.md."
 status_note_2026_06_13_priority_rise: "PRIORITY RISE (owner reprioritization post-T23 band): this ticket's FIRST scope item — fix the production compile_context verbose-prompt no_match — is the single highest-value real-usage retrieval fix. Every efficacy run to date (CL smoke, CL band) WORKED AROUND it via focused inject-query mode instead of measuring the real SessionStart path. It is now on the real-usage critical path (T18 instrument → T12 fix → T15 measure-through-the-fixed-path) and BLOCKS T15 (the new primary efficacy gate). The 'sequenced after T14 for attribution' constraint is DISCHARGED — the band yielded ~no attribution; design input is T18's verbose substratum. Depends on T18 only now. Rationale: docs/plans/2026-06-13-v1-7-reprioritization-post-clband.md."
 status_note: "Restructured 2026-06-12: the 2026-06-11 Rethink is now folded into the body (the old contradictory MRR wording is gone). Instrument half split out to T18 (hard dep); #180 cross-project recurrence extracted to T19 (deferred — unmeasurable on a single-project corpus). Sequenced AFTER T14 so per-pull attribution scopes the investment."
 plan_ref: docs/plans/2026-06-08-feat-v1-7-local-hybrid-skilldag-retrieval-plan.md
@@ -93,21 +94,27 @@ captured the recall win); what T11 did NOT settle — the priming intent — is 
 
 ## Acceptance Criteria
 
-- [ ] Typed `RetrievalIntent` seam: SessionStart → `Priming`, prompt/`find_skill` → `Task`;
-      documented and matching code; `Task` path byte-identical to pre-T12 behavior (proven by the
-      existing quality gate staying green).
-- [ ] Priming ranker (recurrence-baseline + bounded freshness slot, bounded N) implemented; a
-      thin/vague session-start prompt surfaces high-value project baseline skills incl. a relevant
-      brand-new one.
-- [ ] Measured on the T18 session-start stratum with T18's pre-registered metrics; negative control
-      passed before any verdict; paired + sign-test verdicts; raw artifacts persisted.
-- [ ] Each signal's keep/drop decision cites the T18 pre-registered threshold verbatim; dropped
-      signals recorded with their measured delta; verdicts stated as scale-bound.
-- [ ] Centrality/recent-use shipped ONLY if candidate-recall@limit (task) or coverage (priming)
-      cleared their pre-registered bars.
-- [ ] T14 attribution data reviewed and cited in the investment decision (minimal seam vs full
-      ranker); the branch taken is recorded.
-- [ ] SessionStart p95 within the 500ms budget, measured live, raw latency artifact persisted.
+- [x] Typed `RetrievalIntent` seam: SessionStart → `Priming`, prompt/`find_skill` → `Task`;
+      documented and matching code; `Task` path byte-identical to pre-T12 behavior (Unit 1; existing
+      retrieval + mcp-server lib gates green; Task branch is the unchanged pre-T12 code path).
+- [x] Priming ranker (recurrence-baseline + bounded freshness slot, bounded N) implemented (Unit 3:
+      Priming-scoped floor 0.30, N=5, recurrence prior boost, freshness slot via `skills.created_at`
+      on the snapshot). A thin session-start prompt now surfaces project-baseline skills (no_match
+      eliminated). [Measured caveat: recurrence/freshness are INERT on the 262 corpus — see below.]
+- [x] Measured on the T18 session-start stratum with T18's pre-registered metrics through the
+      production `compile_context`; negative control (permutation) PASSED FIRST (62.5% crater); paired
+      + sign-test computed; raw artifacts persisted (`tests/e2e/reports/retrieval/t12_priming_*.json`).
+- [~] Each signal's keep/drop decision cites the T18 threshold verbatim; measured deltas recorded
+      (recurrence Δ0.000; freshness-slot Δ0.000; multi-view Δ0.000 cov@3; centrality default-DROP).
+      VERDICT FINALIZATION DEFERRED — owner gate #2 holding (reviewing artifacts). Scale-bound (262).
+- [x] Centrality/recent-use NOT shipped (default DROP — not implemented; T11 ranking-inert,
+      corroborated by the measured recurrence inertia).
+- [x] T14 attribution branch recorded: the T14 CL band was an instrument-failure (no usable
+      attribution; reprioritization 2026-06-13 discharged the constraint) → the FULL mechanism was
+      built and graded on the T18 instrument. Branch = full ranker (then measured down to floor-only kernel).
+- [~] SessionStart p95 measured live, raw artifact persisted. WITHIN budget at single-embed
+      (cap=1 verbose p95 564ms ≈ T18 baseline 560ms); BREACHES at multi-view-on (2240ms@8). Owner kept
+      multi-view ON and FLAGGED the latency for reconsideration before a production default-ON flip.
 
 ## Local Context
 

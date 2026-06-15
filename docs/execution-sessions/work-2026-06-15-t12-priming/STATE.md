@@ -6,9 +6,9 @@ tickets_ref: docs/tickets/2026-06-08-v1-7-local-hybrid-skilldag-retrieval/index.
 source_packet_ref: "promoted from todo #220 (P1); restructured 2026-06-12 (instrument→T18, recurrence→T19)"
 brainstorm_ref: n/a
 started: 2026-06-15
-status: in_progress
+status: implemented-owner-decisions-deferred
 execution_shape: vertical-slices
-current_unit: 1
+current_unit: 4
 total_units: 4
 session_id: work-2026-06-15-t12-priming
 ---
@@ -47,10 +47,28 @@ session_id: work-2026-06-15-t12-priming
 ## Work Status
 | # | Unit | Kind | Serves / Unlocks | Status | Attempts | Session File |
 |---|------|------|------------------|--------|----------|--------------|
-| 1 | Typed RetrievalIntent seam (Task byte-identical) + SessionStart trigger→Priming | tracer-bullet | the intent distinction the whole ticket rests on | pending | -- | -- |
-| 2 | Verbose fix: query-side multi-view / max-over-segments (Priming) | expansion | fixes verbose dilution (coverage 0.027) | pending | -- | -- |
-| 3 | Intent-conditional floor + priming ranker (recurrence prior + freshness slot via created_at) | expansion | raise set-coverage@3 toward ≥0.17 | pending | -- | -- |
-| 4 | Re-measure on T18 instrument (neg-control + paired + sign-test); per-signal verdicts | hardening | the evidence + owner verdicts | pending | -- | -- |
+| 1 | Typed RetrievalIntent seam (Task byte-identical) + SessionStart trigger→Priming | tracer-bullet | the intent distinction the whole ticket rests on | completed | 1 | unit-01-retrieval-intent-seam.md |
+| 2 | Verbose fix: query-side multi-view / max-over-segments (Priming) | expansion | fixes verbose dilution (coverage 0.027) | completed | 1 | unit-02-query-side-multiview.md |
+| 3 | Intent-conditional floor + priming ranker (recurrence prior + freshness slot via created_at) | expansion | raise set-coverage@3 toward ≥0.17 | completed | 2 | unit-03-intent-floor-priming-ranker.md |
+| 4 | Re-measure on T18 instrument (neg-control + paired + sign-test); per-signal verdicts | hardening | the evidence + owner verdicts | completed (verdicts owner-deferred) | 1 | unit-04-measurement-verdict.md |
+
+## Measured verdict (Unit 4, 2026-06-15)
+- Neg-control PASS (62.5% crater); baseline reproduces T18 0.0685 exactly.
+- Primed cov@3=0.0805, paired delta +0.012 sign_p=1.0 → FAILS the +0.10 bar.
+- Per-signal (ablation-isolated): recurrence DROP (Δ=0.000 @ w=0.1 and 0.6); freshness slot DROP (isolated Δ=0.000); centrality/recent-use DROP (default). Only floor+multiview moves anything.
+- Real wins: no_match 14%→0% (the motivating fix); freshness hit-rate thin 0.73→0.91 (from floor+N, not the slot).
+- BLOCKER: verbose p95 ~2240ms breaches 500ms (Ollama semaphore serializes per-segment embeds; even T18 baseline single verbose embed was 560-734ms >500ms).
+
+## Owner gate (2026-06-15)
+- #1 default-ON: NOT as-is → owner chose "fix multi-view latency, then reconsider".
+- #2 per-signal verdicts: owner HOLDING (reviewing raw artifacts tests/e2e/reports/retrieval/t12_priming_*.json). DO NOT finalize signal verdicts yet.
+- Action: added env-tunable priming_max_segments; rebuilding image to measure the latency/coverage curve at tighter caps (1/2/3).
 
 ## Learnings Brief
-_No learnings yet._
+- [rust] `SkillRetriever::retrieve(prompt, repo_path, intent)` is the seam; `RetrievalOrchestrator<E>` is the only real impl. Test impls all `#[cfg(test)]` (orchestrator.rs, find_skill.rs TwoSkillStub, lib.rs EmbedCountingRetriever, test_admin_tools.rs EmptyRetriever).
+- [rust] orchestrator.rs test scaffolding: `versioned_snapshot(n)`, `qdrant_hybrid_snapshot()`, `ConstantEmbeddingService`→`[1.0,0.0,0.0,0.0]`. Use these for Priming-branch tests.
+- [mcp-server] intent derived in `invoke_and_capture_outcome` before `retrieve`; `TriggerKind::Other` is `#[serde(other)]`, keep last.
+- [build] `_unused` param prefix avoids `-D warnings` clippy without `#[allow]`. Clippy form `-p retrieval -p compiler -p mcp-server --all-targets`.
+- [scope] retrieve() call sites = compile_context.rs:133 (intent), find_skill.rs:105 (Task), + 8 orchestrator test calls.
+- [rust] Unit 2: orchestrator `retrieve` now branches per backend, each embeds + records on its own (breaker allow_request hoisted once). Priming = segment_prompt → embed_batch (1 call) → per-segment search_scopes_concurrently passes → merge_scope_results_max(passes, candidate_limit). `search_scopes_concurrently(prompt, &emb, Arc<snapshot>, &config, &scopes)`.
+- [rust] 0.48 floor still applied per-segment pass; Unit 3 adds Priming-scoped intent floor + recurrence(prior)/freshness(created_at) ranker. Test embedding services: ConstantEmbeddingService (uniform), KeywordAwareEmbeddingService (text→vec by keyword).

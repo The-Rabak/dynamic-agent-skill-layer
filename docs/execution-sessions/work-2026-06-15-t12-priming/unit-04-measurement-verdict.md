@@ -89,6 +89,30 @@ no recurrence, no freshness rerank.** Delivers: **no_match 14%→0%** (the motiv
 prime is never empty); cov@3 +0.012 (sub the +0.10 bar — honest); freshness hit-rate thin 0.73→0.91
 (floor side-effect); verbose latency ≈ baseline. Unblocks T15 with a working non-empty priming path.
 
+## Owner decisions (2026-06-15) — BOTH DEFERRED, not finalized
+- **Gate #1 (default-ON flip):** owner = *"we need the multi-view, keep it and flag for
+  reconsideration."* → multi-view is KEPT ON by default (`priming_max_segments` reverted
+  1 → DEFAULT_MAX_SEGMENTS=8); the production default-ON flip is NOT finalized. Two tensions
+  carried forward for reconsideration (documented in-code at `RetrievalConfig::default`):
+  1. **Multi-view measured INERT** for cov@3 on the 262 dogfood corpus (identical 0.0805 at
+     caps 1/2/3/8). Kept because it is the symmetric twin of T09's doc-side win and is
+     expected to matter at larger corpus scale / richer query distributions — revisit then.
+  2. **Latency:** verbose SessionStart p95 = 2240ms@8 (564ms@1) breaches the 500ms budget
+     (Ollama semaphore serializes per-segment embeds). A latency solution (parallel/faster
+     embed, or a SessionStart-budget revisit) is required before any production default-ON.
+- **Gate #2 (per-signal keep/drop verdicts):** owner = *"still reviewing — keep holding."* →
+  verdicts left NON-FINAL in this report; recurrence/freshness/centrality/multi-view code all
+  retained (env-tunable). Measured deltas recorded above for the owner's review of
+  `tests/e2e/reports/retrieval/t12_priming_*.json`.
+
+## Disposition
+Mechanism fully built (Units 1–3), measured on the live T18 instrument (Unit 4), workspace gates
+green, Task path byte-identical. The two OWNER decisions (production default-ON flip; per-signal
+keep/drop finalization) are DEFERRED pending owner reconsideration — T12 is implementation-complete
+but not owner-closed. Pre-existing (non-T12) env-sensitive failures: `infrastructure
+scope::tests::fs_marker_resolver_{falls_back,returns_unavailable}` (scope.rs untouched by T12 —
+temp-dir tests walk up and find the repo `.git`; cleanup-todo candidate).
+
 ## Test Results
 - `scripts/t12_priming_sweep.py` ran 3 server configs (default + 2 ablations) over the live server; raw
   per-query artifacts persisted. retrieval_metrics self-test still 56/56. Server restored to default config.
