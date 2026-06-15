@@ -133,6 +133,50 @@ ready with the arm's `OLLAMA_EMBED_MODEL` / server wired:
   + re-embed + the two existing sweeps. That alone answers Q-LATENCY (H1) and Q-QUALITY-MODEL (H4); add
   TEI (A1/A3) only if A2's quality clears the gate and you want the extra latency headroom.
 
+## Results — Arm A2 (qwen3-embedding:0.6b on Ollama), measured 2026-06-15
+
+Clean comparison: evicted `4b` from VRAM, mounted `0.6b` (cold re-embed of 262 skills, 155s), measured
+on the live server, then restored `4b`. Raw artifacts:
+`tests/e2e/reports/retrieval/t12_priming_a2_0p6b_ollama.json`, `t12_task_quality_a2_0p6b.json`.
+
+**VRAM / latency (H1 CONFIRMED):** `0.6b` loads at **100% GPU** (2.4 GB) — no CPU offload, vs `4b`'s
+**11%/89% CPU/GPU** (doesn't fit the 6 GB card). Latency:
+
+| metric | 4b (Ollama) | 0.6b (Ollama) |
+|---|---|---|
+| Task `find_skill` p95 | ~370–505 ms | **283 ms** |
+| Priming single-embed (max_seg=1) verbose p95 | 560 ms | **411 ms** (< 500 ms ✓) |
+| Priming multi-view (max_seg=8) verbose p95 | 2240 ms | **1007 ms** |
+
+**Task quality (Q-QUALITY-MODEL) — clears ALL T11 floors, real but bounded hit:**
+
+| metric | 4b ref (T11) | 0.6b | T11 floor | pass |
+|---|---|---|---|---|
+| MRR@3 | 0.743 | **0.686** | 0.64 | ✓ |
+| nDCG@3 | 0.755 | 0.703 | 0.64 | ✓ |
+| cand-recall@50 | 0.796 | **0.752** | 0.68 | ✓ |
+| no_match precision | 0.92 | **1.00** | 0.88 | ✓ (better) |
+
+The `0.6b` ranking hit (MRR −0.057, cand-recall −0.044) ≈ the cost of turning OFF dense-multi-view on
+`4b` (T11 single-view MRR was also 0.686) — a measurable dip that stays inside the validated floors.
+no_match precision *improved* to 1.00. NOTE: this is the find_skill snapshot_dense probe (validated
+`retrieval_metrics` functions), not the full `--gate` wrapper — the α=0 crater reboot was skipped
+because the 0.6b Qdrant collection isn't populated (graph-builder skips unchanged skills via its
+content-addressed idempotency key; a full corpus re-seed like the original qwen3 adoption would be
+needed to run the gate wrapper). Fixture discrimination was already validated on 4b.
+
+**Priming quality (T18 instrument) — IMPROVED on 0.6b:** neg-control PASS (66% crater); set-coverage@3
+**0.0984** (4b 0.0805; baseline 0.0730), paired **+0.0255** (6 better / 2 worse / 14 tie, sign p=0.29 —
+still < the +0.10 bar but better than 4b); no_match 0%. Multi-view is **no longer fully inert** on 0.6b
+(unlike 4b's Δ0.000).
+
+**A2 verdict:** `0.6b` is a viable adoption candidate — it clears the T11 gate, runs fully on-GPU,
+gets single-embed priming **under 500 ms**, halves multi-view latency, and slightly *improves* priming
+coverage + no_match precision. The cost is a bounded Task-ranking dip (within floors). **Before a flip:**
+(a) re-confirm via the full `--gate` wrapper after a 0.6b corpus re-seed (α=0 crater), (b) recalibrate
+the 0.48 Task / 0.30 priming floors on the 0.6b score scale, (c) optionally measure A1/A3 (TEI) for
+extra multi-view latency headroom. TEI not yet measured (A1/A3 pending).
+
 ## Out of scope
 
 - No production default-flip here (that's the T12/owner gate, post-results). No new metrics. No
