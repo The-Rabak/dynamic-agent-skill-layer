@@ -719,6 +719,93 @@ fn expand_candidates_with_bm25(
     (expanded, bm25_scores_by_index)
 }
 
+/// Merges K per-segment search passes into one set of `ScopedSearchResult`s,
+/// taking the MAX-scoring `FusedCandidate` per `(scope_id, skill_id)` across passes
+/// (query-side max-over-segments).
+///
+/// Within each scope the merged candidate pool is re-sorted by score desc and
+/// truncated to `candidate_limit` so the merged pool matches single-pass
+/// cardinality semantics. With a single pass the output equals the input
+/// (byte-identical Task path when called with one segment).
+///
+/// Scope failures from all passes are unioned (deduplicated by `scope_id`):
+/// a scope that fails in any pass appears once in the returned failure list.
+pub(crate) fn merge_scope_results_max(
+    passes: Vec<(Vec<ScopedSearchResult>, Vec<ScopedSearchFailure>)>,
+    candidate_limit: usize,
+) -> (Vec<ScopedSearchResult>, Vec<ScopedSearchFailure>) {
+    if passes.is_empty() {
+        return (Vec::new(), Vec::new());
+    }
+
+    // Fast path: single pass — return unchanged (byte-identical Task path).
+    if passes.len() == 1 {
+        let (results, failures) = passes.into_iter().next().expect("len==1 checked above");
+        return (results, failures);
+    }
+
+    // For each scope: map skill_id → best-scoring FusedCandidate across passes.
+    // We key by scope_id because the same skill can appear in different scopes
+    // (project vs global) and they must not merge across scope boundaries.
+    let mut best_by_scope_and_skill: HashMap<String, HashMap<String, FusedCandidate>> =
+        HashMap::new();
+    // Track scope_type per scope_id so we can reconstruct ScopedSearchResult.
+    let mut scope_type_by_id: HashMap<String, domain::ScopeType> = HashMap::new();
+    // Collect per-pass failures, deduped by scope_id.
+    let mut seen_failure_scope_ids: HashSet<String> = HashSet::new();
+    let mut merged_failures: Vec<ScopedSearchFailure> = Vec::new();
+
+    for (results, failures) in passes {
+        // Union failures; deduplicate by scope_id (first failure wins for reason_code).
+        for failure in failures {
+            if seen_failure_scope_ids.insert(failure.scope_id.clone()) {
+                merged_failures.push(failure);
+            }
+        }
+
+        for result in results {
+            scope_type_by_id
+                .entry(result.scope_id.clone())
+                .or_insert(result.scope_type);
+
+            let scope_map = best_by_scope_and_skill
+                .entry(result.scope_id.clone())
+                .or_default();
+
+            for candidate in result.candidates {
+                scope_map
+                    .entry(candidate.skill_id.clone())
+                    .and_modify(|existing| {
+                        // Keep the higher-scoring candidate; on exact tie keep
+                        // the first seen (deterministic: consistent with search order).
+                        if candidate.score > existing.score {
+                            *existing = candidate.clone();
+                        }
+                    })
+                    .or_insert(candidate);
+            }
+        }
+    }
+
+    // Reconstruct ScopedSearchResult per scope: sort by score desc, truncate to limit.
+    let merged_results: Vec<ScopedSearchResult> = best_by_scope_and_skill
+        .into_iter()
+        .filter_map(|(scope_id, skill_map)| {
+            let scope_type = scope_type_by_id.get(&scope_id).copied()?;
+            let mut candidates: Vec<FusedCandidate> = skill_map.into_values().collect();
+            candidates.sort_by(|a, b| b.score.total_cmp(&a.score));
+            candidates.truncate(candidate_limit);
+            Some(ScopedSearchResult {
+                scope_id,
+                scope_type,
+                candidates,
+            })
+        })
+        .collect();
+
+    (merged_results, merged_failures)
+}
+
 trait ScopeTypeLabel {
     fn scope_type_label(&self) -> &'static str;
 }
@@ -1517,6 +1604,171 @@ mod tests {
             "admitted candidate must have score >= floor (0.48); got {:.4}",
             admitted.score
         );
+    }
+
+    // ── T12 Unit 2: merge_scope_results_max tests ────────────────────────────
+
+    /// Builds a minimal `FusedCandidate` for merge tests.
+    fn fused_candidate(skill_id: &str, skill_index: usize, score: f32) -> FusedCandidate {
+        FusedCandidate {
+            skill_index,
+            skill_id: skill_id.to_owned(),
+            matched_scope: domain::ScopeType::Global,
+            score,
+            semantic_score: score,
+            lexical_score: 0.0,
+            subunit_evidence: 0.0,
+            embedding: vec![score, 0.0],
+            highlights: Vec::new(),
+        }
+    }
+
+    fn scoped_result(scope_id: &str, candidates: Vec<FusedCandidate>) -> ScopedSearchResult {
+        ScopedSearchResult {
+            scope_id: scope_id.to_owned(),
+            scope_type: domain::ScopeType::Global,
+            candidates,
+        }
+    }
+
+    /// Single pass in → identical out (byte-identical Task path invariant).
+    #[test]
+    fn merge_single_pass_returns_identical_output() {
+        let candidates = vec![
+            fused_candidate("skill-a", 0, 0.9),
+            fused_candidate("skill-b", 1, 0.7),
+        ];
+        let pass = vec![(vec![scoped_result("global", candidates.clone())], vec![])];
+        let (merged, failures) = merge_scope_results_max(pass, 50);
+
+        assert!(failures.is_empty());
+        assert_eq!(merged.len(), 1);
+        assert_eq!(merged[0].candidates.len(), 2);
+        assert_eq!(merged[0].candidates[0].skill_id, "skill-a");
+        assert_eq!(merged[0].candidates[1].skill_id, "skill-b");
+        // Scores must be exactly preserved (byte-identical).
+        assert_eq!(merged[0].candidates[0].score.to_bits(), 0.9_f32.to_bits());
+        assert_eq!(merged[0].candidates[1].score.to_bits(), 0.7_f32.to_bits());
+    }
+
+    /// Two passes where skill X scores 0.6 in pass A and 0.9 in pass B →
+    /// merged X has score 0.9 (max wins).
+    #[test]
+    fn merge_two_passes_max_score_wins_per_skill() {
+        let pass_a = (
+            vec![scoped_result(
+                "global",
+                vec![fused_candidate("skill-x", 0, 0.6)],
+            )],
+            vec![],
+        );
+        let pass_b = (
+            vec![scoped_result(
+                "global",
+                vec![fused_candidate("skill-x", 0, 0.9)],
+            )],
+            vec![],
+        );
+        let (merged, failures) = merge_scope_results_max(vec![pass_a, pass_b], 50);
+
+        assert!(failures.is_empty());
+        assert_eq!(merged.len(), 1);
+        assert_eq!(merged[0].candidates.len(), 1);
+        assert_eq!(merged[0].candidates[0].skill_id, "skill-x");
+        assert!(
+            (merged[0].candidates[0].score - 0.9).abs() < 1e-6,
+            "max score must be 0.9; got {}",
+            merged[0].candidates[0].score
+        );
+    }
+
+    /// `candidate_limit` is respected: if passes produce more unique skills than
+    /// the limit, the merged output is truncated to the limit (highest scores kept).
+    #[test]
+    fn merge_truncates_to_candidate_limit() {
+        let pass_a = (
+            vec![scoped_result(
+                "global",
+                vec![
+                    fused_candidate("skill-a", 0, 0.9),
+                    fused_candidate("skill-b", 1, 0.8),
+                    fused_candidate("skill-c", 2, 0.7),
+                ],
+            )],
+            vec![],
+        );
+        let pass_b = (
+            vec![scoped_result(
+                "global",
+                vec![fused_candidate("skill-d", 3, 0.6)],
+            )],
+            vec![],
+        );
+        // 4 unique skills, limit=2 → only top 2 by score.
+        let (merged, failures) = merge_scope_results_max(vec![pass_a, pass_b], 2);
+
+        assert!(failures.is_empty());
+        assert_eq!(merged.len(), 1);
+        assert_eq!(
+            merged[0].candidates.len(),
+            2,
+            "candidate_limit=2 must truncate to 2 candidates"
+        );
+        // Top 2 must be skill-a (0.9) and skill-b (0.8).
+        let ids: Vec<&str> = merged[0]
+            .candidates
+            .iter()
+            .map(|c| c.skill_id.as_str())
+            .collect();
+        assert!(
+            ids.contains(&"skill-a"),
+            "skill-a (score 0.9) must be in top 2"
+        );
+        assert!(
+            ids.contains(&"skill-b"),
+            "skill-b (score 0.8) must be in top 2"
+        );
+    }
+
+    /// Scope separation is preserved: skills from different scopes do NOT merge.
+    #[test]
+    fn merge_preserves_scope_separation() {
+        let pass = vec![(
+            vec![
+                ScopedSearchResult {
+                    scope_id: "project".to_owned(),
+                    scope_type: domain::ScopeType::Project,
+                    candidates: vec![fused_candidate("shared-skill", 0, 0.8)],
+                },
+                scoped_result("global", vec![fused_candidate("shared-skill", 0, 0.5)]),
+            ],
+            vec![],
+        )];
+        let (merged, failures) = merge_scope_results_max(pass, 50);
+
+        assert!(failures.is_empty());
+        assert_eq!(
+            merged.len(),
+            2,
+            "project and global scopes must remain separate"
+        );
+        // Both scopes have 1 candidate (the merge is per-scope, not global).
+        for result in &merged {
+            assert_eq!(
+                result.candidates.len(),
+                1,
+                "each scope should have exactly 1 candidate; scope={}",
+                result.scope_id
+            );
+        }
+    }
+
+    /// Empty passes return empty results with no failures.
+    #[test]
+    fn merge_empty_passes_returns_empty() {
+        let (merged, failures) = merge_scope_results_max(vec![], 50);
+        assert!(merged.is_empty());
+        assert!(failures.is_empty());
     }
 
     // ── T04-B hybrid arm tests ────────────────────────────────────────────────

@@ -7,6 +7,7 @@ pub mod fusion;
 pub mod graph_search;
 pub mod hybrid;
 pub mod orchestrator;
+pub mod query_segments;
 pub mod scope_resolution;
 pub mod scoring;
 pub mod sparse;

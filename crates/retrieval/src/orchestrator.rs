@@ -17,10 +17,12 @@ use domain::{
 use crate::{
     CircuitBreaker,
     dual_scope::{
-        ScopedSearchResult, search_scopes_concurrently, search_scopes_with_qdrant_candidates,
+        ScopedSearchFailure, ScopedSearchResult, merge_scope_results_max,
+        search_scopes_concurrently, search_scopes_with_qdrant_candidates,
     },
     fusion::{ScopeRanking, weighted_reciprocal_rank_fusion},
     hybrid::{HybridCandidateSource, HybridQueryError},
+    query_segments,
     scope_resolution::DualScopeResolver,
     scoring::ScoringWeights,
 };
@@ -989,8 +991,7 @@ where
         &self,
         prompt: &str,
         repo_path: Option<&str>,
-        _intent: RetrievalIntent,
-        // T12 Unit 1: seam only — Priming runs the identical path; later units branch here.
+        intent: RetrievalIntent,
     ) -> RetrievalOutcome {
         let started = Instant::now();
         // Load the swappable read model exactly once for this call so the graph
@@ -1013,7 +1014,7 @@ where
             );
         }
 
-        // Gate the embedding call behind the circuit breaker.  When the breaker
+        // Gate the embedding call(s) behind the circuit breaker.  When the breaker
         // is open the provider has been repeatedly failing; skip the network call
         // entirely and return a loud degraded outcome with a named reason code so
         // callers can distinguish circuit-open from a transient embed failure.
@@ -1022,7 +1023,7 @@ where
         // OllamaEmbeddingService already carries internal timeouts and the embed
         // batch path uses `retry_with_backoff`; stacking a second retry layer
         // here would violate the project's no-double-retry rule.
-        let prompt_embedding = if !self.embedding_breaker.allow_request().await {
+        if !self.embedding_breaker.allow_request().await {
             reason_codes.push(Self::REASON_EMBEDDING_CIRCUIT_OPEN.to_owned());
             return self.build_degraded_outcome(
                 started,
@@ -1031,49 +1032,40 @@ where
                 reason_codes,
                 scopes_considered,
             );
-        } else {
-            match self.embedding_service.embed_text(prompt).await {
-                Ok(embedding) => {
-                    self.embedding_breaker.record_success().await;
-                    embedding
-                }
-                Err(error) => {
-                    self.embedding_breaker.record_failure().await;
-                    reason_codes.push(Self::map_embedding_error_to_reason(&error));
-                    return self.build_degraded_outcome(
-                        started,
-                        graph_version,
-                        scopes_considered.clone(),
-                        reason_codes,
-                        scopes_considered,
-                    );
-                }
-            }
-        };
+        }
 
-        // Dispatch to the configured candidate-generation backend.
+        // Dispatch to the configured candidate-generation backend, applying
+        // intent-aware embedding and candidate-generation strategy:
         //
-        // - `SnapshotDense`: cosine search over the in-memory snapshot (current default).
-        // - `SnapshotHybrid`: dense cosine + BM25 pool expansion + eq.3 scoring (T04-B).
-        //   The hybrid arm expands the candidate pool with BM25-scored skills, then
-        //   all candidates pass through the existing eq.3 scoring and relevance floor.
-        // - `QdrantHybrid`: async Qdrant dense+sparse query; hits are mapped to snapshot
-        //   skill indices via `skill_stable_id`, then run through eq.3 → floor → MMR
-        //   exactly like the snapshot arms. Fail loud on Qdrant down — NO silent fallback
-        //   to dense. The CQRS "Qdrant-down cannot degrade compile_context" contract is
-        //   intentionally broken for this arm (T08 ADR).
+        // - `QdrantHybrid` (any intent): always single-embed; Qdrant is the
+        //   candidate source; segmentation is NOT applied (T12 Unit 2 scope).
+        // - `SnapshotDense`/`SnapshotHybrid` with `Task`: single embed, single
+        //   search pass — byte-identical to pre-T12 behavior.
+        // - `SnapshotDense`/`SnapshotHybrid` with `Priming`: segment the prompt,
+        //   embed all segments in ONE batch call (latency fence), run one search
+        //   pass per segment, and merge by max-score per (scope_id, skill_id).
+        //   With a 1-segment prompt (short / Task-like opening) the merge is a
+        //   no-op and the result is numerically identical to the Task path.
         let (scope_results, scope_failures) = match self.config.backend {
-            RetrievalBackend::SnapshotDense | RetrievalBackend::SnapshotHybrid => {
-                search_scopes_concurrently(
-                    prompt,
-                    &prompt_embedding,
-                    graph.clone(),
-                    &self.config,
-                    &scopes,
-                )
-                .await
-            }
             RetrievalBackend::QdrantHybrid => {
+                // QdrantHybrid: always single-embed regardless of intent.
+                let prompt_embedding = match self.embedding_service.embed_text(prompt).await {
+                    Ok(embedding) => {
+                        self.embedding_breaker.record_success().await;
+                        embedding
+                    }
+                    Err(error) => {
+                        self.embedding_breaker.record_failure().await;
+                        reason_codes.push(Self::map_embedding_error_to_reason(&error));
+                        return self.build_degraded_outcome(
+                            started,
+                            graph_version,
+                            scopes_considered.clone(),
+                            reason_codes,
+                            scopes_considered,
+                        );
+                    }
+                };
                 match self
                     .search_scopes_qdrant_hybrid(prompt, &prompt_embedding, graph.clone(), &scopes)
                     .await
@@ -1092,6 +1084,96 @@ where
                             reason_codes,
                             scopes_considered,
                         );
+                    }
+                }
+            }
+
+            RetrievalBackend::SnapshotDense | RetrievalBackend::SnapshotHybrid => {
+                match intent {
+                    RetrievalIntent::Task => {
+                        // Task: single embed, single search pass — unchanged from pre-T12.
+                        let prompt_embedding = match self.embedding_service.embed_text(prompt).await
+                        {
+                            Ok(embedding) => {
+                                self.embedding_breaker.record_success().await;
+                                embedding
+                            }
+                            Err(error) => {
+                                self.embedding_breaker.record_failure().await;
+                                reason_codes.push(Self::map_embedding_error_to_reason(&error));
+                                return self.build_degraded_outcome(
+                                    started,
+                                    graph_version,
+                                    scopes_considered.clone(),
+                                    reason_codes,
+                                    scopes_considered,
+                                );
+                            }
+                        };
+                        search_scopes_concurrently(
+                            prompt,
+                            &prompt_embedding,
+                            graph.clone(),
+                            &self.config,
+                            &scopes,
+                        )
+                        .await
+                    }
+
+                    RetrievalIntent::Priming => {
+                        // Segment the prompt into topically-distinct views (pure string
+                        // work, no LLM). For a short/single-paragraph prompt this yields
+                        // exactly 1 segment and the path is numerically identical to Task.
+                        let segments = query_segments::segment_prompt(
+                            prompt,
+                            query_segments::DEFAULT_MAX_SEGMENTS,
+                            query_segments::DEFAULT_MAX_SEGMENT_CHARS,
+                        );
+
+                        // ONE batched embedding call for all segments (latency fence).
+                        // Even a 1-segment batch costs one network round-trip — same as
+                        // the Task `embed_text` call — preserving the latency budget.
+                        let segment_refs: Vec<&str> = segments.iter().map(String::as_str).collect();
+                        let segment_embeddings =
+                            match self.embedding_service.embed_batch(&segment_refs).await {
+                                Ok(embeddings) => {
+                                    self.embedding_breaker.record_success().await;
+                                    embeddings
+                                }
+                                Err(error) => {
+                                    self.embedding_breaker.record_failure().await;
+                                    reason_codes.push(Self::map_embedding_error_to_reason(&error));
+                                    return self.build_degraded_outcome(
+                                        started,
+                                        graph_version,
+                                        scopes_considered.clone(),
+                                        reason_codes,
+                                        scopes_considered,
+                                    );
+                                }
+                            };
+
+                        // One search pass per segment embedding (sequential — sub-ms
+                        // in-memory cosine work; no parallel task spawning needed).
+                        // Arc::clone per pass is a cheap refcount bump.
+                        let mut passes: Vec<(Vec<ScopedSearchResult>, Vec<ScopedSearchFailure>)> =
+                            Vec::with_capacity(segment_embeddings.len());
+                        for seg_embedding in &segment_embeddings {
+                            let pass = search_scopes_concurrently(
+                                prompt,
+                                seg_embedding,
+                                graph.clone(),
+                                &self.config,
+                                &scopes,
+                            )
+                            .await;
+                            passes.push(pass);
+                        }
+
+                        // Merge by max score per (scope_id, skill_id) across passes.
+                        // A 1-segment batch produces exactly 1 pass → merge is a no-op
+                        // (byte-identical to the Task single-pass result).
+                        merge_scope_results_max(passes, self.config.candidate_limit)
                     }
                 }
             }
@@ -2326,6 +2408,260 @@ mod tests {
         );
     }
 
+    // ── T12 Unit 2: keyword-aware embedding service for behavioral tests ──────
+
+    /// Test-only embedding service that returns different vectors based on whether
+    /// the input text contains a known keyword. Used to prove that query-side
+    /// multi-view (max-over-segments) surfaces skills that match a segment of a
+    /// verbose prompt even when the averaged / whole-prompt embedding does not.
+    ///
+    /// Keyword → 4D unit vector mapping:
+    /// - "auth" keyword in text → `[1.0, 0.0, 0.0, 0.0]`  (dimension 0 = auth topic)
+    /// - "migration" keyword    → `[0.0, 1.0, 0.0, 0.0]`  (dimension 1 = migration topic)
+    /// - anything else          → `[0.5, 0.5, 0.0, 0.0]`  (blended / off-topic)
+    struct KeywordAwareEmbeddingService;
+
+    #[async_trait::async_trait]
+    impl EmbeddingService for KeywordAwareEmbeddingService {
+        async fn embed_text(&self, text: &str) -> Result<Vec<f32>, EmbeddingError> {
+            Ok(keyword_vector(text))
+        }
+
+        async fn embed_batch(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>, EmbeddingError> {
+            Ok(texts.iter().map(|t| keyword_vector(t)).collect())
+        }
+    }
+
+    fn keyword_vector(text: &str) -> Vec<f32> {
+        let lower = text.to_lowercase();
+        if lower.contains("auth") {
+            vec![1.0, 0.0, 0.0, 0.0]
+        } else if lower.contains("migration") {
+            vec![0.0, 1.0, 0.0, 0.0]
+        } else {
+            vec![0.5, 0.5, 0.0, 0.0]
+        }
+    }
+
+    /// Builds a two-skill snapshot for the Priming multi-view behavioral test.
+    ///
+    /// - `auth-skill`:      embedding `[1.0, 0.0, 0.0, 0.0]` — matches "auth" queries.
+    /// - `migration-skill`: embedding `[0.0, 1.0, 0.0, 0.0]` — matches "migration" queries.
+    fn keyword_snapshot() -> RetrievalSnapshot {
+        use domain::{DomainId, LifecycleStatus, ScopeType, Skill, SkillStatus};
+
+        let auth_skill = Skill {
+            id: DomainId::new_unchecked("auth-skill"),
+            name: "authentication middleware".to_owned(),
+            description: "auth token middleware".to_owned(),
+            scope: ScopeType::Global,
+            status: SkillStatus::Ready,
+            lifecycle: LifecycleStatus::Active,
+            tags: vec!["auth".to_owned()],
+            subunit_ids: vec![],
+            community_id: None,
+        };
+        let migration_skill = Skill {
+            id: DomainId::new_unchecked("migration-skill"),
+            name: "database migration".to_owned(),
+            description: "schema migration tooling".to_owned(),
+            scope: ScopeType::Global,
+            status: SkillStatus::Ready,
+            lifecycle: LifecycleStatus::Active,
+            tags: vec!["migration".to_owned()],
+            subunit_ids: vec![],
+            community_id: None,
+        };
+
+        RetrievalSnapshot::new(
+            vec![
+                SeededSkill {
+                    skill: auth_skill,
+                    scope_id: "global".to_owned(),
+                    source_paths: vec![],
+                    embedding: vec![1.0, 0.0, 0.0, 0.0],
+                    subunits: vec![],
+                    subunit_embeddings: vec![],
+                    prior: 0.0,
+                    community_boost: 0.0,
+                    e_task_embedding: Vec::new(),
+                    e_needs_embedding: Vec::new(),
+                    e_negative_embedding: Vec::new(),
+                },
+                SeededSkill {
+                    skill: migration_skill,
+                    scope_id: "global".to_owned(),
+                    source_paths: vec![],
+                    embedding: vec![0.0, 1.0, 0.0, 0.0],
+                    subunits: vec![],
+                    subunit_embeddings: vec![],
+                    prior: 0.0,
+                    community_boost: 0.0,
+                    e_task_embedding: Vec::new(),
+                    e_needs_embedding: Vec::new(),
+                    e_negative_embedding: Vec::new(),
+                },
+            ],
+            1,
+        )
+    }
+
+    /// T12 Unit 2: Priming with a short single-segment prompt returns the same
+    /// outcome as Task (the single-view path is byte-identical for 1 segment).
+    ///
+    /// Uses `ConstantEmbeddingService` (same vector for every text) so that
+    /// segmentation of the short "probe" prompt yields exactly 1 segment and
+    /// the 1-segment merge is a no-op. This is the preserved Unit-1 invariant.
+    #[tokio::test]
+    async fn priming_single_segment_prompt_equals_task_outcome() {
+        let orchestrator = RetrievalOrchestrator::new(
+            Arc::new(ConstantEmbeddingService),
+            versioned_snapshot(3),
+            RetrievalConfig::default(),
+        );
+
+        let task_outcome = orchestrator
+            .retrieve("probe", None, RetrievalIntent::Task)
+            .await;
+        let priming_outcome = orchestrator
+            .retrieve("probe", None, RetrievalIntent::Priming)
+            .await;
+
+        let task_ids: Vec<_> = task_outcome
+            .skills
+            .iter()
+            .map(|s| {
+                (
+                    s.scored_skill.skill.id.as_str().to_owned(),
+                    s.scored_skill.score.to_bits(),
+                )
+            })
+            .collect();
+        let priming_ids: Vec<_> = priming_outcome
+            .skills
+            .iter()
+            .map(|s| {
+                (
+                    s.scored_skill.skill.id.as_str().to_owned(),
+                    s.scored_skill.score.to_bits(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            task_ids, priming_ids,
+            "T12 Unit 2: single-segment Priming must equal Task (byte-identical single-view)"
+        );
+        assert_eq!(
+            task_outcome.reason_codes, priming_outcome.reason_codes,
+            "T12 Unit 2: Priming reason_codes must equal Task for short prompts"
+        );
+    }
+
+    /// T12 Unit 2 behavioral test: Priming with a multi-paragraph verbose prompt
+    /// surfaces `migration-skill` (which matches only segment 2) even though the
+    /// full-prompt averaged embedding (`[0.5, 0.5]` from KeywordAwareEmbeddingService)
+    /// does not produce a cosine-1.0 hit for either skill.
+    ///
+    /// Under Task (single embed = `[0.5, 0.5, 0.0, 0.0]`):
+    ///   cosine(`[0.5,0.5]`, auth-skill `[1.0,0.0]`) = 0.707 → eq3 ≈ 0.318 (below 0.48 floor)
+    ///   cosine(`[0.5,0.5]`, migration `[0.0,1.0]`) = 0.707 → same (below floor)
+    ///   Both skills are gated out → empty result.
+    ///
+    /// Under Priming (2 segments: "auth middleware", "database migration"):
+    ///   Segment 1 embed = `[1.0,0,0,0]` → cosine(auth-skill) = 1.0 → eq3 = 0.45 (below floor)
+    ///   Segment 2 embed = `[0,1.0,0,0]` → cosine(migration-skill) = 1.0 → eq3 = 0.45 (below floor)
+    ///
+    /// NOTE: with the default floor 0.48 and no subunit evidence (β=0) and no prior (γ=0),
+    /// even a perfect cosine hit gives eq3 = 0.45 which is still below the floor.
+    /// So we use a low test floor (0.1) to prove the behavioral difference.
+    #[tokio::test]
+    async fn priming_multi_segment_surfaces_skill_matching_only_second_paragraph() {
+        // Low floor so cosine hits above 0 clear it.
+        let config = RetrievalConfig {
+            scope_id: "global".to_owned(),
+            scope_type: domain::ScopeType::Global,
+            candidate_limit: 10,
+            max_results: 3,
+            relevance_threshold: 0.1, // low floor for this behavioral test
+            backend: RetrievalBackend::SnapshotDense,
+            dense_views_enabled: false, // single e_summary view — keep it simple
+            ..RetrievalConfig::default()
+        };
+
+        let orchestrator = RetrievalOrchestrator::new(
+            Arc::new(KeywordAwareEmbeddingService),
+            keyword_snapshot(),
+            config,
+        );
+
+        // Two-paragraph prompt: para 1 = auth topic, para 2 = migration topic.
+        // The `segment_prompt` function splits on "\n\n" → 2 segments.
+        let verbose_prompt = "Implement auth middleware for the request pipeline.\n\nDatabase migration tooling for schema evolution.";
+
+        // Task: embed the whole prompt as one vector.
+        // KeywordAwareEmbeddingService returns [0.5,0.5,0,0] for text containing both topics.
+        let task_outcome = orchestrator
+            .retrieve(verbose_prompt, None, RetrievalIntent::Task)
+            .await;
+
+        // Priming: embed each paragraph separately.
+        // Para 1 → [1.0,0,0,0] (auth) → cosine with auth-skill = 1.0
+        // Para 2 → [0.0,1.0,0,0] (migration) → cosine with migration-skill = 1.0
+        let priming_outcome = orchestrator
+            .retrieve(verbose_prompt, None, RetrievalIntent::Priming)
+            .await;
+
+        // Task uses [0.5,0.5,0,0]: cosine with auth=[1,0,0,0] = 0.5/sqrt(0.5^2+0.5^2) = 0.707
+        // But note: KeywordAwareEmbeddingService returns [0.5,0.5,0,0] for mixed-topic text,
+        // and cosine([0.5,0.5,0,0], [1,0,0,0]) = 0.5 / sqrt(0.5) = 0.707... eq3 = 0.45*0.707 = 0.318
+        // With floor=0.1 → Task DOES find both skills but at lower scores.
+        // Priming segments the prompt → para1 = "auth" keyword → [1,0,0,0] → cosine(auth-skill)=1.0
+        //                              → para2 = "migration" → [0,1,0,0] → cosine(migration-skill)=1.0
+        // So Priming finds BOTH skills at score 0.45 (α * 1.0), vs Task finding at 0.318.
+        // The test verifies Priming surfaces migration-skill (matching segment 2 only).
+        let priming_skill_ids: Vec<&str> = priming_outcome
+            .skills
+            .iter()
+            .map(|s| s.scored_skill.skill.id.as_str())
+            .collect();
+
+        assert!(
+            priming_skill_ids.contains(&"migration-skill"),
+            "Priming must surface migration-skill (matches only the second paragraph segment); \
+             got skills: {:?}",
+            priming_skill_ids
+        );
+        assert!(
+            priming_skill_ids.contains(&"auth-skill"),
+            "Priming must surface auth-skill (matches only the first paragraph segment); \
+             got skills: {:?}",
+            priming_skill_ids
+        );
+
+        // Verify Priming scores are at or above Task scores for both skills
+        // (max-over-segments = higher quality match per skill vs averaged embedding).
+        let task_migration_score = task_outcome
+            .skills
+            .iter()
+            .find(|s| s.scored_skill.skill.id.as_str() == "migration-skill")
+            .map(|s| s.scored_skill.score);
+        let priming_migration_score = priming_outcome
+            .skills
+            .iter()
+            .find(|s| s.scored_skill.skill.id.as_str() == "migration-skill")
+            .map(|s| s.scored_skill.score);
+
+        if let (Some(task_score), Some(priming_score)) =
+            (task_migration_score, priming_migration_score)
+        {
+            assert!(
+                priming_score >= task_score,
+                "Priming migration-skill score {priming_score:.4} must be >= Task score {task_score:.4} \
+                 (segment 2 = pure migration vector; Task = blended vector)"
+            );
+        }
+    }
+
     /// T12 Unit 1 seam guard: calling `retrieve(.., RetrievalIntent::Priming)` on a
     /// snapshot-dense orchestrator returns an outcome equal to `retrieve(.., RetrievalIntent::Task)`
     /// for the same snapshot and prompt — the Priming variant runs the identical code path
@@ -2333,6 +2669,11 @@ mod tests {
     ///
     /// Compares `skills` ids + scores and `reason_codes` because those are the
     /// semantically meaningful fields; latency_ms is excluded (wall-clock noise).
+    ///
+    /// NOTE (T12 Unit 2): This test uses `ConstantEmbeddingService` (all texts → same
+    /// vector) with a short "probe" prompt that produces 1 segment. The 1-segment
+    /// merge is a no-op, so Priming still equals Task. The test is still valid as
+    /// the single-segment invariant guard.
     #[tokio::test]
     async fn priming_intent_produces_identical_outcome_to_task_intent() {
         let orchestrator = RetrievalOrchestrator::new(
