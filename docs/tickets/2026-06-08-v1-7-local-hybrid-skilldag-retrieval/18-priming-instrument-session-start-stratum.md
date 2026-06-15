@@ -82,6 +82,32 @@ priming, as its own ticket so the instrument exists before the mechanism it meas
   MUST be committed to this ticket before the stratum queries are authored, to close the remaining
   self-authoring circularity channel.
 
+## Pre-registration (LOCKED 2026-06-15, owner "go" — before stratum authoring / any measured run)
+
+Full draft + rationale: `docs/execution-sessions/work-2026-06-14-224314-T18/unit-A-preregistration-DRAFT.md`.
+Go-time env verified: mcp-server `/health` ready, `qwen3-embedding:4b` dim=2560, `snapshot_dense`,
+corpus = 262, live `find_skill` over `http://127.0.0.1:3001/mcp` returns real ranked skills.
+
+- **Metrics (NEW in `scripts/retrieval_metrics.py`; primary = coverage):**
+  - **set-coverage@N** = `|P∩G|/|G|` where `P` = the skills `compile_context` injects, `G` = labeled
+    multi-gold baseline set. **Headline N = 3** (production `max_results` default, floor 0.48);
+    diagnostic curve at N ∈ {3,5,8} via `RETRIEVAL_MAX_RESULTS`. MRR/nDCG are NOT priming metrics.
+  - **freshness hit-rate@N** = over queries with ≥1 `fresh` gold, fraction where a `fresh` gold ∈ P.
+  - **judge usefulness** (secondary) = committed claude-CLI rubric (relevance/actionability/non-redundancy 0–2).
+  - **SessionStart p95** through `compile_context` < 500ms (guardrail, raw artifact).
+- **Per-signal ROI thresholds (default DROP; KEEP iff paired sign-test p<0.05 AND delta ≥ bar):**
+  recurrence-baseline +0.10 set-coverage (≥25%·S); freshness slot +0.15 hit-rate with ≤0.02 coverage
+  cannibalization (≥25%·S); centrality +0.043 cand-recall/coverage (≥50%·S, default DROP at 262);
+  recent-use same as centrality. `S` = the negative-control separation, fixed by the gate below FIRST.
+- **Negative-control gate (runs FIRST, before any baseline number):** PERMUTATION control (each query's
+  prime scored against a *different* query's gold set). Proceed iff `mean coverage(permuted) ≤ 0.5 ×
+  mean coverage(true)` (reuse `crater_check`). Else stratum REJECTED → INSTRUMENT-FAILURE(priming-stratum).
+- **Baseline measured through `compile_context`** (production surface, NOT `find_skill`) on the real
+  server; verbose substratum reports the `no_match` RATE explicitly (Finding 2 quantified). Raw
+  per-query artifacts persisted (T11 format).
+- **Stratum source:** `tests/e2e/reports/t11/session_problems.json` (genuine problem statements +
+  `skills_in_session` multi-gold), thin/vague + VERBOSE substrata; anti-circularity token-overlap ≤0.3.
+
 ## Acceptance Criteria
 
 - [ ] Session-start stratum authored (≥20 queries from the 24 transcripts' opening turns, multi-gold

@@ -7,10 +7,11 @@ tickets_ref: docs/tickets/2026-06-08-v1-7-local-hybrid-skilldag-retrieval/index.
 source_packet_ref: "T18 (Batch 19) — split from T12 (restructure 2026-06-12); lead of the elevated real-usage spine T18→T12→T15 (reprioritization 2026-06-13)"
 brainstorm_ref: ""
 started: 2026-06-14
-status: paused
-pause_reason: "OWNER HOLD — drive to the pre-registration gate, then stop before stratum authoring / live measurement / heavy agents. Awaiting owner go/no-go on the staged pre-registration."
+status: in_progress
+pause_reason: ""
+resumed: "2026-06-15 — owner GO. Pre-registration LOCKED (Unit A). Stack brought up + verified (corpus 262, qwen3, snapshot_dense, /health ready). Executing Units B→C→D."
 execution_shape: infra-track
-current_unit: 1
+current_unit: 2
 total_units: 4
 session_id: work-2026-06-14-224314-T18
 ---
@@ -53,10 +54,10 @@ session_id: work-2026-06-14-224314-T18
 ## Work Status
 | # | Unit | Kind | Serves / Unlocks | Status | Attempts | Session File |
 |---|------|------|------------------|--------|----------|--------------|
-| A | Pre-registration (metrics + ROI thresholds + judge rubric + negative-control design) | infra-packet | The locked ruler T12 is graded against; owner sign-off gate | **draft-staged (awaiting owner lock)** | 0 | unit-A-preregistration-DRAFT.md |
-| B | Author session-start stratum (thin/vague + VERBOSE substrata; multi-gold; anti-circularity probe) | infra-packet | The priming distribution the T11 fixture lacks | **HELD (pending owner go)** | -- | -- |
-| C | Negative-control gate run (wrong-scope/permuted prime must crater set-coverage; runs FIRST) | infra-packet | Proves the coverage metric is non-vacuous before any verdict | **HELD (pending owner go)** | -- | -- |
-| D | Baseline prime measured through `compile_context` (incl. verbose no_match quantified); raw artifacts | infra-packet | T12's honest before-number | **HELD (pending owner go)** | -- | -- |
+| A | Pre-registration (metrics + ROI thresholds + judge rubric + negative-control design) | infra-packet | The locked ruler T12 is graded against; owner sign-off gate | **completed — LOCKED 2026-06-15** | 1 | unit-A-preregistration-DRAFT.md |
+| B | Author session-start stratum (thin/vague + VERBOSE substrata; multi-gold; anti-circularity probe) | infra-packet | The priming distribution the T11 fixture lacks | in_progress | -- | -- |
+| C | Negative-control gate run (permuted prime must crater set-coverage; runs FIRST) | infra-packet | Proves the coverage metric is non-vacuous before any verdict | pending | -- | -- |
+| D | Baseline prime measured through `compile_context` (incl. verbose no_match quantified); raw artifacts | infra-packet | T12's honest before-number | pending | -- | -- |
 
 ## Owner decision points (STOP and ask) — THIS IS THE HOLD
 1. **Lock the pre-registration?** Review `unit-A-preregistration-DRAFT.md` — metric definitions,

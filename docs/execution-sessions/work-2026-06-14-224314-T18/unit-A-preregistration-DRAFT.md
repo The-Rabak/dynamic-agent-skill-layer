@@ -10,10 +10,20 @@ session_id: work-2026-06-14-224314-T18
 
 # T18 priming-instrument — PRE-REGISTRATION (DRAFT for owner lock)
 
-**Status: DRAFT. Nothing measured. No stratum authored.** Per pre-registration discipline, the
-content below must be locked (owner-approved, committed verbatim into the T18 ticket) BEFORE the
-session-start stratum is authored and BEFORE any measured run. Numbers marked **[LOCK]** are the
-owner's to confirm/adjust; the *decision rules and discipline* around them are the non-negotiable part.
+**Status: LOCKED 2026-06-15 (owner "go").** Pre-registration accepted as proposed and committed into
+the T18 ticket (`## Pre-registration (LOCKED 2026-06-15)`) BEFORE stratum authoring / any measured run.
+Go-time environment VERIFIED on the live stack: mcp-server `/health` ready, `qwen3-embedding:4b`
+dim=2560, `snapshot_dense`, corpus = **262**, `MAX_RESULTS=3`, live `find_skill` over
+`http://127.0.0.1:3001/mcp` returns real ranked skills (semantic score = relevance; `fusion_rank_score`
+is the RRF artifact). Resolved [LOCK] values:
+- **Headline N = 3** (production `compile_context` cap = `RetrievalConfig.max_results` default 3,
+  floor-gated at 0.48). Report set-coverage at the actual floor-gated injected set (≤3) AND a
+  diagnostic curve at N ∈ {3, 5, 8} via the `RETRIEVAL_MAX_RESULTS` override (shows what a larger
+  bounded prime *would* cover — direct input to T12's bounded-set design).
+- **Thresholds: as proposed** (§4: +0.10 / +0.15 / +0.043 / +0.043; separation fractions 25/25/50/50).
+- **Negative control: permutation** (§5; crater ratio ≤0.5×). Cross-project deferred (T19/T25).
+- **Stratum source:** `tests/e2e/reports/t11/session_problems.json` (genuine problem statements +
+  `skills_in_session` multi-gold sets) — the anti-circular machinery T11 already used.
 
 Grounding (real artifacts, read this session): metrics extend the T20 shared lib
 `scripts/retrieval_metrics.py` (which today has mrr/ndcg/recall/candidate_recall/sign_test/crater_check
