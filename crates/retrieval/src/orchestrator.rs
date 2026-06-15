@@ -464,6 +464,14 @@ pub struct RetrievalConfig {
     /// freshness slot. Unknown age (missing from the snapshot map) → never fresh.
     /// Default **30** (env `RETRIEVAL_PRIMING_FRESHNESS_WINDOW_DAYS`).
     pub priming_freshness_window_days: u32,
+
+    /// Maximum number of query segments embedded for the Priming query-side
+    /// multi-view (T12 Unit 2). Each segment is a separate embed; the Ollama
+    /// semaphore serializes them, so this is the dominant SessionStart latency
+    /// lever for long/verbose openings. Lower = faster but fewer query views.
+    /// Default **8** (env `RETRIEVAL_PRIMING_MAX_SEGMENTS`). A value of 1 reduces
+    /// Priming to a single full-prompt embed (no query-side multi-view).
+    pub priming_max_segments: usize,
 }
 
 impl Default for RetrievalConfig {
@@ -553,6 +561,8 @@ impl Default for RetrievalConfig {
             priming_freshness_slots: 1,
             // priming_freshness_window_days: skills ≤30 days old are "fresh".
             priming_freshness_window_days: 30,
+            // priming_max_segments: query-side multi-view cap (latency lever).
+            priming_max_segments: query_segments::DEFAULT_MAX_SEGMENTS,
         }
     }
 }
@@ -644,6 +654,7 @@ impl RetrievalConfig {
                 "RETRIEVAL_PRIMING_FRESHNESS_WINDOW_DAYS",
                 d.priming_freshness_window_days,
             ),
+            priming_max_segments: env_or("RETRIEVAL_PRIMING_MAX_SEGMENTS", d.priming_max_segments),
             ..d
         }
     }
@@ -1248,7 +1259,7 @@ where
                         // (when floors also match).
                         let segments = query_segments::segment_prompt(
                             prompt,
-                            query_segments::DEFAULT_MAX_SEGMENTS,
+                            self.config.priming_max_segments,
                             query_segments::DEFAULT_MAX_SEGMENT_CHARS,
                         );
 
@@ -2885,6 +2896,11 @@ mod tests {
             cfg.priming_freshness_window_days, 30,
             "priming_freshness_window_days default must be 30"
         );
+        assert_eq!(
+            cfg.priming_max_segments,
+            query_segments::DEFAULT_MAX_SEGMENTS,
+            "priming_max_segments default must be DEFAULT_MAX_SEGMENTS"
+        );
     }
 
     /// T12 Unit 3: `RetrievalConfig::from_env()` parses all five priming-scoped fields
@@ -2896,9 +2912,14 @@ mod tests {
         let _g3 = EnvVarGuard::set("RETRIEVAL_PRIMING_RECURRENCE_WEIGHT", "0.05");
         let _g4 = EnvVarGuard::set("RETRIEVAL_PRIMING_FRESHNESS_SLOTS", "2");
         let _g5 = EnvVarGuard::set("RETRIEVAL_PRIMING_FRESHNESS_WINDOW_DAYS", "60");
+        let _g6 = EnvVarGuard::set("RETRIEVAL_PRIMING_MAX_SEGMENTS", "3");
 
         let cfg = RetrievalConfig::from_env();
 
+        assert_eq!(
+            cfg.priming_max_segments, 3,
+            "RETRIEVAL_PRIMING_MAX_SEGMENTS=3 must parse"
+        );
         assert!(
             (cfg.priming_relevance_threshold - 0.20).abs() < 1e-6,
             "RETRIEVAL_PRIMING_RELEVANCE_THRESHOLD=0.20 must parse; got {}",
