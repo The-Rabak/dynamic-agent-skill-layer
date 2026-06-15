@@ -561,8 +561,14 @@ impl Default for RetrievalConfig {
             priming_freshness_slots: 1,
             // priming_freshness_window_days: skills ≤30 days old are "fresh".
             priming_freshness_window_days: 30,
-            // priming_max_segments: query-side multi-view cap (latency lever).
-            priming_max_segments: query_segments::DEFAULT_MAX_SEGMENTS,
+            // priming_max_segments: DEFAULT 1 (single full-prompt embed; query-side
+            // multi-view OFF). T12 Unit 4 measured the multi-view as INERT for
+            // set-coverage@3 (identical 0.0805 at caps 1/2/3/8) while each extra
+            // segment adds a serialized Ollama embed (verbose p95 564ms@1 → 2240ms@8).
+            // The lone active priming lever is the lower floor. The segmentation code
+            // is retained behind this knob for re-evaluation at larger corpus scale /
+            // denser query distributions; raise it to re-enable query-side multi-view.
+            priming_max_segments: 1,
         }
     }
 }
@@ -2783,6 +2789,11 @@ mod tests {
             candidate_limit: 10,
             max_results: 3,
             relevance_threshold: 0.1, // low floor for this behavioral test
+            priming_relevance_threshold: 0.1, // Priming floor also low for this test
+            // Explicitly enable query-side multi-view (default is 1 = off since T12
+            // Unit 4 measured it inert on the dogfood corpus); this test validates the
+            // mechanism still WORKS when enabled.
+            priming_max_segments: 4,
             backend: RetrievalBackend::SnapshotDense,
             dense_views_enabled: false, // single e_summary view — keep it simple
             ..RetrievalConfig::default()
@@ -2897,9 +2908,8 @@ mod tests {
             "priming_freshness_window_days default must be 30"
         );
         assert_eq!(
-            cfg.priming_max_segments,
-            query_segments::DEFAULT_MAX_SEGMENTS,
-            "priming_max_segments default must be DEFAULT_MAX_SEGMENTS"
+            cfg.priming_max_segments, 1,
+            "priming_max_segments default must be 1 (multi-view measured inert in T12 Unit 4)"
         );
     }
 
