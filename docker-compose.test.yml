@@ -188,6 +188,14 @@ services:
       # embeddings are built unconditionally at mcp-server boot, so flipping this flag
       # is a pure mcp-server restart (reboot_mcp) — no graph-builder rebuild needed.
       RETRIEVAL_DENSE_VIEWS: ${RETRIEVAL_DENSE_VIEWS:-}
+      # T12: SessionStart priming-intent levers (Priming-scoped only; Task path
+      # uses the unchanged 0.48 floor / max_results). All env-overridable for the
+      # T12 priming sweep + per-signal ablations (RetrievalConfig::from_env).
+      RETRIEVAL_PRIMING_RELEVANCE_THRESHOLD: ${RETRIEVAL_PRIMING_RELEVANCE_THRESHOLD:-}
+      RETRIEVAL_PRIMING_MAX_RESULTS: ${RETRIEVAL_PRIMING_MAX_RESULTS:-}
+      RETRIEVAL_PRIMING_RECURRENCE_WEIGHT: ${RETRIEVAL_PRIMING_RECURRENCE_WEIGHT:-}
+      RETRIEVAL_PRIMING_FRESHNESS_SLOTS: ${RETRIEVAL_PRIMING_FRESHNESS_SLOTS:-}
+      RETRIEVAL_PRIMING_FRESHNESS_WINDOW_DAYS: ${RETRIEVAL_PRIMING_FRESHNESS_WINDOW_DAYS:-}
       # T02: selects the embedding arm (model-keyed Qdrant collection).
       # De-facto app default is qwen3-embedding:4b (2560-dim, skills__qwen3-embedding-4b).
       # Override to nomic-embed-text (768-dim, skills__nomic-embed-text) only for the legacy arm.
