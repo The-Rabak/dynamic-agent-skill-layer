@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use retrieval::SkillRetriever;
+use retrieval::{RetrievalIntent, SkillRetriever};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -102,7 +102,11 @@ impl FindSkillTool {
     }
 
     pub async fn invoke(&self, request: FindSkillRequest) -> FindSkillResponse {
-        let outcome = self.retriever.retrieve(&request.prompt, None).await;
+        // find_skill is always mid-session task retrieval (never SessionStart priming).
+        let outcome = self
+            .retriever
+            .retrieve(&request.prompt, None, RetrievalIntent::Task)
+            .await;
 
         if outcome.is_degraded() {
             return FindSkillResponse {
@@ -172,7 +176,7 @@ mod tests {
 
     use async_trait::async_trait;
     use domain::{DomainId, LifecycleStatus, ScopeType, ScoredSkill, Skill, SkillStatus};
-    use retrieval::{RetrievalOutcome, RetrievedSkill, SkillRetriever};
+    use retrieval::{RetrievalIntent, RetrievalOutcome, RetrievedSkill, SkillRetriever};
 
     use super::{FindSkillRequest, FindSkillTool};
 
@@ -187,7 +191,12 @@ mod tests {
 
     #[async_trait]
     impl SkillRetriever for TwoSkillStub {
-        async fn retrieve(&self, _prompt: &str, _repo_path: Option<&str>) -> RetrievalOutcome {
+        async fn retrieve(
+            &self,
+            _prompt: &str,
+            _repo_path: Option<&str>,
+            _intent: RetrievalIntent,
+        ) -> RetrievalOutcome {
             RetrievalOutcome {
                 skills: vec![
                     RetrievedSkill {

@@ -24,8 +24,8 @@ pub use graph_search::{GraphHit, SubunitProjection, search_graph};
 pub use hybrid::{HybridCandidate, HybridCandidateSource, HybridQueryError};
 pub use orchestrator::{
     BoolFlag, CommunityBoostMode, DenseViewsMetadata, RescueCue, RetrievalBackend, RetrievalConfig,
-    RetrievalOrchestrator, RetrievalOutcome, RetrievalSnapshot, RetrievedSkill, RetrievedSubunit,
-    SeededSkill, SkillRetriever,
+    RetrievalIntent, RetrievalOrchestrator, RetrievalOutcome, RetrievalSnapshot, RetrievedSkill,
+    RetrievedSubunit, SeededSkill, SkillRetriever,
 };
 pub use scope_resolution::{DualScopeResolver, ScopeResolutionOutcome};
 pub use scoring::{ScoreComponents, ScoringWeights, UsagePriorInputs, score_eq3, usage_prior};

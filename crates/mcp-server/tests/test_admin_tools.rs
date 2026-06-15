@@ -21,7 +21,7 @@ use infrastructure::{
     LiveGraphSnapshotMutation, PostgresAdapter, PostgresConfig, RebuildCoordinator, RebuildError,
 };
 use mcp_server::{McpServerApp, protocol::JsonRpcRequest};
-use retrieval::{RetrievalOutcome, SkillRetriever};
+use retrieval::{RetrievalIntent, RetrievalOutcome, SkillRetriever};
 use serde_json::json;
 use sqlx::Executor;
 use tokio::sync::Semaphore;
@@ -32,7 +32,12 @@ struct EmptyRetriever;
 
 #[async_trait]
 impl SkillRetriever for EmptyRetriever {
-    async fn retrieve(&self, _prompt: &str, _repo_path: Option<&str>) -> RetrievalOutcome {
+    async fn retrieve(
+        &self,
+        _prompt: &str,
+        _repo_path: Option<&str>,
+        _intent: RetrievalIntent,
+    ) -> RetrievalOutcome {
         RetrievalOutcome {
             skills: Vec::new(),
             rescue_pool: Vec::new(),

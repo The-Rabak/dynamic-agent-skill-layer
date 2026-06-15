@@ -3,7 +3,7 @@ use std::{collections::BTreeMap, sync::Arc, time::Instant};
 use compiler::{
     CompilerHighlightInput, CompilerRescueCueInput, CompilerSkillInput, TemplateOnlyCompiler,
 };
-use retrieval::{RetrievalOutcome, SkillRetriever};
+use retrieval::{RetrievalIntent, RetrievalOutcome, SkillRetriever};
 use serde::{Deserialize, Serialize};
 
 use crate::state::{CachedContext, CompiledContextCache, SessionSuppressionState};
@@ -35,6 +35,10 @@ pub enum TriggerKind {
     /// Post-compaction re-inject: bypasses session suppression for this single call
     /// so the agent receives fresh context after Claude Code summarizes the conversation.
     Compact,
+    /// SessionStart priming — routes retrieval to `RetrievalIntent::Priming` so the
+    /// orchestrator can apply intent-appropriate candidate selection in later T12 units.
+    /// Session suppression semantics are unchanged by this trigger.
+    SessionStart,
     /// Any unrecognized trigger value. Treated as an ordinary call — no bypass.
     #[serde(other)]
     Other,
@@ -128,9 +132,18 @@ impl CompileContextTool {
             return (response, None);
         }
 
+        // Derive retrieval intent from the trigger. SessionStart priming is labelled
+        // `Priming` so the orchestrator can apply intent-appropriate behavior in later
+        // T12 units. All other triggers (Compact, Other, None) remain Task — their
+        // suppression-bypass and other semantics are independent of retrieval intent.
+        let intent = match request.trigger {
+            Some(TriggerKind::SessionStart) => RetrievalIntent::Priming,
+            _ => RetrievalIntent::Task,
+        };
+
         let outcome = self
             .retriever
-            .retrieve(&request.prompt, Some(request.repo_path.as_str()))
+            .retrieve(&request.prompt, Some(request.repo_path.as_str()), intent)
             .await;
 
         let response = self
@@ -358,5 +371,193 @@ impl CompileContextTool {
 
         self.compiler
             .compile_with_rescue(prompt, &compiled_skills, &rescue_pool)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{Arc, Mutex};
+
+    use async_trait::async_trait;
+    use retrieval::{RetrievalIntent, RetrievalOutcome, SkillRetriever};
+
+    use super::TriggerKind;
+
+    // ── T12 Unit 1: TriggerKind::SessionStart serde round-trip ─────────────
+
+    /// Proves `"session_start"` deserializes to `TriggerKind::SessionStart`.
+    #[test]
+    fn trigger_kind_session_start_deserializes() {
+        let parsed: TriggerKind = serde_json::from_str("\"session_start\"").unwrap();
+        assert_eq!(
+            parsed,
+            TriggerKind::SessionStart,
+            "'session_start' must deserialize to TriggerKind::SessionStart"
+        );
+    }
+
+    /// Proves `"compact"` still deserializes to `TriggerKind::Compact` (regression guard).
+    #[test]
+    fn trigger_kind_compact_still_deserializes() {
+        let parsed: TriggerKind = serde_json::from_str("\"compact\"").unwrap();
+        assert_eq!(
+            parsed,
+            TriggerKind::Compact,
+            "'compact' must still deserialize to TriggerKind::Compact"
+        );
+    }
+
+    /// Proves an unknown trigger string deserializes to `TriggerKind::Other` (catchall guard).
+    #[test]
+    fn trigger_kind_unknown_deserializes_to_other() {
+        let parsed: TriggerKind = serde_json::from_str("\"frobnicate\"").unwrap();
+        assert_eq!(
+            parsed,
+            TriggerKind::Other,
+            "unknown trigger string must deserialize to TriggerKind::Other"
+        );
+    }
+
+    // ── T12 Unit 1: intent-routing through invoke_and_capture_outcome ───────
+
+    /// Intent-capturing test retriever: records the `RetrievalIntent` it was called with.
+    struct IntentCapturingRetriever {
+        captured_intent: Arc<Mutex<Option<RetrievalIntent>>>,
+    }
+
+    impl IntentCapturingRetriever {
+        fn new() -> (Arc<Mutex<Option<RetrievalIntent>>>, Arc<Self>) {
+            let captured = Arc::new(Mutex::new(None));
+            let retriever = Arc::new(Self {
+                captured_intent: captured.clone(),
+            });
+            (captured, retriever)
+        }
+    }
+
+    #[async_trait]
+    impl SkillRetriever for IntentCapturingRetriever {
+        async fn retrieve(
+            &self,
+            _prompt: &str,
+            _repo_path: Option<&str>,
+            intent: RetrievalIntent,
+        ) -> RetrievalOutcome {
+            *self.captured_intent.lock().unwrap() = Some(intent);
+            RetrievalOutcome {
+                skills: Vec::new(),
+                rescue_pool: Vec::new(),
+                degraded_scopes: Vec::new(),
+                reason_codes: Vec::new(),
+                health: Default::default(),
+                scopes_considered: vec!["global".to_owned()],
+                graph_version: 1,
+                latency_ms: 0,
+            }
+        }
+
+        fn current_graph_version(&self) -> i64 {
+            1
+        }
+
+        fn configured_scopes(&self) -> Vec<String> {
+            vec!["global".to_owned()]
+        }
+    }
+
+    fn make_tool(retriever: Arc<dyn SkillRetriever>) -> super::CompileContextTool {
+        use crate::state::{CompiledContextCache, SessionSuppressionState};
+        use compiler::TemplateOnlyCompiler;
+
+        super::CompileContextTool::new(
+            retriever,
+            TemplateOnlyCompiler::default(),
+            SessionSuppressionState::default(),
+            CompiledContextCache::default(),
+        )
+    }
+
+    /// T12 Unit 1: `trigger: Some(TriggerKind::SessionStart)` routes to `Priming` intent.
+    #[tokio::test]
+    async fn session_start_trigger_routes_to_priming_intent() {
+        let (captured, retriever) = IntentCapturingRetriever::new();
+        let tool = make_tool(retriever as Arc<dyn SkillRetriever>);
+
+        tool.invoke(super::CompileContextRequest {
+            prompt: "start session".to_owned(),
+            session_id: "s1".to_owned(),
+            repo_path: "/repo".to_owned(),
+            trigger: Some(TriggerKind::SessionStart),
+        })
+        .await;
+
+        assert_eq!(
+            *captured.lock().unwrap(),
+            Some(RetrievalIntent::Priming),
+            "SessionStart trigger must route to RetrievalIntent::Priming"
+        );
+    }
+
+    /// T12 Unit 1: `trigger: None` routes to `Task` intent.
+    #[tokio::test]
+    async fn no_trigger_routes_to_task_intent() {
+        let (captured, retriever) = IntentCapturingRetriever::new();
+        let tool = make_tool(retriever as Arc<dyn SkillRetriever>);
+
+        tool.invoke(super::CompileContextRequest {
+            prompt: "task prompt".to_owned(),
+            session_id: "s2".to_owned(),
+            repo_path: "/repo".to_owned(),
+            trigger: None,
+        })
+        .await;
+
+        assert_eq!(
+            *captured.lock().unwrap(),
+            Some(RetrievalIntent::Task),
+            "trigger: None must route to RetrievalIntent::Task"
+        );
+    }
+
+    /// T12 Unit 1: `trigger: Some(TriggerKind::Compact)` routes to `Task` intent.
+    #[tokio::test]
+    async fn compact_trigger_routes_to_task_intent() {
+        let (captured, retriever) = IntentCapturingRetriever::new();
+        let tool = make_tool(retriever as Arc<dyn SkillRetriever>);
+
+        tool.invoke(super::CompileContextRequest {
+            prompt: "compact prompt".to_owned(),
+            session_id: "s3".to_owned(),
+            repo_path: "/repo".to_owned(),
+            trigger: Some(TriggerKind::Compact),
+        })
+        .await;
+
+        assert_eq!(
+            *captured.lock().unwrap(),
+            Some(RetrievalIntent::Task),
+            "Compact trigger must route to RetrievalIntent::Task (Compact = suppression-bypass, not Priming)"
+        );
+    }
+
+    /// T12 Unit 1: `trigger: Some(TriggerKind::Other)` routes to `Task` intent.
+    #[tokio::test]
+    async fn other_trigger_routes_to_task_intent() {
+        let (captured, retriever) = IntentCapturingRetriever::new();
+        let tool = make_tool(retriever as Arc<dyn SkillRetriever>);
+
+        tool.invoke(super::CompileContextRequest {
+            prompt: "other trigger".to_owned(),
+            session_id: "s4".to_owned(),
+            repo_path: "/repo".to_owned(),
+            trigger: Some(TriggerKind::Other),
+        })
+        .await;
+
+        assert_eq!(
+            *captured.lock().unwrap(),
+            Some(RetrievalIntent::Task),
+            "Other trigger must route to RetrievalIntent::Task (unknown triggers are ordinary calls)"
+        );
     }
 }

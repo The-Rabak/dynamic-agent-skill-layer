@@ -187,6 +187,26 @@ impl std::str::FromStr for RetrievalBackend {
     }
 }
 
+/// Labels the purpose of a retrieval call so the orchestrator can apply
+/// intent-appropriate candidate selection and ranking.
+///
+/// This type is a typed seam introduced in T12 Unit 1. In this unit `Priming`
+/// runs the identical code path as `Task`; later T12 units branch on intent to
+/// apply Priming-specific behavior (e.g. broader candidate pool, relaxed floor).
+///
+/// Threaded via the `SkillRetriever::retrieve` signature so callers declare
+/// intent once at the call site; the orchestrator owns the dispatch decision.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum RetrievalIntent {
+    /// Mid-session task retrieval (`compile_context` / `find_skill`). Current
+    /// behavior; the floor, ranker, and single-view embed are all unchanged.
+    #[default]
+    Task,
+    /// SessionStart priming. Same behavior as `Task` in this unit (pure seam);
+    /// Priming-specific behavior is added in later T12 units.
+    Priming,
+}
+
 #[derive(Debug, Clone)]
 pub struct RetrievalSnapshot {
     pub graph_version: i64,
@@ -544,7 +564,17 @@ where
 
 #[async_trait]
 pub trait SkillRetriever: Send + Sync {
-    async fn retrieve(&self, prompt: &str, repo_path: Option<&str>) -> RetrievalOutcome;
+    /// Retrieves the top matching skills for `prompt` in the given repository scope.
+    ///
+    /// `intent` classifies the caller's purpose (`Task` for mid-session queries,
+    /// `Priming` for SessionStart pre-loading). In T12 Unit 1 both intents run the
+    /// same code path; later T12 units branch on intent for Priming-specific behavior.
+    async fn retrieve(
+        &self,
+        prompt: &str,
+        repo_path: Option<&str>,
+        intent: RetrievalIntent,
+    ) -> RetrievalOutcome;
     fn current_graph_version(&self) -> i64;
     fn configured_scopes(&self) -> Vec<String>;
 }
@@ -955,7 +985,13 @@ impl<E> SkillRetriever for RetrievalOrchestrator<E>
 where
     E: EmbeddingService + Send + Sync + 'static,
 {
-    async fn retrieve(&self, prompt: &str, repo_path: Option<&str>) -> RetrievalOutcome {
+    async fn retrieve(
+        &self,
+        prompt: &str,
+        repo_path: Option<&str>,
+        _intent: RetrievalIntent,
+        // T12 Unit 1: seam only — Priming runs the identical path; later units branch here.
+    ) -> RetrievalOutcome {
         let started = Instant::now();
         // Load the swappable read model exactly once for this call so the graph
         // and its version can never skew, even if a `swap_graph` lands mid-call
@@ -1543,7 +1579,9 @@ mod tests {
                         "GraphSnapshot.version must mirror the inner snapshot version"
                     );
 
-                    let outcome = orchestrator.retrieve("probe", None).await;
+                    let outcome = orchestrator
+                        .retrieve("probe", None, RetrievalIntent::Task)
+                        .await;
                     let reported = outcome.graph_version;
                     assert!(
                         (1..=200).contains(&reported),
@@ -1692,7 +1730,9 @@ mod tests {
         // Drive the breaker to its threshold — each of these is a normal embed
         // failure (not circuit-open yet).
         for i in 1..=THRESHOLD {
-            let outcome = orchestrator.retrieve("probe", None).await;
+            let outcome = orchestrator
+                .retrieve("probe", None, RetrievalIntent::Task)
+                .await;
             assert!(
                 outcome.is_degraded(),
                 "call {i}: outcome must be degraded while breaker is still closed"
@@ -1717,7 +1757,9 @@ mod tests {
         );
 
         // Breaker is now open.  The next call must NOT reach the embedder.
-        let open_outcome = orchestrator.retrieve("probe-after-open", None).await;
+        let open_outcome = orchestrator
+            .retrieve("probe-after-open", None, RetrievalIntent::Task)
+            .await;
         assert!(
             open_outcome.is_degraded(),
             "open-breaker call must produce a degraded outcome (not silent empty success)"
@@ -1779,7 +1821,9 @@ mod tests {
         );
 
         // Probe call — half-open allows one request.
-        let probe_outcome = orchestrator.retrieve("probe", None).await;
+        let probe_outcome = orchestrator
+            .retrieve("probe", None, RetrievalIntent::Task)
+            .await;
         // An empty snapshot (version=0, no skills) returns not-degraded (all
         // scopes resolved, embed succeeded, just no results).  Verify the
         // breaker closed.
@@ -1999,7 +2043,9 @@ mod tests {
         )
         .with_hybrid_candidate_source(source);
 
-        let outcome = orchestrator.retrieve("query alpha", None).await;
+        let outcome = orchestrator
+            .retrieve("query alpha", None, RetrievalIntent::Task)
+            .await;
 
         assert!(
             !outcome.is_degraded(),
@@ -2062,7 +2108,9 @@ mod tests {
         )
         .with_hybrid_candidate_source(source);
 
-        let outcome = orchestrator.retrieve("query alpha", None).await;
+        let outcome = orchestrator
+            .retrieve("query alpha", None, RetrievalIntent::Task)
+            .await;
 
         assert!(
             outcome.skills.is_empty(),
@@ -2097,7 +2145,9 @@ mod tests {
         )
         .with_hybrid_candidate_source(source);
 
-        let outcome = orchestrator.retrieve("query", None).await;
+        let outcome = orchestrator
+            .retrieve("query", None, RetrievalIntent::Task)
+            .await;
 
         assert!(
             outcome.is_degraded(),
@@ -2246,7 +2296,9 @@ mod tests {
             config,
         );
 
-        let outcome = orchestrator.retrieve("query", None).await;
+        let outcome = orchestrator
+            .retrieve("query", None, RetrievalIntent::Task)
+            .await;
 
         assert!(
             outcome.is_degraded(),
@@ -2258,6 +2310,73 @@ mod tests {
                 .contains(&"qdrant_hybrid_unavailable".to_owned()),
             "absent source must produce qdrant_hybrid_unavailable reason code; got: {:?}",
             outcome.reason_codes
+        );
+    }
+
+    // ── T12 Unit 1: RetrievalIntent seam tests ──────────────────────────────
+
+    /// T12 Unit 1 guard: `RetrievalIntent::default()` is `Task` — the existing
+    /// call sites remain on the Task path with no behavior change.
+    #[test]
+    fn retrieval_intent_default_is_task() {
+        assert_eq!(
+            RetrievalIntent::default(),
+            RetrievalIntent::Task,
+            "default intent must be Task so all existing call sites retain current behavior"
+        );
+    }
+
+    /// T12 Unit 1 seam guard: calling `retrieve(.., RetrievalIntent::Priming)` on a
+    /// snapshot-dense orchestrator returns an outcome equal to `retrieve(.., RetrievalIntent::Task)`
+    /// for the same snapshot and prompt — the Priming variant runs the identical code path
+    /// in Unit 1 (pure seam; behavioral differentiation is added in later T12 units).
+    ///
+    /// Compares `skills` ids + scores and `reason_codes` because those are the
+    /// semantically meaningful fields; latency_ms is excluded (wall-clock noise).
+    #[tokio::test]
+    async fn priming_intent_produces_identical_outcome_to_task_intent() {
+        let orchestrator = RetrievalOrchestrator::new(
+            Arc::new(ConstantEmbeddingService),
+            versioned_snapshot(3),
+            RetrievalConfig::default(),
+        );
+
+        let task_outcome = orchestrator
+            .retrieve("probe", None, RetrievalIntent::Task)
+            .await;
+        let priming_outcome = orchestrator
+            .retrieve("probe", None, RetrievalIntent::Priming)
+            .await;
+
+        // Skill ids and scores must be identical (byte-identical seam).
+        let task_ids: Vec<_> = task_outcome
+            .skills
+            .iter()
+            .map(|s| {
+                (
+                    s.scored_skill.skill.id.as_str().to_owned(),
+                    s.scored_skill.score.to_bits(),
+                )
+            })
+            .collect();
+        let priming_ids: Vec<_> = priming_outcome
+            .skills
+            .iter()
+            .map(|s| {
+                (
+                    s.scored_skill.skill.id.as_str().to_owned(),
+                    s.scored_skill.score.to_bits(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            task_ids, priming_ids,
+            "T12 Unit 1 seam: Priming must produce the same skill ids+scores as Task"
+        );
+
+        assert_eq!(
+            task_outcome.reason_codes, priming_outcome.reason_codes,
+            "T12 Unit 1 seam: Priming must produce the same reason_codes as Task"
         );
     }
 }

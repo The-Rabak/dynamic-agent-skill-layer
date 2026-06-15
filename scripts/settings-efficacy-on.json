@@ -15,7 +15,8 @@
         "arguments": {
           "prompt": "{{initial_prompt}}",
           "session_id": "{{session_id}}",
-          "repo_path": "{{repo_path}}"
+          "repo_path": "{{repo_path}}",
+          "trigger": "session_start"
         },
         "result_policy": {
           "inject_additional_context_on": ["ok", "degraded"],

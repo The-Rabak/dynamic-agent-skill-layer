@@ -2203,7 +2203,7 @@ mod readiness_short_circuit_tests {
     use async_trait::async_trait;
     use domain::{DomainId, LifecycleStatus, ScopeType, ScoredSkill, Skill, SkillStatus};
     use infrastructure::ReadinessHandle;
-    use retrieval::{RetrievalOutcome, RetrievedSkill, SkillRetriever};
+    use retrieval::{RetrievalIntent, RetrievalOutcome, RetrievedSkill, SkillRetriever};
 
     use super::{
         McpServerApp,
@@ -2237,7 +2237,12 @@ mod readiness_short_circuit_tests {
 
     #[async_trait]
     impl SkillRetriever for EmbedCountingRetriever {
-        async fn retrieve(&self, _prompt: &str, _repo_path: Option<&str>) -> RetrievalOutcome {
+        async fn retrieve(
+            &self,
+            _prompt: &str,
+            _repo_path: Option<&str>,
+            _intent: RetrievalIntent,
+        ) -> RetrievalOutcome {
             *self.call_count.lock().unwrap() += 1;
             RetrievalOutcome {
                 skills: vec![RetrievedSkill {
