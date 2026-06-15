@@ -33,6 +33,7 @@ use admin::tools::{
     RebuildGraphStatusResponse,
 };
 use async_trait::async_trait;
+use chrono::Utc;
 use compiler::TemplateOnlyCompiler;
 use domain::{EmbeddingService, ScopeResolver};
 #[cfg(any(test, feature = "test-utils"))]
@@ -1882,6 +1883,21 @@ async fn build_graph_from_pg(
         })
         .await?;
 
+    // T12 Unit 3: build the skill_age_days map for freshness-slot injection.
+    //
+    // `created_at` is the DB row's real TIMESTAMPTZ (NOT NULL DEFAULT NOW());
+    // no stub or placeholder — every row carries a genuine timestamp from migration 001.
+    // `age_days` is the whole days elapsed since creation, floored at 0 to guard
+    // against system-clock skew returning a tiny negative duration.
+    let now_utc = Utc::now();
+    let skill_age_days: std::collections::HashMap<String, u32> = skills
+        .iter()
+        .map(|record| {
+            let age_days = (now_utc - record.created_at).num_days().max(0) as u32;
+            (record.skill_id.clone(), age_days)
+        })
+        .collect();
+
     let seeded_skills: Vec<retrieval::SeededSkill> = skills
         .into_iter()
         .zip(embeddings.into_iter())
@@ -2083,7 +2099,12 @@ async fn build_graph_from_pg(
     Ok(RetrievalSnapshot::new(seeded_skills, graph_version)
         .with_community_centroids(community_centroids)
         .with_bm25_index(bm25_index)
-        .with_dense_views_metadata(dense_views_metadata))
+        .with_dense_views_metadata(dense_views_metadata)
+        // T12 Unit 3: attach real freshness data computed from skills.created_at
+        // (DB column from migration 001). The priming ranker uses this to inject
+        // recently-added skills into the session-start prime without broadening
+        // the candidate pool.
+        .with_skill_age_days(skill_age_days))
 }
 
 /// Computes the BLAKE3 hash of a raw prompt string for safe storage.

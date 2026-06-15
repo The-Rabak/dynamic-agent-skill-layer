@@ -183,6 +183,11 @@ pub struct PersistedGraphSkillRecord {
     pub requires: Vec<String>,
     /// Outcomes or artifacts produced by following this skill (migration 009). Empty when NULL.
     pub produces: Vec<String>,
+    /// Timestamp when the skills row was first created (migration 001 DEFAULT NOW()).
+    /// Used by the retrieval layer to compute age_days for freshness-slot injection
+    /// (T12 Unit 3 `select_priming_prime`). Always present — the column has a NOT NULL
+    /// DEFAULT NOW() constraint so every row carries a real timestamp.
+    pub created_at: DateTime<Utc>,
 }
 
 /// Persisted community projection used by live graph read adapters.
@@ -246,6 +251,7 @@ impl PostgresGraphSnapshotStore {
                 Option<Vec<String>>, // invariants
                 Option<Vec<String>>, // requires
                 Option<Vec<String>>, // produces
+                DateTime<Utc>,       // created_at (T12 Unit 3: freshness age_days)
             ),
         >(
             r#"
@@ -267,7 +273,8 @@ impl PostgresGraphSnapshotStore {
                 skills.tools,
                 skills.invariants,
                 skills.requires,
-                skills.produces
+                skills.produces,
+                skills.created_at
             FROM skills
             LEFT JOIN community_skills
                 ON community_skills.skill_id = skills.id
@@ -277,7 +284,8 @@ impl PostgresGraphSnapshotStore {
             GROUP BY skills.id, skills.name, skills.description,
                      skills.tags, skills.source_paths, skills.scope,
                      skills.use_when, skills.avoid_when, skills.artifacts,
-                     skills.tools, skills.invariants, skills.requires, skills.produces
+                     skills.tools, skills.invariants, skills.requires, skills.produces,
+                     skills.created_at
             ORDER BY skills.id
             "#,
         )
@@ -335,6 +343,7 @@ impl PostgresGraphSnapshotStore {
                     invariants,
                     requires,
                     produces,
+                    created_at,
                 )| {
                     PersistedGraphSkillRecord {
                         subunits: subunits_by_skill.remove(&skill_id).unwrap_or_default(),
@@ -354,6 +363,7 @@ impl PostgresGraphSnapshotStore {
                         invariants: invariants.unwrap_or_default(),
                         requires: requires.unwrap_or_default(),
                         produces: produces.unwrap_or_default(),
+                        created_at,
                     }
                 },
             )

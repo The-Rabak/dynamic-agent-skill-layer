@@ -21,6 +21,7 @@ path = "tests/test_compile_context.rs"
 admin = { path = "../admin" }
 axum = "0.8.6"
 async-trait = "0.1.89"
+chrono = { version = "0.4.42", features = ["clock"] }
 compiler = { path = "../compiler" }
 dashmap = "6.1.0"
 domain = { path = "../domain" }
@@ -40,7 +41,6 @@ uuid = { version = "1.18.1", features = ["v7"] }
 test-utils = ["infrastructure/test-utils", "admin/test-utils", "session-extractor/test-utils"]
 
 [dev-dependencies]
-chrono = { version = "0.4.42", features = ["clock"] }
 criterion = { version = "0.5.1", features = ["async_tokio"] }
 graph-builder = { path = "../graph-builder", features = ["test-utils"] }
 infrastructure = { path = "../infrastructure", features = ["test-utils"] }

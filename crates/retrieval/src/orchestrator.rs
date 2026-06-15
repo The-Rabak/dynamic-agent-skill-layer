@@ -22,6 +22,7 @@ use crate::{
     },
     fusion::{ScopeRanking, weighted_reciprocal_rank_fusion},
     hybrid::{HybridCandidateSource, HybridQueryError},
+    priming_rank::{PrimingRankConfig, select_priming_prime},
     query_segments,
     scope_resolution::DualScopeResolver,
     scoring::ScoringWeights,
@@ -237,6 +238,20 @@ pub struct RetrievalSnapshot {
     /// test snapshots that do not build the views. Consulted by the health endpoint to
     /// surface view names, embedding dim, and skill count without new DB columns.
     pub dense_views_metadata: DenseViewsMetadata,
+    /// T12 Unit 3: Stable skill id → whole days since `skills.created_at`.
+    ///
+    /// Used by `select_priming_prime` to identify "fresh" skills (age ≤
+    /// `priming_freshness_window_days`) eligible for freshness slot injection.
+    ///
+    /// Populated by `build_graph_from_pg` at snapshot construction time. Default
+    /// **empty** from `RetrievalSnapshot::new` so that cold-start snapshots and
+    /// test snapshots carry no freshness data — zero behavior change for every
+    /// existing test. An unknown skill (not in this map) is never treated as fresh.
+    ///
+    /// NOTE: the corpus was rebuilt in one go so wall-clock `created_at` may be
+    /// near-uniform (all skills appear "fresh" together). This is an honest measured
+    /// outcome; the Unit 4 measurement will quantify the impact.
+    pub skill_age_days: HashMap<String, u32>,
 }
 
 impl RetrievalSnapshot {
@@ -256,6 +271,7 @@ impl RetrievalSnapshot {
             bm25_index: None,
             skill_id_to_index,
             dense_views_metadata: DenseViewsMetadata::default(),
+            skill_age_days: HashMap::new(),
         }
     }
 
@@ -285,6 +301,18 @@ impl RetrievalSnapshot {
     /// the dense views can skip this call; `dense_views_metadata` defaults to empty.
     pub fn with_dense_views_metadata(mut self, metadata: DenseViewsMetadata) -> Self {
         self.dense_views_metadata = metadata;
+        self
+    }
+
+    /// Attaches T12 Unit 3 skill age data (builder style).
+    ///
+    /// Maps each skill's stable id to whole days since `skills.created_at`.
+    /// Called by `build_graph_from_pg` after the skills are loaded so the snapshot
+    /// carries freshness data from its first use. Tests that do not need freshness
+    /// injection can skip this call; `skill_age_days` defaults to empty (no freshness
+    /// data → no skill is considered fresh → zero behavior change for existing tests).
+    pub fn with_skill_age_days(mut self, age_map: HashMap<String, u32>) -> Self {
+        self.skill_age_days = age_map;
         self
     }
 }
@@ -397,6 +425,45 @@ pub struct RetrievalConfig {
     /// toggled needs no graph rebuild), but they are only READ by the scoring path
     /// when this flag is on.
     pub dense_views_enabled: bool,
+
+    // ── T12 Unit 3: Priming-scoped retrieval parameters ─────────────────────
+    // These fields are ONLY applied when `RetrievalIntent::Priming` is active.
+    // The `Task` path and the global `relevance_threshold` (0.48) are UNTOUCHED.
+    // Defaults are deliberately conservative so Unit 4 can measure each lever
+    // independently on the real server without silent behavior changes at Task sites.
+    /// Relevance floor applied to the Priming candidate pool.
+    ///
+    /// Lower than the Task floor (0.48) to surface more of the broad baseline gold
+    /// set while still discriminating — the negative-control permutation gate must
+    /// still crater. Default **0.30** (env `RETRIEVAL_PRIMING_RELEVANCE_THRESHOLD`).
+    pub priming_relevance_threshold: f32,
+
+    /// Maximum number of candidates to include in the SessionStart prime.
+    ///
+    /// Bounded prime size keeps the context injection tight. Default **5**
+    /// (env `RETRIEVAL_PRIMING_MAX_RESULTS`).
+    pub priming_max_results: usize,
+
+    /// Additive weight for the recurrence (usage prior) signal in the Priming rerank.
+    ///
+    /// Applied as `score + recurrence_weight * prior` where prior ≤ 0.15, so
+    /// the maximum boost is ≈ 0.015 with the default weight — relevance stays
+    /// dominant. Default **0.10** (env `RETRIEVAL_PRIMING_RECURRENCE_WEIGHT`).
+    pub priming_recurrence_weight: f32,
+
+    /// Number of bottom slots reserved for freshness injection in the Priming prime.
+    ///
+    /// A fresh skill ranked just outside the top-N may displace the lowest non-fresh
+    /// slot if a freshness slot is available. Default **1**
+    /// (env `RETRIEVAL_PRIMING_FRESHNESS_SLOTS`).
+    pub priming_freshness_slots: usize,
+
+    /// Age threshold in days for a skill to be considered "fresh" for slot injection.
+    ///
+    /// A skill whose `age_days ≤ priming_freshness_window_days` is eligible for a
+    /// freshness slot. Unknown age (missing from the snapshot map) → never fresh.
+    /// Default **30** (env `RETRIEVAL_PRIMING_FRESHNESS_WINDOW_DAYS`).
+    pub priming_freshness_window_days: u32,
 }
 
 impl Default for RetrievalConfig {
@@ -470,6 +537,22 @@ impl Default for RetrievalConfig {
             // Set RETRIEVAL_DENSE_VIEWS=false to restore byte-for-byte pre-T09 ranking.
             // See tests/e2e/reports/t11/T11-VALIDATION-REPORT.md.
             dense_views_enabled: true,
+
+            // T12 Unit 3: Priming-scoped parameters (conservative defaults).
+            // PRIMING-ONLY: the Task path and global floor (0.48) are UNTOUCHED.
+            //
+            // priming_relevance_threshold: lower than 0.48 so more of the baseline
+            // gold set surfaces, while still discriminating (permutation control must crater).
+            priming_relevance_threshold: 0.30,
+            // priming_max_results: bounded prime size (session context is precious).
+            priming_max_results: 5,
+            // priming_recurrence_weight: modest usage-prior additive boost.
+            // Max boost = 0.10 * 0.15 (max prior) = 0.015 — relevance stays dominant.
+            priming_recurrence_weight: 0.10,
+            // priming_freshness_slots: one reserved slot for the most-relevant fresh skill.
+            priming_freshness_slots: 1,
+            // priming_freshness_window_days: skills ≤30 days old are "fresh".
+            priming_freshness_window_days: 30,
         }
     }
 }
@@ -513,7 +596,12 @@ impl RetrievalConfig {
     /// `RETRIEVAL_GLOBAL_SCOPE_WEIGHT`, `RETRIEVAL_RRF_K`,
     /// `RETRIEVAL_COMMUNITY_BOOST_MODE` (`binary`|`centroid_affinity`|`off`),
     /// `RETRIEVAL_BACKEND` (`snapshot_dense`|`snapshot_hybrid`|`qdrant_hybrid`),
-    /// `RETRIEVAL_DENSE_VIEWS` (`0/false/off` or `1/true/on`, default `true` since T11).
+    /// `RETRIEVAL_DENSE_VIEWS` (`0/false/off` or `1/true/on`, default `true` since T11),
+    /// `RETRIEVAL_PRIMING_RELEVANCE_THRESHOLD` (f32, default 0.30),
+    /// `RETRIEVAL_PRIMING_MAX_RESULTS` (usize, default 5),
+    /// `RETRIEVAL_PRIMING_RECURRENCE_WEIGHT` (f32, default 0.10),
+    /// `RETRIEVAL_PRIMING_FRESHNESS_SLOTS` (usize, default 1),
+    /// `RETRIEVAL_PRIMING_FRESHNESS_WINDOW_DAYS` (u32, default 30).
     pub fn from_env() -> Self {
         let d = RetrievalConfig::default();
         Self {
@@ -538,6 +626,24 @@ impl RetrievalConfig {
             community_boost_mode: env_or("RETRIEVAL_COMMUNITY_BOOST_MODE", d.community_boost_mode),
             backend: env_or("RETRIEVAL_BACKEND", d.backend),
             dense_views_enabled: env_or("RETRIEVAL_DENSE_VIEWS", BoolFlag(d.dense_views_enabled)).0,
+            // T12 Unit 3: Priming-scoped overrides (fail-loud; absent → documented default).
+            priming_relevance_threshold: env_or(
+                "RETRIEVAL_PRIMING_RELEVANCE_THRESHOLD",
+                d.priming_relevance_threshold,
+            ),
+            priming_max_results: env_or("RETRIEVAL_PRIMING_MAX_RESULTS", d.priming_max_results),
+            priming_recurrence_weight: env_or(
+                "RETRIEVAL_PRIMING_RECURRENCE_WEIGHT",
+                d.priming_recurrence_weight,
+            ),
+            priming_freshness_slots: env_or(
+                "RETRIEVAL_PRIMING_FRESHNESS_SLOTS",
+                d.priming_freshness_slots,
+            ),
+            priming_freshness_window_days: env_or(
+                "RETRIEVAL_PRIMING_FRESHNESS_WINDOW_DAYS",
+                d.priming_freshness_window_days,
+            ),
             ..d
         }
     }
@@ -1121,9 +1227,25 @@ where
                     }
 
                     RetrievalIntent::Priming => {
+                        // T12 Unit 3: Build a Priming-scoped effective config that
+                        // overrides the relevance floor and max_results for the search
+                        // passes so `score_and_select_candidates` applies the lower
+                        // Priming floor. The Task path is UNTOUCHED (uses `&self.config`).
+                        //
+                        // Only `relevance_threshold` and `max_results` differ; all other
+                        // fields (scoring weights, rrf_k, candidate_limit, scope weights,
+                        // dense_views_enabled, etc.) are inherited from `self.config` so
+                        // the ranking logic is identical — only the floor changes.
+                        let priming_search_config = RetrievalConfig {
+                            relevance_threshold: self.config.priming_relevance_threshold,
+                            max_results: self.config.priming_max_results,
+                            ..self.config.clone()
+                        };
+
                         // Segment the prompt into topically-distinct views (pure string
                         // work, no LLM). For a short/single-paragraph prompt this yields
-                        // exactly 1 segment and the path is numerically identical to Task.
+                        // exactly 1 segment and the path is numerically identical to Task
+                        // (when floors also match).
                         let segments = query_segments::segment_prompt(
                             prompt,
                             query_segments::DEFAULT_MAX_SEGMENTS,
@@ -1153,8 +1275,8 @@ where
                                 }
                             };
 
-                        // One search pass per segment embedding (sequential — sub-ms
-                        // in-memory cosine work; no parallel task spawning needed).
+                        // One search pass per segment embedding, using the Priming
+                        // effective config (lower floor) for each pass.
                         // Arc::clone per pass is a cheap refcount bump.
                         let mut passes: Vec<(Vec<ScopedSearchResult>, Vec<ScopedSearchFailure>)> =
                             Vec::with_capacity(segment_embeddings.len());
@@ -1163,7 +1285,7 @@ where
                                 prompt,
                                 seg_embedding,
                                 graph.clone(),
-                                &self.config,
+                                &priming_search_config,
                                 &scopes,
                             )
                             .await;
@@ -1171,8 +1293,7 @@ where
                         }
 
                         // Merge by max score per (scope_id, skill_id) across passes.
-                        // A 1-segment batch produces exactly 1 pass → merge is a no-op
-                        // (byte-identical to the Task single-pass result).
+                        // A 1-segment batch produces exactly 1 pass → merge is a no-op.
                         merge_scope_results_max(passes, self.config.candidate_limit)
                     }
                 }
@@ -1203,20 +1324,64 @@ where
             })
             .collect();
 
+        // T12 Unit 3: choose the fusion bound and candidate selection strategy by intent.
+        //
+        // - Task: unchanged — plain top-`max_results` by RRF score.
+        // - Priming: uses `priming_max_results` as the bound, then delegates final
+        //   ordering/injection to `select_priming_prime` (recurrence + freshness).
+        //
+        // The `fusion_limit` upper-bounds how many entries RRF returns before
+        // selection. For Task it is ≥ `max_results`; for Priming ≥ `priming_max_results`.
+        // We take the larger of all-candidates-sum and the effective N so that
+        // `select_priming_prime` has the full pool to draw fresh candidates from.
+        let effective_max = match intent {
+            RetrievalIntent::Task => self.config.max_results,
+            RetrievalIntent::Priming => self.config.priming_max_results,
+        };
+
         let fusion_limit = scope_rankings
             .iter()
             .map(|ranking| ranking.candidates.len())
             .sum::<usize>()
-            .max(self.config.max_results);
+            .max(effective_max);
 
         let ranked_candidates =
             weighted_reciprocal_rank_fusion(&scope_rankings, self.config.rrf_k, fusion_limit);
 
-        let selected_candidates: Vec<_> = ranked_candidates
-            .iter()
-            .take(self.config.max_results)
-            .cloned()
-            .collect();
+        let selected_candidates: Vec<_> = match intent {
+            RetrievalIntent::Task => {
+                // Byte-identical to pre-T12: plain top-N by RRF score.
+                ranked_candidates
+                    .iter()
+                    .take(self.config.max_results)
+                    .cloned()
+                    .collect()
+            }
+            RetrievalIntent::Priming => {
+                // Priming: recurrence rerank + bounded freshness injection.
+                let priming_cfg = PrimingRankConfig {
+                    max_results: self.config.priming_max_results,
+                    recurrence_weight: self.config.priming_recurrence_weight,
+                    freshness_slots: self.config.priming_freshness_slots,
+                    freshness_window_days: self.config.priming_freshness_window_days,
+                };
+                let prior_of = |idx: usize| -> f32 {
+                    ranked_candidates
+                        .get(idx)
+                        .and_then(|c| graph.skills.get(c.skill_index))
+                        .map(|seeded| seeded.prior)
+                        .unwrap_or(0.0)
+                };
+                let age_days_of =
+                    |skill_id: &str| -> Option<u32> { graph.skill_age_days.get(skill_id).copied() };
+                let selected_indices =
+                    select_priming_prime(&ranked_candidates, prior_of, age_days_of, priming_cfg);
+                selected_indices
+                    .into_iter()
+                    .filter_map(|idx| ranked_candidates.get(idx).cloned())
+                    .collect()
+            }
+        };
         let selected_ids: HashSet<String> = selected_candidates
             .iter()
             .map(|candidate| candidate.skill_id.clone())
@@ -2506,25 +2671,49 @@ mod tests {
         )
     }
 
-    /// T12 Unit 2: Priming with a short single-segment prompt returns the same
-    /// outcome as Task (the single-view path is byte-identical for 1 segment).
+    /// T12 Unit 2 / Unit 3 single-segment no-divergence guard:
+    /// Priming with a short single-segment prompt and a config where BOTH the Task
+    /// floor and the Priming floor are set equal (0.1 test floor) produces the same
+    /// result as Task (byte-identical for 1 segment when floors match).
     ///
-    /// Uses `ConstantEmbeddingService` (same vector for every text) so that
-    /// segmentation of the short "probe" prompt yields exactly 1 segment and
-    /// the 1-segment merge is a no-op. This is the preserved Unit-1 invariant.
+    /// Uses `ConstantEmbeddingService` + the explicit keyword_snapshot so both arms
+    /// find the same skills at the same scores. The invariant is: with 1 segment,
+    /// the Priming merge is a no-op; with equal floors the only remaining difference
+    /// is max_results (set equal here too). This proves the single-segment path is
+    /// preserved even after Unit 3's floor branching.
+    ///
+    /// NOTE: the default config diverges Task/Priming on `versioned_snapshot(3)` because
+    /// eq3=0.45 < Task floor 0.48 but ≥ Priming floor 0.30. The divergence is correct
+    /// and is the whole point of Unit 3 (see `priming_lower_floor_surfaces_skill_below_task_threshold`).
+    /// This guard uses matching floors to prove the segment merge path has no bugs.
     #[tokio::test]
     async fn priming_single_segment_prompt_equals_task_outcome() {
+        // Equal floors + equal max_results → single-segment Priming == Task.
+        let config = RetrievalConfig {
+            scope_id: "global".to_owned(),
+            scope_type: domain::ScopeType::Global,
+            candidate_limit: 10,
+            max_results: 3,
+            relevance_threshold: 0.1,         // Task floor
+            priming_relevance_threshold: 0.1, // same Priming floor — no divergence
+            priming_max_results: 3,           // same max_results — no divergence
+            dense_views_enabled: false,
+            backend: RetrievalBackend::SnapshotDense,
+            ..RetrievalConfig::default()
+        };
+
         let orchestrator = RetrievalOrchestrator::new(
-            Arc::new(ConstantEmbeddingService),
-            versioned_snapshot(3),
-            RetrievalConfig::default(),
+            Arc::new(KeywordAwareEmbeddingService),
+            keyword_snapshot(),
+            config,
         );
 
+        // Short single-word prompt → 1 segment → merge is a no-op.
         let task_outcome = orchestrator
-            .retrieve("probe", None, RetrievalIntent::Task)
+            .retrieve("auth", None, RetrievalIntent::Task)
             .await;
         let priming_outcome = orchestrator
-            .retrieve("probe", None, RetrievalIntent::Priming)
+            .retrieve("auth", None, RetrievalIntent::Priming)
             .await;
 
         let task_ids: Vec<_> = task_outcome
@@ -2549,11 +2738,11 @@ mod tests {
             .collect();
         assert_eq!(
             task_ids, priming_ids,
-            "T12 Unit 2: single-segment Priming must equal Task (byte-identical single-view)"
+            "T12 Unit 2/3: single-segment Priming with equal floors must equal Task (byte-identical single-view merge)"
         );
         assert_eq!(
             task_outcome.reason_codes, priming_outcome.reason_codes,
-            "T12 Unit 2: Priming reason_codes must equal Task for short prompts"
+            "T12 Unit 2/3: Priming reason_codes must equal Task for short prompts with equal floors"
         );
     }
 
@@ -2662,6 +2851,240 @@ mod tests {
         }
     }
 
+    // ── T12 Unit 3: priming-scoped config, freshness snapshot, floor divergence ──
+
+    /// T12 Unit 3: `RetrievalConfig::default()` carries the correct defaults for
+    /// all five new priming-scoped fields introduced in Unit 3.
+    ///
+    /// These defaults are deliberately conservative so Unit 4 can measure each lever
+    /// independently on the real server: threshold 0.30 (lower floor), max_results 5
+    /// (small prime), recurrence_weight 0.10 (modest prior boost), freshness_slots 1
+    /// (single injection slot), freshness_window_days 30 (one month = "fresh").
+    #[test]
+    fn priming_config_defaults_are_conservative() {
+        let cfg = RetrievalConfig::default();
+        assert!(
+            (cfg.priming_relevance_threshold - 0.30).abs() < 1e-6,
+            "priming_relevance_threshold default must be 0.30; got {}",
+            cfg.priming_relevance_threshold
+        );
+        assert_eq!(
+            cfg.priming_max_results, 5,
+            "priming_max_results default must be 5"
+        );
+        assert!(
+            (cfg.priming_recurrence_weight - 0.10).abs() < 1e-6,
+            "priming_recurrence_weight default must be 0.10; got {}",
+            cfg.priming_recurrence_weight
+        );
+        assert_eq!(
+            cfg.priming_freshness_slots, 1,
+            "priming_freshness_slots default must be 1"
+        );
+        assert_eq!(
+            cfg.priming_freshness_window_days, 30,
+            "priming_freshness_window_days default must be 30"
+        );
+    }
+
+    /// T12 Unit 3: `RetrievalConfig::from_env()` parses all five priming-scoped fields
+    /// from their dedicated env vars (fail-loud; absent = default).
+    #[test]
+    fn priming_config_env_parses_all_five_fields() {
+        let _g1 = EnvVarGuard::set("RETRIEVAL_PRIMING_RELEVANCE_THRESHOLD", "0.20");
+        let _g2 = EnvVarGuard::set("RETRIEVAL_PRIMING_MAX_RESULTS", "7");
+        let _g3 = EnvVarGuard::set("RETRIEVAL_PRIMING_RECURRENCE_WEIGHT", "0.05");
+        let _g4 = EnvVarGuard::set("RETRIEVAL_PRIMING_FRESHNESS_SLOTS", "2");
+        let _g5 = EnvVarGuard::set("RETRIEVAL_PRIMING_FRESHNESS_WINDOW_DAYS", "60");
+
+        let cfg = RetrievalConfig::from_env();
+
+        assert!(
+            (cfg.priming_relevance_threshold - 0.20).abs() < 1e-6,
+            "RETRIEVAL_PRIMING_RELEVANCE_THRESHOLD=0.20 must parse; got {}",
+            cfg.priming_relevance_threshold
+        );
+        assert_eq!(
+            cfg.priming_max_results, 7,
+            "RETRIEVAL_PRIMING_MAX_RESULTS=7 must parse"
+        );
+        assert!(
+            (cfg.priming_recurrence_weight - 0.05).abs() < 1e-6,
+            "RETRIEVAL_PRIMING_RECURRENCE_WEIGHT=0.05 must parse; got {}",
+            cfg.priming_recurrence_weight
+        );
+        assert_eq!(
+            cfg.priming_freshness_slots, 2,
+            "RETRIEVAL_PRIMING_FRESHNESS_SLOTS=2 must parse"
+        );
+        assert_eq!(
+            cfg.priming_freshness_window_days, 60,
+            "RETRIEVAL_PRIMING_FRESHNESS_WINDOW_DAYS=60 must parse"
+        );
+    }
+
+    /// T12 Unit 3: When env vars are absent, `from_env()` uses the documented defaults
+    /// for all five priming-scoped fields (no silent env fallback to zero/wrong values).
+    #[test]
+    fn priming_config_env_absent_falls_back_to_defaults() {
+        let _g1 = EnvVarGuard::remove("RETRIEVAL_PRIMING_RELEVANCE_THRESHOLD");
+        let _g2 = EnvVarGuard::remove("RETRIEVAL_PRIMING_MAX_RESULTS");
+        let _g3 = EnvVarGuard::remove("RETRIEVAL_PRIMING_RECURRENCE_WEIGHT");
+        let _g4 = EnvVarGuard::remove("RETRIEVAL_PRIMING_FRESHNESS_SLOTS");
+        let _g5 = EnvVarGuard::remove("RETRIEVAL_PRIMING_FRESHNESS_WINDOW_DAYS");
+
+        let cfg = RetrievalConfig::from_env();
+        let default = RetrievalConfig::default();
+
+        assert!(
+            (cfg.priming_relevance_threshold - default.priming_relevance_threshold).abs() < 1e-6,
+            "absent env must use default priming_relevance_threshold"
+        );
+        assert_eq!(
+            cfg.priming_max_results, default.priming_max_results,
+            "absent env must use default priming_max_results"
+        );
+        assert_eq!(
+            cfg.priming_freshness_slots, default.priming_freshness_slots,
+            "absent env must use default priming_freshness_slots"
+        );
+        assert_eq!(
+            cfg.priming_freshness_window_days, default.priming_freshness_window_days,
+            "absent env must use default priming_freshness_window_days"
+        );
+    }
+
+    /// T12 Unit 3: `RetrievalSnapshot::with_skill_age_days` round-trip test.
+    ///
+    /// After calling the builder with a populated map, the snapshot must expose the
+    /// same map via `skill_age_days`. An empty map (default from `new`) must not
+    /// mark any skill as fresh — zero behavior change for existing tests and snapshots.
+    #[test]
+    fn retrieval_snapshot_with_skill_age_days_round_trip() {
+        let snapshot = RetrievalSnapshot::new(vec![], 1);
+        assert!(
+            snapshot.skill_age_days.is_empty(),
+            "default skill_age_days must be empty (no-freshness-data state)"
+        );
+
+        let mut age_map = std::collections::HashMap::new();
+        age_map.insert("skill-a".to_owned(), 5_u32);
+        age_map.insert("skill-b".to_owned(), 45_u32);
+
+        let snapshot_with_ages = snapshot.with_skill_age_days(age_map.clone());
+        assert_eq!(
+            snapshot_with_ages.skill_age_days, age_map,
+            "with_skill_age_days must attach the map to the snapshot"
+        );
+        assert_eq!(
+            snapshot_with_ages.skill_age_days.get("skill-a").copied(),
+            Some(5),
+            "skill-a must have age 5"
+        );
+        assert_eq!(
+            snapshot_with_ages.skill_age_days.get("skill-b").copied(),
+            Some(45),
+            "skill-b must have age 45"
+        );
+        assert_eq!(
+            snapshot_with_ages.skill_age_days.get("skill-x"),
+            None,
+            "unknown skill must return None"
+        );
+    }
+
+    /// T12 Unit 3 floor divergence: a skill that scores ~0.35 (above the 0.30
+    /// priming floor but below the 0.48 Task floor) is:
+    ///   - DROPPED by Task (0.35 < 0.48 → no_match)
+    ///   - SURFACED by Priming (0.35 ≥ 0.30 → appears in result)
+    ///
+    /// Proves that the priming effective config applies the lower floor to Priming
+    /// retrieval while the Task path keeps the calibrated 0.48 floor unchanged.
+    ///
+    /// Setup: single skill, embedding [1.0,0,0,0]. Query = [1.0,0,0,0].
+    /// cosine = 1.0.  eq3 = α * 1.0 = 0.45 (default α=0.45, β=0, γ=0).
+    /// 0.45 > 0.30 (priming floor) but 0.45 < 0.48 (task floor).
+    #[tokio::test]
+    async fn priming_lower_floor_surfaces_skill_below_task_threshold() {
+        use domain::{DomainId, LifecycleStatus, ScopeType, Skill, SkillStatus};
+
+        let skill = Skill {
+            id: DomainId::new_unchecked("mid-score-skill"),
+            name: "mid-score skill".to_owned(),
+            description: "scores between priming and task floors".to_owned(),
+            scope: ScopeType::Global,
+            status: SkillStatus::Ready,
+            lifecycle: LifecycleStatus::Active,
+            tags: vec![],
+            subunit_ids: vec![],
+            community_id: None,
+        };
+
+        let snapshot = RetrievalSnapshot::new(
+            vec![SeededSkill {
+                skill,
+                scope_id: "global".to_owned(),
+                source_paths: vec![],
+                // ConstantEmbeddingService returns [1,0,0,0]; cosine with [1,0,0,0] = 1.0
+                embedding: vec![1.0, 0.0, 0.0, 0.0],
+                subunits: vec![],
+                subunit_embeddings: vec![],
+                prior: 0.0,
+                community_boost: 0.0,
+                e_task_embedding: vec![],
+                e_needs_embedding: vec![],
+                e_negative_embedding: vec![],
+            }],
+            1,
+        );
+
+        // Config: Task floor = 0.48 (calibrated default), Priming floor = 0.30.
+        // eq3 with α=0.45, cosine=1.0, β=0, γ=0 → score = 0.45.
+        // 0.45 < 0.48 → Task drops it. 0.45 ≥ 0.30 → Priming surfaces it.
+        let config = RetrievalConfig {
+            scope_id: "global".to_owned(),
+            scope_type: domain::ScopeType::Global,
+            candidate_limit: 10,
+            max_results: 3,
+            relevance_threshold: 0.48,         // Task floor (calibrated)
+            priming_relevance_threshold: 0.30, // Priming floor
+            priming_max_results: 5,
+            dense_views_enabled: false, // single-view scoring keeps eq3 simple
+            backend: RetrievalBackend::SnapshotDense,
+            ..RetrievalConfig::default()
+        };
+
+        let orchestrator =
+            RetrievalOrchestrator::new(Arc::new(ConstantEmbeddingService), snapshot, config);
+
+        // Task: 0.45 < 0.48 floor → no results.
+        let task_outcome = orchestrator
+            .retrieve("probe", None, RetrievalIntent::Task)
+            .await;
+
+        // Priming: 0.45 ≥ 0.30 floor → skill surfaced.
+        let priming_outcome = orchestrator
+            .retrieve("probe", None, RetrievalIntent::Priming)
+            .await;
+
+        assert!(
+            task_outcome.skills.is_empty(),
+            "Task must drop the skill (eq3=0.45 < Task floor 0.48); got {} skills",
+            task_outcome.skills.len()
+        );
+        assert_eq!(
+            priming_outcome.skills.len(),
+            1,
+            "Priming must surface the skill (eq3=0.45 ≥ Priming floor 0.30); got {} skills",
+            priming_outcome.skills.len()
+        );
+        assert_eq!(
+            priming_outcome.skills[0].scored_skill.skill.id.as_str(),
+            "mid-score-skill",
+            "the surfaced skill must be mid-score-skill"
+        );
+    }
+
     /// T12 Unit 1 seam guard: calling `retrieve(.., RetrievalIntent::Priming)` on a
     /// snapshot-dense orchestrator returns an outcome equal to `retrieve(.., RetrievalIntent::Task)`
     /// for the same snapshot and prompt — the Priming variant runs the identical code path
@@ -2670,15 +3093,26 @@ mod tests {
     /// Compares `skills` ids + scores and `reason_codes` because those are the
     /// semantically meaningful fields; latency_ms is excluded (wall-clock noise).
     ///
-    /// NOTE (T12 Unit 2): This test uses `ConstantEmbeddingService` (all texts → same
-    /// vector) with a short "probe" prompt that produces 1 segment. The 1-segment
-    /// merge is a no-op, so Priming still equals Task. The test is still valid as
-    /// the single-segment invariant guard.
+    /// NOTE (T12 Unit 3): This test uses `ConstantEmbeddingService` + `versioned_snapshot`
+    /// where all skills have embedding [1,0,0,0]. With default floors (Task=0.48,
+    /// Priming=0.30) and eq3=0.45 (α*cosine=0.45*1.0), ALL skills score BELOW Task 0.48
+    /// and ABOVE Priming 0.30. The test scenario uses `versioned_snapshot(0)` = no skills,
+    /// so both Task and Priming return empty results — the equality holds.
+    ///
+    /// The "no-divergence guard" for the case where all candidates clear BOTH floors
+    /// is covered by `priming_single_segment_prompt_equals_task_outcome` above, which
+    /// uses a lower test-specific floor. See also `priming_lower_floor_surfaces_skill_below_task_threshold`.
     #[tokio::test]
     async fn priming_intent_produces_identical_outcome_to_task_intent() {
+        // Use an empty snapshot (version=0, no skills) so both Task and Priming
+        // return empty results — the equality holds regardless of floor differences.
+        // The `versioned_snapshot(3)` scenario diverges in Unit 3 (eq3=0.45 falls
+        // between the Task floor 0.48 and the Priming floor 0.30); that divergence
+        // is the intended Unit 3 behavior and is tested separately in
+        // `priming_lower_floor_surfaces_skill_below_task_threshold`.
         let orchestrator = RetrievalOrchestrator::new(
             Arc::new(ConstantEmbeddingService),
-            versioned_snapshot(3),
+            versioned_snapshot(0),
             RetrievalConfig::default(),
         );
 
@@ -2689,7 +3123,7 @@ mod tests {
             .retrieve("probe", None, RetrievalIntent::Priming)
             .await;
 
-        // Skill ids and scores must be identical (byte-identical seam).
+        // Both return empty skills and no reason_codes (empty snapshot = no_match-style outcome).
         let task_ids: Vec<_> = task_outcome
             .skills
             .iter()
@@ -2712,12 +3146,11 @@ mod tests {
             .collect();
         assert_eq!(
             task_ids, priming_ids,
-            "T12 Unit 1 seam: Priming must produce the same skill ids+scores as Task"
+            "T12 Unit 1 seam: empty snapshot → Priming and Task both return empty skills"
         );
-
         assert_eq!(
             task_outcome.reason_codes, priming_outcome.reason_codes,
-            "T12 Unit 1 seam: Priming must produce the same reason_codes as Task"
+            "T12 Unit 1 seam: empty snapshot → identical reason_codes"
         );
     }
 }

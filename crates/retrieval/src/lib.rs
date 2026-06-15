@@ -7,6 +7,7 @@ pub mod fusion;
 pub mod graph_search;
 pub mod hybrid;
 pub mod orchestrator;
+pub mod priming_rank;
 pub mod query_segments;
 pub mod scope_resolution;
 pub mod scoring;
@@ -28,6 +29,7 @@ pub use orchestrator::{
     RetrievalIntent, RetrievalOrchestrator, RetrievalOutcome, RetrievalSnapshot, RetrievedSkill,
     RetrievedSubunit, SeededSkill, SkillRetriever,
 };
+pub use priming_rank::{PrimingRankConfig, select_priming_prime};
 pub use scope_resolution::{DualScopeResolver, ScopeResolutionOutcome};
 pub use scoring::{ScoreComponents, ScoringWeights, UsagePriorInputs, score_eq3, usage_prior};
 pub use sparse::{build_skill_sparse_vectors, query_sparse_vector, term_to_sparse_index};
