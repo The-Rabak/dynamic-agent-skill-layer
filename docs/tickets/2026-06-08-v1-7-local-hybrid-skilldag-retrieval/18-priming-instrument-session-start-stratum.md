@@ -2,8 +2,8 @@
 ticket_id: T18
 title: Priming instrument — session-start stratum, pre-registered priming metrics, negative control
 kind: measurement
-status: ready
-status_note: "Ready: T10/T11/T20 all completed (T20 landed 2026-06-12); index already shows ready."
+status: completed
+status_note: "COMPLETED 2026-06-15 (session work-2026-06-14-224314-T18). Pre-registration LOCKED (owner go); stratum authored (22 session_start queries, 11 thin + 11 verbose, anti-circularity 0.024); negative-control gate PASSED (true coverage@3 0.0685 vs permuted 0.0321, craters 53.2% → INSTRUMENT-VALID); baseline measured through compile_context on the real server. Before-number for T12: set-coverage@3 = 0.0685 (thin 0.110 / verbose 0.027). Three T12 design constraints surfaced — see results note. Judge usefulness (secondary) deferred."
 plan_ref: docs/plans/2026-06-08-feat-v1-7-local-hybrid-skilldag-retrieval-plan.md
 tickets_ref: docs/tickets/2026-06-08-v1-7-local-hybrid-skilldag-retrieval/index.md
 architecture_ref: "explicit-handoff: parent plan ## Agent usefulness targets; T11 instrument-first discipline (tests/e2e/reports/t11/T11-VALIDATION-REPORT.md)"
@@ -110,17 +110,36 @@ corpus = 262, live `find_skill` over `http://127.0.0.1:3001/mcp` returns real ra
 
 ## Acceptance Criteria
 
-- [ ] Session-start stratum authored (≥20 queries from the 24 transcripts' opening turns, multi-gold
-      baseline sets labeled, anti-circularity verified via token-overlap probe ~0.3 band).
-- [ ] Verbose-opening-prompt substratum included (full-length realistic openings; the T14-smoke
-      `no_match` failure mode is reproduced and quantified by the baseline measurement).
-- [ ] Baseline prime measured through `compile_context` (the production surface), not `find_skill`.
-- [ ] Priming metrics + per-signal ROI thresholds + judge rubric recorded in this ticket BEFORE the
-      stratum was authored and BEFORE any measured run; later docs cite them verbatim.
-- [ ] Negative-control gate ran FIRST and cratered (wrong-scope prime coverage collapse); result
-      persisted with raw data.
-- [ ] Baseline prime measured on the real server on the new stratum; raw per-query artifacts persisted.
-- [ ] Instrument lives in the shared measurement lib home (T20), not a new one-off script family.
+- [x] Session-start stratum authored (22 queries from the 24 sessions' opening turns; multi-gold sets
+      labeled; anti-circularity token-overlap mean Jaccard 0.024 ≤0.3 band, 0 drops). [tighter than the
+      ~0.3 band — conversational openings naturally sit lower; the ≥0.6 reject gate is the binding bar.]
+- [x] Verbose-opening-prompt substratum included (11 full-length openings, mean 588 chars). REFINED:
+      verbose openings do NOT predominantly `no_match` on the dogfood distribution (9% vs thin 18%) —
+      they retrieve the WRONG skills (dilution → coverage@3 0.027 vs thin 0.110). Pure no_match was the
+      CL off-domain distribution; the dogfood failure mode is mis-ranking. Quantified by the baseline.
+- [x] Baseline prime measured through `compile_context` (production surface), not `find_skill`
+      (find_skill used only for the labeled diagnostic coverage curve).
+- [x] Metrics + per-signal ROI thresholds + judge rubric recorded BEFORE authoring/data (LOCKED
+      pre-registration section above + the session draft); headline N=3 (compile_context max_results).
+- [x] Negative-control gate ran FIRST and CRATERED (permutation control: true 0.0685 vs permuted
+      0.0321, 53.2% drop > 50% gate → INSTRUMENT-VALID); persisted `session_start_negcontrol.json`.
+- [x] Baseline measured on the real server; raw per-query artifacts persisted
+      (`tests/e2e/reports/retrieval/session_start_{raw_compile_context,baseline}.json`).
+- [x] Instrument lives in the shared lib home (`scripts/retrieval_metrics.py` += `set_coverage_at_n`,
+      `freshness_hit_rate`, +10 self-tests → 56), not a new one-off family.
+
+## Results & T12 hand-off (2026-06-15)
+
+Before-number: **set-coverage@3 = 0.0685** (thin 0.110 / verbose 0.027), ≈21% of the achievable-at-N=3
+ceiling — the gap T12 must close. Three measured design constraints for T12:
+1. **Raising N is INERT** — the 0.48 floor caps the candidate pool at ≤3 for these queries (diagnostic
+   curve flat @3=@5=@8). T12 must use an intent-conditional floor (mechanism a) or a recurrence/freshness
+   signal that surfaces below-threshold skills, NOT a bigger window.
+2. **Verbose = dilution, not no-retrieval** → query-side multi-view / max-over-segments (mechanism b) is
+   the matched remedy; do not chase a no_match that mostly isn't there on this distribution.
+3. **Latency:** verbose p95 = 734ms already BREACHES the 500ms SessionStart budget — T12's verbose
+   handling must address latency, not only coverage.
+Per-signal thresholds resolve concretely (S=0.0365 small → absolute floors 0.10/0.15/0.043 govern).
 
 ## Local Context
 

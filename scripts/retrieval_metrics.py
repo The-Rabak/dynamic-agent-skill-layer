@@ -293,6 +293,60 @@ def histogram(scores: Sequence[float], bins: int = 10) -> dict:
     }
 
 
+# ── Priming metrics (T18) ────────────────────────────────────────────────────
+
+def set_coverage_at_n(injected_names: Sequence[str],
+                      gold_set: set[str],
+                      n: int) -> float:
+    """Fraction of the gold set covered by the top-N injected skill names.
+
+    This is the headline priming metric.  Unlike MRR (single-gold, rank-ordered),
+    set-coverage measures how much of a *multi-gold* relevant set the bounded
+    prime surfaces.  A score of 1.0 means every skill the prime should surface
+    appears in the first N injected skills.
+
+    Returns 0.0 when gold_set is empty (no coverage to measure).
+
+    Args:
+        injected_names: ordered list of skill names as injected by compile_context
+                        (position 0 = first injected).  Only the first ``n``
+                        entries are considered.
+        gold_set:       set of skill names that constitute the gold prime for
+                        this query (multi-gold, from the session_start stratum).
+        n:              injection window size (e.g. 3 for the production cap).
+    """
+    if not gold_set:
+        return 0.0
+    top_n = set(injected_names[:n])
+    return len(top_n & gold_set) / len(gold_set)
+
+
+def freshness_hit_rate(injected_names: Sequence[str],
+                       fresh_golds: Sequence[str]) -> float | None:
+    """Whether ≥1 fresh-gold skill appears anywhere in the injected set.
+
+    The freshness slot (T12) targets high-value, brand-new / low-prior-use
+    skills.  This metric measures whether the current prime surfaces at least
+    one of them.  It is defined *only* over queries that have ≥1 fresh gold;
+    callers must aggregate the non-None values themselves and report the
+    denominator clearly.
+
+    Returns:
+        1.0 if any fresh_gold name appears in injected_names.
+        0.0 if none do.
+        None if fresh_golds is empty (metric undefined for this query — exclude
+        from mean; the caller must not count None towards the denominator).
+
+    Args:
+        injected_names: all skill names injected by compile_context (any depth).
+        fresh_golds:    the subset of the gold set tagged as high-value / fresh.
+    """
+    if not fresh_golds:
+        return None
+    injected_set = set(injected_names)
+    return 1.0 if any(name in injected_set for name in fresh_golds) else 0.0
+
+
 # ── α=0 crater check ─────────────────────────────────────────────────────────
 
 def crater_check(baseline_mrr: float, control_mrr: float) -> dict:
@@ -633,6 +687,82 @@ def _run_self_tests() -> int:
     # All-identical scores → single bin has all counts.
     h2 = histogram([0.5, 0.5, 0.5], bins=3)
     ok = _assert(sum(h2["counts"]) == 3, "histogram: identical scores, counts sum to 3", f"got {sum(h2['counts'])}")
+    failures += 0 if ok else 1
+
+    # ── set_coverage_at_n ─────────────────────────────────────────────────
+    print("\n-- set_coverage_at_n --")
+
+    # All gold covered in top-3 → 1.0.
+    cov = set_coverage_at_n(["A", "B", "C", "D"], {"A", "B"}, 3)
+    ok = _assert(abs(cov - 1.0) < 1e-9,
+                 "set_coverage@3: both gold in top-3 → 1.0",
+                 f"got {cov}")
+    failures += 0 if ok else 1
+
+    # Half coverage: 1 of 2 gold in top-3.
+    cov = set_coverage_at_n(["A", "X", "Y", "B"], {"A", "B"}, 3)
+    ok = _assert(abs(cov - 0.5) < 1e-9,
+                 "set_coverage@3: 1 of 2 gold in top-3 → 0.5",
+                 f"got {cov}")
+    failures += 0 if ok else 1
+
+    # Gold beyond N window → 0.0.
+    cov = set_coverage_at_n(["X", "Y", "Z", "A"], {"A"}, 3)
+    ok = _assert(cov == 0.0,
+                 "set_coverage@3: gold only at rank 4 → 0.0",
+                 f"got {cov}")
+    failures += 0 if ok else 1
+
+    # Empty gold set → 0.0.
+    cov = set_coverage_at_n(["A", "B"], set(), 3)
+    ok = _assert(cov == 0.0,
+                 "set_coverage@3: empty gold → 0.0",
+                 f"got {cov}")
+    failures += 0 if ok else 1
+
+    # Empty injected, non-empty gold → 0.0.
+    cov = set_coverage_at_n([], {"A", "B"}, 3)
+    ok = _assert(cov == 0.0,
+                 "set_coverage@3: empty injected → 0.0",
+                 f"got {cov}")
+    failures += 0 if ok else 1
+
+    # ── freshness_hit_rate ─────────────────────────────────────────────────
+    print("\n-- freshness_hit_rate --")
+
+    # Fresh gold appears in injected → 1.0.
+    fhr = freshness_hit_rate(["A", "B", "C"], ["B"])
+    ok = _assert(fhr == 1.0,
+                 "freshness_hit_rate: fresh gold in injected → 1.0",
+                 f"got {fhr}")
+    failures += 0 if ok else 1
+
+    # Fresh gold NOT in injected → 0.0.
+    fhr = freshness_hit_rate(["X", "Y", "Z"], ["B"])
+    ok = _assert(fhr == 0.0,
+                 "freshness_hit_rate: fresh gold absent → 0.0",
+                 f"got {fhr}")
+    failures += 0 if ok else 1
+
+    # Multiple fresh golds, one present → 1.0.
+    fhr = freshness_hit_rate(["A", "X"], ["B", "A"])
+    ok = _assert(fhr == 1.0,
+                 "freshness_hit_rate: one of two fresh golds present → 1.0",
+                 f"got {fhr}")
+    failures += 0 if ok else 1
+
+    # Empty fresh_golds → None (metric undefined).
+    fhr = freshness_hit_rate(["A", "B"], [])
+    ok = _assert(fhr is None,
+                 "freshness_hit_rate: empty fresh_golds → None",
+                 f"got {fhr}")
+    failures += 0 if ok else 1
+
+    # Empty injected with fresh golds → 0.0.
+    fhr = freshness_hit_rate([], ["A"])
+    ok = _assert(fhr == 0.0,
+                 "freshness_hit_rate: empty injected, fresh gold present → 0.0",
+                 f"got {fhr}")
     failures += 0 if ok else 1
 
     # ── crater_check ───────────────────────────────────────────────────────

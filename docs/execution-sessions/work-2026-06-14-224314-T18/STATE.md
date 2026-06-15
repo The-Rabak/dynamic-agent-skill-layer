@@ -7,11 +7,12 @@ tickets_ref: docs/tickets/2026-06-08-v1-7-local-hybrid-skilldag-retrieval/index.
 source_packet_ref: "T18 (Batch 19) — split from T12 (restructure 2026-06-12); lead of the elevated real-usage spine T18→T12→T15 (reprioritization 2026-06-13)"
 brainstorm_ref: ""
 started: 2026-06-14
-status: in_progress
+status: completed
 pause_reason: ""
-resumed: "2026-06-15 — owner GO. Pre-registration LOCKED (Unit A). Stack brought up + verified (corpus 262, qwen3, snapshot_dense, /health ready). Executing Units B→C→D."
+resumed: "2026-06-15 — owner GO. Pre-registration LOCKED (Unit A). Stack brought up + verified. Units B→C→D executed."
+completed: "2026-06-15 — instrument VALID (neg-control craters 53.2%); baseline set-coverage@3=0.0685; 3 concrete T12 findings (poor coverage / verbose=dilution-not-no_match / raising-N-inert + latency breach)."
 execution_shape: infra-track
-current_unit: 2
+current_unit: 4
 total_units: 4
 session_id: work-2026-06-14-224314-T18
 ---
@@ -56,8 +57,8 @@ session_id: work-2026-06-14-224314-T18
 |---|------|------|------------------|--------|----------|--------------|
 | A | Pre-registration (metrics + ROI thresholds + judge rubric + negative-control design) | infra-packet | The locked ruler T12 is graded against; owner sign-off gate | **completed — LOCKED 2026-06-15** | 1 | unit-A-preregistration-DRAFT.md |
 | B | Author session-start stratum (thin/vague + VERBOSE substrata; multi-gold; anti-circularity probe) | infra-packet | The priming distribution the T11 fixture lacks | **completed** (184 queries; 11+11; overlap 0.024) | 1 | unit-B-session-start-stratum.md |
-| C | Negative-control gate run (permuted prime must crater set-coverage; runs FIRST) | infra-packet | Proves the coverage metric is non-vacuous before any verdict | in_progress | -- | -- |
-| D | Baseline prime measured through `compile_context` (incl. verbose no_match quantified); raw artifacts | infra-packet | T12's honest before-number | pending | -- | -- |
+| C | Negative-control gate run (permuted prime must crater set-coverage; runs FIRST) | infra-packet | Proves the coverage metric is non-vacuous before any verdict | **completed** (craters 53.2% → VALID) | 1 | unit-CD-negcontrol-baseline.md |
+| D | Baseline prime measured through `compile_context` (incl. verbose no_match quantified); raw artifacts | infra-packet | T12's honest before-number | **completed** (coverage@3=0.0685; 3 T12 findings) | 1 | unit-CD-negcontrol-baseline.md |
 
 ## Owner decision points (STOP and ask) — THIS IS THE HOLD
 1. **Lock the pre-registration?** Review `unit-A-preregistration-DRAFT.md` — metric definitions,

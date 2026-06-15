@@ -1,0 +1,195 @@
+{
+  "unit": "C",
+  "description": "Negative-control gate for priming stratum",
+  "n_queries": 22,
+  "N": 3,
+  "mean_true_coverage_at_3": 0.068513,
+  "mean_permuted_coverage_at_3": 0.032062,
+  "separation_S": 0.036451,
+  "crater_check": {
+    "abs_drop": 0.036451,
+    "rel_drop": 0.532033,
+    "craters": true
+  },
+  "gate_passed": true,
+  "verdict": "INSTRUMENT-VALID: priming stratum discriminates (permuted craters)",
+  "derangement_method": "cyclic-shift-by-1",
+  "per_query": [
+    {
+      "query_id": "t18-session-start-thin-agent-recovery-resume",
+      "substratum": "thin",
+      "true_coverage_at_3": 0.16666666666666666,
+      "permuted_coverage_at_3": 0.16666666666666666,
+      "permuted_gold_query_id": "t18-session-start-thin-resume-batch-check-state",
+      "status": "ok"
+    },
+    {
+      "query_id": "t18-session-start-thin-resume-batch-check-state",
+      "substratum": "thin",
+      "true_coverage_at_3": 0.16666666666666666,
+      "permuted_coverage_at_3": 0.0,
+      "permuted_gold_query_id": "t18-session-start-thin-parallel-agent-dispatch",
+      "status": "ok"
+    },
+    {
+      "query_id": "t18-session-start-thin-parallel-agent-dispatch",
+      "substratum": "thin",
+      "true_coverage_at_3": 0.0,
+      "permuted_coverage_at_3": 0.0,
+      "permuted_gold_query_id": "t18-session-start-thin-commit-continue",
+      "status": "no_match"
+    },
+    {
+      "query_id": "t18-session-start-thin-commit-continue",
+      "substratum": "thin",
+      "true_coverage_at_3": 0.0,
+      "permuted_coverage_at_3": 0.0,
+      "permuted_gold_query_id": "t18-session-start-thin-plan-review",
+      "status": "ok"
+    },
+    {
+      "query_id": "t18-session-start-thin-plan-review",
+      "substratum": "thin",
+      "true_coverage_at_3": 0.14285714285714285,
+      "permuted_coverage_at_3": 0.14285714285714285,
+      "permuted_gold_query_id": "t18-session-start-thin-schema-decisions",
+      "status": "ok"
+    },
+    {
+      "query_id": "t18-session-start-thin-schema-decisions",
+      "substratum": "thin",
+      "true_coverage_at_3": 0.0,
+      "permuted_coverage_at_3": 0.0,
+      "permuted_gold_query_id": "t18-session-start-thin-retrieval-scoring-smell",
+      "status": "no_match"
+    },
+    {
+      "query_id": "t18-session-start-thin-retrieval-scoring-smell",
+      "substratum": "thin",
+      "true_coverage_at_3": 0.1875,
+      "permuted_coverage_at_3": 0.1875,
+      "permuted_gold_query_id": "t18-session-start-thin-search-comparison",
+      "status": "ok"
+    },
+    {
+      "query_id": "t18-session-start-thin-search-comparison",
+      "substratum": "thin",
+      "true_coverage_at_3": 0.125,
+      "permuted_coverage_at_3": 0.0,
+      "permuted_gold_query_id": "t18-session-start-thin-docker-unhealthy",
+      "status": "ok"
+    },
+    {
+      "query_id": "t18-session-start-thin-docker-unhealthy",
+      "substratum": "thin",
+      "true_coverage_at_3": 0.08333333333333333,
+      "permuted_coverage_at_3": 0.08333333333333333,
+      "permuted_gold_query_id": "t18-session-start-thin-embedding-setup",
+      "status": "ok"
+    },
+    {
+      "query_id": "t18-session-start-thin-embedding-setup",
+      "substratum": "thin",
+      "true_coverage_at_3": 0.16666666666666666,
+      "permuted_coverage_at_3": 0.0,
+      "permuted_gold_query_id": "t18-session-start-thin-migration-status",
+      "status": "ok"
+    },
+    {
+      "query_id": "t18-session-start-thin-migration-status",
+      "substratum": "thin",
+      "true_coverage_at_3": 0.16666666666666666,
+      "permuted_coverage_at_3": 0.0,
+      "permuted_gold_query_id": "t18-session-start-verbose-concurrent-clippy-crash",
+      "status": "ok"
+    },
+    {
+      "query_id": "t18-session-start-verbose-concurrent-clippy-crash",
+      "substratum": "verbose",
+      "true_coverage_at_3": 0.0,
+      "permuted_coverage_at_3": 0.0,
+      "permuted_gold_query_id": "t18-session-start-verbose-project-grok-assessment",
+      "status": "ok"
+    },
+    {
+      "query_id": "t18-session-start-verbose-project-grok-assessment",
+      "substratum": "verbose",
+      "true_coverage_at_3": 0.0,
+      "permuted_coverage_at_3": 0.125,
+      "permuted_gold_query_id": "t18-session-start-verbose-harness-agent-eval",
+      "status": "ok"
+    },
+    {
+      "query_id": "t18-session-start-verbose-harness-agent-eval",
+      "substratum": "verbose",
+      "true_coverage_at_3": 0.125,
+      "permuted_coverage_at_3": 0.0,
+      "permuted_gold_query_id": "t18-session-start-verbose-skills-table-source-paths",
+      "status": "ok"
+    },
+    {
+      "query_id": "t18-session-start-verbose-skills-table-source-paths",
+      "substratum": "verbose",
+      "true_coverage_at_3": 0.0,
+      "permuted_coverage_at_3": 0.0,
+      "permuted_gold_query_id": "t18-session-start-verbose-live-infra-quality-mandate",
+      "status": "ok"
+    },
+    {
+      "query_id": "t18-session-start-verbose-live-infra-quality-mandate",
+      "substratum": "verbose",
+      "true_coverage_at_3": 0.0,
+      "permuted_coverage_at_3": 0.0,
+      "permuted_gold_query_id": "t18-session-start-verbose-harness-grok-v2",
+      "status": "no_match"
+    },
+    {
+      "query_id": "t18-session-start-verbose-harness-grok-v2",
+      "substratum": "verbose",
+      "true_coverage_at_3": 0.0,
+      "permuted_coverage_at_3": 0.0,
+      "permuted_gold_query_id": "t18-session-start-verbose-docker-build-failure-musl",
+      "status": "ok"
+    },
+    {
+      "query_id": "t18-session-start-verbose-docker-build-failure-musl",
+      "substratum": "verbose",
+      "true_coverage_at_3": 0.07692307692307693,
+      "permuted_coverage_at_3": 0.0,
+      "permuted_gold_query_id": "t18-session-start-verbose-sessionend-hook-ticket",
+      "status": "ok"
+    },
+    {
+      "query_id": "t18-session-start-verbose-sessionend-hook-ticket",
+      "substratum": "verbose",
+      "true_coverage_at_3": 0.0,
+      "permuted_coverage_at_3": 0.0,
+      "permuted_gold_query_id": "t18-session-start-verbose-e2e-claude-provider-sweep",
+      "status": "ok"
+    },
+    {
+      "query_id": "t18-session-start-verbose-e2e-claude-provider-sweep",
+      "substratum": "verbose",
+      "true_coverage_at_3": 0.1,
+      "permuted_coverage_at_3": 0.0,
+      "permuted_gold_query_id": "t18-session-start-verbose-todo-triage-batch",
+      "status": "ok"
+    },
+    {
+      "query_id": "t18-session-start-verbose-todo-triage-batch",
+      "substratum": "verbose",
+      "true_coverage_at_3": 0.0,
+      "permuted_coverage_at_3": 0.0,
+      "permuted_gold_query_id": "t18-session-start-verbose-allnighter-final-push",
+      "status": "ok"
+    },
+    {
+      "query_id": "t18-session-start-verbose-allnighter-final-push",
+      "substratum": "verbose",
+      "true_coverage_at_3": 0.0,
+      "permuted_coverage_at_3": 0.0,
+      "permuted_gold_query_id": "t18-session-start-thin-agent-recovery-resume",
+      "status": "ok"
+    }
+  ]
+}
