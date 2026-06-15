@@ -1,0 +1,149 @@
+{
+  "description": "T18 session-start stratum anti-circularity probe. Jaccard similarity between each query's content tokens and the concatenated use_when+description of its gold skill set. Pre-registration gate: mean ≤0.5 (target ~0.3); reject any query ≥0.6.",
+  "gate": {
+    "reject_threshold": 0.6,
+    "headline_soft_limit": 0.5,
+    "target_band": 0.3
+  },
+  "results": {
+    "mean_overlap": 0.0241,
+    "max_overlap": 0.0561,
+    "headline_gate_passed": true,
+    "queries_dropped": [],
+    "total_queries_surviving": 22
+  },
+  "per_query": [
+    {
+      "id": "t18-session-start-thin-agent-recovery-resume",
+      "substratum": "thin",
+      "overlap": 0.0,
+      "num_golds": 6
+    },
+    {
+      "id": "t18-session-start-thin-resume-batch-check-state",
+      "substratum": "thin",
+      "overlap": 0.014,
+      "num_golds": 6
+    },
+    {
+      "id": "t18-session-start-thin-parallel-agent-dispatch",
+      "substratum": "thin",
+      "overlap": 0.0145,
+      "num_golds": 9
+    },
+    {
+      "id": "t18-session-start-thin-commit-continue",
+      "substratum": "thin",
+      "overlap": 0.0109,
+      "num_golds": 9
+    },
+    {
+      "id": "t18-session-start-thin-plan-review",
+      "substratum": "thin",
+      "overlap": 0.0173,
+      "num_golds": 7
+    },
+    {
+      "id": "t18-session-start-thin-schema-decisions",
+      "substratum": "thin",
+      "overlap": 0.0174,
+      "num_golds": 7
+    },
+    {
+      "id": "t18-session-start-thin-retrieval-scoring-smell",
+      "substratum": "thin",
+      "overlap": 0.0105,
+      "num_golds": 16
+    },
+    {
+      "id": "t18-session-start-thin-search-comparison",
+      "substratum": "thin",
+      "overlap": 0.0127,
+      "num_golds": 16
+    },
+    {
+      "id": "t18-session-start-thin-docker-unhealthy",
+      "substratum": "thin",
+      "overlap": 0.0091,
+      "num_golds": 12
+    },
+    {
+      "id": "t18-session-start-thin-embedding-setup",
+      "substratum": "thin",
+      "overlap": 0.0091,
+      "num_golds": 12
+    },
+    {
+      "id": "t18-session-start-thin-migration-status",
+      "substratum": "thin",
+      "overlap": 0.014,
+      "num_golds": 6
+    },
+    {
+      "id": "t18-session-start-verbose-concurrent-clippy-crash",
+      "substratum": "verbose",
+      "overlap": 0.0526,
+      "num_golds": 5
+    },
+    {
+      "id": "t18-session-start-verbose-project-grok-assessment",
+      "substratum": "verbose",
+      "overlap": 0.0056,
+      "num_golds": 3
+    },
+    {
+      "id": "t18-session-start-verbose-harness-agent-eval",
+      "substratum": "verbose",
+      "overlap": 0.0452,
+      "num_golds": 8
+    },
+    {
+      "id": "t18-session-start-verbose-skills-table-source-paths",
+      "substratum": "verbose",
+      "overlap": 0.0561,
+      "num_golds": 5
+    },
+    {
+      "id": "t18-session-start-verbose-live-infra-quality-mandate",
+      "substratum": "verbose",
+      "overlap": 0.021,
+      "num_golds": 11
+    },
+    {
+      "id": "t18-session-start-verbose-harness-grok-v2",
+      "substratum": "verbose",
+      "overlap": 0.0346,
+      "num_golds": 13
+    },
+    {
+      "id": "t18-session-start-verbose-docker-build-failure-musl",
+      "substratum": "verbose",
+      "overlap": 0.0421,
+      "num_golds": 13
+    },
+    {
+      "id": "t18-session-start-verbose-sessionend-hook-ticket",
+      "substratum": "verbose",
+      "overlap": 0.0389,
+      "num_golds": 7
+    },
+    {
+      "id": "t18-session-start-verbose-e2e-claude-provider-sweep",
+      "substratum": "verbose",
+      "overlap": 0.0436,
+      "num_golds": 10
+    },
+    {
+      "id": "t18-session-start-verbose-todo-triage-batch",
+      "substratum": "verbose",
+      "overlap": 0.037,
+      "num_golds": 15
+    },
+    {
+      "id": "t18-session-start-verbose-allnighter-final-push",
+      "substratum": "verbose",
+      "overlap": 0.0233,
+      "num_golds": 13
+    }
+  ]
+}

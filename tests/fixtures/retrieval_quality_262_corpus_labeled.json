@@ -7,24 +7,40 @@
   "lexical": "Uses a distinctive technical term from the skill name/description.",
   "multiview": "Uses a term that appears ONLY in tools/artifacts/invariants (not name/desc/use_when).",
   "use_when": "SECONDARY STRATUM: lightly reworded paraphrase of one use_when condition.",
-  "negative": "Adversarial: plausible software-dev query that matches no corpus skill."
+  "negative": "Adversarial: plausible software-dev query that matches no corpus skill.",
+  "session_start": "Session-start priming stratum (T18). Two substrata: 'thin' (short vague openings, underspecified) and 'verbose' (full-length multi-paragraph openings including error output and code blocks, reproducing the T14 smoke Finding-2 no_match distribution). Multi-gold: relevant = all non-preference skills_in_session. fresh_golds = skills not seen in any prior session (freshness heuristic). Anti-circularity gate: Jaccard overlap with gold use_when+description < 0.6."
  },
  "_split": "tuning/held_out disjoint by anchor skill (~55/45); negatives proportionally split",
  "_counts": {
   "strata": {
+   "transcript": 36,
    "disjoint": 36,
    "lexical": 30,
    "multiview": 20,
+   "use_when": 15,
    "negative": 25,
-   "transcript": 36,
-   "use_when": 15
+   "session_start": 22
   },
   "splits": {
-   "held_out": 64,
-   "tuning": 98
+   "held_out": 72,
+   "tuning": 112
   },
   "distinct_gold_skills": 45,
-  "distinct_sessions": 24
+  "distinct_sessions": 24,
+  "session_start_meta": {
+   "total": 22,
+   "substrata": {
+    "thin": 11,
+    "verbose": 11
+   },
+   "distinct_source_sessions": 16,
+   "gold_size_distribution": {
+    "min": 3,
+    "max": 16,
+    "mean": 9.5
+   },
+   "fresh_tagged_count": 22
+  }
  },
  "queries": [
   {
@@ -1595,6 +1611,710 @@
    "text": "GraphQL Apollo Client cache normalization conflict with custom type policies",
    "anchor": null,
    "relevant": [],
+   "split": "held_out"
+  },
+  {
+   "id": "t18-session-start-thin-agent-recovery-resume",
+   "kind": "session_start",
+   "substratum": "thin",
+   "text": "picking up where we left off, the workers crashed mid-batch",
+   "source_session_id": "replica-0003-45fc05d6",
+   "anchor": null,
+   "relevant": [
+    "inspect-current-state-before-mutating",
+    "multi-layer-atomic-propagation",
+    "migration-test-triple-update",
+    "recover-dead-execution-agents-serial-fallback",
+    "separate-coordinator-method-for-related-entity-persistence",
+    "clippy-d-warnings-isolate-touched-crates-only"
+   ],
+   "fresh_golds": [
+    "inspect-current-state-before-mutating",
+    "multi-layer-atomic-propagation",
+    "migration-test-triple-update",
+    "recover-dead-execution-agents-serial-fallback",
+    "separate-coordinator-method-for-related-entity-persistence",
+    "clippy-d-warnings-isolate-touched-crates-only"
+   ],
+   "split": "tuning"
+  },
+  {
+   "id": "t18-session-start-thin-resume-batch-check-state",
+   "kind": "session_start",
+   "substratum": "thin",
+   "text": "agents stopped responding, need to check what's done and continue",
+   "source_session_id": "replica-0003-45fc05d6",
+   "anchor": null,
+   "relevant": [
+    "inspect-current-state-before-mutating",
+    "multi-layer-atomic-propagation",
+    "migration-test-triple-update",
+    "recover-dead-execution-agents-serial-fallback",
+    "separate-coordinator-method-for-related-entity-persistence",
+    "clippy-d-warnings-isolate-touched-crates-only"
+   ],
+   "fresh_golds": [
+    "inspect-current-state-before-mutating",
+    "multi-layer-atomic-propagation",
+    "migration-test-triple-update",
+    "recover-dead-execution-agents-serial-fallback",
+    "separate-coordinator-method-for-related-entity-persistence",
+    "clippy-d-warnings-isolate-touched-crates-only"
+   ],
+   "split": "tuning"
+  },
+  {
+   "id": "t18-session-start-thin-parallel-agent-dispatch",
+   "kind": "session_start",
+   "substratum": "thin",
+   "text": "send an agent on that ticket in parallel while we keep going here",
+   "source_session_id": "replica-0006-cd7a91f5",
+   "anchor": null,
+   "relevant": [
+    "handle-agent-scope-fence-violation",
+    "git-stash-verify-preexisting-test-failure",
+    "rust-clippy-option-method-idioms",
+    "selective-stage-agent-batch-from-dirty-tree",
+    "file-conflict-graph-parallel-agent-batching",
+    "rust-allow-clippy-scoped-with-justification-for-public-api",
+    "git-scope-test-isolation-avoid-tmp-as-outside-git-sentinel",
+    "cargo-clippy-workspace-all-targets-includes-examples-and-e2e",
+    "verify-clippy-ci-gate-with-d-warnings"
+   ],
+   "fresh_golds": [
+    "handle-agent-scope-fence-violation",
+    "git-stash-verify-preexisting-test-failure",
+    "rust-clippy-option-method-idioms",
+    "selective-stage-agent-batch-from-dirty-tree",
+    "file-conflict-graph-parallel-agent-batching",
+    "rust-allow-clippy-scoped-with-justification-for-public-api",
+    "git-scope-test-isolation-avoid-tmp-as-outside-git-sentinel",
+    "cargo-clippy-workspace-all-targets-includes-examples-and-e2e",
+    "verify-clippy-ci-gate-with-d-warnings"
+   ],
+   "split": "held_out"
+  },
+  {
+   "id": "t18-session-start-thin-commit-continue",
+   "kind": "session_start",
+   "substratum": "thin",
+   "text": "commit the batch and move on to fixing the remaining lint issues",
+   "source_session_id": "replica-0006-cd7a91f5",
+   "anchor": null,
+   "relevant": [
+    "handle-agent-scope-fence-violation",
+    "git-stash-verify-preexisting-test-failure",
+    "rust-clippy-option-method-idioms",
+    "selective-stage-agent-batch-from-dirty-tree",
+    "file-conflict-graph-parallel-agent-batching",
+    "rust-allow-clippy-scoped-with-justification-for-public-api",
+    "git-scope-test-isolation-avoid-tmp-as-outside-git-sentinel",
+    "cargo-clippy-workspace-all-targets-includes-examples-and-e2e",
+    "verify-clippy-ci-gate-with-d-warnings"
+   ],
+   "fresh_golds": [
+    "handle-agent-scope-fence-violation",
+    "git-stash-verify-preexisting-test-failure",
+    "rust-clippy-option-method-idioms",
+    "selective-stage-agent-batch-from-dirty-tree",
+    "file-conflict-graph-parallel-agent-batching",
+    "rust-allow-clippy-scoped-with-justification-for-public-api",
+    "git-scope-test-isolation-avoid-tmp-as-outside-git-sentinel",
+    "cargo-clippy-workspace-all-targets-includes-examples-and-e2e",
+    "verify-clippy-ci-gate-with-d-warnings"
+   ],
+   "split": "held_out"
+  },
+  {
+   "id": "t18-session-start-thin-plan-review",
+   "kind": "session_start",
+   "substratum": "thin",
+   "text": "let's go through the plan and talk through the open design questions",
+   "source_session_id": "replica-0019-f861f7b6",
+   "anchor": null,
+   "relevant": [
+    "use-jsonb-for-write-only-audit-fields",
+    "anthropic-api-forced-tool-use-for-structured-json",
+    "postgres-typed-columns-over-jsonb-for-aggregatable-scalars",
+    "deepen-plan-research-decisions",
+    "detect-in-memory-buffer-never-drained-to-sink",
+    "deepen-plan-multi-agent-research",
+    "reconcile-loop-as-guarantee-events-as-optimization"
+   ],
+   "fresh_golds": [
+    "use-jsonb-for-write-only-audit-fields",
+    "anthropic-api-forced-tool-use-for-structured-json",
+    "postgres-typed-columns-over-jsonb-for-aggregatable-scalars",
+    "deepen-plan-research-decisions",
+    "detect-in-memory-buffer-never-drained-to-sink",
+    "deepen-plan-multi-agent-research",
+    "reconcile-loop-as-guarantee-events-as-optimization"
+   ],
+   "split": "tuning"
+  },
+  {
+   "id": "t18-session-start-thin-schema-decisions",
+   "kind": "session_start",
+   "substratum": "thin",
+   "text": "need to finalize the storage schema decisions before we start coding",
+   "source_session_id": "replica-0019-f861f7b6",
+   "anchor": null,
+   "relevant": [
+    "use-jsonb-for-write-only-audit-fields",
+    "anthropic-api-forced-tool-use-for-structured-json",
+    "postgres-typed-columns-over-jsonb-for-aggregatable-scalars",
+    "deepen-plan-research-decisions",
+    "detect-in-memory-buffer-never-drained-to-sink",
+    "deepen-plan-multi-agent-research",
+    "reconcile-loop-as-guarantee-events-as-optimization"
+   ],
+   "fresh_golds": [
+    "use-jsonb-for-write-only-audit-fields",
+    "anthropic-api-forced-tool-use-for-structured-json",
+    "postgres-typed-columns-over-jsonb-for-aggregatable-scalars",
+    "deepen-plan-research-decisions",
+    "detect-in-memory-buffer-never-drained-to-sink",
+    "deepen-plan-multi-agent-research",
+    "reconcile-loop-as-guarantee-events-as-optimization"
+   ],
+   "split": "tuning"
+  },
+  {
+   "id": "t18-session-start-thin-retrieval-scoring-smell",
+   "kind": "session_start",
+   "substratum": "thin",
+   "text": "the search results smell off, let's dig into why the scores are weird",
+   "source_session_id": "replica-0022-ed2c8700",
+   "anchor": null,
+   "relevant": [
+    "ablation-confounded-by-relevance-floor",
+    "near-zero-cosine-score-suspects",
+    "read-before-write-file-edit",
+    "compare-retrieval-arms-top10",
+    "retriage-pending-issues-after-related-commit",
+    "diagnose-flaky-timing-test-by-isolation",
+    "prevent-cross-module-constant-drift-via-pub-crate",
+    "fix-bm25-silent-none-fallback",
+    "numeric-scores-mandatory-for-system-diagnosis",
+    "post-commit-work-item-hygiene",
+    "component-isolation-as-first-diagnostic-step",
+    "diagnose-rrf-artifact-score-exposure",
+    "hybrid-search-zero-uplift-diagnosis",
+    "sequence-clustered-fixes-smallest-to-absorbing-refactor",
+    "search-arm-comparison-extend-to-top10-with-scores",
+    "silent-path-success-as-diagnostic-red-herring"
+   ],
+   "fresh_golds": [
+    "ablation-confounded-by-relevance-floor",
+    "near-zero-cosine-score-suspects",
+    "read-before-write-file-edit",
+    "compare-retrieval-arms-top10",
+    "retriage-pending-issues-after-related-commit",
+    "diagnose-flaky-timing-test-by-isolation",
+    "prevent-cross-module-constant-drift-via-pub-crate",
+    "fix-bm25-silent-none-fallback",
+    "numeric-scores-mandatory-for-system-diagnosis",
+    "post-commit-work-item-hygiene",
+    "component-isolation-as-first-diagnostic-step",
+    "diagnose-rrf-artifact-score-exposure",
+    "hybrid-search-zero-uplift-diagnosis",
+    "sequence-clustered-fixes-smallest-to-absorbing-refactor",
+    "search-arm-comparison-extend-to-top10-with-scores",
+    "silent-path-success-as-diagnostic-red-herring"
+   ],
+   "split": "tuning"
+  },
+  {
+   "id": "t18-session-start-thin-search-comparison",
+   "kind": "session_start",
+   "substratum": "thin",
+   "text": "compare the two retrieval arms and figure out what's going on with the scoring",
+   "source_session_id": "replica-0022-ed2c8700",
+   "anchor": null,
+   "relevant": [
+    "ablation-confounded-by-relevance-floor",
+    "near-zero-cosine-score-suspects",
+    "read-before-write-file-edit",
+    "compare-retrieval-arms-top10",
+    "retriage-pending-issues-after-related-commit",
+    "diagnose-flaky-timing-test-by-isolation",
+    "prevent-cross-module-constant-drift-via-pub-crate",
+    "fix-bm25-silent-none-fallback",
+    "numeric-scores-mandatory-for-system-diagnosis",
+    "post-commit-work-item-hygiene",
+    "component-isolation-as-first-diagnostic-step",
+    "diagnose-rrf-artifact-score-exposure",
+    "hybrid-search-zero-uplift-diagnosis",
+    "sequence-clustered-fixes-smallest-to-absorbing-refactor",
+    "search-arm-comparison-extend-to-top10-with-scores",
+    "silent-path-success-as-diagnostic-red-herring"
+   ],
+   "fresh_golds": [
+    "ablation-confounded-by-relevance-floor",
+    "near-zero-cosine-score-suspects",
+    "read-before-write-file-edit",
+    "compare-retrieval-arms-top10",
+    "retriage-pending-issues-after-related-commit",
+    "diagnose-flaky-timing-test-by-isolation",
+    "prevent-cross-module-constant-drift-via-pub-crate",
+    "fix-bm25-silent-none-fallback",
+    "numeric-scores-mandatory-for-system-diagnosis",
+    "post-commit-work-item-hygiene",
+    "component-isolation-as-first-diagnostic-step",
+    "diagnose-rrf-artifact-score-exposure",
+    "hybrid-search-zero-uplift-diagnosis",
+    "sequence-clustered-fixes-smallest-to-absorbing-refactor",
+    "search-arm-comparison-extend-to-top10-with-scores",
+    "silent-path-success-as-diagnostic-red-herring"
+   ],
+   "split": "tuning"
+  },
+  {
+   "id": "t18-session-start-thin-docker-unhealthy",
+   "kind": "session_start",
+   "substratum": "thin",
+   "text": "two containers are unhealthy in docker, let's get them fixed",
+   "source_session_id": "replica-0010-36f19d93",
+   "anchor": null,
+   "relevant": [
+    "ollama-embedding-2048-token-batch-limit",
+    "embedding-write-read-path-divergence",
+    "docker-healthcheck-bash-dev-tcp",
+    "postgres-docker-stale-volume-db-missing",
+    "fix-file-not-read-before-write",
+    "cold-start-guard-for-retirement-workers",
+    "ollama-500-embedding-token-overflow",
+    "embed-summary-only-for-hierarchical-documents",
+    "postgres-volume-reuse-missing-database",
+    "qdrant-healthcheck-bash-devtcp",
+    "recursive-watcher-exclude-build-dirs",
+    "docker-healthcheck-tool-absent-in-minimal-image"
+   ],
+   "fresh_golds": [
+    "ollama-embedding-2048-token-batch-limit",
+    "embedding-write-read-path-divergence",
+    "docker-healthcheck-bash-dev-tcp",
+    "postgres-docker-stale-volume-db-missing",
+    "fix-file-not-read-before-write",
+    "cold-start-guard-for-retirement-workers",
+    "ollama-500-embedding-token-overflow",
+    "embed-summary-only-for-hierarchical-documents",
+    "postgres-volume-reuse-missing-database",
+    "qdrant-healthcheck-bash-devtcp",
+    "recursive-watcher-exclude-build-dirs",
+    "docker-healthcheck-tool-absent-in-minimal-image"
+   ],
+   "split": "tuning"
+  },
+  {
+   "id": "t18-session-start-thin-embedding-setup",
+   "kind": "session_start",
+   "substratum": "thin",
+   "text": "the embedding pipeline seems off, corpus isn't loading right",
+   "source_session_id": "replica-0010-36f19d93",
+   "anchor": null,
+   "relevant": [
+    "ollama-embedding-2048-token-batch-limit",
+    "embedding-write-read-path-divergence",
+    "docker-healthcheck-bash-dev-tcp",
+    "postgres-docker-stale-volume-db-missing",
+    "fix-file-not-read-before-write",
+    "cold-start-guard-for-retirement-workers",
+    "ollama-500-embedding-token-overflow",
+    "embed-summary-only-for-hierarchical-documents",
+    "postgres-volume-reuse-missing-database",
+    "qdrant-healthcheck-bash-devtcp",
+    "recursive-watcher-exclude-build-dirs",
+    "docker-healthcheck-tool-absent-in-minimal-image"
+   ],
+   "fresh_golds": [
+    "ollama-embedding-2048-token-batch-limit",
+    "embedding-write-read-path-divergence",
+    "docker-healthcheck-bash-dev-tcp",
+    "postgres-docker-stale-volume-db-missing",
+    "fix-file-not-read-before-write",
+    "cold-start-guard-for-retirement-workers",
+    "ollama-500-embedding-token-overflow",
+    "embed-summary-only-for-hierarchical-documents",
+    "postgres-volume-reuse-missing-database",
+    "qdrant-healthcheck-bash-devtcp",
+    "recursive-watcher-exclude-build-dirs",
+    "docker-healthcheck-tool-absent-in-minimal-image"
+   ],
+   "split": "tuning"
+  },
+  {
+   "id": "t18-session-start-thin-migration-status",
+   "kind": "session_start",
+   "substratum": "thin",
+   "text": "double-check all migrations went through before running the suite",
+   "source_session_id": "replica-0003-45fc05d6",
+   "anchor": null,
+   "relevant": [
+    "inspect-current-state-before-mutating",
+    "multi-layer-atomic-propagation",
+    "migration-test-triple-update",
+    "recover-dead-execution-agents-serial-fallback",
+    "separate-coordinator-method-for-related-entity-persistence",
+    "clippy-d-warnings-isolate-touched-crates-only"
+   ],
+   "fresh_golds": [
+    "inspect-current-state-before-mutating",
+    "multi-layer-atomic-propagation",
+    "migration-test-triple-update",
+    "recover-dead-execution-agents-serial-fallback",
+    "separate-coordinator-method-for-related-entity-persistence",
+    "clippy-d-warnings-isolate-touched-crates-only"
+   ],
+   "split": "tuning"
+  },
+  {
+   "id": "t18-session-start-verbose-concurrent-clippy-crash",
+   "kind": "session_start",
+   "substratum": "verbose",
+   "text": "both of your subagents ran clippy at the same time and crashed my machine, from now on concurrently running agents get explicit instructions not to do that or any other intense actions like that. bring them up again and tell them to keep going where they stopped, once they're done validate their work and run clippy yourself. then keep going with the other batches until you finish your entire todo set",
+   "source_session_id": "replica-0001-c1ed00d6",
+   "anchor": null,
+   "relevant": [
+    "prohibit-concurrent-cargo-ops-across-agents",
+    "file-overlap-batch-serialization-for-agent-swarms",
+    "wsl2-crash-dirty-file-recovery",
+    "isolate-clippy-findings-to-changed-files-with-pre-existing-debt",
+    "recover-wsl2-crash-corrupted-git-object-store"
+   ],
+   "fresh_golds": [
+    "prohibit-concurrent-cargo-ops-across-agents",
+    "file-overlap-batch-serialization-for-agent-swarms",
+    "wsl2-crash-dirty-file-recovery",
+    "isolate-clippy-findings-to-changed-files-with-pre-existing-debt",
+    "recover-wsl2-crash-corrupted-git-object-store"
+   ],
+   "split": "tuning"
+  },
+  {
+   "id": "t18-session-start-verbose-project-grok-assessment",
+   "kind": "session_start",
+   "substratum": "verbose",
+   "text": "grok the shit out of this repo, the v-1-1 plan and architecture files and the work we've done so far on T01-T15. give me your summary and analysis of this project and scope and rate it loosely on the same params as our current assessements but be creative in your current assessement. also look at the dream state e2e tests we have and see where we're going with this. that's what you should be assessing on, the final product description according to our plans, architecture and endgame tests.",
+   "source_session_id": "replica-0002-2cfdbfa8",
+   "anchor": null,
+   "relevant": [
+    "qdrant-rest-grpc-port-mismatch",
+    "boot-time-arc-snapshot-never-refreshed",
+    "extraction-pipeline-session-lifecycle-hook-coverage"
+   ],
+   "fresh_golds": [
+    "qdrant-rest-grpc-port-mismatch",
+    "boot-time-arc-snapshot-never-refreshed",
+    "extraction-pipeline-session-lifecycle-hook-coverage"
+   ],
+   "split": "held_out"
+  },
+  {
+   "id": "t18-session-start-verbose-harness-agent-eval",
+   "kind": "session_start",
+   "substratum": "verbose",
+   "text": "you are a kickass coding harness agent given this system to use as your dynamic context layer. it should automatically parse your completed sessions, extract meaningful patterns and auto create skills to improve your ability to work with your user and on any given project. skills SHOULD be retrieved on each context window refresh or on demand. Grok the living shit out of this system. read the plans up to v-1-5 which should all be implemented, go through all logic paths, read every corner of the repo, tread through all interfaces and use all the pieces. give me your gosh darned honest evaluation and analysis of this project. be honest and brutal, we can take it.",
+   "source_session_id": "replica-0007-8a0965e3",
+   "anchor": null,
+   "relevant": [
+    "Analyze the main commands and the skills and (preference)",
+    "audit-rust-codebase-stub-violations",
+    "docs-are-spec-build-up-not-edit-down",
+    "reject-version-advance-as-proxy-for-retrieval-assertion",
+    "detect-doc-reality-drift-in-planning-heavy-projects",
+    "apply-fail-loud-env-var-checks-to-all-binaries-not-just-the-server",
+    "detect-live-e2e-tests-using-in-process-fakes",
+    "fight-ai-workflow-bloat-with-single-source-references"
+   ],
+   "fresh_golds": [
+    "Analyze the main commands and the skills and (preference)",
+    "audit-rust-codebase-stub-violations",
+    "docs-are-spec-build-up-not-edit-down",
+    "reject-version-advance-as-proxy-for-retrieval-assertion",
+    "detect-doc-reality-drift-in-planning-heavy-projects",
+    "apply-fail-loud-env-var-checks-to-all-binaries-not-just-the-server",
+    "detect-live-e2e-tests-using-in-process-fakes",
+    "fight-ai-workflow-bloat-with-single-source-references"
+   ],
+   "split": "tuning"
+  },
+  {
+   "id": "t18-session-start-verbose-skills-table-source-paths",
+   "kind": "session_start",
+   "substratum": "verbose",
+   "text": "the skills table should definitely store source paths in its own column. work that in to wherever needed (T09 and wherever else) then go on straight to the next batch (T02 should also be on the next batch, looks like its missing from the index file). don't run review after execution on these tickets is done, i'll run it later on the whole branch",
+   "source_session_id": "replica-0008-a8625564",
+   "anchor": null,
+   "relevant": [
+    "gate-parallel-agents-on-file-overlap",
+    "validate-smoke-test-is-not-vacuous",
+    "wire-live-graph-replace-stub-server",
+    "independently-verify-execution-agent-completion-claims",
+    "detect-revert-cargo-fmt-agent-churn"
+   ],
+   "fresh_golds": [
+    "gate-parallel-agents-on-file-overlap",
+    "validate-smoke-test-is-not-vacuous",
+    "wire-live-graph-replace-stub-server",
+    "independently-verify-execution-agent-completion-claims",
+    "detect-revert-cargo-fmt-agent-churn"
+   ],
+   "split": "held_out"
+  },
+  {
+   "id": "t18-session-start-verbose-live-infra-quality-mandate",
+   "kind": "session_start",
+   "substratum": "verbose",
+   "text": "let me just be clear aboot something, it should be in your persistent memory as well. we're only working against live infra, real production logic flows and everything must be top tier quality ON PRODUCTION LIVE INFRA. i cannot stress this enough. if there any placeholders or stubs or anything else i consider it lying. don't lie to me. if anything requires additional digging into or clarifying stop immediately and let me know",
+   "source_session_id": "replica-0012-f7e56bd4",
+   "anchor": null,
+   "relevant": [
+    "reread-file-before-edit-on-conflict",
+    "verify-todo-diagnosis-matches-current-codebase",
+    "isolate-cross-crate-parallel-test-flakes",
+    "postgres-implicit-tx-atomic-ddl-batch",
+    "llm-extraction-test-must-use-substantive-fixture",
+    "filesystem-walk-resolver-fails-in-container-cwd-root",
+    "tokio-test-for-sqlx-reqwest-construction",
+    "sqlx-transaction-executor-hrtb-send-regression",
+    "migration-self-commit-escapes-outer-sqlx-tx",
+    "read-before-edit-file",
+    "fix-askuserquestion-options-overflow"
+   ],
+   "fresh_golds": [
+    "reread-file-before-edit-on-conflict",
+    "verify-todo-diagnosis-matches-current-codebase",
+    "isolate-cross-crate-parallel-test-flakes",
+    "postgres-implicit-tx-atomic-ddl-batch",
+    "llm-extraction-test-must-use-substantive-fixture",
+    "filesystem-walk-resolver-fails-in-container-cwd-root",
+    "tokio-test-for-sqlx-reqwest-construction",
+    "sqlx-transaction-executor-hrtb-send-regression",
+    "migration-self-commit-escapes-outer-sqlx-tx",
+    "read-before-edit-file",
+    "fix-askuserquestion-options-overflow"
+   ],
+   "split": "held_out"
+  },
+  {
+   "id": "t18-session-start-verbose-harness-grok-v2",
+   "kind": "session_start",
+   "substratum": "verbose",
+   "text": "you are a kickass coding harness agent given this system to use as your dynamic context layer. it should automatically parse your completed sessions, extract meaningful patterns and auto create skills to improve your ability to work with your user and on any given project. skills SHOULD be retrieved on each context window refresh or on demand. Grok the living shit out of this system. read the plans up to v-1-5 which should all be implemented, go through all logic paths, read every corner of the repo, tread through all interfaces and use all the pieces. give me your gosh darned honest evaluation and analysis of this project. be honest and brutal, we can take it.",
+   "source_session_id": "replica-0015-76428acd",
+   "anchor": null,
+   "relevant": [
+    "Ticket 205 has a dependency-ordering problem: it requires (preference)",
+    "rust-eliminate-expect-with-sum-types",
+    "validate-enforcement-guard-bites-in-all-zones",
+    "ml-benchmark-three-run-validity-design",
+    "rust-fail-loud-via-constructor-removal",
+    "fix-rust-cfg-test-depth-tracker-exit-condition",
+    "rag-retrieval-intent-split",
+    "never-push-without-explicit-request",
+    "uniform-binary-boost-cancels-in-ranking",
+    "rag-corpus-first-efficacy-measurement-ordering",
+    "fail-loud-on-missing-security-scope-env-var",
+    "cold-start-zero-prior-in-usage-scored-retrieval",
+    "relevance-floor-fragility-on-small-corpus"
+   ],
+   "fresh_golds": [
+    "Ticket 205 has a dependency-ordering problem: it requires (preference)",
+    "rust-eliminate-expect-with-sum-types",
+    "validate-enforcement-guard-bites-in-all-zones",
+    "ml-benchmark-three-run-validity-design",
+    "rust-fail-loud-via-constructor-removal",
+    "fix-rust-cfg-test-depth-tracker-exit-condition",
+    "rag-retrieval-intent-split",
+    "never-push-without-explicit-request",
+    "uniform-binary-boost-cancels-in-ranking",
+    "rag-corpus-first-efficacy-measurement-ordering",
+    "fail-loud-on-missing-security-scope-env-var",
+    "cold-start-zero-prior-in-usage-scored-retrieval",
+    "relevance-floor-fragility-on-small-corpus"
+   ],
+   "split": "tuning"
+  },
+  {
+   "id": "t18-session-start-verbose-docker-build-failure-musl",
+   "kind": "session_start",
+   "substratum": "verbose",
+   "text": "grok the shit out of this project, understand its goals, architecture, implementation path and the awesomeness that went into this. Then fix the damn docker build process, there should be a todo about it somewhere but here's the latest error output:\n\n=> ERROR [maintenance-worker builder 8/8] RUN --mount=type=cache,target=/app/target cargo build --release --target x86_64-unknown-linux-musl --b 0.8s\n=> CACHED [graph-builder planner 3/4] COPY . . 0.0s\n=> CACHED [graph-builder planner 4/4] RUN cargo chef prepare --recipe-path recipe.json 0.0s\n=> CACHED [graph-builder builder 5/8] COPY --from=planner /app/recipe.json recipe.json 0.0s\n=> CACHED [graph-builder builder 6/8] RUN --mount=type=cache,target=/app/target cargo chef cook --release --recipe-path recipe.json --target x86 0.0s\n=> CACHED [graph-builder builder 7/8] COPY . . 0.0s\n=> CANCELED [graph-builder builder 8/8] RUN --mount=type=cache,target=/app/target cargo build --release --target x86_64-unknown-linux-musl --bin 1.0s\n=> CANCELED [mcp-server builder 8/8] RUN --mount=type=cache,target=/app/target cargo build --release --target x86_64-unknown-linux-musl --bin mc 1.1s\n------\n> [maintenance-worker builder 8/8] RUN --mount=type=cache,target=/app/target cargo build --release --target x86_64-unknown-linux-musl --bin maintenance-worker && cp /app/target/x86_64-unknown-linux-musl/release/maintenance-worker /app/service-bin:\n0.696 error: no bin target named `maintenance-worker` in default-run packages\n0.696 help: available bin tar",
+   "source_session_id": "replica-0016-3367184b",
+   "anchor": null,
+   "relevant": [
+    "rust-cargo-bin-target-missing-docker-build-failure",
+    "build-tool-silent-coverage-gap",
+    "detect-agent-scope-creep-via-git-diff",
+    "read-before-edit-multi-file",
+    "cargo-all-targets-silently-skips-required-features",
+    "docker-compose-global-shared-mount-must-not-default-to-project-relative-path",
+    "cfg-test-vs-test-utils-import-mismatch",
+    "cargo-check-misses-workspace-integration-test-compilation",
+    "dual-scope-knowledge-store-intrinsic-vs-emergent-generality-routing",
+    "parallel-agent-wave-planning-via-file-overlap",
+    "orchestrator-must-verify-agent-results-independently",
+    "configuration-default-silent-misrouting",
+    "The extraction hook always sets repo_path to cwd (preference)"
+   ],
+   "fresh_golds": [
+    "rust-cargo-bin-target-missing-docker-build-failure",
+    "build-tool-silent-coverage-gap",
+    "detect-agent-scope-creep-via-git-diff",
+    "read-before-edit-multi-file",
+    "cargo-all-targets-silently-skips-required-features",
+    "docker-compose-global-shared-mount-must-not-default-to-project-relative-path",
+    "cfg-test-vs-test-utils-import-mismatch",
+    "cargo-check-misses-workspace-integration-test-compilation",
+    "dual-scope-knowledge-store-intrinsic-vs-emergent-generality-routing",
+    "parallel-agent-wave-planning-via-file-overlap",
+    "orchestrator-must-verify-agent-results-independently",
+    "configuration-default-silent-misrouting",
+    "The extraction hook always sets repo_path to cwd (preference)"
+   ],
+   "split": "tuning"
+  },
+  {
+   "id": "t18-session-start-verbose-sessionend-hook-ticket",
+   "kind": "session_start",
+   "substratum": "verbose",
+   "text": "we want to work on the P1 bug where the sessionEnd hook ships an absolute transcript reference that the validation rejects. Read it through carefully, analyze relevant architecture context and all touched upon areas of the code, plan the solution (option 4 we selected) to the tidbits, add e2e (real infra) tests and apply the fix, refactor until the tests pass and we have a clean working solution. use our docker compose setup, again real infra no bullshit placeholders or stubs. don't mind the human gating, we've already thought everything through, take it all the way. on this branch, don't stop until it looks and works perfectly.",
+   "source_session_id": "replica-0017-c7fca263",
+   "anchor": null,
+   "relevant": [
+    "rich-fixture-required-for-llm-extraction-tests",
+    "tokio-current-thread-starves-spawned-server",
+    "e2e-lenient-assertions-mask-real-failures",
+    "bounded-retry-for-llm-nondeterminism-in-e2e",
+    "shell-hook-fire-and-forget-setsid",
+    "postgres-work-queue-for-update-skip-locked",
+    "detect-test-leniency-masking-pipeline-failures"
+   ],
+   "fresh_golds": [
+    "rich-fixture-required-for-llm-extraction-tests",
+    "tokio-current-thread-starves-spawned-server",
+    "e2e-lenient-assertions-mask-real-failures",
+    "bounded-retry-for-llm-nondeterminism-in-e2e",
+    "shell-hook-fire-and-forget-setsid",
+    "postgres-work-queue-for-update-skip-locked",
+    "detect-test-leniency-masking-pipeline-failures"
+   ],
+   "split": "held_out"
+  },
+  {
+   "id": "t18-session-start-verbose-e2e-claude-provider-sweep",
+   "kind": "session_start",
+   "substratum": "verbose",
+   "text": "grok the shit out of this repo before doing anything. go over all logic paths, high level docs and their implementation, see where we are and where we're meant to go. i want you to run ALL e2e suite tests with the claude code cli provider. sonnet 4-6 as the extraction model. go through all extracted and generated data, the full test reports and give me a quality assessment and deep dive into the results. then compare to our previous ollama runs and give me an in depth summary",
+   "source_session_id": "replica-0018-92e5b61c",
+   "anchor": null,
+   "relevant": [
+    "deterministic-embedding-drift-from-input-policy-change",
+    "contamination-vs-precision-triangulation-for-no-match-failures",
+    "zero-second-test-failure-is-deterministic-not-flaky",
+    "latency-floor-shift-indicates-resource-starvation",
+    "read-before-edit-file-guard",
+    "audit-llm-seam-provider-coupling",
+    "avoid-hardcoding-llm-provider-in-extraction-tests",
+    "retrieval-embedding-reuse-silent-recall-loss-in-merge-dedup",
+    "cost-estimate-before-cloud-llm-e2e-run",
+    "single-transport-abstraction-for-provider-agnostic-seams"
+   ],
+   "fresh_golds": [
+    "deterministic-embedding-drift-from-input-policy-change",
+    "contamination-vs-precision-triangulation-for-no-match-failures",
+    "zero-second-test-failure-is-deterministic-not-flaky",
+    "latency-floor-shift-indicates-resource-starvation",
+    "read-before-edit-file-guard",
+    "audit-llm-seam-provider-coupling",
+    "avoid-hardcoding-llm-provider-in-extraction-tests",
+    "retrieval-embedding-reuse-silent-recall-loss-in-merge-dedup",
+    "cost-estimate-before-cloud-llm-e2e-run",
+    "single-transport-abstraction-for-provider-agnostic-seams"
+   ],
+   "split": "tuning"
+  },
+  {
+   "id": "t18-session-start-verbose-todo-triage-batch",
+   "kind": "session_start",
+   "substratum": "verbose",
+   "text": "let's go over all open todos, starting with the P1 sessionEnd hook absolute-path rejection bug and onwards. one at a time, present possible actions to resolve, once we make a decision update the todo file in place with the selected course of action",
+   "source_session_id": "replica-0020-9e91fe13",
+   "anchor": null,
+   "relevant": [
+    "path-starts-with-requires-symmetric-canonicalization",
+    "container-hook-absolute-path-resolution-options",
+    "parallel-rust-agents-require-file-disjoint-batches-and-git-worktrees",
+    "verify-phantom-field-claim-across-all-code-paths",
+    "git-add-all-sweeps-untracked-test-artifacts",
+    "zip-without-length-guard-silently-drops-trailing-items",
+    "triage-todo-backlog-with-decisions",
+    "parallel-agent-stale-base-detection-and-recovery",
+    "Relax the constitution to allow the user to (preference)",
+    "cargo-test-coupling-direction-online-depends-on-offline",
+    "regression-isolation-via-baseline-worktree",
+    "Defer all concrete actions to T05; use the (preference)",
+    "recover-stale-file-edit-retry",
+    "arcswap-rcu-use-return-value-not-closure-mutation",
+    "extract-behavior-not-predicate-for-exactly-once-unit-test"
+   ],
+   "fresh_golds": [
+    "path-starts-with-requires-symmetric-canonicalization",
+    "container-hook-absolute-path-resolution-options",
+    "parallel-rust-agents-require-file-disjoint-batches-and-git-worktrees",
+    "verify-phantom-field-claim-across-all-code-paths",
+    "git-add-all-sweeps-untracked-test-artifacts",
+    "zip-without-length-guard-silently-drops-trailing-items",
+    "triage-todo-backlog-with-decisions",
+    "parallel-agent-stale-base-detection-and-recovery",
+    "Relax the constitution to allow the user to (preference)",
+    "cargo-test-coupling-direction-online-depends-on-offline",
+    "regression-isolation-via-baseline-worktree",
+    "Defer all concrete actions to T05; use the (preference)",
+    "recover-stale-file-edit-retry",
+    "arcswap-rcu-use-return-value-not-closure-mutation",
+    "extract-behavior-not-predicate-for-exactly-once-unit-test"
+   ],
+   "split": "held_out"
+  },
+  {
+   "id": "t18-session-start-verbose-allnighter-final-push",
+   "kind": "session_start",
+   "substratum": "verbose",
+   "text": "we're going to pull an all nighter. grok the shit out of this repo before doing anything. go over all logic paths, high level docs and their implementation, see where we are and where we're meant to go. This is what's left in order to get this project out the door, it's in the last-hurdle plan doc. Go over stage 0 and stage 1 tasks, run all required research, then launch scoped sonnet execution-agent instances for each task with all the context and scope they need, validate each individual agent's work after they report done. do not proceed if something smells or isn't properly implemented",
+   "source_session_id": "replica-0023-bd3b7606",
+   "anchor": null,
+   "relevant": [
+    "bool-returning-assertion-helper-must-be-asserted",
+    "docker-compose-concurrent-bringup-lock",
+    "retrieval-quality-mrr-collapse-from-shared-test-scope",
+    "retry-ineffective-for-deterministic-llm-failures",
+    "fail-loud-never-silently-default-to-success",
+    "parallel-test-shared-scope-contamination",
+    "cargo-fmt-reformatting-noise-in-diffs",
+    "serde-default-swallows-missing-llm-output-field",
+    "isolate-e2e-corpus-rebaseline-before-tune",
+    "validate-committed-config-default-on-fresh-container",
+    "count-distinct-for-idempotent-upsert-reconciliation-assertions",
+    "rust-test-fake-env-guard-antipattern",
+    "ollama-thinking-model-think-false-structured-json"
+   ],
+   "fresh_golds": [
+    "bool-returning-assertion-helper-must-be-asserted",
+    "docker-compose-concurrent-bringup-lock",
+    "retrieval-quality-mrr-collapse-from-shared-test-scope",
+    "retry-ineffective-for-deterministic-llm-failures",
+    "fail-loud-never-silently-default-to-success",
+    "parallel-test-shared-scope-contamination",
+    "cargo-fmt-reformatting-noise-in-diffs",
+    "serde-default-swallows-missing-llm-output-field",
+    "isolate-e2e-corpus-rebaseline-before-tune",
+    "validate-committed-config-default-on-fresh-container",
+    "count-distinct-for-idempotent-upsert-reconciliation-assertions",
+    "rust-test-fake-env-guard-antipattern",
+    "ollama-thinking-model-think-false-structured-json"
+   ],
    "split": "held_out"
   }
  ]

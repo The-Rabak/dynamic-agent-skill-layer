@@ -55,8 +55,8 @@ session_id: work-2026-06-14-224314-T18
 | # | Unit | Kind | Serves / Unlocks | Status | Attempts | Session File |
 |---|------|------|------------------|--------|----------|--------------|
 | A | Pre-registration (metrics + ROI thresholds + judge rubric + negative-control design) | infra-packet | The locked ruler T12 is graded against; owner sign-off gate | **completed — LOCKED 2026-06-15** | 1 | unit-A-preregistration-DRAFT.md |
-| B | Author session-start stratum (thin/vague + VERBOSE substrata; multi-gold; anti-circularity probe) | infra-packet | The priming distribution the T11 fixture lacks | in_progress | -- | -- |
-| C | Negative-control gate run (permuted prime must crater set-coverage; runs FIRST) | infra-packet | Proves the coverage metric is non-vacuous before any verdict | pending | -- | -- |
+| B | Author session-start stratum (thin/vague + VERBOSE substrata; multi-gold; anti-circularity probe) | infra-packet | The priming distribution the T11 fixture lacks | **completed** (184 queries; 11+11; overlap 0.024) | 1 | unit-B-session-start-stratum.md |
+| C | Negative-control gate run (permuted prime must crater set-coverage; runs FIRST) | infra-packet | Proves the coverage metric is non-vacuous before any verdict | in_progress | -- | -- |
 | D | Baseline prime measured through `compile_context` (incl. verbose no_match quantified); raw artifacts | infra-packet | T12's honest before-number | pending | -- | -- |
 
 ## Owner decision points (STOP and ask) — THIS IS THE HOLD
