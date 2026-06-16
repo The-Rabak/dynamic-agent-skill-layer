@@ -7,10 +7,10 @@ use graph_builder::{
 };
 use infrastructure::{
     CircuitState, DependencyFactory, EmbeddingModelInfo, EventEnvelope, HealthReport,
-    InfrastructureHealthChecker, OllamaEmbeddingConfig, OllamaEmbeddingService, OutboxRelay,
-    PostgresAdapter, PostgresConfig, PostgresGraphWriteCoordinator, PostgresRebuildCoordinator,
-    QdrantAdapter, QdrantConfig, QdrantError, RebuildCoordinator, RedisStreamError,
-    RedisStreamsAdapter, RedisStreamsConfig, embedding_model_from_env, logging::init_logging,
+    InfrastructureHealthChecker, OutboxRelay, PostgresAdapter, PostgresConfig,
+    PostgresGraphWriteCoordinator, PostgresRebuildCoordinator, QdrantAdapter, QdrantConfig,
+    QdrantError, RebuildCoordinator, RedisStreamError, RedisStreamsAdapter, RedisStreamsConfig,
+    build_embedding_service_from_env, discover_embedding_arm, logging::init_logging,
     model_keyed_collection_name, model_keyed_hybrid_collection_name, validate_qdrant_url,
 };
 use retrieval::{RetrievalBackend, RetrievalConfig};
@@ -200,20 +200,15 @@ async fn maybe_replay_graph_rebuilt(
     }
 }
 
-/// Builds a real Ollama embedding service from the environment.
+/// Builds the live embedding service for the configured provider.
 ///
-/// Reads `OLLAMA_URL` (required, fails loud when unset) and delegates model
-/// selection to [`infrastructure::embedding_model_from_env`] (unset or blank
-/// defaults to `nomic-embed-text`). There is no fallback embedder in production.
-fn build_embedding_service() -> Result<OllamaEmbeddingService, Box<dyn std::error::Error>> {
-    let base_url = std::env::var("OLLAMA_URL")
-        .map_err(|_| "OLLAMA_URL must be set to connect to the embedding service")?;
-    let config = OllamaEmbeddingConfig {
-        base_url,
-        model: embedding_model_from_env(),
-        max_concurrency: 4,
-    };
-    OllamaEmbeddingService::from_config(config).map_err(|e| e.to_string().into())
+/// Selected by `EMBEDDING_PROVIDER` (default `ollama`); fails loud when the chosen
+/// provider's URL env (`OLLAMA_URL` / `TEI_URL`) is unset. There is no fallback
+/// embedder in production. The arm identity (collection name + dimension) is read
+/// from `OLLAMA_EMBED_MODEL` regardless of provider.
+fn build_embedding_service()
+-> Result<std::sync::Arc<dyn domain::EmbeddingService>, Box<dyn std::error::Error>> {
+    build_embedding_service_from_env(4).map_err(|e| e.to_string().into())
 }
 
 async fn run_rebuild_cycle(
@@ -345,10 +340,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Discover the real vector dimension from the live model before setting up
     // the Qdrant collection. This prevents hardcoded dimension mismatches when
     // switching from nomic (768) to qwen (2560) or any future model.
-    let model_info: EmbeddingModelInfo = embedding_service
-        .discover_dimension()
-        .await
-        .map_err(|e| format!("embedding dimension discovery failed: {e}"))?;
+    let model_info: EmbeddingModelInfo =
+        discover_embedding_arm(embedding_service.as_ref())
+            .await
+            .map_err(|e| format!("embedding dimension discovery failed: {e}"))?;
     tracing::info!(
         embedder_model = %model_info.model_name,
         dimension = model_info.dimension,
@@ -524,7 +519,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut orchestrator = GraphRebuildOrchestrator::new(
                 &mut durable_state,
                 &mut published_events,
-                &embedding_service,
+                embedding_service.as_ref(),
             );
             run_rebuild_cycle(
                 &mut watcher,

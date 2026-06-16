@@ -55,14 +55,18 @@ pub fn embedding_model_from_env() -> String {
 /// worst case (dense code/markdown) keeps a 4000-character cap safely under the
 /// 2048-token limit. Inputs longer than this are truncated with a `warn!` rather
 /// than allowed to fail the embed call (see `embed_with_timeout`).
-const MAX_EMBED_INPUT_CHARS: usize = 4000;
+pub(crate) const MAX_EMBED_INPUT_CHARS: usize = 4000;
 
 /// Caps an embedding input to the model's safe single-batch window, truncating
 /// on a UTF-8 char boundary and emitting a `warn!` when it does. Returns the text
 /// unchanged (cloned) when it already fits. Truncation is loud, never silent: a
 /// fixed embedding window legitimately bounds the input, but operators are told so
 /// they can shorten the source if full-fidelity embedding matters.
-fn cap_to_embed_window(text: &str) -> String {
+///
+/// Shared with the TEI embedding service (`crate::embeddings::tei`) so every
+/// provider applies the SAME input window — a cross-provider A/B is only valid if
+/// the corpus and query texts are capped identically before embedding.
+pub(crate) fn cap_to_embed_window(text: &str) -> String {
     let char_count = text.chars().count();
     if char_count <= MAX_EMBED_INPUT_CHARS {
         return text.to_owned();

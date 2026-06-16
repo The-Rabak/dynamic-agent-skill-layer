@@ -5,11 +5,11 @@ use chrono::Utc;
 use domain::EmbeddingService;
 use infrastructure::{
     ClaudeGeneralityVerifier, ClaudeGeneralityVerifierConfig, ClaudeMergeVerifier,
-    ClaudeMergeVerifierConfig, LlmEquivalenceVerifier, OllamaEmbeddingConfig,
-    OllamaEmbeddingService, OllamaGeneralityVerifier, OllamaGeneralityVerifierConfig,
-    OllamaMergeVerifier, OllamaMergeVerifierConfig, PostgresAdapter, PostgresConfig,
-    PostgresGraphSnapshotStore, PostgresPromotionRecurrenceStore, PostgresUsageSampleStore,
-    PromotionRecurrenceStore, SkillGeneralityVerifier, TranscriptIngestQueue, UsageSampleStore,
+    ClaudeMergeVerifierConfig, LlmEquivalenceVerifier, OllamaGeneralityVerifier,
+    OllamaGeneralityVerifierConfig, OllamaMergeVerifier, OllamaMergeVerifierConfig,
+    PostgresAdapter, PostgresConfig, PostgresGraphSnapshotStore, PostgresPromotionRecurrenceStore,
+    PostgresUsageSampleStore, PromotionRecurrenceStore, SkillGeneralityVerifier,
+    TranscriptIngestQueue, UsageSampleStore, build_embedding_service_from_env,
     logging::{ServiceLoggingConfig, init_service_logging},
 };
 use session_extractor::SessionExtractor;
@@ -588,24 +588,16 @@ fn build_transcript_drain(pg_adapter: &PostgresAdapter) -> Option<TranscriptQueu
     ))
 }
 
-/// Builds a real Ollama embedding service from `OLLAMA_URL`.
+/// Builds the live embedding service for the configured provider.
 ///
-/// Returns an error (causing the worker to fail at boot) when `OLLAMA_URL` is unset.
-/// There is no silent fallback — missing configuration must surface loudly.
+/// Selected by `EMBEDDING_PROVIDER` (default `ollama`). Returns an error (causing
+/// the worker to fail at boot) when the chosen provider's URL env (`OLLAMA_URL` /
+/// `TEI_URL`) is unset. There is no silent fallback — missing configuration must
+/// surface loudly. The arm identity comes from `OLLAMA_EMBED_MODEL`, so maintenance
+/// candidates embed at the SAME dimension/arm graph-builder + mcp-server use (a
+/// mismatch would corrupt cosine/merge).
 fn build_embedding_service_from_environment() -> Result<Arc<dyn EmbeddingService>, String> {
-    let base_url = std::env::var("OLLAMA_URL").map_err(|_| "OLLAMA_URL must be set".to_owned())?;
-    let config = OllamaEmbeddingConfig {
-        base_url,
-        // Honor OLLAMA_EMBED_MODEL (de-facto default qwen3-embedding:4b). A hardcoded
-        // model here would embed maintenance candidates at the WRONG dimension for a
-        // qwen3 corpus (768 vs 2560) and corrupt cosine/merge — must match the arm
-        // graph-builder + mcp-server use.
-        model: infrastructure::embedding_model_from_env(),
-        max_concurrency: 4,
-    };
-    let service = OllamaEmbeddingService::from_config(config)
-        .map_err(|e| format!("OllamaEmbeddingService init failed: {e}"))?;
-    Ok(Arc::new(service) as Arc<dyn EmbeddingService>)
+    build_embedding_service_from_env(4).map_err(|e| e.to_string())
 }
 
 /// Builds the merge-verifier LLM provider from `MERGE_VERIFIER_PROVIDER`.

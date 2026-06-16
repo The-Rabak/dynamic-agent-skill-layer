@@ -9,7 +9,13 @@ services:
     ports:
       - "${POSTGRES_PORT:-15432}:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      # postgres:18 uses PGDATA=/var/lib/postgresql/18/docker and declares
+      # VOLUME /var/lib/postgresql. Mounting the named volume at the legacy
+      # /var/lib/postgresql/data left PGDATA in a per-container ANONYMOUS volume
+      # that was orphaned (corpus appeared to vanish) whenever the container was
+      # recreated. Mount the named volume at the real PGDATA parent so the cluster
+      # persists across recreates.
+      - postgres_data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 10s
@@ -131,6 +137,19 @@ services:
       REDIS_URL: redis://redis:6379
       QDRANT_URL: http://qdrant:6333
       OLLAMA_URL: http://ollama:11434
+      # Embedding arm selection. Defaults preserve production: Ollama + qwen3:4b.
+      # The embedding-model/server A/B (T12 latency experiment) flips these:
+      #   EMBEDDING_PROVIDER=tei, TEI_URL=http://tei:80, OLLAMA_EMBED_MODEL=<arm label>
+      # OLLAMA_EMBED_MODEL is the arm identity for the model-keyed collection + /health
+      # (under TEI set it to e.g. qwen3-embedding-4b-tei to isolate that arm's vectors).
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-ollama}
+      TEI_URL: ${TEI_URL:-http://tei:80}
+      OLLAMA_EMBED_MODEL: ${OLLAMA_EMBED_MODEL:-qwen3-embedding:4b}
+      TEI_CLIENT_BATCH_SIZE: ${TEI_CLIENT_BATCH_SIZE:-32}
+      # Retrieval/priming knobs surfaced for the T12 latency curve (explicit prod
+      # defaults: snapshot_dense backend, multi-view priming at 8 segments).
+      RETRIEVAL_BACKEND: ${RETRIEVAL_BACKEND:-snapshot_dense}
+      RETRIEVAL_PRIMING_MAX_SEGMENTS: ${RETRIEVAL_PRIMING_MAX_SEGMENTS:-8}
       SKILL_GLOBAL_PATHS: /skills/global
       SKILL_GLOBAL_ALLOWED_ROOTS: ${SKILL_GLOBAL_ALLOWED_ROOTS:-/skills/project,/skills/global}
       # Declares the in-container project scope root (issue #154). The container's
@@ -188,6 +207,12 @@ services:
       REDIS_URL: redis://redis:6379
       QDRANT_URL: http://qdrant:6333
       OLLAMA_URL: http://ollama:11434
+      # Embedding arm selection (see mcp-server). graph-builder must embed the
+      # corpus with the SAME provider/arm as mcp-server or vectors would mismatch.
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-ollama}
+      TEI_URL: ${TEI_URL:-http://tei:80}
+      OLLAMA_EMBED_MODEL: ${OLLAMA_EMBED_MODEL:-qwen3-embedding:4b}
+      TEI_CLIENT_BATCH_SIZE: ${TEI_CLIENT_BATCH_SIZE:-32}
       GRAPH_BUILDER_PROJECT_ROOT: ${GRAPH_BUILDER_PROJECT_ROOT:-/skills/project}
       GRAPH_BUILDER_GLOBAL_ROOT: ${GRAPH_BUILDER_GLOBAL_ROOT:-/skills/global}
       GRAPH_BUILDER_ADDR: 0.0.0.0:${GRAPH_BUILDER_PORT:-8080}
@@ -227,6 +252,12 @@ services:
       REDIS_URL: redis://redis:6379
       QDRANT_URL: http://qdrant:6333
       OLLAMA_URL: http://ollama:11434
+      # Embedding arm selection (see mcp-server). Maintenance embeds merge/dedup
+      # candidates and must use the SAME provider/arm as the live corpus.
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-ollama}
+      TEI_URL: ${TEI_URL:-http://tei:80}
+      OLLAMA_EMBED_MODEL: ${OLLAMA_EMBED_MODEL:-qwen3-embedding:4b}
+      TEI_CLIENT_BATCH_SIZE: ${TEI_CLIENT_BATCH_SIZE:-32}
       # Transcript-ingest queue drain (todo 103). The drain feeds queued content
       # via transcript_inline, so CLAUDE_TRANSCRIPT_ROOT is never read for IO —
       # it is required only by SessionExtractor::from_environment's construction
@@ -243,9 +274,51 @@ services:
       - ${SKILL_GLOBAL_HOST_PATH:-${HOME}/.claude/skills}:/skills/global
     restart: unless-stopped
 
+  # HuggingFace Text Embeddings Inference — the alternative embedding server for
+  # the T12 embedding-model/server A/B (arms A1 = 4b/TEI, A3 = 0.6b/TEI). Gated
+  # behind the `tei` compose profile so the default production stack never starts
+  # it (and never reserves the GPU for it). Bring it up only for an experiment arm:
+  #   TEI_MODEL_ID=Qwen/Qwen3-Embedding-0.6B docker compose --profile tei up -d tei
+  # Then restart mcp-server/graph-builder with EMBEDDING_PROVIDER=tei + TEI_URL.
+  tei:
+    image: ghcr.io/huggingface/text-embeddings-inference:cuda-1.9
+    container_name: ${COMPOSE_PROJECT_NAME:-skill-layer}-tei
+    profiles: ["tei"]
+    # Qwen3-Embedding uses last-token pooling; match it explicitly. No instruction
+    # prompt is configured (the client sends raw text — parity with the Ollama arm).
+    command:
+      - "--model-id"
+      - "${TEI_MODEL_ID:-Qwen/Qwen3-Embedding-0.6B}"
+      - "--pooling"
+      - "last-token"
+      - "--max-client-batch-size"
+      - "${TEI_MAX_CLIENT_BATCH_SIZE:-64}"
+      - "--max-batch-tokens"
+      - "${TEI_MAX_BATCH_TOKENS:-32768}"
+    environment:
+      # Optional HF token for gated/rate-limited model pulls (Qwen3-Embedding is public).
+      HF_TOKEN: ${HF_TOKEN:-}
+      # Flash-attention kernels produce NaN embeddings on pre-Ampere GPUs (the host
+      # RTX 2060 is Turing, compute 7.5). Default OFF here so the experiment host
+      # gets correct vectors; set USE_FLASH_ATTENTION=true on an Ampere+ card.
+      USE_FLASH_ATTENTION: ${USE_FLASH_ATTENTION:-false}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    ports:
+      - "127.0.0.1:${TEI_PORT:-8085}:80"
+    volumes:
+      - tei_data:/data
+    restart: unless-stopped
+
 volumes:
   postgres_data:
   redis_data:
   qdrant_data:
+  tei_data:
   ollama_data:
     external: true

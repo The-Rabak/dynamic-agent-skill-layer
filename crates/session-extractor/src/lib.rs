@@ -26,9 +26,9 @@ use domain::{
     DomainId, EmbeddingService, ExtractionError, ExtractionResult, TranscriptSkillExtractionService,
 };
 use infrastructure::{
-    EventEnvelope, LlmEquivalenceVerifier, OllamaEmbeddingConfig, OllamaEmbeddingService,
-    RedisStreamError, RedisStreamsAdapter, RedisStreamsConfig, RetryPolicy, StructuredTextLlm,
-    TextLlmEquivalenceVerifier, retry_with_backoff,
+    EventEnvelope, LlmEquivalenceVerifier, RedisStreamError, RedisStreamsAdapter,
+    RedisStreamsConfig, RetryPolicy, StructuredTextLlm, TextLlmEquivalenceVerifier,
+    retry_with_backoff,
 };
 use orchestrator::{OrchestrationConfig, OrchestrationError, run_orchestration};
 use routing::{RoutingConfigError, RoutingDecision, compute_routing_decision};
@@ -424,12 +424,6 @@ impl SessionExtractor {
         // `active_run_path` bundles the run-path discriminant with its required seams so
         // "Orchestrated without seams" cannot be represented (no Option-unwrap panics at job time).
         let active_run_path: ActiveRunPath = if run_path == ExtractionRunPath::Orchestrated {
-            // Embeddings are ALWAYS local via Ollama — the one documented exception
-            // to provider selection. The model is the configured arm (default
-            // qwen3-embedding:4b), read from OLLAMA_EMBED_MODEL. OLLAMA_URL is
-            // therefore required even when the seams run on claude-code.
-            let ollama_url = seams::require_ollama_base_url()?;
-
             // Build ONE provider-agnostic text-LLM transport for ALL four LLM
             // seams (skeleton / synthesis / preamble / equivalence), selected by
             // `EXTRACT_SESSION_PROVIDER`. This is the seam analogue of the map-step
@@ -444,20 +438,16 @@ impl SessionExtractor {
                     .map_err(|e| SessionExtractorInitError::SeamInit(e.to_string()))?,
             };
 
-            // Build the embed config before logging so we can report the
-            // resolved model name rather than a hardcoded literal.
-            // Embedder: OllamaEmbeddingService from OLLAMA_URL using the
-            // configured arm (default qwen3-embedding:4b).
-            let embed_config = OllamaEmbeddingConfig {
-                base_url: ollama_url.clone(),
-                model: infrastructure::embedding_model_from_env(),
-                max_concurrency: 4,
-            };
+            // Embedder: provider selected by EMBEDDING_PROVIDER (default ollama),
+            // arm identity from OLLAMA_EMBED_MODEL (default qwen3-embedding:4b).
+            // Resolve labels before logging so we report the real arm, not a literal.
+            let embed_model = infrastructure::embedding_model_from_env();
+            let embed_provider = infrastructure::embedding_provider_from_env();
 
             tracing::info!(
                 seam_provider = seam_llm.provider_label(),
                 seam_model = seam_llm.model(),
-                embedding = format!("ollama:{} (always local)", embed_config.model).as_str(),
+                embedding = format!("{embed_provider}:{embed_model} (always local)").as_str(),
                 "orchestration seams built from environment"
             );
 
@@ -470,10 +460,9 @@ impl SessionExtractor {
             let equivalence_verifier: Arc<dyn LlmEquivalenceVerifier> =
                 Arc::new(TextLlmEquivalenceVerifier::new(seam_llm.clone()));
 
-            let embedder: Arc<dyn EmbeddingService> = Arc::new(
-                OllamaEmbeddingService::from_config(embed_config)
-                    .map_err(|e| SessionExtractorInitError::SeamInit(e.to_string()))?,
-            );
+            let embedder: Arc<dyn EmbeddingService> =
+                infrastructure::build_embedding_service_from_env(4)
+                    .map_err(|e| SessionExtractorInitError::SeamInit(e.to_string()))?;
 
             ActiveRunPath::Orchestrated(OrchestrationSeams {
                 skeleton_labeler: labeler as Arc<dyn SkeletonLabeler>,

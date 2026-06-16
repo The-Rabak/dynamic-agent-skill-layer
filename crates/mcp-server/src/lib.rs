@@ -39,16 +39,15 @@ use domain::{EmbeddingService, ScopeResolver};
 #[cfg(any(test, feature = "test-utils"))]
 use infrastructure::OutboxVectorStore;
 use infrastructure::{
-    EmbeddingCacheRow, EmbeddingCacheStore, EmbeddingModelInfo, EnvPathGlobalResolver,
-    FsMarkerProjectResolver, LoadedEmbedding, OllamaEmbeddingConfig, OllamaEmbeddingService,
-    PersistedGraphSkillRecord, PostgresAdapter, PostgresConfig, PostgresGraphSnapshotStore,
-    PostgresGraphWriteCoordinator, PostgresPool, PostgresRebuildCoordinator,
-    PostgresUsageSampleStore, PostgresUsageWriter, QdrantAdapter, QdrantConfig, QdrantError,
-    ReadinessHandle, RedisClient, RedisStreamsAdapter, RedisStreamsConfig, SessionUsageRecord,
-    SkillSelectionRecord, TranscriptIngestQueue, UsagePersistencePort, UsageSampleStore,
-    VIEW_KIND_E_NEEDS, VIEW_KIND_E_NEGATIVE, VIEW_KIND_E_SUMMARY, VIEW_KIND_E_TASK,
-    content_hash_for_view_text, model_keyed_collection_name, model_keyed_hybrid_collection_name,
-    subunit_view_kind,
+    DynEmbeddingService, EmbeddingCacheRow, EmbeddingCacheStore, EmbeddingModelInfo,
+    EnvPathGlobalResolver, FsMarkerProjectResolver, LoadedEmbedding, PersistedGraphSkillRecord,
+    PostgresAdapter, PostgresConfig, PostgresGraphSnapshotStore, PostgresGraphWriteCoordinator,
+    PostgresPool, PostgresRebuildCoordinator, PostgresUsageSampleStore, PostgresUsageWriter,
+    QdrantAdapter, QdrantConfig, QdrantError, ReadinessHandle, RedisClient, RedisStreamsAdapter,
+    RedisStreamsConfig, SessionUsageRecord, SkillSelectionRecord, TranscriptIngestQueue,
+    UsagePersistencePort, UsageSampleStore, VIEW_KIND_E_NEEDS, VIEW_KIND_E_NEGATIVE,
+    VIEW_KIND_E_SUMMARY, VIEW_KIND_E_TASK, content_hash_for_view_text, discover_embedding_arm,
+    model_keyed_collection_name, model_keyed_hybrid_collection_name, subunit_view_kind,
 };
 use maintenance::RetirementConfig;
 use retrieval::{
@@ -538,7 +537,7 @@ pub enum TranscriptIngestOutcome {
 /// deadlock between the writer and teardown.
 pub struct LiveServerComponents {
     pub app: McpServerApp,
-    pub embedding_service: Arc<OllamaEmbeddingService>,
+    pub embedding_service: Arc<DynEmbeddingService>,
     pub write_coordinator: Arc<PostgresGraphWriteCoordinator>,
     pub qdrant_adapter: Arc<QdrantAdapter>,
     pub redis_adapter: Arc<RedisStreamsAdapter>,
@@ -731,8 +730,7 @@ async fn build_live_server(
             // Discover the real vector dimension from the live model BEFORE
             // creating/validating the Qdrant collection. This ensures the
             // collection is sized to the actual model output, not a hardcoded value.
-            let embedding_model_info = embedding_service
-                .discover_dimension()
+            let embedding_model_info = discover_embedding_arm(embedding_service.as_ref())
                 .await
                 .map_err(|e| format!("embedding dimension discovery failed: {e}"))?;
             let q = build_qdrant_adapter_with_model(&embedding_model_info).await?;
@@ -836,7 +834,7 @@ async fn build_live_server(
     // EMBED_CIRCUIT_FAILURE_THRESHOLD and EMBED_CIRCUIT_OPEN_FOR_SECS with
     // sane defaults; panics loudly on malformed values (per no-stubs mandate).
     let embedding_breaker: CircuitBreaker =
-        RetrievalOrchestrator::<OllamaEmbeddingService>::build_embedding_circuit_breaker_from_env();
+        RetrievalOrchestrator::<DynEmbeddingService>::build_embedding_circuit_breaker_from_env();
 
     // When QdrantHybrid is active, inject the real HybridCandidateSource so the
     // C3 read arm can query Qdrant at request time. The collection name is derived
@@ -1051,18 +1049,8 @@ async fn build_qdrant_adapter_with_model(
     Ok(Arc::new(qdrant_adapter))
 }
 
-/// Delegates to the shared infrastructure helper so the resolution policy is
-/// defined in exactly one place.
-///
-/// Kept as a local name so the `embedding_model_env_tests` module below can call
-/// it without import churn; #240 will migrate those tests to use the pure
-/// `infrastructure::resolve_embedding_model` directly.
-fn embedding_model_from_env() -> String {
-    infrastructure::embedding_model_from_env()
-}
-
 fn build_embedding_service()
--> Result<Arc<OllamaEmbeddingService>, Box<dyn std::error::Error + Send + Sync>> {
+-> Result<Arc<DynEmbeddingService>, Box<dyn std::error::Error + Send + Sync>> {
     // Concurrency cap for embedding requests. The previous hardcoded `4` throttled
     // the warm read path: under concurrent sessions, per-request `compile_context`
     // embed calls piled up behind a 4-permit semaphore, driving p95 latency far over
@@ -1078,13 +1066,10 @@ fn build_embedding_service()
     if max_concurrency == 0 {
         return Err("EMBED_MAX_CONCURRENCY must be greater than zero".into());
     }
-    let ollama_config = OllamaEmbeddingConfig {
-        base_url: env_var("OLLAMA_URL")?,
-        model: embedding_model_from_env(),
-        max_concurrency,
-    };
-    let embedding_service = OllamaEmbeddingService::from_config(ollama_config)
-        .map_err(|e| format!("ollama init failed: {e}"))?;
+    // Provider selected by EMBEDDING_PROVIDER (ollama default, or tei). Fails loud
+    // when the chosen provider's URL env (OLLAMA_URL / TEI_URL) is unset.
+    let embedding_service = DynEmbeddingService::from_env(max_concurrency)
+        .map_err(|e| format!("embedding service init failed: {e}"))?;
     Ok(Arc::new(embedding_service))
 }
 
@@ -1163,8 +1148,8 @@ fn scope_paths_from_env(name: &str) -> Vec<std::path::PathBuf> {
 ///       intervention that restarts the server.
 struct PostgresGraphReloader {
     pg_adapter: Arc<PostgresAdapter>,
-    embedding_service: Arc<OllamaEmbeddingService>,
-    retriever: Arc<RetrievalOrchestrator<OllamaEmbeddingService>>,
+    embedding_service: Arc<DynEmbeddingService>,
+    retriever: Arc<RetrievalOrchestrator<DynEmbeddingService>>,
     usage_sample_store: Arc<PostgresUsageSampleStore>,
     /// The active embedding model identity discovered at boot via
     /// `discover_dimension`.  Passed to `build_graph_from_pg` on every reload
@@ -1238,8 +1223,8 @@ impl GraphReloader for PostgresGraphReloader {
 fn spawn_graph_refresh_subscriber(
     redis_streams: Arc<RedisStreamsAdapter>,
     pg_adapter: Arc<PostgresAdapter>,
-    embedding_service: Arc<OllamaEmbeddingService>,
-    retriever: Arc<RetrievalOrchestrator<OllamaEmbeddingService>>,
+    embedding_service: Arc<DynEmbeddingService>,
+    retriever: Arc<RetrievalOrchestrator<DynEmbeddingService>>,
     usage_sample_store: Arc<PostgresUsageSampleStore>,
     model_info: EmbeddingModelInfo,
     readiness: Arc<ReadinessHandle>,
@@ -2514,21 +2499,6 @@ mod embedding_model_env_tests {
             resolve_embedding_model(Some("qwen3-embedding:4b")),
             "qwen3-embedding:4b",
             "a non-blank model name must be returned unchanged"
-        );
-    }
-
-    /// Smoke-tests that the local `embedding_model_from_env` wrapper returns a
-    /// non-empty String, proving it delegates to the infrastructure resolution
-    /// path rather than returning a hard-coded constant or panicking.
-    ///
-    /// This test reads the real environment but never mutates it, so it is
-    /// safe to run concurrently with any other test.
-    #[test]
-    fn embedding_model_from_env_returns_non_empty_string() {
-        let model = super::embedding_model_from_env();
-        assert!(
-            !model.is_empty(),
-            "embedding_model_from_env must always return a non-empty model name"
         );
     }
 }

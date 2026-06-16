@@ -5,7 +5,6 @@ use admin::tools::{
     PostgresGraphSnapshotReader,
 };
 use domain::{EmbeddingService, ScopeRoot, ScopeType};
-use infrastructure::{OllamaEmbeddingConfig, OllamaEmbeddingService};
 
 /// Runtime dependencies that wire admin tools into the MCP transport surface.
 ///
@@ -45,23 +44,16 @@ pub(crate) fn admin_runtime_dependencies_with_embedder(
     }
 }
 
-/// Builds a real Ollama embedding service from the `OLLAMA_URL` environment variable.
+/// Builds the live embedding service for the configured provider.
 ///
-/// Panics at boot when `OLLAMA_URL` is unset — production must not continue without
-/// a real embedder. There is no silent fallback.
+/// Selected by `EMBEDDING_PROVIDER` (default `ollama`). Panics at boot when the
+/// chosen provider's URL env (`OLLAMA_URL` / `TEI_URL`) is unset — production must
+/// not continue without a real embedder. There is no silent fallback. Honors
+/// `OLLAMA_EMBED_MODEL` as the arm identity so admin tooling embeds at the same
+/// dimension/arm as the live corpus.
 fn build_embedding_service() -> Arc<dyn EmbeddingService> {
-    let base_url = std::env::var("OLLAMA_URL")
-        .expect("OLLAMA_URL must be set to connect to the embedding service");
-    let config = OllamaEmbeddingConfig {
-        base_url,
-        // Honor OLLAMA_EMBED_MODEL (de-facto default qwen3-embedding:4b) so admin
-        // tooling embeds at the same dimension/arm as the live corpus.
-        model: infrastructure::embedding_model_from_env(),
-        max_concurrency: 4,
-    };
-    let service = OllamaEmbeddingService::from_config(config)
-        .expect("OllamaEmbeddingService construction must succeed with a valid config");
-    Arc::new(service) as Arc<dyn EmbeddingService>
+    infrastructure::build_embedding_service_from_env(4)
+        .expect("embedding service construction must succeed with a valid provider config")
 }
 
 /// Build the default project and global scope roots used by the filesystem

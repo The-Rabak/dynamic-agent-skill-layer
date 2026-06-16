@@ -1,5 +1,7 @@
 pub mod embeddings {
     pub mod ollama;
+    pub mod provider;
+    pub mod tei;
 }
 
 pub mod extraction;
@@ -30,6 +32,14 @@ pub mod vector {
 pub use embeddings::ollama::{
     EmbeddingModelInfo, OllamaEmbeddingConfig, OllamaEmbeddingService, embedding_model_from_env,
     resolve_embedding_model,
+};
+pub use embeddings::provider::{
+    DynEmbeddingService, build_embedding_service_from_env, discover_embedding_arm,
+    embedding_provider_from_env,
+};
+pub use embeddings::tei::{
+    DEFAULT_TEI_CLIENT_BATCH_SIZE, TeiEmbeddingConfig, TeiEmbeddingService,
+    tei_client_batch_size_from_env,
 };
 pub use extraction::claude::{ClaudeExtractionConfig, ClaudeExtractor};
 pub use extraction::claude_code::{

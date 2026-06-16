@@ -1,6 +1,8 @@
 # Experiment plan — embedding model size & inference server: latency vs retrieval quality
 
-**Status:** DRAFT (plan only — no execution). Authored 2026-06-15, branch `feat/v-1-7`.
+**Status:** MEASURED. A2 (0.6b/Ollama) 2026-06-15; A1 (4b/TEI) + A3 (0.6b/TEI) 2026-06-16. A1=GPU-infeasible
+(VRAM OOM); A3=clears T11 gate, best latency, TEI quality-neutral vs Ollama (H3 confirmed). See results +
+incident sections below. Authored 2026-06-15, branch `feat/v-1-7`.
 **Owner gate:** run only on owner "go" (re-embeds the corpus, swaps the live embedding arm).
 **Motivation:** T12 left a flagged tension — query-side multi-view (and even a single 4B verbose
 embed) breaches the 500 ms SessionStart budget. Investigation
@@ -176,6 +178,83 @@ coverage + no_match precision. The cost is a bounded Task-ranking dip (within fl
 (a) re-confirm via the full `--gate` wrapper after a 0.6b corpus re-seed (α=0 crater), (b) recalibrate
 the 0.48 Task / 0.30 priming floors on the 0.6b score scale, (c) optionally measure A1/A3 (TEI) for
 extra multi-view latency headroom. TEI not yet measured (A1/A3 pending).
+
+## Results — Arms A1 (4b/TEI) + A3 (0.6b/TEI), measured 2026-06-16
+
+TEI stood up as a profile-gated compose service (`ghcr.io/huggingface/text-embeddings-inference:cuda-1.9`),
+new `TeiEmbeddingService` impl of the `EmbeddingService` trait behind an `EMBEDDING_PROVIDER` selector
+(`DynEmbeddingService` enum so `RetrievalOrchestrator<E>` stays monomorphic), all 5 production
+construction sites routed through it. Code gate-green (both clippy forms + fmt + 17 embedding unit tests).
+Raw artifacts: `tests/e2e/reports/retrieval/t12_task_quality_a3_0p6b_tei.json`,
+`t12_priming_a3_0p6b_tei_seg{1,4,8}.json`.
+
+**Two host-specific TEI settings were REQUIRED on the RTX 2060 (Turing, compute 7.5) — themselves findings:**
+- `USE_FLASH_ATTENTION=false`: TEI's `FlashQwen3` flash-attention kernels return **NaN** embeddings on
+  pre-Ampere GPUs (serialized as JSON `null`; reqwest decode then fails). Disabling flash → real vectors.
+- `--max-batch-tokens 4096` (down from 32768): without flash attention the warmup materializes an
+  O(seq²) attention matrix that **OOMs** at the default 32k tokens on 6 GB. Our inputs are ≤4000 chars,
+  so 4096 is ample. Both are baked into the compose `tei` service as host-appropriate defaults.
+
+**Arm A1 (4b/TEI) — INFEASIBLE on this card (confirms H2/the VRAM hypothesis).** TEI's CUDA backend is
+GPU-only (no CPU offload like Ollama/llama.cpp). Loading Qwen3-Embedding-4B fp16 (~8 GB weights) onto the
+6 GB card fails immediately: `Could not start Candle backend: DriverError(CUDA_ERROR_OUT_OF_MEMORY)`. So
+TEI cannot serve the 4b arm on this hardware at all — latency is moot. The CPU-image fallback (quality-only
+parity) was NOT run: the H3 parity question is already answered by A3 below (see verdict), and 4b is a
+non-viable arm regardless (the whole experiment is about moving OFF VRAM-bound 4b).
+
+**Arm A3 (0.6b/TEI) — clears the gate, best latency yet, quality-neutral vs Ollama:**
+
+Task quality (find_skill snapshot_dense probe, validated `retrieval_metrics`, vs the A0 4B reference):
+
+| metric | 4b ref | A2 (0.6b/Ollama) | **A3 (0.6b/TEI)** | T11 floor | pass |
+|---|---|---|---|---|---|
+| MRR@3 | 0.743 | 0.686 | **0.6837** | 0.64 | ✓ |
+| nDCG@3 | 0.755 | 0.703 | **0.6955** | 0.64 | ✓ |
+| cand-recall@50 | 0.796 | 0.752 | **0.7299** | 0.68 | ✓ |
+| no_match precision | 0.92 | 1.00 | **1.00** | 0.88 | ✓ |
+
+ALL T11 floors PASS. Task p95 **111 ms**.
+
+Priming (T18 session_start instrument) + the SessionStart latency curve:
+
+| max_segments | A3 (0.6b/TEI) p95 | A2 (0.6b/Ollama) | 4b/Ollama | A3 coverage@3 |
+|---|---|---|---|---|
+| 1 (single-embed) | **298 ms** | 411 ms | ~560 ms | 0.0797 |
+| 4 | 526 ms | — | — | 0.0934 |
+| 8 (multi-view) | **507 ms** | 1007 ms | 2240 ms | 0.0934 |
+
+Neg-control PASS at every seg (rel_drop ~0.62–0.64). Priming paired delta +0.0196 @ seg8 (sign p=0.45 —
+under the +0.10 bar, same inert-rerank story as A2/4b). Coverage plateaus at seg=4 (most queries ≤4 views).
+
+**Verdict (A1+A3):**
+- **H3 parity (TEI quality-neutral vs Ollama) — CONFIRMED at 0.6b.** TEI-0.6b vs Ollama-0.6b: MRR@3
+  0.6837 vs 0.686 (Δ0.002, inside the ±0.02 band), cand-recall 0.730 vs 0.752 (Δ0.022, at the band edge),
+  no_match 1.00 vs 1.00. If TEI mishandled Qwen3-Embedding's last-token pooling / no-instruction-prefix,
+  these would diverge; they don't. Parity holds independent of model size, so A1's GPU-OOM does not leave
+  parity unanswered.
+- **H2 (TEI's batched /embed is the multi-view latency lever) — CONFIRMED.** A single `/embed` per
+  client-batch vs Ollama's per-text calls roughly **halves** multi-view latency (507 ms vs 1007 ms at
+  seg=8) and ~**4.4×** vs 4b (2240 ms). Single-embed priming is a comfortable 298 ms.
+- **TEI + 0.6b is the strongest latency arm.** Single-embed priming 298 ms (vs 4b 560 ms); multi-view
+  ~510 ms — right at the 500 ms SessionStart budget (vs 4b's 4.5× breach), so multi-view becomes
+  borderline-feasible instead of impossible. Task p95 111 ms.
+- **Caveat (unchanged from A2):** full `--gate` α=0 crater canary still pending a 0.6b-TEI Qdrant re-seed;
+  recalibrate the 0.48 Task / 0.30 priming floors on the 0.6b-TEI score scale before any production flip.
+
+## Incident (2026-06-16): corpus data-loss scare during arm setup — RECOVERED
+
+Switching the live mcp-server onto a TEI arm triggered a recreate of the `postgres` container, which
+surfaced a **pre-existing compose misconfig**: `postgres:18` uses `PGDATA=/var/lib/postgresql/18/docker`
+(VOLUME `/var/lib/postgresql`), but the compose mounted the named `postgres_data` volume at the legacy
+`/var/lib/postgresql/data`. The real cluster therefore lived in a per-container ANONYMOUS volume that was
+orphaned on recreate → the new container came up with an empty DB (skills=0). Compounded by the real corpus
+DB being `skill_layer_test` (not the compose default `skill_layer`) — so the first TEI restart, lacking
+`POSTGRES_DB=skill_layer_test`, also connected to an empty DB. **This produced a FALSE "TEI craters
+retrieval" reading (MRR 0.0)** that was purely the empty-DB connection; TEI embedding was fine.
+RECOVERED: located the orphaned anon volume (verified PG18 + 263 skills), copied it into the named volume,
+and FIXED the mount to `postgres_data:/var/lib/postgresql` so recreates persist. Orphaned volume kept as
+backup. The validated 4b/Ollama arm was restored afterward (`/health` green, find_skill gv 18). Both
+gotchas saved to memory ([[postgres18-pgdata-mount-gotcha-and-skill-layer-test-db]]).
 
 ## Out of scope
 

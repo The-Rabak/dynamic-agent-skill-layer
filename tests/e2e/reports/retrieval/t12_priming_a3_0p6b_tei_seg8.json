@@ -1,0 +1,1979 @@
+{
+  "unit": "T12 Unit 4",
+  "config_label": "a3_0p6b_tei_seg8",
+  "stratum": "session_start (22 queries: 11 thin + 11 verbose)",
+  "headline_N": 3,
+  "t18_before_number_coverage_at_3": 0.068513,
+  "t18_thresholds_verbatim": {
+    "recurrence_baseline": "+0.10 absolute set-coverage (\u2192 >=0.17) by paired sign test p<0.05",
+    "freshness_slot": "+0.15 hit-rate with <=0.02 coverage cannibalization",
+    "centrality_recent_use": "+0.043 (default DROP \u2014 T11 ranking-inert @262)",
+    "negative_control_gate": "permuted mean coverage <= 0.5x true mean (crater)"
+  },
+  "negative_control": {
+    "control": "permutation (cyclic-shift-1 derangement of gold sets)",
+    "true_mean_coverage_at_3": 0.093377,
+    "permuted_mean_coverage_at_3": 0.033198,
+    "separation_S": 0.060179,
+    "rel_drop": 0.644475,
+    "craters": true,
+    "gate": "PASS (instrument-valid for this arm)"
+  },
+  "primed_arm": {
+    "n": 22,
+    "mean_coverage_at_3": 0.093377,
+    "no_match_rate": 0.0,
+    "freshness_hit_rate": 0.636364,
+    "p95_latency_ms": 507,
+    "by_substratum": {
+      "thin": {
+        "n": 11,
+        "mean_coverage_at_3": 0.128247,
+        "no_match_rate": 0.0,
+        "freshness_hit_rate": 0.909091,
+        "p95_latency_ms": 220
+      },
+      "verbose": {
+        "n": 11,
+        "mean_coverage_at_3": 0.058508,
+        "no_match_rate": 0.0,
+        "freshness_hit_rate": 0.363636,
+        "p95_latency_ms": 796
+      }
+    }
+  },
+  "baseline_arm": {
+    "n": 22,
+    "mean_coverage_at_3": 0.073789,
+    "no_match_rate": 0.136364,
+    "freshness_hit_rate": 0.454545,
+    "p95_latency_ms": 167,
+    "by_substratum": {
+      "thin": {
+        "n": 11,
+        "mean_coverage_at_3": 0.116342,
+        "no_match_rate": 0.181818,
+        "freshness_hit_rate": 0.636364,
+        "p95_latency_ms": 103
+      },
+      "verbose": {
+        "n": 11,
+        "mean_coverage_at_3": 0.031235,
+        "no_match_rate": 0.090909,
+        "freshness_hit_rate": 0.272727,
+        "p95_latency_ms": 185
+      }
+    }
+  },
+  "paired_baseline_vs_primed": {
+    "n": 22,
+    "n_primed_better": 5,
+    "n_baseline_better": 2,
+    "n_tie": 15,
+    "mean_paired_delta": 0.019589,
+    "sign_test_p": 0.453125,
+    "per_query": [
+      {
+        "query_id": "t18-session-start-thin-agent-recovery-resume",
+        "substratum": "thin",
+        "baseline_cov3": 0.0,
+        "primed_cov3": 0.166667,
+        "delta": 0.166667
+      },
+      {
+        "query_id": "t18-session-start-thin-resume-batch-check-state",
+        "substratum": "thin",
+        "baseline_cov3": 0.0,
+        "primed_cov3": 0.166667,
+        "delta": 0.166667
+      },
+      {
+        "query_id": "t18-session-start-thin-parallel-agent-dispatch",
+        "substratum": "thin",
+        "baseline_cov3": 0.0,
+        "primed_cov3": 0.0,
+        "delta": 0.0
+      },
+      {
+        "query_id": "t18-session-start-thin-commit-continue",
+        "substratum": "thin",
+        "baseline_cov3": 0.0,
+        "primed_cov3": 0.0,
+        "delta": 0.0
+      },
+      {
+        "query_id": "t18-session-start-thin-plan-review",
+        "substratum": "thin",
+        "baseline_cov3": 0.285714,
+        "primed_cov3": 0.142857,
+        "delta": -0.142857
+      },
+      {
+        "query_id": "t18-session-start-thin-schema-decisions",
+        "substratum": "thin",
+        "baseline_cov3": 0.285714,
+        "primed_cov3": 0.142857,
+        "delta": -0.142857
+      },
+      {
+        "query_id": "t18-session-start-thin-retrieval-scoring-smell",
+        "substratum": "thin",
+        "baseline_cov3": 0.1875,
+        "primed_cov3": 0.1875,
+        "delta": 0.0
+      },
+      {
+        "query_id": "t18-session-start-thin-search-comparison",
+        "substratum": "thin",
+        "baseline_cov3": 0.1875,
+        "primed_cov3": 0.1875,
+        "delta": 0.0
+      },
+      {
+        "query_id": "t18-session-start-thin-docker-unhealthy",
+        "substratum": "thin",
+        "baseline_cov3": 0.083333,
+        "primed_cov3": 0.166667,
+        "delta": 0.083333
+      },
+      {
+        "query_id": "t18-session-start-thin-embedding-setup",
+        "substratum": "thin",
+        "baseline_cov3": 0.083333,
+        "primed_cov3": 0.083333,
+        "delta": 0.0
+      },
+      {
+        "query_id": "t18-session-start-thin-migration-status",
+        "substratum": "thin",
+        "baseline_cov3": 0.166667,
+        "primed_cov3": 0.166667,
+        "delta": 0.0
+      },
+      {
+        "query_id": "t18-session-start-verbose-concurrent-clippy-crash",
+        "substratum": "verbose",
+        "baseline_cov3": 0.2,
+        "primed_cov3": 0.4,
+        "delta": 0.2
+      },
+      {
+        "query_id": "t18-session-start-verbose-project-grok-assessment",
+        "substratum": "verbose",
+        "baseline_cov3": 0.0,
+        "primed_cov3": 0.0,
+        "delta": 0.0
+      },
+      {
+        "query_id": "t18-session-start-verbose-harness-agent-eval",
+        "substratum": "verbose",
+        "baseline_cov3": 0.0,
+        "primed_cov3": 0.0,
+        "delta": 0.0
+      },
+      {
+        "query_id": "t18-session-start-verbose-skills-table-source-paths",
+        "substratum": "verbose",
+        "baseline_cov3": 0.0,
+        "primed_cov3": 0.0,
+        "delta": 0.0
+      },
+      {
+        "query_id": "t18-session-start-verbose-live-infra-quality-mandate",
+        "substratum": "verbose",
+        "baseline_cov3": 0.0,
+        "primed_cov3": 0.0,
+        "delta": 0.0
+      },
+      {
+        "query_id": "t18-session-start-verbose-harness-grok-v2",
+        "substratum": "verbose",
+        "baseline_cov3": 0.0,
+        "primed_cov3": 0.0,
+        "delta": 0.0
+      },
+      {
+        "query_id": "t18-session-start-verbose-docker-build-failure-musl",
+        "substratum": "verbose",
+        "baseline_cov3": 0.076923,
+        "primed_cov3": 0.076923,
+        "delta": 0.0
+      },
+      {
+        "query_id": "t18-session-start-verbose-sessionend-hook-ticket",
+        "substratum": "verbose",
+        "baseline_cov3": 0.0,
+        "primed_cov3": 0.0,
+        "delta": 0.0
+      },
+      {
+        "query_id": "t18-session-start-verbose-e2e-claude-provider-sweep",
+        "substratum": "verbose",
+        "baseline_cov3": 0.0,
+        "primed_cov3": 0.1,
+        "delta": 0.1
+      },
+      {
+        "query_id": "t18-session-start-verbose-todo-triage-batch",
+        "substratum": "verbose",
+        "baseline_cov3": 0.066667,
+        "primed_cov3": 0.066667,
+        "delta": 0.0
+      },
+      {
+        "query_id": "t18-session-start-verbose-allnighter-final-push",
+        "substratum": "verbose",
+        "baseline_cov3": 0.0,
+        "primed_cov3": 0.0,
+        "delta": 0.0
+      }
+    ]
+  },
+  "primed_per_query": [
+    {
+      "query_id": "t18-session-start-thin-agent-recovery-resume",
+      "substratum": "thin",
+      "split": "tuning",
+      "text": "picking up where we left off, the workers crashed mid-batch",
+      "relevant": [
+        "clippy-d-warnings-isolate-touched-crates-only",
+        "inspect-current-state-before-mutating",
+        "migration-test-triple-update",
+        "multi-layer-atomic-propagation",
+        "recover-dead-execution-agents-serial-fallback",
+        "separate-coordinator-method-for-related-entity-persistence"
+      ],
+      "fresh_golds": [
+        "inspect-current-state-before-mutating",
+        "multi-layer-atomic-propagation",
+        "migration-test-triple-update",
+        "recover-dead-execution-agents-serial-fallback",
+        "separate-coordinator-method-for-related-entity-persistence",
+        "clippy-d-warnings-isolate-touched-crates-only"
+      ],
+      "status": "ok",
+      "latency_ms": 220,
+      "injected_names": [
+        "recover-dead-execution-agents-serial-fallback",
+        "Use batch FW-2025-0118 (preference)",
+        "wsl2-crash-dirty-file-recovery",
+        "postgres-work-queue-for-update-skip-locked",
+        "post-commit-work-item-hygiene"
+      ],
+      "coverage_at_3": 0.16666666666666666,
+      "freshness_hit": 1.0,
+      "no_match": false
+    },
+    {
+      "query_id": "t18-session-start-thin-resume-batch-check-state",
+      "substratum": "thin",
+      "split": "tuning",
+      "text": "agents stopped responding, need to check what's done and continue",
+      "relevant": [
+        "clippy-d-warnings-isolate-touched-crates-only",
+        "inspect-current-state-before-mutating",
+        "migration-test-triple-update",
+        "multi-layer-atomic-propagation",
+        "recover-dead-execution-agents-serial-fallback",
+        "separate-coordinator-method-for-related-entity-persistence"
+      ],
+      "fresh_golds": [
+        "inspect-current-state-before-mutating",
+        "multi-layer-atomic-propagation",
+        "migration-test-triple-update",
+        "recover-dead-execution-agents-serial-fallback",
+        "separate-coordinator-method-for-related-entity-persistence",
+        "clippy-d-warnings-isolate-touched-crates-only"
+      ],
+      "status": "ok",
+      "latency_ms": 179,
+      "injected_names": [
+        "recover-dead-execution-agents-serial-fallback",
+        "Do not respond to these messages or otherwise (preference)",
+        "retry-ineffective-for-deterministic-llm-failures",
+        "shell-hook-fire-and-forget-setsid",
+        "orchestration-validates-agent-self-report"
+      ],
+      "coverage_at_3": 0.16666666666666666,
+      "freshness_hit": 1.0,
+      "no_match": false
+    },
+    {
+      "query_id": "t18-session-start-thin-parallel-agent-dispatch",
+      "substratum": "thin",
+      "split": "held_out",
+      "text": "send an agent on that ticket in parallel while we keep going here",
+      "relevant": [
+        "cargo-clippy-workspace-all-targets-includes-examples-and-e2e",
+        "file-conflict-graph-parallel-agent-batching",
+        "git-scope-test-isolation-avoid-tmp-as-outside-git-sentinel",
+        "git-stash-verify-preexisting-test-failure",
+        "handle-agent-scope-fence-violation",
+        "rust-allow-clippy-scoped-with-justification-for-public-api",
+        "rust-clippy-option-method-idioms",
+        "selective-stage-agent-batch-from-dirty-tree",
+        "verify-clippy-ci-gate-with-d-warnings"
+      ],
+      "fresh_golds": [
+        "handle-agent-scope-fence-violation",
+        "git-stash-verify-preexisting-test-failure",
+        "rust-clippy-option-method-idioms",
+        "selective-stage-agent-batch-from-dirty-tree",
+        "file-conflict-graph-parallel-agent-batching",
+        "rust-allow-clippy-scoped-with-justification-for-public-api",
+        "git-scope-test-isolation-avoid-tmp-as-outside-git-sentinel",
+        "cargo-clippy-workspace-all-targets-includes-examples-and-e2e",
+        "verify-clippy-ci-gate-with-d-warnings"
+      ],
+      "status": "ok",
+      "latency_ms": 173,
+      "injected_names": [
+        "override-execution-agent-model-to-sonnet",
+        "file-disjoint-parallel-round-swarm-planning",
+        "independent-validate-agent-output-before-commit",
+        "recover-dead-execution-agents-serial-fallback",
+        "triage-todo-backlog-with-decisions"
+      ],
+      "coverage_at_3": 0.0,
+      "freshness_hit": 0.0,
+      "no_match": false
+    },
+    {
+      "query_id": "t18-session-start-thin-commit-continue",
+      "substratum": "thin",
+      "split": "held_out",
+      "text": "commit the batch and move on to fixing the remaining lint issues",
+      "relevant": [
+        "cargo-clippy-workspace-all-targets-includes-examples-and-e2e",
+        "file-conflict-graph-parallel-agent-batching",
+        "git-scope-test-isolation-avoid-tmp-as-outside-git-sentinel",
+        "git-stash-verify-preexisting-test-failure",
+        "handle-agent-scope-fence-violation",
+        "rust-allow-clippy-scoped-with-justification-for-public-api",
+        "rust-clippy-option-method-idioms",
+        "selective-stage-agent-batch-from-dirty-tree",
+        "verify-clippy-ci-gate-with-d-warnings"
+      ],
+      "fresh_golds": [
+        "handle-agent-scope-fence-violation",
+        "git-stash-verify-preexisting-test-failure",
+        "rust-clippy-option-method-idioms",
+        "selective-stage-agent-batch-from-dirty-tree",
+        "file-conflict-graph-parallel-agent-batching",
+        "rust-allow-clippy-scoped-with-justification-for-public-api",
+        "git-scope-test-isolation-avoid-tmp-as-outside-git-sentinel",
+        "cargo-clippy-workspace-all-targets-includes-examples-and-e2e",
+        "verify-clippy-ci-gate-with-d-warnings"
+      ],
+      "status": "ok",
+      "latency_ms": 203,
+      "injected_names": [
+        "pre-existing-clippy-regression-triage",
+        "migration-self-commit-escapes-outer-sqlx-tx",
+        "validate-enforcement-guard-bites-in-all-zones",
+        "selective-stage-agent-batch-from-dirty-tree",
+        "post-commit-work-item-hygiene"
+      ],
+      "coverage_at_3": 0.0,
+      "freshness_hit": 1.0,
+      "no_match": false
+    },
+    {
+      "query_id": "t18-session-start-thin-plan-review",
+      "substratum": "thin",
+      "split": "tuning",
+      "text": "let's go through the plan and talk through the open design questions",
+      "relevant": [
+        "anthropic-api-forced-tool-use-for-structured-json",
+        "deepen-plan-multi-agent-research",
+        "deepen-plan-research-decisions",
+        "detect-in-memory-buffer-never-drained-to-sink",
+        "postgres-typed-columns-over-jsonb-for-aggregatable-scalars",
+        "reconcile-loop-as-guarantee-events-as-optimization",
+        "use-jsonb-for-write-only-audit-fields"
+      ],
+      "fresh_golds": [
+        "use-jsonb-for-write-only-audit-fields",
+        "anthropic-api-forced-tool-use-for-structured-json",
+        "postgres-typed-columns-over-jsonb-for-aggregatable-scalars",
+        "deepen-plan-research-decisions",
+        "detect-in-memory-buffer-never-drained-to-sink",
+        "deepen-plan-multi-agent-research",
+        "reconcile-loop-as-guarantee-events-as-optimization"
+      ],
+      "status": "ok",
+      "latency_ms": 190,
+      "injected_names": [
+        "deepen-plan-research-decisions",
+        "Before working, thoroughly read all implemented plans up (preference)",
+        "Do not modify the plan review mechanisms in (preference)",
+        "Do not encroach on v2 plan scope; make (preference)",
+        "fix-askuserquestion-options-overflow"
+      ],
+      "coverage_at_3": 0.14285714285714285,
+      "freshness_hit": 1.0,
+      "no_match": false
+    },
+    {
+      "query_id": "t18-session-start-thin-schema-decisions",
+      "substratum": "thin",
+      "split": "tuning",
+      "text": "need to finalize the storage schema decisions before we start coding",
+      "relevant": [
+        "anthropic-api-forced-tool-use-for-structured-json",
+        "deepen-plan-multi-agent-research",
+        "deepen-plan-research-decisions",
+        "detect-in-memory-buffer-never-drained-to-sink",
+        "postgres-typed-columns-over-jsonb-for-aggregatable-scalars",
+        "reconcile-loop-as-guarantee-events-as-optimization",
+        "use-jsonb-for-write-only-audit-fields"
+      ],
+      "fresh_golds": [
+        "use-jsonb-for-write-only-audit-fields",
+        "anthropic-api-forced-tool-use-for-structured-json",
+        "postgres-typed-columns-over-jsonb-for-aggregatable-scalars",
+        "deepen-plan-research-decisions",
+        "detect-in-memory-buffer-never-drained-to-sink",
+        "deepen-plan-multi-agent-research",
+        "reconcile-loop-as-guarantee-events-as-optimization"
+      ],
+      "status": "ok",
+      "latency_ms": 199,
+      "injected_names": [
+        "deepen-plan-research-decisions",
+        "write-ahead-db-migration-pattern",
+        "qdrant-ensure-collection-dimension-footgun",
+        "never-push-without-explicit-request",
+        "cold-start-guard-for-retirement-workers"
+      ],
+      "coverage_at_3": 0.14285714285714285,
+      "freshness_hit": 1.0,
+      "no_match": false
+    },
+    {
+      "query_id": "t18-session-start-thin-retrieval-scoring-smell",
+      "substratum": "thin",
+      "split": "tuning",
+      "text": "the search results smell off, let's dig into why the scores are weird",
+      "relevant": [
+        "ablation-confounded-by-relevance-floor",
+        "compare-retrieval-arms-top10",
+        "component-isolation-as-first-diagnostic-step",
+        "diagnose-flaky-timing-test-by-isolation",
+        "diagnose-rrf-artifact-score-exposure",
+        "fix-bm25-silent-none-fallback",
+        "hybrid-search-zero-uplift-diagnosis",
+        "near-zero-cosine-score-suspects",
+        "numeric-scores-mandatory-for-system-diagnosis",
+        "post-commit-work-item-hygiene",
+        "prevent-cross-module-constant-drift-via-pub-crate",
+        "read-before-write-file-edit",
+        "retriage-pending-issues-after-related-commit",
+        "search-arm-comparison-extend-to-top10-with-scores",
+        "sequence-clustered-fixes-smallest-to-absorbing-refactor",
+        "silent-path-success-as-diagnostic-red-herring"
+      ],
+      "fresh_golds": [
+        "ablation-confounded-by-relevance-floor",
+        "near-zero-cosine-score-suspects",
+        "read-before-write-file-edit",
+        "compare-retrieval-arms-top10",
+        "retriage-pending-issues-after-related-commit",
+        "diagnose-flaky-timing-test-by-isolation",
+        "prevent-cross-module-constant-drift-via-pub-crate",
+        "fix-bm25-silent-none-fallback",
+        "numeric-scores-mandatory-for-system-diagnosis",
+        "post-commit-work-item-hygiene",
+        "component-isolation-as-first-diagnostic-step",
+        "diagnose-rrf-artifact-score-exposure",
+        "hybrid-search-zero-uplift-diagnosis",
+        "sequence-clustered-fixes-smallest-to-absorbing-refactor",
+        "search-arm-comparison-extend-to-top10-with-scores",
+        "silent-path-success-as-diagnostic-red-herring"
+      ],
+      "status": "ok",
+      "latency_ms": 182,
+      "injected_names": [
+        "numeric-scores-mandatory-for-system-diagnosis",
+        "hybrid-search-zero-uplift-diagnosis",
+        "near-zero-cosine-score-suspects",
+        "search-arm-comparison-extend-to-top10-with-scores",
+        "ablation-confounded-by-relevance-floor"
+      ],
+      "coverage_at_3": 0.1875,
+      "freshness_hit": 1.0,
+      "no_match": false
+    },
+    {
+      "query_id": "t18-session-start-thin-search-comparison",
+      "substratum": "thin",
+      "split": "tuning",
+      "text": "compare the two retrieval arms and figure out what's going on with the scoring",
+      "relevant": [
+        "ablation-confounded-by-relevance-floor",
+        "compare-retrieval-arms-top10",
+        "component-isolation-as-first-diagnostic-step",
+        "diagnose-flaky-timing-test-by-isolation",
+        "diagnose-rrf-artifact-score-exposure",
+        "fix-bm25-silent-none-fallback",
+        "hybrid-search-zero-uplift-diagnosis",
+        "near-zero-cosine-score-suspects",
+        "numeric-scores-mandatory-for-system-diagnosis",
+        "post-commit-work-item-hygiene",
+        "prevent-cross-module-constant-drift-via-pub-crate",
+        "read-before-write-file-edit",
+        "retriage-pending-issues-after-related-commit",
+        "search-arm-comparison-extend-to-top10-with-scores",
+        "sequence-clustered-fixes-smallest-to-absorbing-refactor",
+        "silent-path-success-as-diagnostic-red-herring"
+      ],
+      "fresh_golds": [
+        "ablation-confounded-by-relevance-floor",
+        "near-zero-cosine-score-suspects",
+        "read-before-write-file-edit",
+        "compare-retrieval-arms-top10",
+        "retriage-pending-issues-after-related-commit",
+        "diagnose-flaky-timing-test-by-isolation",
+        "prevent-cross-module-constant-drift-via-pub-crate",
+        "fix-bm25-silent-none-fallback",
+        "numeric-scores-mandatory-for-system-diagnosis",
+        "post-commit-work-item-hygiene",
+        "component-isolation-as-first-diagnostic-step",
+        "diagnose-rrf-artifact-score-exposure",
+        "hybrid-search-zero-uplift-diagnosis",
+        "sequence-clustered-fixes-smallest-to-absorbing-refactor",
+        "search-arm-comparison-extend-to-top10-with-scores",
+        "silent-path-success-as-diagnostic-red-herring"
+      ],
+      "status": "ok",
+      "latency_ms": 179,
+      "injected_names": [
+        "numeric-scores-mandatory-for-system-diagnosis",
+        "compare-retrieval-arms-top10",
+        "ablation-confounded-by-relevance-floor",
+        "byte-identical-hybrid-vs-baseline-metrics-means-investigate-wiring",
+        "diagnose-rrf-artifact-score-exposure"
+      ],
+      "coverage_at_3": 0.1875,
+      "freshness_hit": 1.0,
+      "no_match": false
+    },
+    {
+      "query_id": "t18-session-start-thin-docker-unhealthy",
+      "substratum": "thin",
+      "split": "tuning",
+      "text": "two containers are unhealthy in docker, let's get them fixed",
+      "relevant": [
+        "cold-start-guard-for-retirement-workers",
+        "docker-healthcheck-bash-dev-tcp",
+        "docker-healthcheck-tool-absent-in-minimal-image",
+        "embed-summary-only-for-hierarchical-documents",
+        "embedding-write-read-path-divergence",
+        "fix-file-not-read-before-write",
+        "ollama-500-embedding-token-overflow",
+        "ollama-embedding-2048-token-batch-limit",
+        "postgres-docker-stale-volume-db-missing",
+        "postgres-volume-reuse-missing-database",
+        "qdrant-healthcheck-bash-devtcp",
+        "recursive-watcher-exclude-build-dirs"
+      ],
+      "fresh_golds": [
+        "ollama-embedding-2048-token-batch-limit",
+        "embedding-write-read-path-divergence",
+        "docker-healthcheck-bash-dev-tcp",
+        "postgres-docker-stale-volume-db-missing",
+        "fix-file-not-read-before-write",
+        "cold-start-guard-for-retirement-workers",
+        "ollama-500-embedding-token-overflow",
+        "embed-summary-only-for-hierarchical-documents",
+        "postgres-volume-reuse-missing-database",
+        "qdrant-healthcheck-bash-devtcp",
+        "recursive-watcher-exclude-build-dirs",
+        "docker-healthcheck-tool-absent-in-minimal-image"
+      ],
+      "status": "ok",
+      "latency_ms": 186,
+      "injected_names": [
+        "docker-healthcheck-tool-absent-in-minimal-image",
+        "container-hook-absolute-path-resolution-options",
+        "postgres-volume-reuse-missing-database",
+        "rust-cargo-bin-target-missing-docker-build-failure",
+        "docker-compose-concurrent-bringup-lock"
+      ],
+      "coverage_at_3": 0.16666666666666666,
+      "freshness_hit": 1.0,
+      "no_match": false
+    },
+    {
+      "query_id": "t18-session-start-thin-embedding-setup",
+      "substratum": "thin",
+      "split": "tuning",
+      "text": "the embedding pipeline seems off, corpus isn't loading right",
+      "relevant": [
+        "cold-start-guard-for-retirement-workers",
+        "docker-healthcheck-bash-dev-tcp",
+        "docker-healthcheck-tool-absent-in-minimal-image",
+        "embed-summary-only-for-hierarchical-documents",
+        "embedding-write-read-path-divergence",
+        "fix-file-not-read-before-write",
+        "ollama-500-embedding-token-overflow",
+        "ollama-embedding-2048-token-batch-limit",
+        "postgres-docker-stale-volume-db-missing",
+        "postgres-volume-reuse-missing-database",
+        "qdrant-healthcheck-bash-devtcp",
+        "recursive-watcher-exclude-build-dirs"
+      ],
+      "fresh_golds": [
+        "ollama-embedding-2048-token-batch-limit",
+        "embedding-write-read-path-divergence",
+        "docker-healthcheck-bash-dev-tcp",
+        "postgres-docker-stale-volume-db-missing",
+        "fix-file-not-read-before-write",
+        "cold-start-guard-for-retirement-workers",
+        "ollama-500-embedding-token-overflow",
+        "embed-summary-only-for-hierarchical-documents",
+        "postgres-volume-reuse-missing-database",
+        "qdrant-healthcheck-bash-devtcp",
+        "recursive-watcher-exclude-build-dirs",
+        "docker-healthcheck-tool-absent-in-minimal-image"
+      ],
+      "status": "ok",
+      "latency_ms": 192,
+      "injected_names": [
+        "rag-corpus-first-efficacy-measurement-ordering",
+        "near-zero-cosine-score-suspects",
+        "ollama-500-embedding-token-overflow",
+        "hybrid-search-zero-uplift-diagnosis",
+        "embedding-write-read-path-divergence"
+      ],
+      "coverage_at_3": 0.08333333333333333,
+      "freshness_hit": 1.0,
+      "no_match": false
+    },
+    {
+      "query_id": "t18-session-start-thin-migration-status",
+      "substratum": "thin",
+      "split": "tuning",
+      "text": "double-check all migrations went through before running the suite",
+      "relevant": [
+        "clippy-d-warnings-isolate-touched-crates-only",
+        "inspect-current-state-before-mutating",
+        "migration-test-triple-update",
+        "multi-layer-atomic-propagation",
+        "recover-dead-execution-agents-serial-fallback",
+        "separate-coordinator-method-for-related-entity-persistence"
+      ],
+      "fresh_golds": [
+        "inspect-current-state-before-mutating",
+        "multi-layer-atomic-propagation",
+        "migration-test-triple-update",
+        "recover-dead-execution-agents-serial-fallback",
+        "separate-coordinator-method-for-related-entity-persistence",
+        "clippy-d-warnings-isolate-touched-crates-only"
+      ],
+      "status": "ok",
+      "latency_ms": 194,
+      "injected_names": [
+        "migration-test-triple-update",
+        "migration-file-unwired-from-registry",
+        "build-tool-silent-coverage-gap",
+        "orphaned-migration-file-detection",
+        "fixture-corpus-growth-stales-count-assertions"
+      ],
+      "coverage_at_3": 0.16666666666666666,
+      "freshness_hit": 1.0,
+      "no_match": false
+    },
+    {
+      "query_id": "t18-session-start-verbose-concurrent-clippy-crash",
+      "substratum": "verbose",
+      "split": "tuning",
+      "text": "both of your subagents ran clippy at the same time and crashed my machine, from now on concurrently running agents get explicit instructions not to do that or a",
+      "relevant": [
+        "file-overlap-batch-serialization-for-agent-swarms",
+        "isolate-clippy-findings-to-changed-files-with-pre-existing-debt",
+        "prohibit-concurrent-cargo-ops-across-agents",
+        "recover-wsl2-crash-corrupted-git-object-store",
+        "wsl2-crash-dirty-file-recovery"
+      ],
+      "fresh_golds": [
+        "prohibit-concurrent-cargo-ops-across-agents",
+        "file-overlap-batch-serialization-for-agent-swarms",
+        "wsl2-crash-dirty-file-recovery",
+        "isolate-clippy-findings-to-changed-files-with-pre-existing-debt",
+        "recover-wsl2-crash-corrupted-git-object-store"
+      ],
+      "status": "ok",
+      "latency_ms": 328,
+      "injected_names": [
+        "prohibit-concurrent-cargo-ops-across-agents",
+        "serialize-shared-file-todos-across-agent-batches",
+        "file-overlap-batch-serialization-for-agent-swarms",
+        "file-conflict-graph-parallel-agent-batching",
+        "file-overlap-clustering-before-execution-batching"
+      ],
+      "coverage_at_3": 0.4,
+      "freshness_hit": 1.0,
+      "no_match": false
+    },
+    {
+      "query_id": "t18-session-start-verbose-project-grok-assessment",
+      "substratum": "verbose",
+      "split": "held_out",
+      "text": "grok the shit out of this repo, the v-1-1 plan and architecture files and the work we've done so far on T01-T15. give me your summary and analysis of this proje",
+      "relevant": [
+        "boot-time-arc-snapshot-never-refreshed",
+        "extraction-pipeline-session-lifecycle-hook-coverage",
+        "qdrant-rest-grpc-port-mismatch"
+      ],
+      "fresh_golds": [
+        "qdrant-rest-grpc-port-mismatch",
+        "boot-time-arc-snapshot-never-refreshed",
+        "extraction-pipeline-session-lifecycle-hook-coverage"
+      ],
+      "status": "ok",
+      "latency_ms": 507,
+      "injected_names": [
+        "deepen-plan-multi-agent-research",
+        "deepen-plan-research-decisions",
+        "cost-estimate-before-cloud-llm-e2e-run",
+        "fix-e2e-suite-end-to-end-green",
+        "audit-rust-codebase-stub-violations"
+      ],
+      "coverage_at_3": 0.0,
+      "freshness_hit": 0.0,
+      "no_match": false
+    },
+    {
+      "query_id": "t18-session-start-verbose-harness-agent-eval",
+      "substratum": "verbose",
+      "split": "tuning",
+      "text": "you are a kickass coding harness agent given this system to use as your dynamic context layer. it should automatically parse your completed sessions, extract me",
+      "relevant": [
+        "Analyze the main commands and the skills and (preference)",
+        "apply-fail-loud-env-var-checks-to-all-binaries-not-just-the-server",
+        "audit-rust-codebase-stub-violations",
+        "detect-doc-reality-drift-in-planning-heavy-projects",
+        "detect-live-e2e-tests-using-in-process-fakes",
+        "docs-are-spec-build-up-not-edit-down",
+        "fight-ai-workflow-bloat-with-single-source-references",
+        "reject-version-advance-as-proxy-for-retrieval-assertion"
+      ],
+      "fresh_golds": [
+        "Analyze the main commands and the skills and (preference)",
+        "audit-rust-codebase-stub-violations",
+        "docs-are-spec-build-up-not-edit-down",
+        "reject-version-advance-as-proxy-for-retrieval-assertion",
+        "detect-doc-reality-drift-in-planning-heavy-projects",
+        "apply-fail-loud-env-var-checks-to-all-binaries-not-just-the-server",
+        "detect-live-e2e-tests-using-in-process-fakes",
+        "fight-ai-workflow-bloat-with-single-source-references"
+      ],
+      "status": "ok",
+      "latency_ms": 485,
+      "injected_names": [
+        "deepen-plan-research-decisions",
+        "deepen-plan-multi-agent-research",
+        "Operate as a coding harness agent using the (preference)",
+        "triage-todo-backlog-with-decisions",
+        "extraction-pipeline-session-lifecycle-hook-coverage"
+      ],
+      "coverage_at_3": 0.0,
+      "freshness_hit": 0.0,
+      "no_match": false
+    },
+    {
+      "query_id": "t18-session-start-verbose-skills-table-source-paths",
+      "substratum": "verbose",
+      "split": "held_out",
+      "text": "the skills table should definitely store source paths in its own column. work that in to wherever needed (T09 and wherever else) then go on straight to the next",
+      "relevant": [
+        "detect-revert-cargo-fmt-agent-churn",
+        "gate-parallel-agents-on-file-overlap",
+        "independently-verify-execution-agent-completion-claims",
+        "validate-smoke-test-is-not-vacuous",
+        "wire-live-graph-replace-stub-server"
+      ],
+      "fresh_golds": [
+        "gate-parallel-agents-on-file-overlap",
+        "validate-smoke-test-is-not-vacuous",
+        "wire-live-graph-replace-stub-server",
+        "independently-verify-execution-agent-completion-claims",
+        "detect-revert-cargo-fmt-agent-churn"
+      ],
+      "status": "ok",
+      "latency_ms": 328,
+      "injected_names": [
+        "Do not run review after ticket execution completes; (preference)",
+        "add-schema-migration-source-paths",
+        "retriage-pending-issues-after-related-commit",
+        "pre-existing-clippy-regression-triage",
+        "post-commit-work-item-hygiene"
+      ],
+      "coverage_at_3": 0.0,
+      "freshness_hit": 0.0,
+      "no_match": false
+    },
+    {
+      "query_id": "t18-session-start-verbose-live-infra-quality-mandate",
+      "substratum": "verbose",
+      "split": "held_out",
+      "text": "let me just be clear aboot something, it should be in your persistent memory as well. we're only working against live infra, real production logic flows and eve",
+      "relevant": [
+        "filesystem-walk-resolver-fails-in-container-cwd-root",
+        "fix-askuserquestion-options-overflow",
+        "isolate-cross-crate-parallel-test-flakes",
+        "llm-extraction-test-must-use-substantive-fixture",
+        "migration-self-commit-escapes-outer-sqlx-tx",
+        "postgres-implicit-tx-atomic-ddl-batch",
+        "read-before-edit-file",
+        "reread-file-before-edit-on-conflict",
+        "sqlx-transaction-executor-hrtb-send-regression",
+        "tokio-test-for-sqlx-reqwest-construction",
+        "verify-todo-diagnosis-matches-current-codebase"
+      ],
+      "fresh_golds": [
+        "reread-file-before-edit-on-conflict",
+        "verify-todo-diagnosis-matches-current-codebase",
+        "isolate-cross-crate-parallel-test-flakes",
+        "postgres-implicit-tx-atomic-ddl-batch",
+        "llm-extraction-test-must-use-substantive-fixture",
+        "filesystem-walk-resolver-fails-in-container-cwd-root",
+        "tokio-test-for-sqlx-reqwest-construction",
+        "sqlx-transaction-executor-hrtb-send-regression",
+        "migration-self-commit-escapes-outer-sqlx-tx",
+        "read-before-edit-file",
+        "fix-askuserquestion-options-overflow"
+      ],
+      "status": "ok",
+      "latency_ms": 299,
+      "injected_names": [
+        "Never provide false or misleading information (preference)",
+        "Do not respond to these messages or otherwise (preference)",
+        "Operate as a coding harness agent using the (preference)",
+        "Operate as a coding harness agent, treating the (preference)",
+        "Ignore injected context messages (e.g. system reminders, background (preference)"
+      ],
+      "coverage_at_3": 0.0,
+      "freshness_hit": 0.0,
+      "no_match": false
+    },
+    {
+      "query_id": "t18-session-start-verbose-harness-grok-v2",
+      "substratum": "verbose",
+      "split": "tuning",
+      "text": "you are a kickass coding harness agent given this system to use as your dynamic context layer. it should automatically parse your completed sessions, extract me",
+      "relevant": [
+        "Ticket 205 has a dependency-ordering problem: it requires (preference)",
+        "cold-start-zero-prior-in-usage-scored-retrieval",
+        "fail-loud-on-missing-security-scope-env-var",
+        "fix-rust-cfg-test-depth-tracker-exit-condition",
+        "ml-benchmark-three-run-validity-design",
+        "never-push-without-explicit-request",
+        "rag-corpus-first-efficacy-measurement-ordering",
+        "rag-retrieval-intent-split",
+        "relevance-floor-fragility-on-small-corpus",
+        "rust-eliminate-expect-with-sum-types",
+        "rust-fail-loud-via-constructor-removal",
+        "uniform-binary-boost-cancels-in-ranking",
+        "validate-enforcement-guard-bites-in-all-zones"
+      ],
+      "fresh_golds": [
+        "Ticket 205 has a dependency-ordering problem: it requires (preference)",
+        "rust-eliminate-expect-with-sum-types",
+        "validate-enforcement-guard-bites-in-all-zones",
+        "ml-benchmark-three-run-validity-design",
+        "rust-fail-loud-via-constructor-removal",
+        "fix-rust-cfg-test-depth-tracker-exit-condition",
+        "rag-retrieval-intent-split",
+        "never-push-without-explicit-request",
+        "uniform-binary-boost-cancels-in-ranking",
+        "rag-corpus-first-efficacy-measurement-ordering",
+        "fail-loud-on-missing-security-scope-env-var",
+        "cold-start-zero-prior-in-usage-scored-retrieval",
+        "relevance-floor-fragility-on-small-corpus"
+      ],
+      "status": "ok",
+      "latency_ms": 496,
+      "injected_names": [
+        "deepen-plan-research-decisions",
+        "deepen-plan-multi-agent-research",
+        "Operate as a coding harness agent using the (preference)",
+        "triage-todo-backlog-with-decisions",
+        "extraction-pipeline-session-lifecycle-hook-coverage"
+      ],
+      "coverage_at_3": 0.0,
+      "freshness_hit": 0.0,
+      "no_match": false
+    },
+    {
+      "query_id": "t18-session-start-verbose-docker-build-failure-musl",
+      "substratum": "verbose",
+      "split": "tuning",
+      "text": "grok the shit out of this project, understand its goals, architecture, implementation path and the awesomeness that went into this. Then fix the damn docker bui",
+      "relevant": [
+        "The extraction hook always sets repo_path to cwd (preference)",
+        "build-tool-silent-coverage-gap",
+        "cargo-all-targets-silently-skips-required-features",
+        "cargo-check-misses-workspace-integration-test-compilation",
+        "cfg-test-vs-test-utils-import-mismatch",
+        "configuration-default-silent-misrouting",
+        "detect-agent-scope-creep-via-git-diff",
+        "docker-compose-global-shared-mount-must-not-default-to-project-relative-path",
+        "dual-scope-knowledge-store-intrinsic-vs-emergent-generality-routing",
+        "orchestrator-must-verify-agent-results-independently",
+        "parallel-agent-wave-planning-via-file-overlap",
+        "read-before-edit-multi-file",
+        "rust-cargo-bin-target-missing-docker-build-failure"
+      ],
+      "fresh_golds": [
+        "rust-cargo-bin-target-missing-docker-build-failure",
+        "build-tool-silent-coverage-gap",
+        "detect-agent-scope-creep-via-git-diff",
+        "read-before-edit-multi-file",
+        "cargo-all-targets-silently-skips-required-features",
+        "docker-compose-global-shared-mount-must-not-default-to-project-relative-path",
+        "cfg-test-vs-test-utils-import-mismatch",
+        "cargo-check-misses-workspace-integration-test-compilation",
+        "dual-scope-knowledge-store-intrinsic-vs-emergent-generality-routing",
+        "parallel-agent-wave-planning-via-file-overlap",
+        "orchestrator-must-verify-agent-results-independently",
+        "configuration-default-silent-misrouting",
+        "The extraction hook always sets repo_path to cwd (preference)"
+      ],
+      "status": "ok",
+      "latency_ms": 796,
+      "injected_names": [
+        "docker-musl-ring-missing-gcc",
+        "rust-cargo-bin-target-missing-docker-build-failure",
+        "docker-cache-mount-binary-not-persisted-to-image",
+        "build-tool-silent-coverage-gap",
+        "fix-file-not-read-before-write"
+      ],
+      "coverage_at_3": 0.07692307692307693,
+      "freshness_hit": 1.0,
+      "no_match": false
+    },
+    {
+      "query_id": "t18-session-start-verbose-sessionend-hook-ticket",
+      "substratum": "verbose",
+      "split": "held_out",
+      "text": "we want to work on the P1 bug where the sessionEnd hook ships an absolute transcript reference that the validation rejects. Read it through carefully, analyze r",
+      "relevant": [
+        "bounded-retry-for-llm-nondeterminism-in-e2e",
+        "detect-test-leniency-masking-pipeline-failures",
+        "e2e-lenient-assertions-mask-real-failures",
+        "postgres-work-queue-for-update-skip-locked",
+        "rich-fixture-required-for-llm-extraction-tests",
+        "shell-hook-fire-and-forget-setsid",
+        "tokio-current-thread-starves-spawned-server"
+      ],
+      "fresh_golds": [
+        "rich-fixture-required-for-llm-extraction-tests",
+        "tokio-current-thread-starves-spawned-server",
+        "e2e-lenient-assertions-mask-real-failures",
+        "bounded-retry-for-llm-nondeterminism-in-e2e",
+        "shell-hook-fire-and-forget-setsid",
+        "postgres-work-queue-for-update-skip-locked",
+        "detect-test-leniency-masking-pipeline-failures"
+      ],
+      "status": "ok",
+      "latency_ms": 427,
+      "injected_names": [
+        "Use the project's Docker Compose setup for real (preference)",
+        "docker-compose-concurrent-bringup-lock",
+        "validate-committed-config-default-on-fresh-container",
+        "build-tool-silent-coverage-gap",
+        "verify-live-infra-before-e2e-agent-dispatch"
+      ],
+      "coverage_at_3": 0.0,
+      "freshness_hit": 0.0,
+      "no_match": false
+    },
+    {
+      "query_id": "t18-session-start-verbose-e2e-claude-provider-sweep",
+      "substratum": "verbose",
+      "split": "tuning",
+      "text": "grok the shit out of this repo before doing anything. go over all logic paths, high level docs and their implementation, see where we are and where we're meant ",
+      "relevant": [
+        "audit-llm-seam-provider-coupling",
+        "avoid-hardcoding-llm-provider-in-extraction-tests",
+        "contamination-vs-precision-triangulation-for-no-match-failures",
+        "cost-estimate-before-cloud-llm-e2e-run",
+        "deterministic-embedding-drift-from-input-policy-change",
+        "latency-floor-shift-indicates-resource-starvation",
+        "read-before-edit-file-guard",
+        "retrieval-embedding-reuse-silent-recall-loss-in-merge-dedup",
+        "single-transport-abstraction-for-provider-agnostic-seams",
+        "zero-second-test-failure-is-deterministic-not-flaky"
+      ],
+      "fresh_golds": [
+        "deterministic-embedding-drift-from-input-policy-change",
+        "contamination-vs-precision-triangulation-for-no-match-failures",
+        "zero-second-test-failure-is-deterministic-not-flaky",
+        "latency-floor-shift-indicates-resource-starvation",
+        "read-before-edit-file-guard",
+        "audit-llm-seam-provider-coupling",
+        "avoid-hardcoding-llm-provider-in-extraction-tests",
+        "retrieval-embedding-reuse-silent-recall-loss-in-merge-dedup",
+        "cost-estimate-before-cloud-llm-e2e-run",
+        "single-transport-abstraction-for-provider-agnostic-seams"
+      ],
+      "status": "ok",
+      "latency_ms": 270,
+      "injected_names": [
+        "deepen-plan-multi-agent-research",
+        "Relax the constitution to allow the user to (preference)",
+        "cost-estimate-before-cloud-llm-e2e-run",
+        "compare-retrieval-arms-top10",
+        "triage-todo-backlog-with-decisions"
+      ],
+      "coverage_at_3": 0.1,
+      "freshness_hit": 1.0,
+      "no_match": false
+    },
+    {
+      "query_id": "t18-session-start-verbose-todo-triage-batch",
+      "substratum": "verbose",
+      "split": "held_out",
+      "text": "let's go over all open todos, starting with the P1 sessionEnd hook absolute-path rejection bug and onwards. one at a time, present possible actions to resolve, ",
+      "relevant": [
+        "Defer all concrete actions to T05; use the (preference)",
+        "Relax the constitution to allow the user to (preference)",
+        "arcswap-rcu-use-return-value-not-closure-mutation",
+        "cargo-test-coupling-direction-online-depends-on-offline",
+        "container-hook-absolute-path-resolution-options",
+        "extract-behavior-not-predicate-for-exactly-once-unit-test",
+        "git-add-all-sweeps-untracked-test-artifacts",
+        "parallel-agent-stale-base-detection-and-recovery",
+        "parallel-rust-agents-require-file-disjoint-batches-and-git-worktrees",
+        "path-starts-with-requires-symmetric-canonicalization",
+        "recover-stale-file-edit-retry",
+        "regression-isolation-via-baseline-worktree",
+        "triage-todo-backlog-with-decisions",
+        "verify-phantom-field-claim-across-all-code-paths",
+        "zip-without-length-guard-silently-drops-trailing-items"
+      ],
+      "fresh_golds": [
+        "path-starts-with-requires-symmetric-canonicalization",
+        "container-hook-absolute-path-resolution-options",
+        "parallel-rust-agents-require-file-disjoint-batches-and-git-worktrees",
+        "verify-phantom-field-claim-across-all-code-paths",
+        "git-add-all-sweeps-untracked-test-artifacts",
+        "zip-without-length-guard-silently-drops-trailing-items",
+        "triage-todo-backlog-with-decisions",
+        "parallel-agent-stale-base-detection-and-recovery",
+        "Relax the constitution to allow the user to (preference)",
+        "cargo-test-coupling-direction-online-depends-on-offline",
+        "regression-isolation-via-baseline-worktree",
+        "Defer all concrete actions to T05; use the (preference)",
+        "recover-stale-file-edit-retry",
+        "arcswap-rcu-use-return-value-not-closure-mutation",
+        "extract-behavior-not-predicate-for-exactly-once-unit-test"
+      ],
+      "status": "ok",
+      "latency_ms": 175,
+      "injected_names": [
+        "triage-todo-backlog-with-decisions",
+        "read-before-write-file-edit",
+        "serialize-shared-file-todos-across-agent-batches",
+        "fix-bm25-silent-none-fallback",
+        "retriage-pending-issues-after-related-commit"
+      ],
+      "coverage_at_3": 0.06666666666666667,
+      "freshness_hit": 1.0,
+      "no_match": false
+    },
+    {
+      "query_id": "t18-session-start-verbose-allnighter-final-push",
+      "substratum": "verbose",
+      "split": "held_out",
+      "text": "we're going to pull an all nighter. grok the shit out of this repo before doing anything. go over all logic paths, high level docs and their implementation, see",
+      "relevant": [
+        "bool-returning-assertion-helper-must-be-asserted",
+        "cargo-fmt-reformatting-noise-in-diffs",
+        "count-distinct-for-idempotent-upsert-reconciliation-assertions",
+        "docker-compose-concurrent-bringup-lock",
+        "fail-loud-never-silently-default-to-success",
+        "isolate-e2e-corpus-rebaseline-before-tune",
+        "ollama-thinking-model-think-false-structured-json",
+        "parallel-test-shared-scope-contamination",
+        "retrieval-quality-mrr-collapse-from-shared-test-scope",
+        "retry-ineffective-for-deterministic-llm-failures",
+        "rust-test-fake-env-guard-antipattern",
+        "serde-default-swallows-missing-llm-output-field",
+        "validate-committed-config-default-on-fresh-container"
+      ],
+      "fresh_golds": [
+        "bool-returning-assertion-helper-must-be-asserted",
+        "docker-compose-concurrent-bringup-lock",
+        "retrieval-quality-mrr-collapse-from-shared-test-scope",
+        "retry-ineffective-for-deterministic-llm-failures",
+        "fail-loud-never-silently-default-to-success",
+        "parallel-test-shared-scope-contamination",
+        "cargo-fmt-reformatting-noise-in-diffs",
+        "serde-default-swallows-missing-llm-output-field",
+        "isolate-e2e-corpus-rebaseline-before-tune",
+        "validate-committed-config-default-on-fresh-container",
+        "count-distinct-for-idempotent-upsert-reconciliation-assertions",
+        "rust-test-fake-env-guard-antipattern",
+        "ollama-thinking-model-think-false-structured-json"
+      ],
+      "status": "ok",
+      "latency_ms": 497,
+      "injected_names": [
+        "Do not proceed if something seems off or (preference)",
+        "orchestrator-verifies-actual-state-before-and-after-delegation",
+        "deepen-plan-multi-agent-research",
+        "orchestration-validates-agent-self-report",
+        "read-before-edit-file"
+      ],
+      "coverage_at_3": 0.0,
+      "freshness_hit": 0.0,
+      "no_match": false
+    }
+  ],
+  "baseline_per_query": [
+    {
+      "query_id": "t18-session-start-thin-agent-recovery-resume",
+      "substratum": "thin",
+      "split": "tuning",
+      "text": "picking up where we left off, the workers crashed mid-batch",
+      "relevant": [
+        "clippy-d-warnings-isolate-touched-crates-only",
+        "inspect-current-state-before-mutating",
+        "migration-test-triple-update",
+        "multi-layer-atomic-propagation",
+        "recover-dead-execution-agents-serial-fallback",
+        "separate-coordinator-method-for-related-entity-persistence"
+      ],
+      "fresh_golds": [
+        "inspect-current-state-before-mutating",
+        "multi-layer-atomic-propagation",
+        "migration-test-triple-update",
+        "recover-dead-execution-agents-serial-fallback",
+        "separate-coordinator-method-for-related-entity-persistence",
+        "clippy-d-warnings-isolate-touched-crates-only"
+      ],
+      "status": "no_match",
+      "latency_ms": 84,
+      "injected_names": [],
+      "coverage_at_3": 0.0,
+      "freshness_hit": 0.0,
+      "no_match": true
+    },
+    {
+      "query_id": "t18-session-start-thin-resume-batch-check-state",
+      "substratum": "thin",
+      "split": "tuning",
+      "text": "agents stopped responding, need to check what's done and continue",
+      "relevant": [
+        "clippy-d-warnings-isolate-touched-crates-only",
+        "inspect-current-state-before-mutating",
+        "migration-test-triple-update",
+        "multi-layer-atomic-propagation",
+        "recover-dead-execution-agents-serial-fallback",
+        "separate-coordinator-method-for-related-entity-persistence"
+      ],
+      "fresh_golds": [
+        "inspect-current-state-before-mutating",
+        "multi-layer-atomic-propagation",
+        "migration-test-triple-update",
+        "recover-dead-execution-agents-serial-fallback",
+        "separate-coordinator-method-for-related-entity-persistence",
+        "clippy-d-warnings-isolate-touched-crates-only"
+      ],
+      "status": "no_match",
+      "latency_ms": 83,
+      "injected_names": [],
+      "coverage_at_3": 0.0,
+      "freshness_hit": 0.0,
+      "no_match": true
+    },
+    {
+      "query_id": "t18-session-start-thin-parallel-agent-dispatch",
+      "substratum": "thin",
+      "split": "held_out",
+      "text": "send an agent on that ticket in parallel while we keep going here",
+      "relevant": [
+        "cargo-clippy-workspace-all-targets-includes-examples-and-e2e",
+        "file-conflict-graph-parallel-agent-batching",
+        "git-scope-test-isolation-avoid-tmp-as-outside-git-sentinel",
+        "git-stash-verify-preexisting-test-failure",
+        "handle-agent-scope-fence-violation",
+        "rust-allow-clippy-scoped-with-justification-for-public-api",
+        "rust-clippy-option-method-idioms",
+        "selective-stage-agent-batch-from-dirty-tree",
+        "verify-clippy-ci-gate-with-d-warnings"
+      ],
+      "fresh_golds": [
+        "handle-agent-scope-fence-violation",
+        "git-stash-verify-preexisting-test-failure",
+        "rust-clippy-option-method-idioms",
+        "selective-stage-agent-batch-from-dirty-tree",
+        "file-conflict-graph-parallel-agent-batching",
+        "rust-allow-clippy-scoped-with-justification-for-public-api",
+        "git-scope-test-isolation-avoid-tmp-as-outside-git-sentinel",
+        "cargo-clippy-workspace-all-targets-includes-examples-and-e2e",
+        "verify-clippy-ci-gate-with-d-warnings"
+      ],
+      "status": "ok",
+      "latency_ms": 78,
+      "injected_names": [
+        "override-execution-agent-model-to-sonnet",
+        "file-overlap-batch-serialization-for-agent-swarms",
+        "serialize-shared-file-todos-across-agent-batches"
+      ],
+      "coverage_at_3": 0.0,
+      "freshness_hit": 0.0,
+      "no_match": false
+    },
+    {
+      "query_id": "t18-session-start-thin-commit-continue",
+      "substratum": "thin",
+      "split": "held_out",
+      "text": "commit the batch and move on to fixing the remaining lint issues",
+      "relevant": [
+        "cargo-clippy-workspace-all-targets-includes-examples-and-e2e",
+        "file-conflict-graph-parallel-agent-batching",
+        "git-scope-test-isolation-avoid-tmp-as-outside-git-sentinel",
+        "git-stash-verify-preexisting-test-failure",
+        "handle-agent-scope-fence-violation",
+        "rust-allow-clippy-scoped-with-justification-for-public-api",
+        "rust-clippy-option-method-idioms",
+        "selective-stage-agent-batch-from-dirty-tree",
+        "verify-clippy-ci-gate-with-d-warnings"
+      ],
+      "fresh_golds": [
+        "handle-agent-scope-fence-violation",
+        "git-stash-verify-preexisting-test-failure",
+        "rust-clippy-option-method-idioms",
+        "selective-stage-agent-batch-from-dirty-tree",
+        "file-conflict-graph-parallel-agent-batching",
+        "rust-allow-clippy-scoped-with-justification-for-public-api",
+        "git-scope-test-isolation-avoid-tmp-as-outside-git-sentinel",
+        "cargo-clippy-workspace-all-targets-includes-examples-and-e2e",
+        "verify-clippy-ci-gate-with-d-warnings"
+      ],
+      "status": "ok",
+      "latency_ms": 78,
+      "injected_names": [
+        "pre-existing-clippy-regression-triage",
+        "post-commit-work-item-hygiene"
+      ],
+      "coverage_at_3": 0.0,
+      "freshness_hit": 0.0,
+      "no_match": false
+    },
+    {
+      "query_id": "t18-session-start-thin-plan-review",
+      "substratum": "thin",
+      "split": "tuning",
+      "text": "let's go through the plan and talk through the open design questions",
+      "relevant": [
+        "anthropic-api-forced-tool-use-for-structured-json",
+        "deepen-plan-multi-agent-research",
+        "deepen-plan-research-decisions",
+        "detect-in-memory-buffer-never-drained-to-sink",
+        "postgres-typed-columns-over-jsonb-for-aggregatable-scalars",
+        "reconcile-loop-as-guarantee-events-as-optimization",
+        "use-jsonb-for-write-only-audit-fields"
+      ],
+      "fresh_golds": [
+        "use-jsonb-for-write-only-audit-fields",
+        "anthropic-api-forced-tool-use-for-structured-json",
+        "postgres-typed-columns-over-jsonb-for-aggregatable-scalars",
+        "deepen-plan-research-decisions",
+        "detect-in-memory-buffer-never-drained-to-sink",
+        "deepen-plan-multi-agent-research",
+        "reconcile-loop-as-guarantee-events-as-optimization"
+      ],
+      "status": "ok",
+      "latency_ms": 78,
+      "injected_names": [
+        "deepen-plan-research-decisions",
+        "deepen-plan-multi-agent-research"
+      ],
+      "coverage_at_3": 0.2857142857142857,
+      "freshness_hit": 1.0,
+      "no_match": false
+    },
+    {
+      "query_id": "t18-session-start-thin-schema-decisions",
+      "substratum": "thin",
+      "split": "tuning",
+      "text": "need to finalize the storage schema decisions before we start coding",
+      "relevant": [
+        "anthropic-api-forced-tool-use-for-structured-json",
+        "deepen-plan-multi-agent-research",
+        "deepen-plan-research-decisions",
+        "detect-in-memory-buffer-never-drained-to-sink",
+        "postgres-typed-columns-over-jsonb-for-aggregatable-scalars",
+        "reconcile-loop-as-guarantee-events-as-optimization",
+        "use-jsonb-for-write-only-audit-fields"
+      ],
+      "fresh_golds": [
+        "use-jsonb-for-write-only-audit-fields",
+        "anthropic-api-forced-tool-use-for-structured-json",
+        "postgres-typed-columns-over-jsonb-for-aggregatable-scalars",
+        "deepen-plan-research-decisions",
+        "detect-in-memory-buffer-never-drained-to-sink",
+        "deepen-plan-multi-agent-research",
+        "reconcile-loop-as-guarantee-events-as-optimization"
+      ],
+      "status": "ok",
+      "latency_ms": 85,
+      "injected_names": [
+        "deepen-plan-research-decisions",
+        "deepen-plan-multi-agent-research"
+      ],
+      "coverage_at_3": 0.2857142857142857,
+      "freshness_hit": 1.0,
+      "no_match": false
+    },
+    {
+      "query_id": "t18-session-start-thin-retrieval-scoring-smell",
+      "substratum": "thin",
+      "split": "tuning",
+      "text": "the search results smell off, let's dig into why the scores are weird",
+      "relevant": [
+        "ablation-confounded-by-relevance-floor",
+        "compare-retrieval-arms-top10",
+        "component-isolation-as-first-diagnostic-step",
+        "diagnose-flaky-timing-test-by-isolation",
+        "diagnose-rrf-artifact-score-exposure",
+        "fix-bm25-silent-none-fallback",
+        "hybrid-search-zero-uplift-diagnosis",
+        "near-zero-cosine-score-suspects",
+        "numeric-scores-mandatory-for-system-diagnosis",
+        "post-commit-work-item-hygiene",
+        "prevent-cross-module-constant-drift-via-pub-crate",
+        "read-before-write-file-edit",
+        "retriage-pending-issues-after-related-commit",
+        "search-arm-comparison-extend-to-top10-with-scores",
+        "sequence-clustered-fixes-smallest-to-absorbing-refactor",
+        "silent-path-success-as-diagnostic-red-herring"
+      ],
+      "fresh_golds": [
+        "ablation-confounded-by-relevance-floor",
+        "near-zero-cosine-score-suspects",
+        "read-before-write-file-edit",
+        "compare-retrieval-arms-top10",
+        "retriage-pending-issues-after-related-commit",
+        "diagnose-flaky-timing-test-by-isolation",
+        "prevent-cross-module-constant-drift-via-pub-crate",
+        "fix-bm25-silent-none-fallback",
+        "numeric-scores-mandatory-for-system-diagnosis",
+        "post-commit-work-item-hygiene",
+        "component-isolation-as-first-diagnostic-step",
+        "diagnose-rrf-artifact-score-exposure",
+        "hybrid-search-zero-uplift-diagnosis",
+        "sequence-clustered-fixes-smallest-to-absorbing-refactor",
+        "search-arm-comparison-extend-to-top10-with-scores",
+        "silent-path-success-as-diagnostic-red-herring"
+      ],
+      "status": "ok",
+      "latency_ms": 89,
+      "injected_names": [
+        "numeric-scores-mandatory-for-system-diagnosis",
+        "hybrid-search-zero-uplift-diagnosis",
+        "near-zero-cosine-score-suspects"
+      ],
+      "coverage_at_3": 0.1875,
+      "freshness_hit": 1.0,
+      "no_match": false
+    },
+    {
+      "query_id": "t18-session-start-thin-search-comparison",
+      "substratum": "thin",
+      "split": "tuning",
+      "text": "compare the two retrieval arms and figure out what's going on with the scoring",
+      "relevant": [
+        "ablation-confounded-by-relevance-floor",
+        "compare-retrieval-arms-top10",
+        "component-isolation-as-first-diagnostic-step",
+        "diagnose-flaky-timing-test-by-isolation",
+        "diagnose-rrf-artifact-score-exposure",
+        "fix-bm25-silent-none-fallback",
+        "hybrid-search-zero-uplift-diagnosis",
+        "near-zero-cosine-score-suspects",
+        "numeric-scores-mandatory-for-system-diagnosis",
+        "post-commit-work-item-hygiene",
+        "prevent-cross-module-constant-drift-via-pub-crate",
+        "read-before-write-file-edit",
+        "retriage-pending-issues-after-related-commit",
+        "search-arm-comparison-extend-to-top10-with-scores",
+        "sequence-clustered-fixes-smallest-to-absorbing-refactor",
+        "silent-path-success-as-diagnostic-red-herring"
+      ],
+      "fresh_golds": [
+        "ablation-confounded-by-relevance-floor",
+        "near-zero-cosine-score-suspects",
+        "read-before-write-file-edit",
+        "compare-retrieval-arms-top10",
+        "retriage-pending-issues-after-related-commit",
+        "diagnose-flaky-timing-test-by-isolation",
+        "prevent-cross-module-constant-drift-via-pub-crate",
+        "fix-bm25-silent-none-fallback",
+        "numeric-scores-mandatory-for-system-diagnosis",
+        "post-commit-work-item-hygiene",
+        "component-isolation-as-first-diagnostic-step",
+        "diagnose-rrf-artifact-score-exposure",
+        "hybrid-search-zero-uplift-diagnosis",
+        "sequence-clustered-fixes-smallest-to-absorbing-refactor",
+        "search-arm-comparison-extend-to-top10-with-scores",
+        "silent-path-success-as-diagnostic-red-herring"
+      ],
+      "status": "ok",
+      "latency_ms": 73,
+      "injected_names": [
+        "numeric-scores-mandatory-for-system-diagnosis",
+        "compare-retrieval-arms-top10",
+        "ablation-confounded-by-relevance-floor"
+      ],
+      "coverage_at_3": 0.1875,
+      "freshness_hit": 1.0,
+      "no_match": false
+    },
+    {
+      "query_id": "t18-session-start-thin-docker-unhealthy",
+      "substratum": "thin",
+      "split": "tuning",
+      "text": "two containers are unhealthy in docker, let's get them fixed",
+      "relevant": [
+        "cold-start-guard-for-retirement-workers",
+        "docker-healthcheck-bash-dev-tcp",
+        "docker-healthcheck-tool-absent-in-minimal-image",
+        "embed-summary-only-for-hierarchical-documents",
+        "embedding-write-read-path-divergence",
+        "fix-file-not-read-before-write",
+        "ollama-500-embedding-token-overflow",
+        "ollama-embedding-2048-token-batch-limit",
+        "postgres-docker-stale-volume-db-missing",
+        "postgres-volume-reuse-missing-database",
+        "qdrant-healthcheck-bash-devtcp",
+        "recursive-watcher-exclude-build-dirs"
+      ],
+      "fresh_golds": [
+        "ollama-embedding-2048-token-batch-limit",
+        "embedding-write-read-path-divergence",
+        "docker-healthcheck-bash-dev-tcp",
+        "postgres-docker-stale-volume-db-missing",
+        "fix-file-not-read-before-write",
+        "cold-start-guard-for-retirement-workers",
+        "ollama-500-embedding-token-overflow",
+        "embed-summary-only-for-hierarchical-documents",
+        "postgres-volume-reuse-missing-database",
+        "qdrant-healthcheck-bash-devtcp",
+        "recursive-watcher-exclude-build-dirs",
+        "docker-healthcheck-tool-absent-in-minimal-image"
+      ],
+      "status": "ok",
+      "latency_ms": 82,
+      "injected_names": [
+        "docker-healthcheck-tool-absent-in-minimal-image",
+        "container-hook-absolute-path-resolution-options",
+        "docker-compose-concurrent-bringup-lock"
+      ],
+      "coverage_at_3": 0.08333333333333333,
+      "freshness_hit": 1.0,
+      "no_match": false
+    },
+    {
+      "query_id": "t18-session-start-thin-embedding-setup",
+      "substratum": "thin",
+      "split": "tuning",
+      "text": "the embedding pipeline seems off, corpus isn't loading right",
+      "relevant": [
+        "cold-start-guard-for-retirement-workers",
+        "docker-healthcheck-bash-dev-tcp",
+        "docker-healthcheck-tool-absent-in-minimal-image",
+        "embed-summary-only-for-hierarchical-documents",
+        "embedding-write-read-path-divergence",
+        "fix-file-not-read-before-write",
+        "ollama-500-embedding-token-overflow",
+        "ollama-embedding-2048-token-batch-limit",
+        "postgres-docker-stale-volume-db-missing",
+        "postgres-volume-reuse-missing-database",
+        "qdrant-healthcheck-bash-devtcp",
+        "recursive-watcher-exclude-build-dirs"
+      ],
+      "fresh_golds": [
+        "ollama-embedding-2048-token-batch-limit",
+        "embedding-write-read-path-divergence",
+        "docker-healthcheck-bash-dev-tcp",
+        "postgres-docker-stale-volume-db-missing",
+        "fix-file-not-read-before-write",
+        "cold-start-guard-for-retirement-workers",
+        "ollama-500-embedding-token-overflow",
+        "embed-summary-only-for-hierarchical-documents",
+        "postgres-volume-reuse-missing-database",
+        "qdrant-healthcheck-bash-devtcp",
+        "recursive-watcher-exclude-build-dirs",
+        "docker-healthcheck-tool-absent-in-minimal-image"
+      ],
+      "status": "ok",
+      "latency_ms": 99,
+      "injected_names": [
+        "rag-corpus-first-efficacy-measurement-ordering",
+        "near-zero-cosine-score-suspects",
+        "ollama-500-embedding-token-overflow"
+      ],
+      "coverage_at_3": 0.08333333333333333,
+      "freshness_hit": 1.0,
+      "no_match": false
+    },
+    {
+      "query_id": "t18-session-start-thin-migration-status",
+      "substratum": "thin",
+      "split": "tuning",
+      "text": "double-check all migrations went through before running the suite",
+      "relevant": [
+        "clippy-d-warnings-isolate-touched-crates-only",
+        "inspect-current-state-before-mutating",
+        "migration-test-triple-update",
+        "multi-layer-atomic-propagation",
+        "recover-dead-execution-agents-serial-fallback",
+        "separate-coordinator-method-for-related-entity-persistence"
+      ],
+      "fresh_golds": [
+        "inspect-current-state-before-mutating",
+        "multi-layer-atomic-propagation",
+        "migration-test-triple-update",
+        "recover-dead-execution-agents-serial-fallback",
+        "separate-coordinator-method-for-related-entity-persistence",
+        "clippy-d-warnings-isolate-touched-crates-only"
+      ],
+      "status": "ok",
+      "latency_ms": 103,
+      "injected_names": [
+        "migration-test-triple-update",
+        "migration-file-unwired-from-registry",
+        "orphaned-migration-file-detection"
+      ],
+      "coverage_at_3": 0.16666666666666666,
+      "freshness_hit": 1.0,
+      "no_match": false
+    },
+    {
+      "query_id": "t18-session-start-verbose-concurrent-clippy-crash",
+      "substratum": "verbose",
+      "split": "tuning",
+      "text": "both of your subagents ran clippy at the same time and crashed my machine, from now on concurrently running agents get explicit instructions not to do that or a",
+      "relevant": [
+        "file-overlap-batch-serialization-for-agent-swarms",
+        "isolate-clippy-findings-to-changed-files-with-pre-existing-debt",
+        "prohibit-concurrent-cargo-ops-across-agents",
+        "recover-wsl2-crash-corrupted-git-object-store",
+        "wsl2-crash-dirty-file-recovery"
+      ],
+      "fresh_golds": [
+        "prohibit-concurrent-cargo-ops-across-agents",
+        "file-overlap-batch-serialization-for-agent-swarms",
+        "wsl2-crash-dirty-file-recovery",
+        "isolate-clippy-findings-to-changed-files-with-pre-existing-debt",
+        "recover-wsl2-crash-corrupted-git-object-store"
+      ],
+      "status": "ok",
+      "latency_ms": 95,
+      "injected_names": [
+        "prohibit-concurrent-cargo-ops-across-agents",
+        "orchestrator-verifies-actual-state-before-and-after-delegation",
+        "recover-dead-execution-agents-serial-fallback"
+      ],
+      "coverage_at_3": 0.2,
+      "freshness_hit": 1.0,
+      "no_match": false
+    },
+    {
+      "query_id": "t18-session-start-verbose-project-grok-assessment",
+      "substratum": "verbose",
+      "split": "held_out",
+      "text": "grok the shit out of this repo, the v-1-1 plan and architecture files and the work we've done so far on T01-T15. give me your summary and analysis of this proje",
+      "relevant": [
+        "boot-time-arc-snapshot-never-refreshed",
+        "extraction-pipeline-session-lifecycle-hook-coverage",
+        "qdrant-rest-grpc-port-mismatch"
+      ],
+      "fresh_golds": [
+        "qdrant-rest-grpc-port-mismatch",
+        "boot-time-arc-snapshot-never-refreshed",
+        "extraction-pipeline-session-lifecycle-hook-coverage"
+      ],
+      "status": "ok",
+      "latency_ms": 113,
+      "injected_names": [
+        "deepen-plan-multi-agent-research",
+        "fix-e2e-suite-end-to-end-green",
+        "verify-todo-diagnosis-matches-current-codebase"
+      ],
+      "coverage_at_3": 0.0,
+      "freshness_hit": 0.0,
+      "no_match": false
+    },
+    {
+      "query_id": "t18-session-start-verbose-harness-agent-eval",
+      "substratum": "verbose",
+      "split": "tuning",
+      "text": "you are a kickass coding harness agent given this system to use as your dynamic context layer. it should automatically parse your completed sessions, extract me",
+      "relevant": [
+        "Analyze the main commands and the skills and (preference)",
+        "apply-fail-loud-env-var-checks-to-all-binaries-not-just-the-server",
+        "audit-rust-codebase-stub-violations",
+        "detect-doc-reality-drift-in-planning-heavy-projects",
+        "detect-live-e2e-tests-using-in-process-fakes",
+        "docs-are-spec-build-up-not-edit-down",
+        "fight-ai-workflow-bloat-with-single-source-references",
+        "reject-version-advance-as-proxy-for-retrieval-assertion"
+      ],
+      "fresh_golds": [
+        "Analyze the main commands and the skills and (preference)",
+        "audit-rust-codebase-stub-violations",
+        "docs-are-spec-build-up-not-edit-down",
+        "reject-version-advance-as-proxy-for-retrieval-assertion",
+        "detect-doc-reality-drift-in-planning-heavy-projects",
+        "apply-fail-loud-env-var-checks-to-all-binaries-not-just-the-server",
+        "detect-live-e2e-tests-using-in-process-fakes",
+        "fight-ai-workflow-bloat-with-single-source-references"
+      ],
+      "status": "ok",
+      "latency_ms": 167,
+      "injected_names": [
+        "deepen-plan-multi-agent-research",
+        "retriage-pending-issues-after-related-commit",
+        "fix-gitignore-blocking-github-workflows"
+      ],
+      "coverage_at_3": 0.0,
+      "freshness_hit": 0.0,
+      "no_match": false
+    },
+    {
+      "query_id": "t18-session-start-verbose-skills-table-source-paths",
+      "substratum": "verbose",
+      "split": "held_out",
+      "text": "the skills table should definitely store source paths in its own column. work that in to wherever needed (T09 and wherever else) then go on straight to the next",
+      "relevant": [
+        "detect-revert-cargo-fmt-agent-churn",
+        "gate-parallel-agents-on-file-overlap",
+        "independently-verify-execution-agent-completion-claims",
+        "validate-smoke-test-is-not-vacuous",
+        "wire-live-graph-replace-stub-server"
+      ],
+      "fresh_golds": [
+        "gate-parallel-agents-on-file-overlap",
+        "validate-smoke-test-is-not-vacuous",
+        "wire-live-graph-replace-stub-server",
+        "independently-verify-execution-agent-completion-claims",
+        "detect-revert-cargo-fmt-agent-churn"
+      ],
+      "status": "ok",
+      "latency_ms": 100,
+      "injected_names": [
+        "add-schema-migration-source-paths",
+        "scope-gate-cargo-fmt-churn"
+      ],
+      "coverage_at_3": 0.0,
+      "freshness_hit": 0.0,
+      "no_match": false
+    },
+    {
+      "query_id": "t18-session-start-verbose-live-infra-quality-mandate",
+      "substratum": "verbose",
+      "split": "held_out",
+      "text": "let me just be clear aboot something, it should be in your persistent memory as well. we're only working against live infra, real production logic flows and eve",
+      "relevant": [
+        "filesystem-walk-resolver-fails-in-container-cwd-root",
+        "fix-askuserquestion-options-overflow",
+        "isolate-cross-crate-parallel-test-flakes",
+        "llm-extraction-test-must-use-substantive-fixture",
+        "migration-self-commit-escapes-outer-sqlx-tx",
+        "postgres-implicit-tx-atomic-ddl-batch",
+        "read-before-edit-file",
+        "reread-file-before-edit-on-conflict",
+        "sqlx-transaction-executor-hrtb-send-regression",
+        "tokio-test-for-sqlx-reqwest-construction",
+        "verify-todo-diagnosis-matches-current-codebase"
+      ],
+      "fresh_golds": [
+        "reread-file-before-edit-on-conflict",
+        "verify-todo-diagnosis-matches-current-codebase",
+        "isolate-cross-crate-parallel-test-flakes",
+        "postgres-implicit-tx-atomic-ddl-batch",
+        "llm-extraction-test-must-use-substantive-fixture",
+        "filesystem-walk-resolver-fails-in-container-cwd-root",
+        "tokio-test-for-sqlx-reqwest-construction",
+        "sqlx-transaction-executor-hrtb-send-regression",
+        "migration-self-commit-escapes-outer-sqlx-tx",
+        "read-before-edit-file",
+        "fix-askuserquestion-options-overflow"
+      ],
+      "status": "ok",
+      "latency_ms": 85,
+      "injected_names": [
+        "Always ensure all drifts and issues are captured (preference)",
+        "Never provide false or misleading information (preference)"
+      ],
+      "coverage_at_3": 0.0,
+      "freshness_hit": 0.0,
+      "no_match": false
+    },
+    {
+      "query_id": "t18-session-start-verbose-harness-grok-v2",
+      "substratum": "verbose",
+      "split": "tuning",
+      "text": "you are a kickass coding harness agent given this system to use as your dynamic context layer. it should automatically parse your completed sessions, extract me",
+      "relevant": [
+        "Ticket 205 has a dependency-ordering problem: it requires (preference)",
+        "cold-start-zero-prior-in-usage-scored-retrieval",
+        "fail-loud-on-missing-security-scope-env-var",
+        "fix-rust-cfg-test-depth-tracker-exit-condition",
+        "ml-benchmark-three-run-validity-design",
+        "never-push-without-explicit-request",
+        "rag-corpus-first-efficacy-measurement-ordering",
+        "rag-retrieval-intent-split",
+        "relevance-floor-fragility-on-small-corpus",
+        "rust-eliminate-expect-with-sum-types",
+        "rust-fail-loud-via-constructor-removal",
+        "uniform-binary-boost-cancels-in-ranking",
+        "validate-enforcement-guard-bites-in-all-zones"
+      ],
+      "fresh_golds": [
+        "Ticket 205 has a dependency-ordering problem: it requires (preference)",
+        "rust-eliminate-expect-with-sum-types",
+        "validate-enforcement-guard-bites-in-all-zones",
+        "ml-benchmark-three-run-validity-design",
+        "rust-fail-loud-via-constructor-removal",
+        "fix-rust-cfg-test-depth-tracker-exit-condition",
+        "rag-retrieval-intent-split",
+        "never-push-without-explicit-request",
+        "uniform-binary-boost-cancels-in-ranking",
+        "rag-corpus-first-efficacy-measurement-ordering",
+        "fail-loud-on-missing-security-scope-env-var",
+        "cold-start-zero-prior-in-usage-scored-retrieval",
+        "relevance-floor-fragility-on-small-corpus"
+      ],
+      "status": "ok",
+      "latency_ms": 163,
+      "injected_names": [
+        "deepen-plan-multi-agent-research",
+        "retriage-pending-issues-after-related-commit",
+        "fix-gitignore-blocking-github-workflows"
+      ],
+      "coverage_at_3": 0.0,
+      "freshness_hit": 0.0,
+      "no_match": false
+    },
+    {
+      "query_id": "t18-session-start-verbose-docker-build-failure-musl",
+      "substratum": "verbose",
+      "split": "tuning",
+      "text": "grok the shit out of this project, understand its goals, architecture, implementation path and the awesomeness that went into this. Then fix the damn docker bui",
+      "relevant": [
+        "The extraction hook always sets repo_path to cwd (preference)",
+        "build-tool-silent-coverage-gap",
+        "cargo-all-targets-silently-skips-required-features",
+        "cargo-check-misses-workspace-integration-test-compilation",
+        "cfg-test-vs-test-utils-import-mismatch",
+        "configuration-default-silent-misrouting",
+        "detect-agent-scope-creep-via-git-diff",
+        "docker-compose-global-shared-mount-must-not-default-to-project-relative-path",
+        "dual-scope-knowledge-store-intrinsic-vs-emergent-generality-routing",
+        "orchestrator-must-verify-agent-results-independently",
+        "parallel-agent-wave-planning-via-file-overlap",
+        "read-before-edit-multi-file",
+        "rust-cargo-bin-target-missing-docker-build-failure"
+      ],
+      "fresh_golds": [
+        "rust-cargo-bin-target-missing-docker-build-failure",
+        "build-tool-silent-coverage-gap",
+        "detect-agent-scope-creep-via-git-diff",
+        "read-before-edit-multi-file",
+        "cargo-all-targets-silently-skips-required-features",
+        "docker-compose-global-shared-mount-must-not-default-to-project-relative-path",
+        "cfg-test-vs-test-utils-import-mismatch",
+        "cargo-check-misses-workspace-integration-test-compilation",
+        "dual-scope-knowledge-store-intrinsic-vs-emergent-generality-routing",
+        "parallel-agent-wave-planning-via-file-overlap",
+        "orchestrator-must-verify-agent-results-independently",
+        "configuration-default-silent-misrouting",
+        "The extraction hook always sets repo_path to cwd (preference)"
+      ],
+      "status": "ok",
+      "latency_ms": 185,
+      "injected_names": [
+        "rust-cargo-bin-target-missing-docker-build-failure",
+        "docker-cache-mount-binary-not-persisted-to-image",
+        "docker-musl-ring-missing-gcc"
+      ],
+      "coverage_at_3": 0.07692307692307693,
+      "freshness_hit": 1.0,
+      "no_match": false
+    },
+    {
+      "query_id": "t18-session-start-verbose-sessionend-hook-ticket",
+      "substratum": "verbose",
+      "split": "held_out",
+      "text": "we want to work on the P1 bug where the sessionEnd hook ships an absolute transcript reference that the validation rejects. Read it through carefully, analyze r",
+      "relevant": [
+        "bounded-retry-for-llm-nondeterminism-in-e2e",
+        "detect-test-leniency-masking-pipeline-failures",
+        "e2e-lenient-assertions-mask-real-failures",
+        "postgres-work-queue-for-update-skip-locked",
+        "rich-fixture-required-for-llm-extraction-tests",
+        "shell-hook-fire-and-forget-setsid",
+        "tokio-current-thread-starves-spawned-server"
+      ],
+      "fresh_golds": [
+        "rich-fixture-required-for-llm-extraction-tests",
+        "tokio-current-thread-starves-spawned-server",
+        "e2e-lenient-assertions-mask-real-failures",
+        "bounded-retry-for-llm-nondeterminism-in-e2e",
+        "shell-hook-fire-and-forget-setsid",
+        "postgres-work-queue-for-update-skip-locked",
+        "detect-test-leniency-masking-pipeline-failures"
+      ],
+      "status": "no_match",
+      "latency_ms": 103,
+      "injected_names": [],
+      "coverage_at_3": 0.0,
+      "freshness_hit": 0.0,
+      "no_match": true
+    },
+    {
+      "query_id": "t18-session-start-verbose-e2e-claude-provider-sweep",
+      "substratum": "verbose",
+      "split": "tuning",
+      "text": "grok the shit out of this repo before doing anything. go over all logic paths, high level docs and their implementation, see where we are and where we're meant ",
+      "relevant": [
+        "audit-llm-seam-provider-coupling",
+        "avoid-hardcoding-llm-provider-in-extraction-tests",
+        "contamination-vs-precision-triangulation-for-no-match-failures",
+        "cost-estimate-before-cloud-llm-e2e-run",
+        "deterministic-embedding-drift-from-input-policy-change",
+        "latency-floor-shift-indicates-resource-starvation",
+        "read-before-edit-file-guard",
+        "retrieval-embedding-reuse-silent-recall-loss-in-merge-dedup",
+        "single-transport-abstraction-for-provider-agnostic-seams",
+        "zero-second-test-failure-is-deterministic-not-flaky"
+      ],
+      "fresh_golds": [
+        "deterministic-embedding-drift-from-input-policy-change",
+        "contamination-vs-precision-triangulation-for-no-match-failures",
+        "zero-second-test-failure-is-deterministic-not-flaky",
+        "latency-floor-shift-indicates-resource-starvation",
+        "read-before-edit-file-guard",
+        "audit-llm-seam-provider-coupling",
+        "avoid-hardcoding-llm-provider-in-extraction-tests",
+        "retrieval-embedding-reuse-silent-recall-loss-in-merge-dedup",
+        "cost-estimate-before-cloud-llm-e2e-run",
+        "single-transport-abstraction-for-provider-agnostic-seams"
+      ],
+      "status": "ok",
+      "latency_ms": 154,
+      "injected_names": [
+        "Run ALL end-to-end suite tests using the Claude (preference)",
+        "isolate-e2e-corpus-rebaseline-before-tune",
+        "audit-rust-codebase-stub-violations"
+      ],
+      "coverage_at_3": 0.0,
+      "freshness_hit": 0.0,
+      "no_match": false
+    },
+    {
+      "query_id": "t18-session-start-verbose-todo-triage-batch",
+      "substratum": "verbose",
+      "split": "held_out",
+      "text": "let's go over all open todos, starting with the P1 sessionEnd hook absolute-path rejection bug and onwards. one at a time, present possible actions to resolve, ",
+      "relevant": [
+        "Defer all concrete actions to T05; use the (preference)",
+        "Relax the constitution to allow the user to (preference)",
+        "arcswap-rcu-use-return-value-not-closure-mutation",
+        "cargo-test-coupling-direction-online-depends-on-offline",
+        "container-hook-absolute-path-resolution-options",
+        "extract-behavior-not-predicate-for-exactly-once-unit-test",
+        "git-add-all-sweeps-untracked-test-artifacts",
+        "parallel-agent-stale-base-detection-and-recovery",
+        "parallel-rust-agents-require-file-disjoint-batches-and-git-worktrees",
+        "path-starts-with-requires-symmetric-canonicalization",
+        "recover-stale-file-edit-retry",
+        "regression-isolation-via-baseline-worktree",
+        "triage-todo-backlog-with-decisions",
+        "verify-phantom-field-claim-across-all-code-paths",
+        "zip-without-length-guard-silently-drops-trailing-items"
+      ],
+      "fresh_golds": [
+        "path-starts-with-requires-symmetric-canonicalization",
+        "container-hook-absolute-path-resolution-options",
+        "parallel-rust-agents-require-file-disjoint-batches-and-git-worktrees",
+        "verify-phantom-field-claim-across-all-code-paths",
+        "git-add-all-sweeps-untracked-test-artifacts",
+        "zip-without-length-guard-silently-drops-trailing-items",
+        "triage-todo-backlog-with-decisions",
+        "parallel-agent-stale-base-detection-and-recovery",
+        "Relax the constitution to allow the user to (preference)",
+        "cargo-test-coupling-direction-online-depends-on-offline",
+        "regression-isolation-via-baseline-worktree",
+        "Defer all concrete actions to T05; use the (preference)",
+        "recover-stale-file-edit-retry",
+        "arcswap-rcu-use-return-value-not-closure-mutation",
+        "extract-behavior-not-predicate-for-exactly-once-unit-test"
+      ],
+      "status": "ok",
+      "latency_ms": 90,
+      "injected_names": [
+        "triage-todo-backlog-with-decisions",
+        "read-before-write-file-edit",
+        "serialize-shared-file-todos-across-agent-batches"
+      ],
+      "coverage_at_3": 0.06666666666666667,
+      "freshness_hit": 1.0,
+      "no_match": false
+    },
+    {
+      "query_id": "t18-session-start-verbose-allnighter-final-push",
+      "substratum": "verbose",
+      "split": "held_out",
+      "text": "we're going to pull an all nighter. grok the shit out of this repo before doing anything. go over all logic paths, high level docs and their implementation, see",
+      "relevant": [
+        "bool-returning-assertion-helper-must-be-asserted",
+        "cargo-fmt-reformatting-noise-in-diffs",
+        "count-distinct-for-idempotent-upsert-reconciliation-assertions",
+        "docker-compose-concurrent-bringup-lock",
+        "fail-loud-never-silently-default-to-success",
+        "isolate-e2e-corpus-rebaseline-before-tune",
+        "ollama-thinking-model-think-false-structured-json",
+        "parallel-test-shared-scope-contamination",
+        "retrieval-quality-mrr-collapse-from-shared-test-scope",
+        "retry-ineffective-for-deterministic-llm-failures",
+        "rust-test-fake-env-guard-antipattern",
+        "serde-default-swallows-missing-llm-output-field",
+        "validate-committed-config-default-on-fresh-container"
+      ],
+      "fresh_golds": [
+        "bool-returning-assertion-helper-must-be-asserted",
+        "docker-compose-concurrent-bringup-lock",
+        "retrieval-quality-mrr-collapse-from-shared-test-scope",
+        "retry-ineffective-for-deterministic-llm-failures",
+        "fail-loud-never-silently-default-to-success",
+        "parallel-test-shared-scope-contamination",
+        "cargo-fmt-reformatting-noise-in-diffs",
+        "serde-default-swallows-missing-llm-output-field",
+        "isolate-e2e-corpus-rebaseline-before-tune",
+        "validate-committed-config-default-on-fresh-container",
+        "count-distinct-for-idempotent-upsert-reconciliation-assertions",
+        "rust-test-fake-env-guard-antipattern",
+        "ollama-thinking-model-think-false-structured-json"
+      ],
+      "status": "ok",
+      "latency_ms": 123,
+      "injected_names": [
+        "deepen-plan-multi-agent-research",
+        "file-overlap-batch-serialization-for-agent-swarms",
+        "Execution agents must always run on the Sonnet (preference)"
+      ],
+      "coverage_at_3": 0.0,
+      "freshness_hit": 0.0,
+      "no_match": false
+    }
+  ]
+}
