@@ -9,7 +9,7 @@ use tokio::time::timeout;
 
 use crate::{
     cosine_rank::{cosine_similarity, rank_by_cosine},
-    dense_views::fuse_dense_views,
+    dense_views::{self, fuse_dense_views},
     fusion::{FusedCandidate, mmr_select},
     graph_search::{GraphHit, search_graph, tokenize},
     orchestrator::{
@@ -433,7 +433,7 @@ fn perform_scope_search(
             let e_summary_cosine = dense_score_by_index.get(&idx).copied().unwrap_or_else(|| {
                 cosine_similarity(prompt_embedding, &seeded_skill.embedding).max(0.0)
             });
-            if dense_views_enabled {
+            let base = if dense_views_enabled {
                 fuse_dense_views(
                     prompt_embedding,
                     e_summary_cosine,
@@ -442,7 +442,13 @@ fn perform_scope_search(
                 )
             } else {
                 e_summary_cosine
-            }
+            };
+            dense_views::apply_negative_penalty(
+                base,
+                prompt_embedding,
+                &seeded_skill.e_negative_embedding,
+                config.negative_view_weight,
+            )
         },
         |idx, graph_hit| {
             if config.backend == RetrievalBackend::SnapshotHybrid {
@@ -632,7 +638,7 @@ fn perform_scope_search_with_qdrant_candidates(
         |_idx, seeded_skill, _graph_hit| {
             let e_summary_cosine =
                 cosine_similarity(prompt_embedding, &seeded_skill.embedding).max(0.0);
-            if config.dense_views_enabled {
+            let base = if config.dense_views_enabled {
                 fuse_dense_views(
                     prompt_embedding,
                     e_summary_cosine,
@@ -641,7 +647,13 @@ fn perform_scope_search_with_qdrant_candidates(
                 )
             } else {
                 e_summary_cosine
-            }
+            };
+            dense_views::apply_negative_penalty(
+                base,
+                prompt_embedding,
+                &seeded_skill.e_negative_embedding,
+                config.negative_view_weight,
+            )
         },
         |idx, _graph_hit| fused_score_by_index.get(&idx).copied().unwrap_or(0.0),
     );

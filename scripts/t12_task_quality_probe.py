@@ -72,7 +72,8 @@ def main():
         candrec = rm.candidate_recall_at_limit(ranked, rel)
         mrr3_list.append(mrr3); ndcg3_list.append(ndcg3); hit3_list.append(hit3); candrec_list.append(candrec)
         pos_rows.append({"id": q["id"], "kind": q["kind"], "rel": sorted(rel),
-                         "top5": ranked[:5], "mrr_at3": mrr3, "cand_recall": candrec, "latency_ms": lat})
+                         "top5": ranked[:5], "mrr_at3": mrr3, "ndcg_at3": ndcg3,
+                         "hit_at3": hit3, "cand_recall": candrec, "latency_ms": lat})
 
     # no_match precision: a negative is correctly rejected when no relevant skill is in the top-3
     # (the floor should drop off-topic queries; matches empty OR no rel in top-3).
@@ -99,6 +100,31 @@ def main():
         "p95_latency_ms": rm.percentile_nearest_rank(sorted(latencies), 95),
         "n_positives": len(positives), "n_negatives": len(negatives), "limit": args.limit,
     }
+    # Per-stratum breakdown — the durable fix for the "multi-view looks inert"
+    # trap: an aggregate MRR hides which stratum a lever moves. The extended-field
+    # signal concentrates in the use_when / multiview / transcript strata; reporting
+    # per stratum makes a dense-views (or e_negative) contribution visible even when
+    # the aggregate barely shifts. Negatives get their own no_match-precision line.
+    def by_stratum(rows, key):
+        return round(mean([r[key] for r in rows]), 4) if rows else None
+
+    strata_keys = sorted({r["kind"] for r in pos_rows})
+    per_stratum = {}
+    for k in strata_keys:
+        rows = [r for r in pos_rows if r["kind"] == k]
+        per_stratum[k] = {
+            "n": len(rows),
+            "mrr_at3": by_stratum(rows, "mrr_at3"),
+            "ndcg_at3": by_stratum(rows, "ndcg_at3"),
+            "hit_at3": by_stratum(rows, "hit_at3"),
+            "candidate_recall_at_limit": by_stratum(rows, "cand_recall"),
+        }
+    if negatives:
+        per_stratum["negative"] = {
+            "n": len(negatives),
+            "no_match_precision": round(correct_reject / len(negatives), 4),
+        }
+
     # T11 gate floors (verbatim) for the verdict.
     floors = rm.GATE_THRESHOLDS
     gate = {
@@ -109,6 +135,7 @@ def main():
         "unit": "T12 A2 Task-quality probe (find_skill, snapshot_dense, live)",
         "config_label": args.label,
         "metrics": metrics,
+        "per_stratum": per_stratum,
         "t11_4b_reference": T11_4B_REFERENCE,
         "gate_vs_t11_floors": gate,
         "all_floors_pass": all(g["passes"] for g in gate.values()),
@@ -122,6 +149,14 @@ def main():
           f"no_match_prec={metrics['no_match_precision']} (floor {floors['no_match_precision']}) "
           f"p95={metrics['p95_latency_ms']}ms", file=sys.stderr)
     print(f"[task] ALL T11 FLOORS PASS: {report['all_floors_pass']}", file=sys.stderr)
+    print("[task] per-stratum:", file=sys.stderr)
+    for k, v in per_stratum.items():
+        if "no_match_precision" in v:
+            print(f"[task]   {k:<14} n={v['n']:<3} no_match_prec={v['no_match_precision']}", file=sys.stderr)
+        else:
+            print(f"[task]   {k:<14} n={v['n']:<3} MRR@3={v['mrr_at3']:<7} "
+                  f"nDCG@3={v['ndcg_at3']:<7} hit@3={v['hit_at3']:<7} "
+                  f"cand-recall={v['candidate_recall_at_limit']}", file=sys.stderr)
     print(f"[task] wrote {out}", file=sys.stderr)
 
 

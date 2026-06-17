@@ -426,6 +426,21 @@ pub struct RetrievalConfig {
     /// when this flag is on.
     pub dense_views_enabled: bool,
 
+    /// Subtractive weight for the `e_negative` view (`avoid_when`).
+    ///
+    /// When `> 0.0`, the fused positive α of each candidate is reduced by
+    /// `weight * relu(cosine(prompt, e_negative))` (see
+    /// [`crate::dense_views::apply_negative_penalty`]) — a skill whose `avoid_when`
+    /// matches the query is *suppressed*, never boosted. This is the only path by
+    /// which `e_negative` enters scoring.
+    ///
+    /// **Default `0.0`** (off): the penalty is identity, so ranking is byte-for-byte
+    /// unchanged from the pre-activation behaviour. Set via
+    /// `RETRIEVAL_NEGATIVE_VIEW_WEIGHT`; a present-but-unparseable value panics
+    /// fail-loud. Independent of `dense_views_enabled` (applies to both the fused and
+    /// the e_summary-only base), so it can be measured against either.
+    pub negative_view_weight: f32,
+
     // ── T12 Unit 3: Priming-scoped retrieval parameters ─────────────────────
     // These fields are ONLY applied when `RetrievalIntent::Priming` is active.
     // The `Task` path and the global `relevance_threshold` (0.48) are UNTOUCHED.
@@ -546,6 +561,20 @@ impl Default for RetrievalConfig {
             // See tests/e2e/reports/t11/T11-VALIDATION-REPORT.md.
             dense_views_enabled: true,
 
+            // e_negative (avoid_when) penalty — DEFAULT-OFF (0.0), and STAYS OFF per the
+            // 2026-06-17 measurement. weight 0.0 = identity (production unchanged).
+            // Measured on the live 162-query task fixture (real find_skill): subtracting
+            // the e_negative cosine from the fused positive α is NET-HARMFUL at every
+            // positive weight — MRR@3 0.741→0.527 at w=0.25, →0.128 at w=0.50 — because a
+            // relevant skill's `avoid_when` view correlates with its own topic, so the
+            // penalty suppresses TRUE positives. no_match precision was already 1.000 on
+            // this fixture, so there was zero upside to win. The lever is wired + tested
+            // (apply_negative_penalty) and kept env-tunable (RETRIEVAL_NEGATIVE_VIEW_WEIGHT)
+            // for re-evaluation under a different design (margin-gated: penalize only when
+            // e_negative beats the positive α) or a corpus with imperfect no_match (e.g.
+            // session_start priming). Do NOT enable as a flat α-subtraction.
+            negative_view_weight: 0.0,
+
             // T12 Unit 3: Priming-scoped parameters (conservative defaults).
             // PRIMING-ONLY: the Task path and global floor (0.48) are UNTOUCHED.
             //
@@ -646,6 +675,7 @@ impl RetrievalConfig {
             community_boost_mode: env_or("RETRIEVAL_COMMUNITY_BOOST_MODE", d.community_boost_mode),
             backend: env_or("RETRIEVAL_BACKEND", d.backend),
             dense_views_enabled: env_or("RETRIEVAL_DENSE_VIEWS", BoolFlag(d.dense_views_enabled)).0,
+            negative_view_weight: env_or("RETRIEVAL_NEGATIVE_VIEW_WEIGHT", d.negative_view_weight),
             // T12 Unit 3: Priming-scoped overrides (fail-loud; absent → documented default).
             priming_relevance_threshold: env_or(
                 "RETRIEVAL_PRIMING_RELEVANCE_THRESHOLD",

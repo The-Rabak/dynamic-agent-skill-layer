@@ -210,6 +210,38 @@ pub fn fuse_dense_views(
     e_summary_cosine.max(e_task_cosine).max(e_needs_cosine)
 }
 
+/// Applies the optional `e_negative` penalty to an already-fused positive α score.
+///
+/// `e_negative` (built from `avoid_when`) names the situations where a skill must
+/// **not** apply. When `weight > 0.0`, a query that aligns with a skill's
+/// `e_negative` view is *suppressed*: the fused positive α is reduced by
+/// `weight * relu(cosine(prompt, e_negative))` and floored at `0.0`. A strong
+/// "don't apply here" signal can thus pull a skill below the relevance floor
+/// (improving `no_match` precision) **without ever raising** a skill's score —
+/// the operator is purely subtractive, preserving the max-fusion invariant that
+/// the relevance floor stays meaningful.
+///
+/// Fail-safe to identity in two cases, so the production default is byte-for-byte
+/// unchanged from the pre-activation behaviour:
+/// - `weight <= 0.0` (the default, env `RETRIEVAL_NEGATIVE_VIEW_WEIGHT` unset), and
+/// - an empty `e_negative_embedding` (the skill has no `avoid_when`).
+///
+/// This is the negative-signal use anticipated by [`build_e_negative`]; it is the
+/// **only** place `e_negative` enters scoring, and it never feeds positive fusion.
+pub fn apply_negative_penalty(
+    fused_alpha: f32,
+    prompt_embedding: &[f32],
+    e_negative_embedding: &[f32],
+    weight: f32,
+) -> f32 {
+    if weight <= 0.0 || e_negative_embedding.is_empty() {
+        return fused_alpha;
+    }
+    use crate::cosine_rank::cosine_similarity;
+    let e_negative_cosine = cosine_similarity(prompt_embedding, e_negative_embedding).max(0.0);
+    (fused_alpha - weight * e_negative_cosine).max(0.0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -508,5 +540,61 @@ mod tests {
     fn fuse_dense_views_has_no_e_negative_parameter_structural_contract() {
         let result = fuse_dense_views(&[1.0, 0.0], 0.5, &[0.0, 1.0], &[0.0, 1.0]);
         assert!(result >= 0.0, "result must be non-negative: {result}");
+    }
+
+    // e_negative penalty — weight 0.0 (production default) is identity.
+    #[test]
+    fn negative_penalty_is_identity_at_zero_weight() {
+        let fused = 0.72_f32;
+        let result = apply_negative_penalty(fused, &[1.0, 0.0, 0.0], &[1.0, 0.0, 0.0], 0.0);
+        assert!(
+            (result - fused).abs() < 1e-6,
+            "weight 0.0 must return the fused score unchanged; got {result}"
+        );
+    }
+
+    // e_negative penalty — empty avoid_when view is identity regardless of weight.
+    #[test]
+    fn negative_penalty_is_identity_for_empty_negative_view() {
+        let fused = 0.72_f32;
+        let result = apply_negative_penalty(fused, &[1.0, 0.0, 0.0], &[], 0.5);
+        assert!(
+            (result - fused).abs() < 1e-6,
+            "empty e_negative must return the fused score unchanged; got {result}"
+        );
+    }
+
+    // e_negative penalty — a query aligned with avoid_when is suppressed, never raised.
+    #[test]
+    fn negative_penalty_subtracts_aligned_negative_signal() {
+        // prompt == e_negative → cosine 1.0; weight 0.5 → subtract 0.5.
+        let fused = 0.80_f32;
+        let result = apply_negative_penalty(fused, &[1.0, 0.0, 0.0], &[1.0, 0.0, 0.0], 0.5);
+        assert!(
+            (result - 0.30_f32).abs() < 1e-6,
+            "fused 0.80 minus 0.5*1.0 must be 0.30; got {result}"
+        );
+        assert!(result <= fused, "penalty must never raise the score");
+    }
+
+    // e_negative penalty — orthogonal negative view leaves the score untouched.
+    #[test]
+    fn negative_penalty_no_effect_when_negative_view_orthogonal() {
+        let fused = 0.80_f32;
+        let result = apply_negative_penalty(fused, &[1.0, 0.0, 0.0], &[0.0, 1.0, 0.0], 0.9);
+        assert!(
+            (result - fused).abs() < 1e-6,
+            "orthogonal e_negative (cosine 0) must not change the score; got {result}"
+        );
+    }
+
+    // e_negative penalty — result floors at 0.0, never negative.
+    #[test]
+    fn negative_penalty_floors_at_zero() {
+        let result = apply_negative_penalty(0.30_f32, &[1.0, 0.0], &[1.0, 0.0], 1.0);
+        assert!(
+            result.abs() < 1e-6,
+            "0.30 minus 1.0*1.0 must floor at 0.0, not go negative; got {result}"
+        );
     }
 }

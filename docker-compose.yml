@@ -150,6 +150,36 @@ services:
       # defaults: snapshot_dense backend, multi-view priming at 8 segments).
       RETRIEVAL_BACKEND: ${RETRIEVAL_BACKEND:-snapshot_dense}
       RETRIEVAL_PRIMING_MAX_SEGMENTS: ${RETRIEVAL_PRIMING_MAX_SEGMENTS:-8}
+      # Retrieval scoring/tuning surface. ALL default-empty (`${VAR:-}`) → the Rust
+      # binary's compiled defaults apply, so production behaviour is UNCHANGED unless
+      # a var is explicitly set. Surfaced here (parity with docker-compose.test.yml)
+      # so the validated retrieval_sweep.py --gate (α=0 crater canary + T11 floors)
+      # and the per-arm relevance-floor RECALIBRATION can drive the live corpus stack
+      # in place — without these passthroughs the gate's RETRIEVAL_ALPHA=0.0 /
+      # RETRIEVAL_DENSE_VIEWS overrides are silently dropped and every arm runs
+      # identical defaults (false "no crater"). See T12 0.6b/TEI adoption.
+      RETRIEVAL_ALPHA: ${RETRIEVAL_ALPHA:-}
+      RETRIEVAL_BETA: ${RETRIEVAL_BETA:-}
+      RETRIEVAL_GAMMA: ${RETRIEVAL_GAMMA:-}
+      RETRIEVAL_LAMBDA: ${RETRIEVAL_LAMBDA:-}
+      RETRIEVAL_MMR_LAMBDA: ${RETRIEVAL_MMR_LAMBDA:-}
+      RETRIEVAL_CANDIDATE_LIMIT: ${RETRIEVAL_CANDIDATE_LIMIT:-}
+      RETRIEVAL_MAX_RESULTS: ${RETRIEVAL_MAX_RESULTS:-}
+      RETRIEVAL_MAX_SUBUNITS_PER_SKILL: ${RETRIEVAL_MAX_SUBUNITS_PER_SKILL:-}
+      RETRIEVAL_RESCUE_THRESHOLD: ${RETRIEVAL_RESCUE_THRESHOLD:-}
+      RETRIEVAL_RELEVANCE_THRESHOLD: ${RETRIEVAL_RELEVANCE_THRESHOLD:-}
+      RETRIEVAL_PROJECT_SCOPE_WEIGHT: ${RETRIEVAL_PROJECT_SCOPE_WEIGHT:-}
+      RETRIEVAL_GLOBAL_SCOPE_WEIGHT: ${RETRIEVAL_GLOBAL_SCOPE_WEIGHT:-}
+      RETRIEVAL_RRF_K: ${RETRIEVAL_RRF_K:-}
+      RETRIEVAL_COMMUNITY_BOOST_MODE: ${RETRIEVAL_COMMUNITY_BOOST_MODE:-}
+      RETRIEVAL_RERANK: ${RETRIEVAL_RERANK:-}
+      RETRIEVAL_DENSE_VIEWS: ${RETRIEVAL_DENSE_VIEWS:-}
+      RETRIEVAL_NEGATIVE_VIEW_WEIGHT: ${RETRIEVAL_NEGATIVE_VIEW_WEIGHT:-}
+      RETRIEVAL_PRIMING_RELEVANCE_THRESHOLD: ${RETRIEVAL_PRIMING_RELEVANCE_THRESHOLD:-}
+      RETRIEVAL_PRIMING_MAX_RESULTS: ${RETRIEVAL_PRIMING_MAX_RESULTS:-}
+      RETRIEVAL_PRIMING_RECURRENCE_WEIGHT: ${RETRIEVAL_PRIMING_RECURRENCE_WEIGHT:-}
+      RETRIEVAL_PRIMING_FRESHNESS_SLOTS: ${RETRIEVAL_PRIMING_FRESHNESS_SLOTS:-}
+      RETRIEVAL_PRIMING_FRESHNESS_WINDOW_DAYS: ${RETRIEVAL_PRIMING_FRESHNESS_WINDOW_DAYS:-}
       SKILL_GLOBAL_PATHS: /skills/global
       SKILL_GLOBAL_ALLOWED_ROOTS: ${SKILL_GLOBAL_ALLOWED_ROOTS:-/skills/project,/skills/global}
       # Declares the in-container project scope root (issue #154). The container's
