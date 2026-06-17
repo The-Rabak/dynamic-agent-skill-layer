@@ -1,0 +1,2488 @@
+{
+  "unit": "T12 A2 Task-quality probe (find_skill, snapshot_dense, live)",
+  "config_label": "mvprobe2_dvOFF_neg0",
+  "metrics": {
+    "mrr_at3": 0.6837,
+    "ndcg_at3": 0.6919,
+    "candidate_recall_at_limit": 0.7153,
+    "hit_at3": 0.7153,
+    "no_match_precision": 1.0,
+    "p95_latency_ms": 375,
+    "n_positives": 137,
+    "n_negatives": 25,
+    "limit": 50
+  },
+  "per_stratum": {
+    "disjoint": {
+      "n": 36,
+      "mrr_at3": 0.6852,
+      "ndcg_at3": 0.7017,
+      "hit_at3": 0.75,
+      "candidate_recall_at_limit": 0.75
+    },
+    "lexical": {
+      "n": 30,
+      "mrr_at3": 0.85,
+      "ndcg_at3": 0.8544,
+      "hit_at3": 0.8667,
+      "candidate_recall_at_limit": 0.8667
+    },
+    "multiview": {
+      "n": 20,
+      "mrr_at3": 0.8,
+      "ndcg_at3": 0.8131,
+      "hit_at3": 0.85,
+      "candidate_recall_at_limit": 0.85
+    },
+    "transcript": {
+      "n": 36,
+      "mrr_at3": 0.4722,
+      "ndcg_at3": 0.4722,
+      "hit_at3": 0.4722,
+      "candidate_recall_at_limit": 0.4722
+    },
+    "use_when": {
+      "n": 15,
+      "mrr_at3": 0.7,
+      "ndcg_at3": 0.7087,
+      "hit_at3": 0.7333,
+      "candidate_recall_at_limit": 0.7333
+    },
+    "negative": {
+      "n": 25,
+      "no_match_precision": 1.0
+    }
+  },
+  "t11_4b_reference": {
+    "mrr_at3": 0.743,
+    "ndcg_at3": 0.755,
+    "candidate_recall_at_limit": 0.796,
+    "no_match_precision": 0.92
+  },
+  "gate_vs_t11_floors": {
+    "mrr_at3": {
+      "got": 0.6837,
+      "floor": 0.64,
+      "passes": true
+    },
+    "ndcg_at3": {
+      "got": 0.6919,
+      "floor": 0.64,
+      "passes": true
+    },
+    "candidate_recall_at_limit": {
+      "got": 0.7153,
+      "floor": 0.68,
+      "passes": true
+    },
+    "no_match_precision": {
+      "got": 1.0,
+      "floor": 0.88,
+      "passes": true
+    }
+  },
+  "all_floors_pass": true,
+  "positives": [
+    {
+      "id": "t11-transcript-prohibit-concurrent-cargo-ops-across-age",
+      "kind": "transcript",
+      "rel": [
+        "prohibit-concurrent-cargo-ops-across-agents"
+      ],
+      "top5": [
+        "prohibit-concurrent-cargo-ops-across-agents",
+        "recover-wsl2-crash-corrupted-git-object-store",
+        "parallel-agent-stale-base-detection-and-recovery"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 475
+    },
+    {
+      "id": "t11-disjoint-prohibit-concurrent-cargo-ops-across-age",
+      "kind": "disjoint",
+      "rel": [
+        "prohibit-concurrent-cargo-ops-across-agents"
+      ],
+      "top5": [
+        "prohibit-concurrent-cargo-ops-across-agents",
+        "wsl2-crash-dirty-file-recovery",
+        "file-overlap-batch-serialization-for-agent-swarms"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 266
+    },
+    {
+      "id": "t11-transcript-file-overlap-batch-serialization-for-age",
+      "kind": "transcript",
+      "rel": [
+        "file-overlap-batch-serialization-for-agent-swarms"
+      ],
+      "top5": [
+        "gate-parallel-agents-on-file-overlap",
+        "prohibit-concurrent-cargo-ops-across-agents",
+        "serialize-shared-file-todos-across-agent-batches"
+      ],
+      "mrr_at3": 0.0,
+      "ndcg_at3": 0.0,
+      "hit_at3": 0.0,
+      "cand_recall": 0.0,
+      "latency_ms": 270
+    },
+    {
+      "id": "t11-disjoint-file-overlap-batch-serialization-for-age",
+      "kind": "disjoint",
+      "rel": [
+        "file-overlap-batch-serialization-for-agent-swarms"
+      ],
+      "top5": [
+        "gate-parallel-agents-on-file-overlap"
+      ],
+      "mrr_at3": 0.0,
+      "ndcg_at3": 0.0,
+      "hit_at3": 0.0,
+      "cand_recall": 0.0,
+      "latency_ms": 308
+    },
+    {
+      "id": "t11-transcript-qdrant-rest-grpc-port-mismatch",
+      "kind": "transcript",
+      "rel": [
+        "qdrant-rest-grpc-port-mismatch"
+      ],
+      "top5": [
+        "qdrant-rest-grpc-port-mismatch",
+        "live-model-dimension-discovery-via-probe-embed",
+        "embedding-write-read-path-divergence"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 296
+    },
+    {
+      "id": "t11-disjoint-qdrant-rest-grpc-port-mismatch",
+      "kind": "disjoint",
+      "rel": [
+        "qdrant-rest-grpc-port-mismatch"
+      ],
+      "top5": [
+        "model-keyed-qdrant-collections-multi-arm",
+        "qdrant-rest-grpc-port-mismatch",
+        "retry-ineffective-for-deterministic-llm-failures"
+      ],
+      "mrr_at3": 0.5,
+      "ndcg_at3": 0.6309297535714575,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 303
+    },
+    {
+      "id": "t11-transcript-boot-time-arc-snapshot-never-refreshed",
+      "kind": "transcript",
+      "rel": [
+        "boot-time-arc-snapshot-never-refreshed"
+      ],
+      "top5": [],
+      "mrr_at3": 0.0,
+      "ndcg_at3": 0.0,
+      "hit_at3": 0.0,
+      "cand_recall": 0.0,
+      "latency_ms": 248
+    },
+    {
+      "id": "t11-disjoint-boot-time-arc-snapshot-never-refreshed",
+      "kind": "disjoint",
+      "rel": [
+        "boot-time-arc-snapshot-never-refreshed"
+      ],
+      "top5": [],
+      "mrr_at3": 0.0,
+      "ndcg_at3": 0.0,
+      "hit_at3": 0.0,
+      "cand_recall": 0.0,
+      "latency_ms": 308
+    },
+    {
+      "id": "t11-transcript-inspect-current-state-before-mutating",
+      "kind": "transcript",
+      "rel": [
+        "inspect-current-state-before-mutating"
+      ],
+      "top5": [
+        "recover-dead-execution-agents-serial-fallback",
+        "serialize-shared-file-todos-across-agent-batches",
+        "gate-parallel-agents-on-file-overlap"
+      ],
+      "mrr_at3": 0.0,
+      "ndcg_at3": 0.0,
+      "hit_at3": 0.0,
+      "cand_recall": 0.0,
+      "latency_ms": 362
+    },
+    {
+      "id": "t11-disjoint-inspect-current-state-before-mutating",
+      "kind": "disjoint",
+      "rel": [
+        "inspect-current-state-before-mutating"
+      ],
+      "top5": [],
+      "mrr_at3": 0.0,
+      "ndcg_at3": 0.0,
+      "hit_at3": 0.0,
+      "cand_recall": 0.0,
+      "latency_ms": 237
+    },
+    {
+      "id": "t11-transcript-multi-layer-atomic-propagation",
+      "kind": "transcript",
+      "rel": [
+        "multi-layer-atomic-propagation"
+      ],
+      "top5": [],
+      "mrr_at3": 0.0,
+      "ndcg_at3": 0.0,
+      "hit_at3": 0.0,
+      "cand_recall": 0.0,
+      "latency_ms": 266
+    },
+    {
+      "id": "t11-disjoint-multi-layer-atomic-propagation",
+      "kind": "disjoint",
+      "rel": [
+        "multi-layer-atomic-propagation"
+      ],
+      "top5": [
+        "multi-layer-atomic-propagation"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 235
+    },
+    {
+      "id": "t11-transcript-handle-agent-scope-fence-violation",
+      "kind": "transcript",
+      "rel": [
+        "handle-agent-scope-fence-violation"
+      ],
+      "top5": [
+        "detect-agent-scope-creep-via-git-diff",
+        "post-commit-work-item-hygiene",
+        "verify-todo-diagnosis-matches-current-codebase"
+      ],
+      "mrr_at3": 0.0,
+      "ndcg_at3": 0.0,
+      "hit_at3": 0.0,
+      "cand_recall": 0.0,
+      "latency_ms": 249
+    },
+    {
+      "id": "t11-disjoint-handle-agent-scope-fence-violation",
+      "kind": "disjoint",
+      "rel": [
+        "handle-agent-scope-fence-violation"
+      ],
+      "top5": [
+        "handle-agent-scope-fence-violation",
+        "detect-agent-scope-creep-via-git-diff"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 283
+    },
+    {
+      "id": "t11-transcript-git-stash-verify-preexisting-test-failur",
+      "kind": "transcript",
+      "rel": [
+        "git-stash-verify-preexisting-test-failure"
+      ],
+      "top5": [
+        "orchestrator-independent-post-batch-validation",
+        "reread-artifacts-after-agent-completion"
+      ],
+      "mrr_at3": 0.0,
+      "ndcg_at3": 0.0,
+      "hit_at3": 0.0,
+      "cand_recall": 0.0,
+      "latency_ms": 248
+    },
+    {
+      "id": "t11-disjoint-git-stash-verify-preexisting-test-failur",
+      "kind": "disjoint",
+      "rel": [
+        "git-stash-verify-preexisting-test-failure"
+      ],
+      "top5": [
+        "regression-isolation-via-baseline-worktree",
+        "stale-test-asserts-failure-after-fix",
+        "git-stash-verify-preexisting-test-failure"
+      ],
+      "mrr_at3": 0.3333333333333333,
+      "ndcg_at3": 0.5,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 263
+    },
+    {
+      "id": "t11-transcript-docs-are-spec-build-up-not-edit-down",
+      "kind": "transcript",
+      "rel": [
+        "docs-are-spec-build-up-not-edit-down"
+      ],
+      "top5": [
+        "docs-are-spec-build-up-not-edit-down",
+        "verify-phantom-field-claim-across-all-code-paths",
+        "detect-doc-reality-drift-in-planning-heavy-projects"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 270
+    },
+    {
+      "id": "t11-disjoint-docs-are-spec-build-up-not-edit-down",
+      "kind": "disjoint",
+      "rel": [
+        "docs-are-spec-build-up-not-edit-down"
+      ],
+      "top5": [
+        "docs-are-spec-build-up-not-edit-down"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 276
+    },
+    {
+      "id": "t11-transcript-reject-version-advance-as-proxy-for-retr",
+      "kind": "transcript",
+      "rel": [
+        "reject-version-advance-as-proxy-for-retrieval-assertion"
+      ],
+      "top5": [
+        "detect-test-leniency-masking-pipeline-failures"
+      ],
+      "mrr_at3": 0.0,
+      "ndcg_at3": 0.0,
+      "hit_at3": 0.0,
+      "cand_recall": 0.0,
+      "latency_ms": 270
+    },
+    {
+      "id": "t11-disjoint-reject-version-advance-as-proxy-for-retr",
+      "kind": "disjoint",
+      "rel": [
+        "reject-version-advance-as-proxy-for-retrieval-assertion"
+      ],
+      "top5": [],
+      "mrr_at3": 0.0,
+      "ndcg_at3": 0.0,
+      "hit_at3": 0.0,
+      "cand_recall": 0.0,
+      "latency_ms": 266
+    },
+    {
+      "id": "t11-transcript-gate-parallel-agents-on-file-overlap",
+      "kind": "transcript",
+      "rel": [
+        "gate-parallel-agents-on-file-overlap"
+      ],
+      "top5": [
+        "migration-self-commit-escapes-outer-sqlx-tx"
+      ],
+      "mrr_at3": 0.0,
+      "ndcg_at3": 0.0,
+      "hit_at3": 0.0,
+      "cand_recall": 0.0,
+      "latency_ms": 274
+    },
+    {
+      "id": "t11-disjoint-gate-parallel-agents-on-file-overlap",
+      "kind": "disjoint",
+      "rel": [
+        "gate-parallel-agents-on-file-overlap"
+      ],
+      "top5": [
+        "gate-parallel-agents-on-file-overlap",
+        "stash-test-to-attribute-clippy-gate-failures",
+        "reread-file-before-edit-on-conflict"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 333
+    },
+    {
+      "id": "t11-transcript-validate-smoke-test-is-not-vacuous",
+      "kind": "transcript",
+      "rel": [
+        "validate-smoke-test-is-not-vacuous"
+      ],
+      "top5": [],
+      "mrr_at3": 0.0,
+      "ndcg_at3": 0.0,
+      "hit_at3": 0.0,
+      "cand_recall": 0.0,
+      "latency_ms": 271
+    },
+    {
+      "id": "t11-disjoint-validate-smoke-test-is-not-vacuous",
+      "kind": "disjoint",
+      "rel": [
+        "validate-smoke-test-is-not-vacuous"
+      ],
+      "top5": [
+        "detect-live-e2e-tests-using-in-process-fakes",
+        "extract-behavior-not-predicate-for-exactly-once-unit-test",
+        "stale-test-asserts-failure-after-fix"
+      ],
+      "mrr_at3": 0.0,
+      "ndcg_at3": 0.0,
+      "hit_at3": 0.0,
+      "cand_recall": 0.0,
+      "latency_ms": 270
+    },
+    {
+      "id": "t11-transcript-isolate-timing-test-to-diagnose-load-fla",
+      "kind": "transcript",
+      "rel": [
+        "isolate-timing-test-to-diagnose-load-flake"
+      ],
+      "top5": [
+        "isolate-timing-test-to-diagnose-load-flake",
+        "stale-test-asserts-failure-after-fix",
+        "latency-floor-shift-indicates-resource-starvation"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 287
+    },
+    {
+      "id": "t11-disjoint-isolate-timing-test-to-diagnose-load-fla",
+      "kind": "disjoint",
+      "rel": [
+        "isolate-timing-test-to-diagnose-load-flake"
+      ],
+      "top5": [
+        "isolate-timing-test-to-diagnose-load-flake",
+        "latency-floor-shift-indicates-resource-starvation",
+        "parallel-test-shared-scope-contamination"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 267
+    },
+    {
+      "id": "t11-transcript-shell-out-to-authenticated-cli-provider",
+      "kind": "transcript",
+      "rel": [
+        "shell-out-to-authenticated-cli-provider"
+      ],
+      "top5": [
+        "shell-out-to-authenticated-cli-provider",
+        "extraction-pipeline-session-lifecycle-hook-coverage",
+        "claude-cli-headless-json-fence-stripping"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 260
+    },
+    {
+      "id": "t11-disjoint-shell-out-to-authenticated-cli-provider",
+      "kind": "disjoint",
+      "rel": [
+        "shell-out-to-authenticated-cli-provider"
+      ],
+      "top5": [
+        "shell-out-to-authenticated-cli-provider"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 263
+    },
+    {
+      "id": "t11-transcript-ollama-embedding-2048-token-batch-limit",
+      "kind": "transcript",
+      "rel": [
+        "ollama-embedding-2048-token-batch-limit"
+      ],
+      "top5": [
+        "ollama-500-embedding-token-overflow",
+        "retry-ineffective-for-deterministic-llm-failures",
+        "override-execution-agent-model-to-sonnet"
+      ],
+      "mrr_at3": 0.0,
+      "ndcg_at3": 0.0,
+      "hit_at3": 0.0,
+      "cand_recall": 0.0,
+      "latency_ms": 280
+    },
+    {
+      "id": "t11-disjoint-ollama-embedding-2048-token-batch-limit",
+      "kind": "disjoint",
+      "rel": [
+        "ollama-embedding-2048-token-batch-limit"
+      ],
+      "top5": [
+        "ollama-500-embedding-token-overflow",
+        "embed-summary-only-for-hierarchical-documents",
+        "ollama-embedding-2048-token-batch-limit"
+      ],
+      "mrr_at3": 0.3333333333333333,
+      "ndcg_at3": 0.5,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 261
+    },
+    {
+      "id": "t11-transcript-embedding-write-read-path-divergence",
+      "kind": "transcript",
+      "rel": [
+        "embedding-write-read-path-divergence"
+      ],
+      "top5": [
+        "embedding-write-read-path-divergence"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 268
+    },
+    {
+      "id": "t11-disjoint-embedding-write-read-path-divergence",
+      "kind": "disjoint",
+      "rel": [
+        "embedding-write-read-path-divergence"
+      ],
+      "top5": [
+        "embedding-write-read-path-divergence",
+        "fix-bm25-silent-none-fallback",
+        "hybrid-search-zero-uplift-diagnosis"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 309
+    },
+    {
+      "id": "t11-transcript-verify-todo-diagnosis-matches-current-co",
+      "kind": "transcript",
+      "rel": [
+        "verify-todo-diagnosis-matches-current-codebase"
+      ],
+      "top5": [
+        "verify-todo-diagnosis-matches-current-codebase",
+        "post-commit-work-item-hygiene",
+        "sequence-clustered-fixes-smallest-to-absorbing-refactor"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 267
+    },
+    {
+      "id": "t11-disjoint-verify-todo-diagnosis-matches-current-co",
+      "kind": "disjoint",
+      "rel": [
+        "verify-todo-diagnosis-matches-current-codebase"
+      ],
+      "top5": [
+        "verify-todo-diagnosis-matches-current-codebase",
+        "retriage-pending-issues-after-related-commit"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 267
+    },
+    {
+      "id": "t11-transcript-isolate-cross-crate-parallel-test-flakes",
+      "kind": "transcript",
+      "rel": [
+        "isolate-cross-crate-parallel-test-flakes"
+      ],
+      "top5": [
+        "isolate-cross-crate-parallel-test-flakes",
+        "zero-second-test-failure-is-deterministic-not-flaky",
+        "diagnose-flaky-timing-test-by-isolation"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 263
+    },
+    {
+      "id": "t11-disjoint-isolate-cross-crate-parallel-test-flakes",
+      "kind": "disjoint",
+      "rel": [
+        "isolate-cross-crate-parallel-test-flakes"
+      ],
+      "top5": [
+        "isolate-cross-crate-parallel-test-flakes",
+        "stale-test-asserts-failure-after-fix",
+        "detect-test-leniency-masking-pipeline-failures"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 288
+    },
+    {
+      "id": "t11-transcript-rust-eliminate-expect-with-sum-types",
+      "kind": "transcript",
+      "rel": [
+        "rust-eliminate-expect-with-sum-types"
+      ],
+      "top5": [
+        "rust-fail-loud-via-constructor-removal"
+      ],
+      "mrr_at3": 0.0,
+      "ndcg_at3": 0.0,
+      "hit_at3": 0.0,
+      "cand_recall": 0.0,
+      "latency_ms": 283
+    },
+    {
+      "id": "t11-disjoint-rust-eliminate-expect-with-sum-types",
+      "kind": "disjoint",
+      "rel": [
+        "rust-eliminate-expect-with-sum-types"
+      ],
+      "top5": [],
+      "mrr_at3": 0.0,
+      "ndcg_at3": 0.0,
+      "hit_at3": 0.0,
+      "cand_recall": 0.0,
+      "latency_ms": 250
+    },
+    {
+      "id": "t11-transcript-validate-enforcement-guard-bites-in-all",
+      "kind": "transcript",
+      "rel": [
+        "validate-enforcement-guard-bites-in-all-zones"
+      ],
+      "top5": [],
+      "mrr_at3": 0.0,
+      "ndcg_at3": 0.0,
+      "hit_at3": 0.0,
+      "cand_recall": 0.0,
+      "latency_ms": 296
+    },
+    {
+      "id": "t11-disjoint-validate-enforcement-guard-bites-in-all",
+      "kind": "disjoint",
+      "rel": [
+        "validate-enforcement-guard-bites-in-all-zones"
+      ],
+      "top5": [
+        "validate-enforcement-guard-bites-in-all-zones",
+        "stale-test-asserts-failure-after-fix",
+        "validate-smoke-test-is-not-vacuous"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 262
+    },
+    {
+      "id": "t11-transcript-rust-cargo-bin-target-missing-docker-bui",
+      "kind": "transcript",
+      "rel": [
+        "rust-cargo-bin-target-missing-docker-build-failure"
+      ],
+      "top5": [
+        "rust-cargo-bin-target-missing-docker-build-failure",
+        "fix-file-not-read-before-write",
+        "cargo-all-targets-silently-skips-required-features"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 285
+    },
+    {
+      "id": "t11-disjoint-rust-cargo-bin-target-missing-docker-bui",
+      "kind": "disjoint",
+      "rel": [
+        "rust-cargo-bin-target-missing-docker-build-failure"
+      ],
+      "top5": [
+        "rust-cargo-bin-target-missing-docker-build-failure",
+        "apply-fail-loud-env-var-checks-to-all-binaries-not-just-the-server",
+        "docker-musl-ring-missing-gcc"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 265
+    },
+    {
+      "id": "t11-transcript-build-tool-silent-coverage-gap",
+      "kind": "transcript",
+      "rel": [
+        "build-tool-silent-coverage-gap"
+      ],
+      "top5": [
+        "docker-cache-mount-binary-not-persisted-to-image",
+        "docker-compose-concurrent-bringup-lock",
+        "rust-cargo-bin-target-missing-docker-build-failure"
+      ],
+      "mrr_at3": 0.0,
+      "ndcg_at3": 0.0,
+      "hit_at3": 0.0,
+      "cand_recall": 0.0,
+      "latency_ms": 263
+    },
+    {
+      "id": "t11-disjoint-build-tool-silent-coverage-gap",
+      "kind": "disjoint",
+      "rel": [
+        "build-tool-silent-coverage-gap"
+      ],
+      "top5": [],
+      "mrr_at3": 0.0,
+      "ndcg_at3": 0.0,
+      "hit_at3": 0.0,
+      "cand_recall": 0.0,
+      "latency_ms": 320
+    },
+    {
+      "id": "t11-transcript-rich-fixture-required-for-llm-extraction",
+      "kind": "transcript",
+      "rel": [
+        "rich-fixture-required-for-llm-extraction-tests"
+      ],
+      "top5": [
+        "rich-fixture-required-for-llm-extraction-tests",
+        "Run all e2e tests to verify they use (preference)",
+        "live-llm-test-assert-terminal-not-output-count"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 304
+    },
+    {
+      "id": "t11-disjoint-rich-fixture-required-for-llm-extraction",
+      "kind": "disjoint",
+      "rel": [
+        "rich-fixture-required-for-llm-extraction-tests"
+      ],
+      "top5": [
+        "Relax the constitution to allow the user to (preference)",
+        "rich-fixture-required-for-llm-extraction-tests",
+        "live-llm-test-assert-terminal-not-output-count"
+      ],
+      "mrr_at3": 0.5,
+      "ndcg_at3": 0.6309297535714575,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 416
+    },
+    {
+      "id": "t11-transcript-tokio-current-thread-starves-spawned-ser",
+      "kind": "transcript",
+      "rel": [
+        "tokio-current-thread-starves-spawned-server"
+      ],
+      "top5": [
+        "tokio-current-thread-starves-spawned-server",
+        "tokio-test-for-sqlx-reqwest-construction",
+        "tokio-spawn-no-joinhandle-teardown-db-race"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 307
+    },
+    {
+      "id": "t11-disjoint-tokio-current-thread-starves-spawned-ser",
+      "kind": "disjoint",
+      "rel": [
+        "tokio-current-thread-starves-spawned-server"
+      ],
+      "top5": [
+        "tokio-current-thread-starves-spawned-server"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 284
+    },
+    {
+      "id": "t11-transcript-deterministic-embedding-drift-from-input",
+      "kind": "transcript",
+      "rel": [
+        "deterministic-embedding-drift-from-input-policy-change"
+      ],
+      "top5": [
+        "deterministic-embedding-drift-from-input-policy-change",
+        "When test documents cover fewer fields than production (preference)",
+        "retrieval-embedding-reuse-silent-recall-loss-in-merge-dedup"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 283
+    },
+    {
+      "id": "t11-disjoint-deterministic-embedding-drift-from-input",
+      "kind": "disjoint",
+      "rel": [
+        "deterministic-embedding-drift-from-input-policy-change"
+      ],
+      "top5": [
+        "deterministic-embedding-drift-from-input-policy-change",
+        "contamination-vs-precision-triangulation-for-no-match-failures",
+        "sparse-vector-test-must-assert-weight-values-not-just-index-count"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 270
+    },
+    {
+      "id": "t11-transcript-contamination-vs-precision-triangulation",
+      "kind": "transcript",
+      "rel": [
+        "contamination-vs-precision-triangulation-for-no-match-failures"
+      ],
+      "top5": [
+        "contamination-vs-precision-triangulation-for-no-match-failures",
+        "parallel-test-shared-scope-contamination",
+        "zero-second-test-failure-is-deterministic-not-flaky"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 280
+    },
+    {
+      "id": "t11-disjoint-contamination-vs-precision-triangulation",
+      "kind": "disjoint",
+      "rel": [
+        "contamination-vs-precision-triangulation-for-no-match-failures"
+      ],
+      "top5": [
+        "contamination-vs-precision-triangulation-for-no-match-failures",
+        "diagnose-flaky-timing-test-by-isolation",
+        "parallel-test-shared-scope-contamination"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 287
+    },
+    {
+      "id": "t11-transcript-use-jsonb-for-write-only-audit-fields",
+      "kind": "transcript",
+      "rel": [
+        "use-jsonb-for-write-only-audit-fields"
+      ],
+      "top5": [
+        "add-schema-migration-source-paths",
+        "write-ahead-db-migration-pattern"
+      ],
+      "mrr_at3": 0.0,
+      "ndcg_at3": 0.0,
+      "hit_at3": 0.0,
+      "cand_recall": 0.0,
+      "latency_ms": 260
+    },
+    {
+      "id": "t11-disjoint-use-jsonb-for-write-only-audit-fields",
+      "kind": "disjoint",
+      "rel": [
+        "use-jsonb-for-write-only-audit-fields"
+      ],
+      "top5": [
+        "use-jsonb-for-write-only-audit-fields",
+        "write-ahead-db-migration-pattern"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 279
+    },
+    {
+      "id": "t11-transcript-anthropic-api-forced-tool-use-for-struct",
+      "kind": "transcript",
+      "rel": [
+        "anthropic-api-forced-tool-use-for-structured-json"
+      ],
+      "top5": [
+        "claude-cli-headless-json-fence-stripping",
+        "serde-default-swallows-missing-llm-output-field",
+        "retry-ineffective-for-deterministic-llm-failures"
+      ],
+      "mrr_at3": 0.0,
+      "ndcg_at3": 0.0,
+      "hit_at3": 0.0,
+      "cand_recall": 0.0,
+      "latency_ms": 322
+    },
+    {
+      "id": "t11-disjoint-anthropic-api-forced-tool-use-for-struct",
+      "kind": "disjoint",
+      "rel": [
+        "anthropic-api-forced-tool-use-for-structured-json"
+      ],
+      "top5": [
+        "ollama-thinking-model-think-false-structured-json",
+        "serde-default-swallows-missing-llm-output-field",
+        "retry-ineffective-for-deterministic-llm-failures"
+      ],
+      "mrr_at3": 0.0,
+      "ndcg_at3": 0.0,
+      "hit_at3": 0.0,
+      "cand_recall": 0.0,
+      "latency_ms": 282
+    },
+    {
+      "id": "t11-transcript-path-starts-with-requires-symmetric-cano",
+      "kind": "transcript",
+      "rel": [
+        "path-starts-with-requires-symmetric-canonicalization"
+      ],
+      "top5": [],
+      "mrr_at3": 0.0,
+      "ndcg_at3": 0.0,
+      "hit_at3": 0.0,
+      "cand_recall": 0.0,
+      "latency_ms": 255
+    },
+    {
+      "id": "t11-disjoint-path-starts-with-requires-symmetric-cano",
+      "kind": "disjoint",
+      "rel": [
+        "path-starts-with-requires-symmetric-canonicalization"
+      ],
+      "top5": [
+        "path-starts-with-requires-symmetric-canonicalization",
+        "container-hook-absolute-path-resolution-options",
+        "cargo-manifest-dir-path-depth-vs-workspace-root"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 255
+    },
+    {
+      "id": "t11-transcript-container-hook-absolute-path-resolution",
+      "kind": "transcript",
+      "rel": [
+        "container-hook-absolute-path-resolution-options"
+      ],
+      "top5": [
+        "container-hook-absolute-path-resolution-options"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 274
+    },
+    {
+      "id": "t11-disjoint-container-hook-absolute-path-resolution",
+      "kind": "disjoint",
+      "rel": [
+        "container-hook-absolute-path-resolution-options"
+      ],
+      "top5": [
+        "container-hook-absolute-path-resolution-options",
+        "docker-compose-global-shared-mount-must-not-default-to-project-relative-path"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 363
+    },
+    {
+      "id": "t11-transcript-tokio-spawn-no-joinhandle-teardown-db-ra",
+      "kind": "transcript",
+      "rel": [
+        "tokio-spawn-no-joinhandle-teardown-db-race"
+      ],
+      "top5": [
+        "fix-e2e-suite-end-to-end-green",
+        "zero-second-test-failure-is-deterministic-not-flaky"
+      ],
+      "mrr_at3": 0.0,
+      "ndcg_at3": 0.0,
+      "hit_at3": 0.0,
+      "cand_recall": 0.0,
+      "latency_ms": 326
+    },
+    {
+      "id": "t11-disjoint-tokio-spawn-no-joinhandle-teardown-db-ra",
+      "kind": "disjoint",
+      "rel": [
+        "tokio-spawn-no-joinhandle-teardown-db-race"
+      ],
+      "top5": [
+        "tokio-spawn-no-joinhandle-teardown-db-race"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 290
+    },
+    {
+      "id": "t11-transcript-pipe-filter-masks-command-exit-code",
+      "kind": "transcript",
+      "rel": [
+        "pipe-filter-masks-command-exit-code"
+      ],
+      "top5": [],
+      "mrr_at3": 0.0,
+      "ndcg_at3": 0.0,
+      "hit_at3": 0.0,
+      "cand_recall": 0.0,
+      "latency_ms": 293
+    },
+    {
+      "id": "t11-disjoint-pipe-filter-masks-command-exit-code",
+      "kind": "disjoint",
+      "rel": [
+        "pipe-filter-masks-command-exit-code"
+      ],
+      "top5": [
+        "pipe-filter-masks-command-exit-code",
+        "shell-hook-fire-and-forget-setsid"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 344
+    },
+    {
+      "id": "t11-transcript-ablation-confounded-by-relevance-floor",
+      "kind": "transcript",
+      "rel": [
+        "ablation-confounded-by-relevance-floor"
+      ],
+      "top5": [
+        "ablation-confounded-by-relevance-floor",
+        "byte-identical-hybrid-vs-baseline-metrics-means-investigate-wiring",
+        "identical-hybrid-metrics-check-eval-set-coverage"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 259
+    },
+    {
+      "id": "t11-disjoint-ablation-confounded-by-relevance-floor",
+      "kind": "disjoint",
+      "rel": [
+        "ablation-confounded-by-relevance-floor"
+      ],
+      "top5": [
+        "ablation-confounded-by-relevance-floor",
+        "uniform-binary-boost-cancels-in-ranking",
+        "byte-identical-hybrid-vs-baseline-metrics-means-investigate-wiring"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 282
+    },
+    {
+      "id": "t11-transcript-near-zero-cosine-score-suspects",
+      "kind": "transcript",
+      "rel": [
+        "near-zero-cosine-score-suspects"
+      ],
+      "top5": [
+        "near-zero-cosine-score-suspects",
+        "embedding-write-read-path-divergence",
+        "sparse-vector-test-must-assert-weight-values-not-just-index-count"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 312
+    },
+    {
+      "id": "t11-disjoint-near-zero-cosine-score-suspects",
+      "kind": "disjoint",
+      "rel": [
+        "near-zero-cosine-score-suspects"
+      ],
+      "top5": [
+        "near-zero-cosine-score-suspects",
+        "byte-identical-hybrid-vs-baseline-metrics-means-investigate-wiring",
+        "embedding-write-read-path-divergence"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 347
+    },
+    {
+      "id": "t11-transcript-bool-returning-assertion-helper-must-be",
+      "kind": "transcript",
+      "rel": [
+        "bool-returning-assertion-helper-must-be-asserted"
+      ],
+      "top5": [
+        "zero-second-test-failure-is-deterministic-not-flaky",
+        "stale-test-asserts-failure-after-fix",
+        "e2e-lenient-assertions-mask-real-failures"
+      ],
+      "mrr_at3": 0.0,
+      "ndcg_at3": 0.0,
+      "hit_at3": 0.0,
+      "cand_recall": 0.0,
+      "latency_ms": 270
+    },
+    {
+      "id": "t11-disjoint-bool-returning-assertion-helper-must-be",
+      "kind": "disjoint",
+      "rel": [
+        "bool-returning-assertion-helper-must-be-asserted"
+      ],
+      "top5": [
+        "stale-test-asserts-failure-after-fix",
+        "validate-enforcement-guard-bites-in-all-zones",
+        "detect-live-e2e-tests-using-in-process-fakes"
+      ],
+      "mrr_at3": 0.0,
+      "ndcg_at3": 0.0,
+      "hit_at3": 0.0,
+      "cand_recall": 0.0,
+      "latency_ms": 265
+    },
+    {
+      "id": "t11-transcript-docker-compose-concurrent-bringup-lock",
+      "kind": "transcript",
+      "rel": [
+        "docker-compose-concurrent-bringup-lock"
+      ],
+      "top5": [
+        "docker-compose-concurrent-bringup-lock",
+        "parallel-test-shared-scope-contamination"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 288
+    },
+    {
+      "id": "t11-disjoint-docker-compose-concurrent-bringup-lock",
+      "kind": "disjoint",
+      "rel": [
+        "docker-compose-concurrent-bringup-lock"
+      ],
+      "top5": [
+        "docker-compose-concurrent-bringup-lock",
+        "file-overlap-batch-serialization-for-agent-swarms",
+        "prohibit-concurrent-cargo-ops-across-agents"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 290
+    },
+    {
+      "id": "t11-lexical-two-phase-artifact-wiring-must-be-verifi",
+      "kind": "lexical",
+      "rel": [
+        "two-phase-artifact-wiring-must-be-verified-end-to-end"
+      ],
+      "top5": [
+        "migration-file-unwired-from-registry",
+        "orphaned-migration-file-detection",
+        "All migrations must be registered in both the (preference)"
+      ],
+      "mrr_at3": 0.0,
+      "ndcg_at3": 0.0,
+      "hit_at3": 0.0,
+      "cand_recall": 0.0,
+      "latency_ms": 292
+    },
+    {
+      "id": "t11-lexical-rust-cargo-bin-target-missing-docker-bui",
+      "kind": "lexical",
+      "rel": [
+        "rust-cargo-bin-target-missing-docker-build-failure"
+      ],
+      "top5": [
+        "rust-cargo-bin-target-missing-docker-build-failure",
+        "cargo-all-targets-silently-skips-required-features",
+        "docker-cache-mount-binary-not-persisted-to-image"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 379
+    },
+    {
+      "id": "t11-lexical-serialize-shared-file-todos-across-agent",
+      "kind": "lexical",
+      "rel": [
+        "serialize-shared-file-todos-across-agent-batches"
+      ],
+      "top5": [
+        "serialize-shared-file-todos-across-agent-batches",
+        "parallel-rust-agents-require-file-disjoint-batches-and-git-worktrees",
+        "file-overlap-batch-serialization-for-agent-swarms"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 303
+    },
+    {
+      "id": "t11-lexical-ablation-confounded-by-relevance-floor",
+      "kind": "lexical",
+      "rel": [
+        "ablation-confounded-by-relevance-floor"
+      ],
+      "top5": [
+        "ablation-confounded-by-relevance-floor",
+        "An MRR/nDCG score of 80 is an aspiration (preference)",
+        "search-arm-comparison-extend-to-top10-with-scores"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 283
+    },
+    {
+      "id": "t11-lexical-deterministic-embedding-drift-from-input",
+      "kind": "lexical",
+      "rel": [
+        "deterministic-embedding-drift-from-input-policy-change"
+      ],
+      "top5": [
+        "deterministic-embedding-drift-from-input-policy-change",
+        "retrieval-embedding-reuse-silent-recall-loss-in-merge-dedup",
+        "near-zero-cosine-score-suspects"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 325
+    },
+    {
+      "id": "t11-lexical-cargo-clippy-all-targets-dead-code-from",
+      "kind": "lexical",
+      "rel": [
+        "cargo-clippy-all-targets-dead-code-from-test-binary"
+      ],
+      "top5": [
+        "cargo-clippy-all-targets-dead-code-from-test-binary",
+        "clippy-d-warnings-isolate-touched-crates-only",
+        "cargo-clippy-workspace-all-targets-includes-examples-and-e2e"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 287
+    },
+    {
+      "id": "t11-lexical-bool-returning-assertion-helper-must-be",
+      "kind": "lexical",
+      "rel": [
+        "bool-returning-assertion-helper-must-be-asserted"
+      ],
+      "top5": [
+        "bool-returning-assertion-helper-must-be-asserted",
+        "detect-test-leniency-masking-pipeline-failures",
+        "stale-test-asserts-failure-after-fix"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 294
+    },
+    {
+      "id": "t11-lexical-path-starts-with-requires-symmetric-cano",
+      "kind": "lexical",
+      "rel": [
+        "path-starts-with-requires-symmetric-canonicalization"
+      ],
+      "top5": [
+        "container-hook-absolute-path-resolution-options",
+        "path-starts-with-requires-symmetric-canonicalization",
+        "docker-compose-global-shared-mount-must-not-default-to-project-relative-path"
+      ],
+      "mrr_at3": 0.5,
+      "ndcg_at3": 0.6309297535714575,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 265
+    },
+    {
+      "id": "t11-lexical-tokio-spawn-no-joinhandle-teardown-db-ra",
+      "kind": "lexical",
+      "rel": [
+        "tokio-spawn-no-joinhandle-teardown-db-race"
+      ],
+      "top5": [
+        "tokio-spawn-no-joinhandle-teardown-db-race",
+        "sqlx-transaction-executor-hrtb-send-regression",
+        "tokio-current-thread-starves-spawned-server"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 375
+    },
+    {
+      "id": "t11-lexical-isolate-timing-test-to-diagnose-load-fla",
+      "kind": "lexical",
+      "rel": [
+        "isolate-timing-test-to-diagnose-load-flake"
+      ],
+      "top5": [
+        "isolate-timing-test-to-diagnose-load-flake",
+        "latency-floor-shift-indicates-resource-starvation",
+        "isolate-cross-crate-parallel-test-flakes"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 273
+    },
+    {
+      "id": "t11-lexical-gate-parallel-agents-on-file-overlap",
+      "kind": "lexical",
+      "rel": [
+        "gate-parallel-agents-on-file-overlap"
+      ],
+      "top5": [
+        "gate-parallel-agents-on-file-overlap",
+        "prohibit-concurrent-cargo-ops-across-agents",
+        "sequence-clustered-fixes-smallest-to-absorbing-refactor"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 289
+    },
+    {
+      "id": "t11-lexical-inspect-current-state-before-mutating",
+      "kind": "lexical",
+      "rel": [
+        "inspect-current-state-before-mutating"
+      ],
+      "top5": [
+        "inspect-current-state-before-mutating",
+        "parallel-agent-stale-base-detection-and-recovery"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 321
+    },
+    {
+      "id": "t11-lexical-sparse-vector-test-must-assert-weight-va",
+      "kind": "lexical",
+      "rel": [
+        "sparse-vector-test-must-assert-weight-values-not-just-index-count"
+      ],
+      "top5": [
+        "sparse-vector-test-must-assert-weight-values-not-just-index-count",
+        "identical-hybrid-metrics-check-eval-set-coverage",
+        "fix-bm25-silent-none-fallback"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 270
+    },
+    {
+      "id": "t11-lexical-pre-commit-gitignore-silent-exclusion-ch",
+      "kind": "lexical",
+      "rel": [
+        "pre-commit-gitignore-silent-exclusion-check"
+      ],
+      "top5": [
+        "pre-commit-gitignore-silent-exclusion-check",
+        "github-dir-blanket-gitignore-drops-ci-workflows",
+        "git-add-all-sweeps-untracked-test-artifacts"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 269
+    },
+    {
+      "id": "t11-lexical-ollama-embedding-2048-token-batch-limit",
+      "kind": "lexical",
+      "rel": [
+        "ollama-embedding-2048-token-batch-limit"
+      ],
+      "top5": [
+        "ollama-500-embedding-token-overflow",
+        "Use batch FW-2025-0118 (preference)",
+        "retry-ineffective-for-deterministic-llm-failures"
+      ],
+      "mrr_at3": 0.0,
+      "ndcg_at3": 0.0,
+      "hit_at3": 0.0,
+      "cand_recall": 0.0,
+      "latency_ms": 349
+    },
+    {
+      "id": "t11-lexical-handle-agent-scope-fence-violation",
+      "kind": "lexical",
+      "rel": [
+        "handle-agent-scope-fence-violation"
+      ],
+      "top5": [
+        "handle-agent-scope-fence-violation",
+        "detect-revert-cargo-fmt-agent-churn",
+        "detect-agent-scope-creep-via-git-diff"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 367
+    },
+    {
+      "id": "t11-lexical-rust-eliminate-expect-with-sum-types",
+      "kind": "lexical",
+      "rel": [
+        "rust-eliminate-expect-with-sum-types"
+      ],
+      "top5": [
+        "rust-eliminate-expect-with-sum-types",
+        "fail-loud-never-silently-default-to-success",
+        "bool-returning-assertion-helper-must-be-asserted"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 359
+    },
+    {
+      "id": "t11-lexical-prohibit-concurrent-cargo-ops-across-age",
+      "kind": "lexical",
+      "rel": [
+        "prohibit-concurrent-cargo-ops-across-agents"
+      ],
+      "top5": [
+        "prohibit-concurrent-cargo-ops-across-agents",
+        "cargo-clippy-all-targets-dead-code-from-test-binary",
+        "verify-clippy-ci-gate-with-d-warnings"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 277
+    },
+    {
+      "id": "t11-lexical-stale-test-asserts-failure-after-fix",
+      "kind": "lexical",
+      "rel": [
+        "stale-test-asserts-failure-after-fix"
+      ],
+      "top5": [
+        "stale-test-asserts-failure-after-fix",
+        "llm-extraction-test-must-use-substantive-fixture",
+        "reject-version-advance-as-proxy-for-retrieval-assertion"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 283
+    },
+    {
+      "id": "t11-lexical-use-jsonb-for-write-only-audit-fields",
+      "kind": "lexical",
+      "rel": [
+        "use-jsonb-for-write-only-audit-fields"
+      ],
+      "top5": [
+        "use-jsonb-for-write-only-audit-fields",
+        "migration-file-unwired-from-registry",
+        "postgres-typed-columns-over-jsonb-for-aggregatable-scalars"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 287
+    },
+    {
+      "id": "t11-lexical-qdrant-rest-grpc-port-mismatch",
+      "kind": "lexical",
+      "rel": [
+        "qdrant-rest-grpc-port-mismatch"
+      ],
+      "top5": [
+        "qdrant-rest-grpc-port-mismatch",
+        "embed-summary-only-for-hierarchical-documents",
+        "Under the qdrant_hybrid feature, any CQRS-path break must (preference)"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 324
+    },
+    {
+      "id": "t11-lexical-rich-fixture-required-for-llm-extraction",
+      "kind": "lexical",
+      "rel": [
+        "rich-fixture-required-for-llm-extraction-tests"
+      ],
+      "top5": [
+        "rich-fixture-required-for-llm-extraction-tests",
+        "near-zero-cosine-score-suspects",
+        "fix-askuserquestion-options-overflow"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 401
+    },
+    {
+      "id": "t11-lexical-verify-todo-diagnosis-matches-current-co",
+      "kind": "lexical",
+      "rel": [
+        "verify-todo-diagnosis-matches-current-codebase"
+      ],
+      "top5": [
+        "verify-todo-diagnosis-matches-current-codebase",
+        "deepen-plan-multi-agent-research",
+        "isolate-e2e-corpus-rebaseline-before-tune"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 384
+    },
+    {
+      "id": "t11-lexical-docs-are-spec-build-up-not-edit-down",
+      "kind": "lexical",
+      "rel": [
+        "docs-are-spec-build-up-not-edit-down"
+      ],
+      "top5": [
+        "docs-are-spec-build-up-not-edit-down",
+        "verify-phantom-field-claim-across-all-code-paths",
+        "verify-todo-diagnosis-matches-current-codebase"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 356
+    },
+    {
+      "id": "t11-lexical-probe-external-system-parameters-at-runt",
+      "kind": "lexical",
+      "rel": [
+        "probe-external-system-parameters-at-runtime-not-hardcode"
+      ],
+      "top5": [
+        "qdrant-ensure-collection-dimension-footgun",
+        "live-model-dimension-discovery-via-probe-embed"
+      ],
+      "mrr_at3": 0.0,
+      "ndcg_at3": 0.0,
+      "hit_at3": 0.0,
+      "cand_recall": 0.0,
+      "latency_ms": 241
+    },
+    {
+      "id": "t11-lexical-build-tool-silent-coverage-gap",
+      "kind": "lexical",
+      "rel": [
+        "build-tool-silent-coverage-gap"
+      ],
+      "top5": [
+        "build-tool-silent-coverage-gap",
+        "cargo-clippy-workspace-all-targets-includes-examples-and-e2e",
+        "prohibit-concurrent-cargo-ops-across-agents"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 269
+    },
+    {
+      "id": "t11-lexical-run-cargo-fmt-after-multi-agent-rust-edi",
+      "kind": "lexical",
+      "rel": [
+        "run-cargo-fmt-after-multi-agent-rust-edits"
+      ],
+      "top5": [
+        "run-cargo-fmt-after-multi-agent-rust-edits",
+        "cargo-fmt-reformatting-noise-in-diffs",
+        "orchestrator-independent-post-batch-validation"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 284
+    },
+    {
+      "id": "t11-lexical-near-zero-cosine-score-suspects",
+      "kind": "lexical",
+      "rel": [
+        "near-zero-cosine-score-suspects"
+      ],
+      "top5": [
+        "near-zero-cosine-score-suspects",
+        "embedding-write-read-path-divergence",
+        "byte-identical-hybrid-vs-baseline-metrics-means-investigate-wiring"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 288
+    },
+    {
+      "id": "t11-lexical-contamination-vs-precision-triangulation",
+      "kind": "lexical",
+      "rel": [
+        "contamination-vs-precision-triangulation-for-no-match-failures"
+      ],
+      "top5": [
+        "contamination-vs-precision-triangulation-for-no-match-failures",
+        "stale-test-asserts-failure-after-fix",
+        "deterministic-embedding-drift-from-input-policy-change"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 271
+    },
+    {
+      "id": "t11-lexical-stash-test-to-attribute-clippy-gate-fail",
+      "kind": "lexical",
+      "rel": [
+        "stash-test-to-attribute-clippy-gate-failures"
+      ],
+      "top5": [
+        "isolate-clippy-findings-to-changed-files-with-pre-existing-debt",
+        "regression-isolation-via-baseline-worktree",
+        "verify-clippy-ci-gate-with-d-warnings"
+      ],
+      "mrr_at3": 0.0,
+      "ndcg_at3": 0.0,
+      "hit_at3": 0.0,
+      "cand_recall": 0.0,
+      "latency_ms": 294
+    },
+    {
+      "id": "t11-multiview-two-phase-artifact-wiring-must-be-verifi",
+      "kind": "multiview",
+      "rel": [
+        "two-phase-artifact-wiring-must-be-verified-end-to-end"
+      ],
+      "top5": [
+        "migration-file-unwired-from-registry",
+        "two-phase-artifact-wiring-must-be-verified-end-to-end",
+        "orphaned-migration-file-detection"
+      ],
+      "mrr_at3": 0.5,
+      "ndcg_at3": 0.6309297535714575,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 275
+    },
+    {
+      "id": "t11-multiview-rust-cargo-bin-target-missing-docker-bui",
+      "kind": "multiview",
+      "rel": [
+        "rust-cargo-bin-target-missing-docker-build-failure"
+      ],
+      "top5": [
+        "rust-cargo-bin-target-missing-docker-build-failure",
+        "fix-e2e-suite-end-to-end-green",
+        "cargo-all-targets-silently-skips-required-features"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 291
+    },
+    {
+      "id": "t11-multiview-serialize-shared-file-todos-across-agent",
+      "kind": "multiview",
+      "rel": [
+        "serialize-shared-file-todos-across-agent-batches"
+      ],
+      "top5": [
+        "file-conflict-graph-parallel-agent-batching",
+        "Do not run review after ticket execution completes; (preference)",
+        "post-commit-work-item-hygiene"
+      ],
+      "mrr_at3": 0.0,
+      "ndcg_at3": 0.0,
+      "hit_at3": 0.0,
+      "cand_recall": 0.0,
+      "latency_ms": 326
+    },
+    {
+      "id": "t11-multiview-ablation-confounded-by-relevance-floor",
+      "kind": "multiview",
+      "rel": [
+        "ablation-confounded-by-relevance-floor"
+      ],
+      "top5": [
+        "ablation-confounded-by-relevance-floor",
+        "retrieval-quality-mrr-collapse-from-shared-test-scope",
+        "uniform-binary-boost-cancels-in-ranking"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 297
+    },
+    {
+      "id": "t11-multiview-deterministic-embedding-drift-from-input",
+      "kind": "multiview",
+      "rel": [
+        "deterministic-embedding-drift-from-input-policy-change"
+      ],
+      "top5": [
+        "deterministic-embedding-drift-from-input-policy-change",
+        "retrieval-embedding-reuse-silent-recall-loss-in-merge-dedup",
+        "zero-second-test-failure-is-deterministic-not-flaky"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 477
+    },
+    {
+      "id": "t11-multiview-cargo-clippy-all-targets-dead-code-from",
+      "kind": "multiview",
+      "rel": [
+        "cargo-clippy-all-targets-dead-code-from-test-binary"
+      ],
+      "top5": [
+        "cargo-clippy-all-targets-dead-code-from-test-binary",
+        "cargo-check-all-targets-after-struct-field-addition",
+        "clippy-d-warnings-isolate-touched-crates-only"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 273
+    },
+    {
+      "id": "t11-multiview-bool-returning-assertion-helper-must-be",
+      "kind": "multiview",
+      "rel": [
+        "bool-returning-assertion-helper-must-be-asserted"
+      ],
+      "top5": [
+        "cargo-test-required-features-missing-from-integration-tests",
+        "stale-test-asserts-failure-after-fix",
+        "diagnose-flaky-timing-test-by-isolation"
+      ],
+      "mrr_at3": 0.0,
+      "ndcg_at3": 0.0,
+      "hit_at3": 0.0,
+      "cand_recall": 0.0,
+      "latency_ms": 308
+    },
+    {
+      "id": "t11-multiview-path-starts-with-requires-symmetric-cano",
+      "kind": "multiview",
+      "rel": [
+        "path-starts-with-requires-symmetric-canonicalization"
+      ],
+      "top5": [
+        "path-starts-with-requires-symmetric-canonicalization"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 301
+    },
+    {
+      "id": "t11-multiview-tokio-spawn-no-joinhandle-teardown-db-ra",
+      "kind": "multiview",
+      "rel": [
+        "tokio-spawn-no-joinhandle-teardown-db-race"
+      ],
+      "top5": [
+        "tokio-spawn-no-joinhandle-teardown-db-race",
+        "postgres-implicit-tx-atomic-ddl-batch",
+        "parallel-test-shared-scope-contamination"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 272
+    },
+    {
+      "id": "t11-multiview-isolate-timing-test-to-diagnose-load-fla",
+      "kind": "multiview",
+      "rel": [
+        "isolate-timing-test-to-diagnose-load-flake"
+      ],
+      "top5": [
+        "isolate-timing-test-to-diagnose-load-flake",
+        "latency-floor-shift-indicates-resource-starvation",
+        "zero-second-test-failure-is-deterministic-not-flaky"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 264
+    },
+    {
+      "id": "t11-multiview-gate-parallel-agents-on-file-overlap",
+      "kind": "multiview",
+      "rel": [
+        "gate-parallel-agents-on-file-overlap"
+      ],
+      "top5": [
+        "gate-parallel-agents-on-file-overlap",
+        "serialize-shared-file-todos-across-agent-batches",
+        "file-conflict-graph-parallel-agent-batching"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 300
+    },
+    {
+      "id": "t11-multiview-inspect-current-state-before-mutating",
+      "kind": "multiview",
+      "rel": [
+        "inspect-current-state-before-mutating"
+      ],
+      "top5": [
+        "read-before-edit-file",
+        "inspect-current-state-before-mutating",
+        "detect-agent-scope-creep-via-git-diff"
+      ],
+      "mrr_at3": 0.5,
+      "ndcg_at3": 0.6309297535714575,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 385
+    },
+    {
+      "id": "t11-multiview-sparse-vector-test-must-assert-weight-va",
+      "kind": "multiview",
+      "rel": [
+        "sparse-vector-test-must-assert-weight-values-not-just-index-count"
+      ],
+      "top5": [
+        "sparse-vector-test-must-assert-weight-values-not-just-index-count",
+        "deterministic-embedding-drift-from-input-policy-change",
+        "fix-bm25-silent-none-fallback"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 249
+    },
+    {
+      "id": "t11-multiview-pre-commit-gitignore-silent-exclusion-ch",
+      "kind": "multiview",
+      "rel": [
+        "pre-commit-gitignore-silent-exclusion-check"
+      ],
+      "top5": [
+        "pre-commit-gitignore-silent-exclusion-check",
+        "git-add-all-sweeps-untracked-test-artifacts",
+        "github-dir-blanket-gitignore-drops-ci-workflows"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 295
+    },
+    {
+      "id": "t11-multiview-ollama-embedding-2048-token-batch-limit",
+      "kind": "multiview",
+      "rel": [
+        "ollama-embedding-2048-token-batch-limit"
+      ],
+      "top5": [
+        "ollama-500-embedding-token-overflow",
+        "single-transport-abstraction-for-provider-agnostic-seams",
+        "retry-ineffective-for-deterministic-llm-failures"
+      ],
+      "mrr_at3": 0.0,
+      "ndcg_at3": 0.0,
+      "hit_at3": 0.0,
+      "cand_recall": 0.0,
+      "latency_ms": 264
+    },
+    {
+      "id": "t11-multiview-handle-agent-scope-fence-violation",
+      "kind": "multiview",
+      "rel": [
+        "handle-agent-scope-fence-violation"
+      ],
+      "top5": [
+        "handle-agent-scope-fence-violation",
+        "post-commit-work-item-hygiene",
+        "detect-revert-cargo-fmt-agent-churn"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 272
+    },
+    {
+      "id": "t11-multiview-rust-eliminate-expect-with-sum-types",
+      "kind": "multiview",
+      "rel": [
+        "rust-eliminate-expect-with-sum-types"
+      ],
+      "top5": [
+        "rust-eliminate-expect-with-sum-types",
+        "stale-test-asserts-failure-after-fix",
+        "audit-rust-codebase-stub-violations"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 249
+    },
+    {
+      "id": "t11-multiview-prohibit-concurrent-cargo-ops-across-age",
+      "kind": "multiview",
+      "rel": [
+        "prohibit-concurrent-cargo-ops-across-agents"
+      ],
+      "top5": [
+        "prohibit-concurrent-cargo-ops-across-agents",
+        "serialize-shared-file-todos-across-agent-batches",
+        "orchestration-side-revalidation-after-parallel-agents"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 275
+    },
+    {
+      "id": "t11-multiview-stale-test-asserts-failure-after-fix",
+      "kind": "multiview",
+      "rel": [
+        "stale-test-asserts-failure-after-fix"
+      ],
+      "top5": [
+        "stale-test-asserts-failure-after-fix",
+        "isolate-cross-crate-parallel-test-flakes",
+        "retrieval-quality-mrr-collapse-from-shared-test-scope"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 349
+    },
+    {
+      "id": "t11-multiview-use-jsonb-for-write-only-audit-fields",
+      "kind": "multiview",
+      "rel": [
+        "use-jsonb-for-write-only-audit-fields"
+      ],
+      "top5": [
+        "use-jsonb-for-write-only-audit-fields",
+        "migration-file-unwired-from-registry",
+        "postgres-typed-columns-over-jsonb-for-aggregatable-scalars"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 320
+    },
+    {
+      "id": "t11-usewhen-two-phase-artifact-wiring-must-be-verifi",
+      "kind": "use_when",
+      "rel": [
+        "two-phase-artifact-wiring-must-be-verified-end-to-end"
+      ],
+      "top5": [
+        "orphaned-migration-file-detection",
+        "migration-file-unwired-from-registry",
+        "migration-test-triple-update"
+      ],
+      "mrr_at3": 0.0,
+      "ndcg_at3": 0.0,
+      "hit_at3": 0.0,
+      "cand_recall": 0.0,
+      "latency_ms": 367
+    },
+    {
+      "id": "t11-usewhen-rust-cargo-bin-target-missing-docker-bui",
+      "kind": "use_when",
+      "rel": [
+        "rust-cargo-bin-target-missing-docker-build-failure"
+      ],
+      "top5": [
+        "rust-cargo-bin-target-missing-docker-build-failure",
+        "fix-e2e-suite-end-to-end-green",
+        "docker-musl-ring-missing-gcc"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 257
+    },
+    {
+      "id": "t11-usewhen-serialize-shared-file-todos-across-agent",
+      "kind": "use_when",
+      "rel": [
+        "serialize-shared-file-todos-across-agent-batches"
+      ],
+      "top5": [
+        "file-overlap-batch-serialization-for-agent-swarms",
+        "detect-revert-cargo-fmt-agent-churn",
+        "prohibit-concurrent-cargo-ops-across-agents"
+      ],
+      "mrr_at3": 0.0,
+      "ndcg_at3": 0.0,
+      "hit_at3": 0.0,
+      "cand_recall": 0.0,
+      "latency_ms": 332
+    },
+    {
+      "id": "t11-usewhen-ablation-confounded-by-relevance-floor",
+      "kind": "use_when",
+      "rel": [
+        "ablation-confounded-by-relevance-floor"
+      ],
+      "top5": [
+        "ablation-confounded-by-relevance-floor",
+        "retrieval-quality-mrr-collapse-from-shared-test-scope",
+        "An MRR/nDCG score of 80 is an aspiration (preference)"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 307
+    },
+    {
+      "id": "t11-usewhen-deterministic-embedding-drift-from-input",
+      "kind": "use_when",
+      "rel": [
+        "deterministic-embedding-drift-from-input-policy-change"
+      ],
+      "top5": [
+        "deterministic-embedding-drift-from-input-policy-change",
+        "isolate-e2e-corpus-rebaseline-before-tune",
+        "rag-retrieval-intent-split"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 267
+    },
+    {
+      "id": "t11-usewhen-cargo-clippy-all-targets-dead-code-from",
+      "kind": "use_when",
+      "rel": [
+        "cargo-clippy-all-targets-dead-code-from-test-binary"
+      ],
+      "top5": [
+        "cargo-clippy-all-targets-dead-code-from-test-binary",
+        "verify-clippy-ci-gate-with-d-warnings",
+        "cargo-clippy-workspace-all-targets-includes-examples-and-e2e"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 269
+    },
+    {
+      "id": "t11-usewhen-bool-returning-assertion-helper-must-be",
+      "kind": "use_when",
+      "rel": [
+        "bool-returning-assertion-helper-must-be-asserted"
+      ],
+      "top5": [
+        "bool-returning-assertion-helper-must-be-asserted",
+        "e2e-lenient-assertions-mask-real-failures"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 255
+    },
+    {
+      "id": "t11-usewhen-path-starts-with-requires-symmetric-cano",
+      "kind": "use_when",
+      "rel": [
+        "path-starts-with-requires-symmetric-canonicalization"
+      ],
+      "top5": [
+        "path-starts-with-requires-symmetric-canonicalization"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 311
+    },
+    {
+      "id": "t11-usewhen-tokio-spawn-no-joinhandle-teardown-db-ra",
+      "kind": "use_when",
+      "rel": [
+        "tokio-spawn-no-joinhandle-teardown-db-race"
+      ],
+      "top5": [
+        "tokio-spawn-no-joinhandle-teardown-db-race",
+        "tokio-test-for-sqlx-reqwest-construction",
+        "tokio-current-thread-starves-spawned-server"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 273
+    },
+    {
+      "id": "t11-usewhen-isolate-timing-test-to-diagnose-load-fla",
+      "kind": "use_when",
+      "rel": [
+        "isolate-timing-test-to-diagnose-load-flake"
+      ],
+      "top5": [
+        "isolate-timing-test-to-diagnose-load-flake",
+        "isolate-cross-crate-parallel-test-flakes",
+        "parallel-test-shared-scope-contamination"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 279
+    },
+    {
+      "id": "t11-usewhen-gate-parallel-agents-on-file-overlap",
+      "kind": "use_when",
+      "rel": [
+        "gate-parallel-agents-on-file-overlap"
+      ],
+      "top5": [
+        "gate-parallel-agents-on-file-overlap",
+        "reread-file-before-edit-on-conflict",
+        "detect-revert-cargo-fmt-agent-churn"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 307
+    },
+    {
+      "id": "t11-usewhen-inspect-current-state-before-mutating",
+      "kind": "use_when",
+      "rel": [
+        "inspect-current-state-before-mutating"
+      ],
+      "top5": [],
+      "mrr_at3": 0.0,
+      "ndcg_at3": 0.0,
+      "hit_at3": 0.0,
+      "cand_recall": 0.0,
+      "latency_ms": 357
+    },
+    {
+      "id": "t11-usewhen-sparse-vector-test-must-assert-weight-va",
+      "kind": "use_when",
+      "rel": [
+        "sparse-vector-test-must-assert-weight-values-not-just-index-count"
+      ],
+      "top5": [
+        "sparse-vector-test-must-assert-weight-values-not-just-index-count",
+        "fixture-corpus-growth-stales-count-assertions"
+      ],
+      "mrr_at3": 1.0,
+      "ndcg_at3": 1.0,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 259
+    },
+    {
+      "id": "t11-usewhen-pre-commit-gitignore-silent-exclusion-ch",
+      "kind": "use_when",
+      "rel": [
+        "pre-commit-gitignore-silent-exclusion-check"
+      ],
+      "top5": [
+        "selective-stage-agent-batch-from-dirty-tree",
+        "pre-commit-gitignore-silent-exclusion-check",
+        "git-add-all-sweeps-untracked-test-artifacts"
+      ],
+      "mrr_at3": 0.5,
+      "ndcg_at3": 0.6309297535714575,
+      "hit_at3": 1.0,
+      "cand_recall": 1.0,
+      "latency_ms": 285
+    },
+    {
+      "id": "t11-usewhen-ollama-embedding-2048-token-batch-limit",
+      "kind": "use_when",
+      "rel": [
+        "ollama-embedding-2048-token-batch-limit"
+      ],
+      "top5": [
+        "ollama-500-embedding-token-overflow",
+        "fix-askuserquestion-options-overflow",
+        "Add an advisory `generality: project|general|uncertain` field with rationale (preference)"
+      ],
+      "mrr_at3": 0.0,
+      "ndcg_at3": 0.0,
+      "hit_at3": 0.0,
+      "cand_recall": 0.0,
+      "latency_ms": 350
+    }
+  ],
+  "negatives": [
+    {
+      "id": "t11-neg-01",
+      "top3": [],
+      "rejected": true,
+      "latency_ms": 259
+    },
+    {
+      "id": "t11-neg-02",
+      "top3": [],
+      "rejected": true,
+      "latency_ms": 237
+    },
+    {
+      "id": "t11-neg-03",
+      "top3": [],
+      "rejected": true,
+      "latency_ms": 239
+    },
+    {
+      "id": "t11-neg-04",
+      "top3": [],
+      "rejected": true,
+      "latency_ms": 258
+    },
+    {
+      "id": "t11-neg-05",
+      "top3": [],
+      "rejected": true,
+      "latency_ms": 381
+    },
+    {
+      "id": "t11-neg-06",
+      "top3": [
+        "cost-estimate-before-cloud-llm-e2e-run",
+        "audit-rust-codebase-stub-violations",
+        "deepen-plan-research-decisions"
+      ],
+      "rejected": true,
+      "latency_ms": 233
+    },
+    {
+      "id": "t11-neg-07",
+      "top3": [],
+      "rejected": true,
+      "latency_ms": 252
+    },
+    {
+      "id": "t11-neg-08",
+      "top3": [],
+      "rejected": true,
+      "latency_ms": 247
+    },
+    {
+      "id": "t11-neg-09",
+      "top3": [],
+      "rejected": true,
+      "latency_ms": 265
+    },
+    {
+      "id": "t11-neg-10",
+      "top3": [],
+      "rejected": true,
+      "latency_ms": 251
+    },
+    {
+      "id": "t11-neg-11",
+      "top3": [],
+      "rejected": true,
+      "latency_ms": 247
+    },
+    {
+      "id": "t11-neg-12",
+      "top3": [],
+      "rejected": true,
+      "latency_ms": 276
+    },
+    {
+      "id": "t11-neg-13",
+      "top3": [],
+      "rejected": true,
+      "latency_ms": 333
+    },
+    {
+      "id": "t11-neg-14",
+      "top3": [],
+      "rejected": true,
+      "latency_ms": 326
+    },
+    {
+      "id": "t11-neg-15",
+      "top3": [
+        "hybrid-search-zero-uplift-diagnosis",
+        "near-zero-cosine-score-suspects"
+      ],
+      "rejected": true,
+      "latency_ms": 247
+    },
+    {
+      "id": "t11-neg-16",
+      "top3": [],
+      "rejected": true,
+      "latency_ms": 248
+    },
+    {
+      "id": "t11-neg-17",
+      "top3": [],
+      "rejected": true,
+      "latency_ms": 239
+    },
+    {
+      "id": "t11-neg-18",
+      "top3": [],
+      "rejected": true,
+      "latency_ms": 273
+    },
+    {
+      "id": "t11-neg-19",
+      "top3": [],
+      "rejected": true,
+      "latency_ms": 264
+    },
+    {
+      "id": "t11-neg-20",
+      "top3": [],
+      "rejected": true,
+      "latency_ms": 245
+    },
+    {
+      "id": "t11-neg-21",
+      "top3": [],
+      "rejected": true,
+      "latency_ms": 231
+    },
+    {
+      "id": "t11-neg-22",
+      "top3": [],
+      "rejected": true,
+      "latency_ms": 328
+    },
+    {
+      "id": "t11-neg-23",
+      "top3": [],
+      "rejected": true,
+      "latency_ms": 268
+    },
+    {
+      "id": "t11-neg-24",
+      "top3": [],
+      "rejected": true,
+      "latency_ms": 258
+    },
+    {
+      "id": "t11-neg-25",
+      "top3": [],
+      "rejected": true,
+      "latency_ms": 315
+    }
+  ]
+}
