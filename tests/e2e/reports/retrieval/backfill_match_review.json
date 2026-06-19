@@ -1,0 +1,415 @@
+[
+  {
+    "target": "audit-rust-codebase-stub-violations",
+    "live_uw": 0,
+    "live_rq": 0,
+    "best_draft": "audit-rust-system-honesty",
+    "best_cos": 0.9541,
+    "second_cos": 0.727,
+    "mutual_best": true,
+    "passes_gate": true,
+    "stageable_fields": {},
+    "target_desc": "Multi-agent audit of a Rust codebase to identify stubbed, faked, or silently-degrading production code paths and dishone",
+    "best_draft_desc": "Perform a multi-agent audit of a Rust codebase to identify stubbed, silently-failing, or dishonest implementations in pr"
+  },
+  {
+    "target": "recover-stale-file-edit-retry",
+    "live_uw": 0,
+    "live_rq": 0,
+    "best_draft": "retry-edit-after-file-modified",
+    "best_cos": 0.938,
+    "second_cos": 0.4275,
+    "mutual_best": true,
+    "passes_gate": true,
+    "stageable_fields": {},
+    "target_desc": "Re-read a file modified since last read (by user or linter) then retry the edit to resolve the stale-file write conflict",
+    "best_draft_desc": "Re-read a file that was externally modified (e.g. by a linter) before retrying a failed Edit to resolve the stale-read c"
+  },
+  {
+    "target": "reread-file-before-edit-on-conflict",
+    "live_uw": 0,
+    "live_rq": 0,
+    "best_draft": "reread-file-before-edit-after-modification",
+    "best_cos": 0.9341,
+    "second_cos": 0.6656,
+    "mutual_best": true,
+    "passes_gate": true,
+    "stageable_fields": {},
+    "target_desc": "When an edit fails with 'file modified since read', re-read the file at its current state before retrying the write to a",
+    "best_draft_desc": "When an edit fails because a file was modified since last read, re-read the file first and then retry the edit with the "
+  },
+  {
+    "target": "fix-bm25-silent-none-fallback",
+    "live_uw": 0,
+    "live_rq": 0,
+    "best_draft": "fix-bm25-silent-none-fallback",
+    "best_cos": 0.9298,
+    "second_cos": 0.6405,
+    "mutual_best": true,
+    "passes_gate": true,
+    "stageable_fields": {},
+    "target_desc": "Re-triage pending todos against a recent fix commit, verify stale line numbers, then eliminate a silent BM25 index None ",
+    "best_draft_desc": "Re-triage pending todos against a recent fix commit, verify code claims at HEAD, then eliminate a silent None BM25 index"
+  },
+  {
+    "target": "fix-askuserquestion-options-overflow",
+    "live_uw": 0,
+    "live_rq": 0,
+    "best_draft": "fix-askuserquestion-options-overflow",
+    "best_cos": 0.903,
+    "second_cos": 0.3971,
+    "mutual_best": true,
+    "passes_gate": true,
+    "stageable_fields": {},
+    "target_desc": "Resolve an AskUserQuestion InputValidationError caused by exceeding the 4-option limit per question by auditing and trim",
+    "best_draft_desc": "Reduce AskUserQuestion option arrays that exceed the 4-item maximum to resolve InputValidationError validation failures."
+  },
+  {
+    "target": "deepen-plan-multi-agent-research",
+    "live_uw": 0,
+    "live_rq": 0,
+    "best_draft": "deepen-plan-with-research-agents",
+    "best_cos": 0.8831,
+    "second_cos": 0.7353,
+    "mutual_best": true,
+    "passes_gate": false,
+    "stageable_fields": {},
+    "target_desc": "Orchestrates a focused multi-agent research and review fan-out to deepen an existing execution-ready plan with concrete ",
+    "best_draft_desc": "Orchestrates a focused multi-agent research and review fan-out to deepen an existing execution-ready plan with concrete "
+  },
+  {
+    "target": "deepen-plan-research-decisions",
+    "live_uw": 0,
+    "live_rq": 0,
+    "best_draft": "deepen-plan-open-questions",
+    "best_cos": 0.8603,
+    "second_cos": 0.8556,
+    "mutual_best": true,
+    "passes_gate": false,
+    "stageable_fields": {},
+    "target_desc": "Systematically resolves open architectural questions in a feature plan by spawning research agents, collecting user deci",
+    "best_draft_desc": "Resolve deferred open questions in a feature plan by researching each decision (usage model, extraction bridge shape, cr"
+  },
+  {
+    "target": "isolate-e2e-corpus-rebaseline-before-tune",
+    "live_uw": 0,
+    "live_rq": 0,
+    "best_draft": "isolate-e2e-corpus-then-retune",
+    "best_cos": 0.8579,
+    "second_cos": 0.6874,
+    "mutual_best": true,
+    "passes_gate": false,
+    "stageable_fields": {},
+    "target_desc": "Diagnose and fix shared-scope contamination in a parallel e2e retrieval-quality harness (panic-safe cleanup guards, evic",
+    "best_draft_desc": "Fix contaminated e2e retrieval measurements by enforcing panic-safe corpus isolation (evict foreign seeds, serialize par"
+  },
+  {
+    "target": "triage-todo-backlog-with-decisions",
+    "live_uw": 0,
+    "live_rq": 0,
+    "best_draft": "triage-todo-backlog-with-decisions",
+    "best_cos": 0.8422,
+    "second_cos": 0.5461,
+    "mutual_best": true,
+    "passes_gate": false,
+    "stageable_fields": {},
+    "target_desc": "Systematically triage a backlog of pending todos by verifying findings against code, asking the user to choose resolutio",
+    "best_draft_desc": "Triage a backlog of pending architectural todos by investigating code, asking clarifying questions, recording decisions,"
+  },
+  {
+    "target": "fail-loud-on-missing-security-scope-env-var",
+    "live_uw": 3,
+    "live_rq": 0,
+    "best_draft": "fail-loud-on-missing-safety-scope-env-var",
+    "best_cos": 0.8226,
+    "second_cos": 0.5749,
+    "mutual_best": true,
+    "passes_gate": false,
+    "stageable_fields": {
+      "requires": 1,
+      "avoid_when": 1,
+      "invariants": 1
+    },
+    "target_desc": "When an environment variable controls write-path scoping or security boundaries (e.g., restricting file writes to safe r",
+    "best_draft_desc": "When an env var defines the scope of a safety constraint such as allowed write paths, a missing env var must cause a lou"
+  },
+  {
+    "target": "prohibit-concurrent-cargo-ops-across-agents",
+    "live_uw": 3,
+    "live_rq": 0,
+    "best_draft": "prohibit-concurrent-heavy-cli-in-parallel-agents",
+    "best_cos": 0.8141,
+    "second_cos": 0.6193,
+    "mutual_best": true,
+    "passes_gate": false,
+    "stageable_fields": {
+      "requires": 1,
+      "avoid_when": 1,
+      "invariants": 2
+    },
+    "target_desc": "Never allow multiple agents to run cargo build/check/clippy/test concurrently; only one agent should execute heavy build",
+    "best_draft_desc": "Never run cargo build, clippy, test, or other write-heavy CLI operations concurrently across parallel agents on the same"
+  },
+  {
+    "target": "compare-retrieval-arms-top10",
+    "live_uw": 0,
+    "live_rq": 0,
+    "best_draft": "compare-retrieval-arms-top10",
+    "best_cos": 0.8133,
+    "second_cos": 0.6975,
+    "mutual_best": true,
+    "passes_gate": false,
+    "stageable_fields": {},
+    "target_desc": "Boot two retrieval backend arms (dense vs hybrid) in Docker, capture top-10 results for held-out queries against the liv",
+    "best_draft_desc": "Capture and diff top-N retrieval results across two backend arms (dense vs hybrid) against held-out queries using a live"
+  },
+  {
+    "target": "e2e-lenient-assertions-mask-real-failures",
+    "live_uw": 3,
+    "live_rq": 0,
+    "best_draft": "lenient-e2e-accepts-failure-events-anti-pattern",
+    "best_cos": 0.8107,
+    "second_cos": 0.5514,
+    "mutual_best": true,
+    "passes_gate": false,
+    "stageable_fields": {
+      "avoid_when": 1,
+      "invariants": 2
+    },
+    "target_desc": "E2e tests that accept error/failed event codes or skip output-presence checks appear green while the real feature is sil",
+    "best_draft_desc": "Anti-pattern: e2e/integration tests that accept `failed` outcome events or skip checking the real output artifact give f"
+  },
+  {
+    "target": "parallel-agent-wave-planning-via-file-overlap",
+    "live_uw": 3,
+    "live_rq": 0,
+    "best_draft": "parallel-agent-dispatch-file-overlap-analysis",
+    "best_cos": 0.7981,
+    "second_cos": 0.6095,
+    "mutual_best": true,
+    "passes_gate": false,
+    "stageable_fields": {
+      "requires": 1,
+      "avoid_when": 2,
+      "invariants": 2
+    },
+    "target_desc": "Determine agent parallelism by explicitly enumerating each task's file-touch set and shared resources; tasks with disjoi",
+    "best_draft_desc": "Before dispatching execution agents in parallel, enumerate the files each agent will touch and serialize any pair with o"
+  },
+  {
+    "target": "wire-live-graph-replace-stub-server",
+    "live_uw": 0,
+    "live_rq": 0,
+    "best_draft": "wire-live-graph-remove-stub-server",
+    "best_cos": 0.7832,
+    "second_cos": 0.3654,
+    "mutual_best": true,
+    "passes_gate": false,
+    "stageable_fields": {},
+    "target_desc": "Replaces a seeded/stubbed in-memory graph server with a live production graph source, renames the snapshot type, deletes",
+    "best_draft_desc": "Locates and removes a seeded/stubbed in-memory graph bootstrap path from a Rust MCP server, replaces it with a live envi"
+  },
+  {
+    "target": "read-before-edit-multi-file",
+    "live_uw": 0,
+    "live_rq": 0,
+    "best_draft": "read-before-edit-multi-file",
+    "best_cos": 0.7779,
+    "second_cos": 0.5079,
+    "mutual_best": true,
+    "passes_gate": false,
+    "stageable_fields": {},
+    "target_desc": "Fix 'file not read' errors by reading each file before attempting edits, then applying struct literal field additions ac",
+    "best_draft_desc": "Resolve 'file has not been read yet' tool errors by reading each target file before attempting edits, then re-applying a"
+  },
+  {
+    "target": "uniform-binary-boost-cancels-in-ranking",
+    "live_uw": 3,
+    "live_rq": 0,
+    "best_draft": "uniform-boost-is-ranking-inert",
+    "best_cos": 0.773,
+    "second_cos": 0.5134,
+    "mutual_best": true,
+    "passes_gate": false,
+    "stageable_fields": {
+      "avoid_when": 1,
+      "invariants": 1
+    },
+    "target_desc": "If a ranking multiplier is derived from a boolean property that ALL candidates always have (e.g., cluster membership whe",
+    "best_draft_desc": "A multiplicative ranking boost that applies to all or nearly all candidates cancels out of every pairwise comparison and"
+  },
+  {
+    "target": "fail-loud-never-silently-default-to-success",
+    "live_uw": 4,
+    "live_rq": 0,
+    "best_draft": "silent-defensive-fallback-masks-root-cause",
+    "best_cos": 0.756,
+    "second_cos": 0.634,
+    "mutual_best": true,
+    "passes_gate": false,
+    "stageable_fields": {
+      "avoid_when": 1,
+      "invariants": 1
+    },
+    "target_desc": "Across multiple episodes the same root-cause pattern recurred: code paths that should fail instead silently appeared to ",
+    "best_draft_desc": "Defensive or recovery mechanisms \u2014 retry loops, serde defaults, post-hoc filters, ignored return values \u2014 silently swall"
+  },
+  {
+    "target": "inspect-current-state-before-mutating",
+    "live_uw": 4,
+    "live_rq": 0,
+    "best_draft": "audit-actual-state-before-corrective-action",
+    "best_cos": 0.7019,
+    "second_cos": 0.582,
+    "mutual_best": true,
+    "passes_gate": false,
+    "stageable_fields": {
+      "avoid_when": 1,
+      "invariants": 2
+    },
+    "target_desc": "Before performing any mutation, recovery, or transformation, first read/audit the current state of the target artefact. ",
+    "best_draft_desc": "Before taking any corrective or modifying action, audit the actual current state first. Never assume the source of an er"
+  },
+  {
+    "target": "read-before-edit-file",
+    "live_uw": 0,
+    "live_rq": 0,
+    "best_draft": "reread-file-before-edit-after-modification",
+    "best_cos": 0.6929,
+    "second_cos": 0.6759,
+    "mutual_best": false,
+    "passes_gate": false,
+    "stageable_fields": {},
+    "target_desc": "Resolves a write-blocked error by reading the target file first before attempting any edits to it.",
+    "best_draft_desc": "When an edit fails because a file was modified since last read, re-read the file first and then retry the edit with the "
+  },
+  {
+    "target": "read-before-edit-file-guard",
+    "live_uw": 0,
+    "live_rq": 0,
+    "best_draft": "read-before-edit-file-guard",
+    "best_cos": 0.6825,
+    "second_cos": 0.3855,
+    "mutual_best": true,
+    "passes_gate": false,
+    "stageable_fields": {},
+    "target_desc": "Resolve a tool error requiring a file to be read before editing by inserting a Read step immediately before each Edit th",
+    "best_draft_desc": "Resolve the 'file has not been read yet' write guard by reading the target file before issuing any Edit operations."
+  },
+  {
+    "target": "build-tool-silent-coverage-gap",
+    "live_uw": 3,
+    "live_rq": 0,
+    "best_draft": "cargo-required-features-compile-check-blindspot",
+    "best_cos": 0.6067,
+    "second_cos": 0.5668,
+    "mutual_best": true,
+    "passes_gate": false,
+    "stageable_fields": {
+      "requires": 1,
+      "avoid_when": 1,
+      "invariants": 1
+    },
+    "target_desc": "Build and test tools routinely report overall success while silently omitting individual targets from actual coverage \u2014 ",
+    "best_draft_desc": "Cargo silently skips targets whose Cargo.toml specifies `required-features` when those features are not explicitly passe"
+  },
+  {
+    "target": "embedding-write-read-path-divergence",
+    "live_uw": 3,
+    "live_rq": 0,
+    "best_draft": "ollama-embedding-500-exceeds-batch-size",
+    "best_cos": 0.5872,
+    "second_cos": 0.5727,
+    "mutual_best": true,
+    "passes_gate": false,
+    "stageable_fields": {
+      "requires": 2,
+      "avoid_when": 2,
+      "invariants": 2
+    },
+    "target_desc": "When a system has a build-time (ingest) embedding path and a query-time (ranking) embedding path, both must embed identi",
+    "best_draft_desc": "Ollama returns HTTP 500 when embedding input token count exceeds the model's physical batch size; the fix is semantic ch"
+  },
+  {
+    "target": "orchestrator-must-verify-agent-results-independently",
+    "live_uw": 3,
+    "live_rq": 0,
+    "best_draft": "multi-agent-scope-creep-detection-and-revert",
+    "best_cos": 0.5715,
+    "second_cos": 0.5217,
+    "mutual_best": false,
+    "passes_gate": false,
+    "stageable_fields": {
+      "requires": 2,
+      "avoid_when": 1,
+      "invariants": 3
+    },
+    "target_desc": "Never accept an agent's self-reported 'all tests pass' or 'build green' as final; the orchestrator must re-run build and",
+    "best_draft_desc": "After parallel execution agents complete, verify the set of changed files against the authorized set; any extra files ar"
+  },
+  {
+    "target": "read-before-write-file-edit",
+    "live_uw": 0,
+    "live_rq": 0,
+    "best_draft": "batch-multi-file-fixes-by-file-cluster",
+    "best_cos": 0.4938,
+    "second_cos": 0.4409,
+    "mutual_best": false,
+    "passes_gate": false,
+    "stageable_fields": {
+      "use_when": 3,
+      "requires": 1,
+      "avoid_when": 2,
+      "invariants": 2
+    },
+    "target_desc": "Resolve a 'file not read yet' write error by reading the target file first, then applying edits to the correct offsets.",
+    "best_draft_desc": "When executing multiple independent fixes that touch overlapping files, group them into clusters by shared file and sequ"
+  },
+  {
+    "target": "never-push-without-explicit-request",
+    "live_uw": 2,
+    "live_rq": 0,
+    "best_draft": "validate-enforcement-guard-by-planting-violations",
+    "best_cos": 0.469,
+    "second_cos": 0.3744,
+    "mutual_best": false,
+    "passes_gate": false,
+    "stageable_fields": {
+      "requires": 2,
+      "avoid_when": 1,
+      "invariants": 2
+    },
+    "target_desc": "Never run `git push` at the end of a task; always commit locally and wait for the user to explicitly ask before pushing ",
+    "best_draft_desc": "Before committing any lint/enforcement guard, plant deliberate violations in every protected zone and confirm exit 1 in "
+  },
+  {
+    "target": "configuration-default-silent-misrouting",
+    "live_uw": 3,
+    "live_rq": 0,
+    "best_draft": "fix-cargo-bin-target-missing",
+    "best_cos": 0.464,
+    "second_cos": 0.4179,
+    "mutual_best": false,
+    "passes_gate": false,
+    "stageable_fields": {},
+    "target_desc": "Configuration defaults \u2014 env-var fallbacks such as `${VAR:-./local}`, auto-derived paths, and implicit scope assignments",
+    "best_draft_desc": "Diagnose and fix a missing explicit [[bin]] target in Cargo.toml that causes cargo/docker builds to fail because the bin"
+  },
+  {
+    "target": "fix-file-not-read-before-write",
+    "live_uw": 0,
+    "live_rq": 0,
+    "best_draft": "exclude-claude-session-artifacts-from-git-commits",
+    "best_cos": 0.429,
+    "second_cos": 0.4227,
+    "mutual_best": true,
+    "passes_gate": false,
+    "stageable_fields": {
+      "use_when": 3,
+      "avoid_when": 1,
+      "invariants": 2
+    },
+    "target_desc": "Resolves the 'file has not been read yet' error by reading the target file before attempting to edit it, then proceeds w",
+    "best_draft_desc": "Before committing in a Claude Code session, explicitly exclude .claude/projects/ (agent memory), .claude/scheduled_tasks"
+  }
+]

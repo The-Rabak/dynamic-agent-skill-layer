@@ -803,8 +803,23 @@ impl SessionExtractor {
              (dual_pass is observed, not yet wired into the dispatch path)"
         );
 
+        // Skeleton mining is a small-local-model hallucination guard (#188) that emits
+        // view-less, type-less candidates by construction. On the frontier tier the
+        // prose extractor already produces rich typed multi-view skills from the same
+        // windows, so the additive skeleton pass only dilutes the corpus with view-less
+        // near-duplicates — gate it OFF for frontier, keep it ON for local.
+        let skeleton_mining_enabled =
+            self.routing_decision.tier != routing::ExtractionRoutingTier::Frontier;
+        tracing::info!(
+            session_id = session_id.as_str(),
+            tier = self.routing_decision.tier.as_str(),
+            skeleton_mining_enabled,
+            "orchestrated extraction: skeleton-mining gate resolved from routing tier"
+        );
+
         let config = OrchestrationConfig {
             segmentation: segmentation::SegmentationConfig::new(token_budget, 3),
+            skeleton_mining_enabled,
             ..OrchestrationConfig::default()
         };
 

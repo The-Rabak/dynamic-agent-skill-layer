@@ -160,6 +160,18 @@ pub struct OrchestrationConfig {
     pub map_concurrency: usize,
     /// Cosine similarity threshold for the reduce pairing step.
     pub reduce_similarity_threshold: f32,
+    /// Whether the additive skeleton-mining pass runs on tool-arc windows.
+    ///
+    /// Skeleton mining (#188) is a small-local-model hallucination guard: it mines
+    /// the grounded tool-arc steps deterministically and reduces the LLM to a
+    /// bounded label transform (name/description/generality/keep). By construction
+    /// its candidates are TYPE-LESS and VIEW-LESS (`..Default::default()` for every
+    /// multi-view field). On the **frontier** tier the prose extractor already
+    /// produces rich, typed, multi-view skills from the same windows, so the
+    /// additive skeleton candidates are net-negative — view-less near-duplicates
+    /// that dilute the corpus and never participate in dense-view retrieval. lib.rs
+    /// therefore sets this `false` for the frontier tier and `true` for local.
+    pub skeleton_mining_enabled: bool,
 }
 
 impl Default for OrchestrationConfig {
@@ -174,6 +186,10 @@ impl Default for OrchestrationConfig {
             salience: SalienceConfig::default(),
             map_concurrency: 4,
             reduce_similarity_threshold: REDUCE_SIMILARITY_THRESHOLD,
+            // Default ON preserves the historical "prose + additive skeleton"
+            // behavior (and every test that relies on it). The frontier gate is
+            // applied explicitly at the lib.rs call site.
+            skeleton_mining_enabled: true,
         }
     }
 }
@@ -361,6 +377,7 @@ pub async fn run_orchestration(
         let semaphore = Arc::clone(&semaphore);
         let session_id = session_id.clone();
         let preamble_text = preamble.text.clone();
+        let skeleton_mining_enabled = config.skeleton_mining_enabled;
 
         map_join_set.spawn(async move {
             // Acquire one concurrency permit. This blocks (never discards) when
@@ -376,6 +393,7 @@ pub async fn run_orchestration(
                 &preamble_text,
                 labeler.as_ref(),
                 prose_extractor.as_ref(),
+                skeleton_mining_enabled,
             )
             .await
         });
@@ -568,12 +586,18 @@ pub async fn run_orchestration(
 ///
 /// Both paths prepend the preamble text as a synthetic leading context entry so the
 /// model has global session context in every window.
+///
+/// `skeleton_mining_enabled` gates the additive skeleton pass: it is `true` on the
+/// local tier (where skeleton mining compensates for small-model hallucination) and
+/// `false` on the frontier tier (where the prose extractor already yields rich typed
+/// multi-view skills, making the view-less skeleton candidates net-negative).
 async fn map_one_window(
     window_events: &[SessionEvent],
     session_id: &DomainId,
     preamble_text: &str,
     labeler: &dyn SkeletonLabeler,
     prose_extractor: &dyn TranscriptSkillExtractionService,
+    skeleton_mining_enabled: bool,
 ) -> Result<Vec<ExtractedSkillCandidate>, OrchestrationError> {
     if window_events.is_empty() {
         return Ok(Vec::new());
@@ -583,24 +607,29 @@ async fn map_one_window(
     let mut candidates =
         extract_prose_window(window_events, session_id, preamble_text, prose_extractor).await?;
 
-    // Additively run skeleton mining when the window has a tool arc.
-    // `map_episode` returns ProseFallback (not an error) when no arc exists,
-    // so it is safe to call unconditionally — non-arc windows produce no
-    // skeleton candidate and incur only a cheap deterministic scan.
-    match map_episode(window_events, labeler).await? {
-        MapOutcome::Skeleton(skeleton_candidate) => {
-            debug!(
-                name = %skeleton_candidate.name,
-                "orchestrator: window yielded skeleton candidate (additive to prose)"
-            );
-            candidates.push(*skeleton_candidate);
+    // Additively run skeleton mining when enabled (local tier) AND the window has a
+    // tool arc. `map_episode` returns ProseFallback (not an error) when no arc exists.
+    // On the frontier tier this pass is skipped entirely: the prose extractor already
+    // produced typed multi-view skills for the same window, so adding a view-less,
+    // type-less skeleton candidate would only dilute the corpus with near-duplicates.
+    if skeleton_mining_enabled {
+        match map_episode(window_events, labeler).await? {
+            MapOutcome::Skeleton(skeleton_candidate) => {
+                debug!(
+                    name = %skeleton_candidate.name,
+                    "orchestrator: window yielded skeleton candidate (additive to prose)"
+                );
+                candidates.push(*skeleton_candidate);
+            }
+            MapOutcome::ProseFallback { reason } => {
+                debug!(
+                    reason = %reason,
+                    "orchestrator: window has no tool arc; prose extraction is the only path"
+                );
+            }
         }
-        MapOutcome::ProseFallback { reason } => {
-            debug!(
-                reason = %reason,
-                "orchestrator: window has no tool arc; prose extraction is the only path"
-            );
-        }
+    } else {
+        debug!("orchestrator: skeleton mining disabled (frontier tier); prose-only window");
     }
 
     Ok(candidates)
@@ -1693,6 +1722,7 @@ mod tests {
             salience: SalienceConfig::default(),
             map_concurrency: 4,
             reduce_similarity_threshold: REDUCE_SIMILARITY_THRESHOLD,
+            skeleton_mining_enabled: true,
         };
 
         let report = run_orchestration(
@@ -1821,6 +1851,7 @@ mod tests {
             "preamble text",
             &EchoLabelerFake,
             prose_extractor.as_ref(),
+            true,
         )
         .await
         .expect("prose extraction must succeed on no-arc window");
@@ -1832,6 +1863,91 @@ mod tests {
             "no-arc window must produce exactly 1 candidate (from prose); got {candidates:?}"
         );
         assert_eq!(candidates[0].name, expected_candidate.name);
+    }
+
+    /// Builds a minimal failing→passing tool arc so `mine_skeleton` returns `Some`
+    /// and the additive skeleton pass produces a candidate when enabled.
+    fn tool_arc_window_events() -> Vec<SessionEvent> {
+        vec![
+            SessionEvent::ToolCall {
+                index: 0,
+                tool_use_id: "t-001".to_owned(),
+                name: "Bash".to_owned(),
+                input_json: r#"{"command":"cargo test 2>&1"}"#.to_owned(),
+            },
+            SessionEvent::ToolResult {
+                index: 1,
+                tool_use_id: "t-001".to_owned(),
+                is_error: true,
+                exit_code: Some(101),
+                output: "thread panicked at 'assertion failed'".to_owned(),
+            },
+            SessionEvent::ToolCall {
+                index: 2,
+                tool_use_id: "t-002".to_owned(),
+                name: "Bash".to_owned(),
+                input_json: r#"{"command":"cargo test 2>&1"}"#.to_owned(),
+            },
+            SessionEvent::ToolResult {
+                index: 3,
+                tool_use_id: "t-002".to_owned(),
+                is_error: false,
+                exit_code: Some(0),
+                output: "test result: ok".to_owned(),
+            },
+        ]
+    }
+
+    /// The skeleton gate: on a tool-arc window, `skeleton_mining_enabled = true`
+    /// (local tier) adds the grounded skeleton candidate on top of prose, while
+    /// `false` (frontier tier) yields prose-only — no view-less skeleton candidate.
+    #[tokio::test]
+    async fn map_one_window_skeleton_gate_off_drops_additive_skeleton_on_tool_arc() {
+        let events = tool_arc_window_events();
+        let prose = skill_candidate("prose-skill", "A typed prose skill");
+
+        // Gate ON → prose + additive skeleton-mined candidate (2 total).
+        let enabled = map_one_window(
+            &events,
+            &DomainId::new_unchecked("gate-on"),
+            "preamble",
+            &EchoLabelerFake,
+            FixedProseExtractor::returning(vec![prose.clone()]).as_ref(),
+            true,
+        )
+        .await
+        .expect("map must succeed with skeleton enabled");
+        assert_eq!(
+            enabled.len(),
+            2,
+            "enabled: prose + skeleton; got {enabled:?}"
+        );
+        assert!(
+            enabled
+                .iter()
+                .any(|c| c.tags.iter().any(|t| t == "skeleton-mined")),
+            "enabled run must include the skeleton-mined candidate"
+        );
+
+        // Gate OFF → prose only (1), no skeleton-mined candidate.
+        let disabled = map_one_window(
+            &events,
+            &DomainId::new_unchecked("gate-off"),
+            "preamble",
+            &EchoLabelerFake,
+            FixedProseExtractor::returning(vec![prose.clone()]).as_ref(),
+            false,
+        )
+        .await
+        .expect("map must succeed with skeleton disabled");
+        assert_eq!(disabled.len(), 1, "disabled: prose only; got {disabled:?}");
+        assert_eq!(disabled[0].name, prose.name);
+        assert!(
+            !disabled
+                .iter()
+                .any(|c| c.tags.iter().any(|t| t == "skeleton-mined")),
+            "disabled run must NOT include any skeleton-mined candidate"
+        );
     }
 
     // ── Full orchestration smoke test ─────────────────────────────────────────
@@ -1851,6 +1967,7 @@ mod tests {
             salience: SalienceConfig::default(),
             map_concurrency: 2,
             reduce_similarity_threshold: REDUCE_SIMILARITY_THRESHOLD,
+            skeleton_mining_enabled: true,
         };
 
         let report = run_orchestration(
@@ -1913,6 +2030,7 @@ mod tests {
             salience: SalienceConfig::default(),
             map_concurrency: 2,
             reduce_similarity_threshold: REDUCE_SIMILARITY_THRESHOLD,
+            skeleton_mining_enabled: true,
         };
 
         let result = run_orchestration(
@@ -1968,6 +2086,7 @@ mod tests {
             salience: SalienceConfig::default(),
             map_concurrency: 2,
             reduce_similarity_threshold: REDUCE_SIMILARITY_THRESHOLD,
+            skeleton_mining_enabled: true,
         };
 
         let report = run_orchestration(

@@ -36,7 +36,10 @@ MANIFEST = Path(os.environ.get("REPLICA_MANIFEST", str(RDIR / "genuine_manifest.
 SKILLS = RDIR / "skills"
 WORKER = str(ROOT / "target/debug/maintenance-worker")
 MCP = "http://127.0.0.1:3001"
-PG = ["docker", "exec", "dynamic-agent-skill-layer-postgres-1", "psql", "-U", "skill_layer",
+# Container name follows the compose project default (no `-1` replica suffix on the
+# current compose). Override via PG_CONTAINER if your project name differs.
+PG_CONTAINER = os.environ.get("PG_CONTAINER", "dynamic-agent-skill-layer-postgres")
+PG = ["docker", "exec", PG_CONTAINER, "psql", "-U", "skill_layer",
       "-d", "skill_layer_test", "-t", "-A"]
 
 MULTIVIEW_KEYS = ["use_when", "avoid_when", "requires", "invariants", "tools",
