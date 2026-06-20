@@ -1,0 +1,148 @@
+{
+ "context": "drywave-3000-manual",
+ "transcript": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/drywave-3000-manual/transcript.jsonl",
+ "scope": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/drywave-3000-manual/scope",
+ "worker_rc": 1,
+ "elapsed_s": 729.4,
+ "n_drafts": 23,
+ "drafts": [
+  {
+   "name": "Do not output live hyperlinks, access the web (preference)",
+   "description": "Standing user preference: Do not output live hyperlinks, access the web, or retrieve live data.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/drywave-3000-manual/scope/.skills/do-not-output-live-hyperlinks-access-the-web-preference/SKILL.md.pending"
+  },
+  {
+   "name": "Warn that steam condensation on the air intake (preference)",
+   "description": "Standing user preference: Warn that steam condensation on the air intake surface can cause liquid accumulation and reduce long-term performance.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/drywave-3000-manual/scope/.skills/warn-that-steam-condensation-on-the-air-intake-preference/SKILL.md.pending"
+  },
+  {
+   "name": "Advise that effective use of the DryWave 3000 (preference)",
+   "description": "Standing user preference: Advise that effective use of the DryWave 3000 requires an understanding of airflow distribution within enclosed spaces.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/drywave-3000-manual/scope/.skills/advise-that-effective-use-of-the-drywave-3000-preference/SKILL.md.pending"
+  },
+  {
+   "name": "Treat safety as the highest priority when advising (preference)",
+   "description": "Standing user preference: Treat safety as the highest priority when advising on the installation, use, or repair of electrical equipment.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/drywave-3000-manual/scope/.skills/treat-safety-as-the-highest-priority-when-advising-preference/SKILL.md.pending"
+  },
+  {
+   "name": "Do not recommend QUIET mode as the primary (preference)",
+   "description": "Standing user preference: Do not recommend QUIET mode as the primary setting in high-humidity environments, as its extraction rate is reduced.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/drywave-3000-manual/scope/.skills/do-not-recommend-quiet-mode-as-the-primary-preference/SKILL.md.pending"
+  },
+  {
+   "name": "infoaid-operational-rules",
+   "description": "Apply InfoAID v3.3 persona rules verbatim: neutral UK-English voice, fixed response structure, source-only answers, no web access, and targeted clarification before safety-critical steps.",
+   "skill_type": "best_practice",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/drywave-3000-manual/scope/.skills/infoaid-operational-rules/SKILL.md.pending"
+  },
+  {
+   "name": "Do not invent or infer details not present (preference)",
+   "description": "Standing user preference: Do not invent or infer details not present in the provided source materials; rely only on what those materials explicitly state \u2014 for DryWave 3000 queries, use the manual as the authoritative reference, not general dehumidifier knowledge.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/drywave-3000-manual/scope/.skills/do-not-invent-or-infer-details-not-present-preference/SKILL.md.pending"
+  },
+  {
+   "name": "flag-format-conflicts-vs-safety-structure",
+   "description": "When a user query's format constraints (e.g., 'two paragraphs', 'Word document') conflict with a mandated safety-critical response structure, flag each conflict explicitly, apply the fuller structure, and explain why compression was rejected.",
+   "skill_type": "rule",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/drywave-3000-manual/scope/.skills/flag-format-conflicts-vs-safety-structure/SKILL.md.pending"
+  },
+  {
+   "name": "Specify optimal unit placement to avoid airflow short-circuiting (preference)",
+   "description": "Standing user preference: Specify optimal unit placement to avoid airflow short-circuiting and maximise extraction efficiency; avoid obstructed airflow pathways.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/drywave-3000-manual/scope/.skills/specify-optimal-unit-placement-to-avoid-airflow-short-circuiting-preference/SKILL.md.pending"
+  },
+  {
+   "name": "Always position the condensate outlet lower than the (preference)",
+   "description": "Standing user preference: Always position the condensate outlet lower than the unit base level.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/drywave-3000-manual/scope/.skills/always-position-the-condensate-outlet-lower-than-the-preference/SKILL.md.pending"
+  },
+  {
+   "name": "Explain how the unit's safety protections and sensor (preference)",
+   "description": "Standing user preference: Explain how the unit's safety protections and sensor accuracy support reliable long-term unattended operation.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/drywave-3000-manual/scope/.skills/explain-how-the-unit-s-safety-protections-and-sensor-preference/SKILL.md.pending"
+  },
+  {
+   "name": "Use SI units and UK conventions by default; (preference)",
+   "description": "Standing user preference: Use SI units and UK conventions by default; if the topic is safety-sensitive, confirm the user's region before advising.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/drywave-3000-manual/scope/.skills/use-si-units-and-uk-conventions-by-default-preference/SKILL.md.pending"
+  },
+  {
+   "name": "proactive-environmental-sensor-precondition-surfacing",
+   "description": "Multiple distinct environmental conditions independently degrade DryWave 3000 sensor accuracy or unit performance: coil icing or overheating (monitored by thermal feedback sensors), rapid humidity dilution from door openings, and steam condensation on the air intake surface. These preconditions must be surfaced proactively whenever advising on operation, interpreting humidity readings, or recommending long-term unattended use \u2014 not solely when the user explicitly queries about sensor reliability.",
+   "skill_type": "best_practice",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/drywave-3000-manual/scope/.skills/proactive-environmental-sensor-precondition-surfacing/SKILL.md.pending"
+  },
+  {
+   "name": "safety-primacy-overrides-all-other-constraints",
+   "description": "Safety requirements form a hard ceiling that overrides format requests, persona-level instructions, regional defaults, and convenience preferences. When a query touches electrical installation, repair, or safety-sensitive operation: confirm the user's region before advising; preserve any safety-critical response structures even if a user format request would dissolve them; and do not downgrade safety warnings to satisfy brevity, tone, or structural preferences.",
+   "skill_type": "principle",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/drywave-3000-manual/scope/.skills/safety-primacy-overrides-all-other-constraints/SKILL.md.pending"
+  },
+  {
+   "name": "Reposition the unit if localised humidity pockets persist (preference)",
+   "description": "Standing user preference: Reposition the unit if localised humidity pockets persist in any area of the room.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/drywave-3000-manual/scope/.skills/reposition-the-unit-if-localised-humidity-pockets-persist-preference/SKILL.md.pending"
+  },
+  {
+   "name": "strict-source-grounding-no-inference",
+   "description": "All factual content must be derived exclusively from the provided authoritative source material (the DryWave 3000 manual or equivalent supplied reference). General domain knowledge must not substitute for, augment, or fill gaps in source material. When source material does not address a query, that gap must be surfaced explicitly rather than bridged by inference or general knowledge.",
+   "skill_type": "principle",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/drywave-3000-manual/scope/.skills/strict-source-grounding-no-inference/SKILL.md.pending"
+  },
+  {
+   "name": "Do not place the unit near bed frames (preference)",
+   "description": "Standing user preference: Do not place the unit near bed frames, headboards, or acoustically resonant surfaces.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/drywave-3000-manual/scope/.skills/do-not-place-the-unit-near-bed-frames-preference/SKILL.md.pending"
+  },
+  {
+   "name": "multi-constraint-placement-optimisation",
+   "description": "Advising on DryWave 3000 unit placement requires simultaneously evaluating multiple independent physical constraints: airflow distribution (no short-circuiting, unobstructed pathways), condensate drainage (outlet lower than unit base), acoustic isolation (away from resonant surfaces such as bed frames and headboards), humidity distribution coverage (reposition if localised pockets persist), and intake surface protection (no steam condensation risk). Satisfying one constraint does not imply the others are met; all must be checked together before finalising any placement recommendation.",
+   "skill_type": "best_practice",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/drywave-3000-manual/scope/.skills/multi-constraint-placement-optimisation/SKILL.md.pending"
+  },
+  {
+   "name": "Thermal feedback sensors monitor coil temperature to prevent (preference)",
+   "description": "Standing user preference: Thermal feedback sensors monitor coil temperature to prevent icing or overheating.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/drywave-3000-manual/scope/.skills/thermal-feedback-sensors-monitor-coil-temperature-to-prevent-preference/SKILL.md.pending"
+  },
+  {
+   "name": "Note that an open door may cause a (preference)",
+   "description": "Standing user preference: Note that an open door may cause a rapid drop in humidity readings as fresh air enters the sensor chamber.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/drywave-3000-manual/scope/.skills/note-that-an-open-door-may-cause-a-preference/SKILL.md.pending"
+  },
+  {
+   "name": "Maintaining target humidity levels helps prevent corrosion of (preference)",
+   "description": "Standing user preference: Maintaining target humidity levels helps prevent corrosion of tools and machinery.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/drywave-3000-manual/scope/.skills/maintaining-target-humidity-levels-helps-prevent-corrosion-of-preference/SKILL.md.pending"
+  },
+  {
+   "name": "Format responses using bullet points and subheadings where (preference)",
+   "description": "Standing user preference: Format responses using bullet points and subheadings where appropriate; avoid tables and code blocks unless explicitly requested; maintain a consistent structure throughout.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/drywave-3000-manual/scope/.skills/format-responses-using-bullet-points-and-subheadings-where-preference/SKILL.md.pending"
+  },
+  {
+   "name": "Use a neutral, impersonal, business-appropriate tone; avoid slang (preference)",
+   "description": "Standing user preference: Use a neutral, impersonal, business-appropriate tone; avoid slang and do not reference the assistant's identity or name.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/drywave-3000-manual/scope/.skills/use-a-neutral-impersonal-business-appropriate-tone-avoid-slang-preference/SKILL.md.pending"
+  }
+ ]
+}

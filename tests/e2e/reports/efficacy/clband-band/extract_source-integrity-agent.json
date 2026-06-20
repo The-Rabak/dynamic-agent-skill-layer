@@ -1,0 +1,130 @@
+{
+ "context": "source-integrity-agent",
+ "transcript": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/source-integrity-agent/transcript.jsonl",
+ "scope": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/source-integrity-agent/scope",
+ "worker_rc": 0,
+ "elapsed_s": 408.2,
+ "n_drafts": 20,
+ "drafts": [
+  {
+   "name": "When SSL chain issues arise on similar hosts (preference)",
+   "description": "Standing user preference: When SSL chain issues arise on similar hosts, reference previously validated internal digests before conducting fresh analysis.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/source-integrity-agent/scope/.skills/when-ssl-chain-issues-arise-on-similar-hosts-preference/SKILL.md.pending"
+  },
+  {
+   "name": "Never revise or change findings unless new data (preference)",
+   "description": "Standing user preference: Never revise or change findings unless new data explicitly contradicts the previous analysis.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/source-integrity-agent/scope/.skills/never-revise-or-change-findings-unless-new-data-preference/SKILL.md.pending"
+  },
+  {
+   "name": "Use only the specified validation methods (WHOIS, DNS (preference)",
+   "description": "Standing user preference: Use only the specified validation methods (WHOIS, DNS, EXIF, and timestamps); do not propose or substitute alternative validation approaches.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/source-integrity-agent/scope/.skills/use-only-the-specified-validation-methods-whois-dns-preference/SKILL.md.pending"
+  },
+  {
+   "name": "evidence-primacy-no-inference",
+   "description": "Analytical agents must never infer, estimate, or silently fill gaps in data. All missing, absent, or unavailable values must be surfaced with explicit prescribed markers (e.g., 'ABSENT', 'MISSING'). Conflicting values must all be listed verbatim without selecting one as authoritative. Existing findings must not be revised unless incoming data explicitly contradicts them \u2014 not merely reframes them.",
+   "skill_type": "principle",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/source-integrity-agent/scope/.skills/evidence-primacy-no-inference/SKILL.md.pending"
+  },
+  {
+   "name": "strict-schema-output-fidelity",
+   "description": "When a precise output schema is prescribed, it is a contract, not a template. All output must use exact enum literals, exact formula component names and weights, exact JSON field names, exact data formats (ISO 8601, JSON-only), and verbatim preservation of source field values. No reformatting, synonym substitution, prose wrapping, or 'improvement' of prescribed values is permitted.",
+   "skill_type": "best_practice",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/source-integrity-agent/scope/.skills/strict-schema-output-fidelity/SKILL.md.pending"
+  },
+  {
+   "name": "If an EXIF date field is missing, mark (preference)",
+   "description": "Standing user preference: If an EXIF date field is missing, mark it as 'ABSENT'; never estimate or infer missing date values.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/source-integrity-agent/scope/.skills/if-an-exif-date-field-is-missing-mark-preference/SKILL.md.pending"
+  },
+  {
+   "name": "closed-method-set-with-session-result-reuse",
+   "description": "The set of permitted validation and analytical methods is closed: use only the explicitly enumerated methods (e.g., WHOIS, DNS, EXIF, timestamps). Do not propose, add, or substitute alternatives even when they appear equivalent. Additionally, before re-running a validation step, check whether a prior validated result for the same artifact exists in the session; if so, reference that result rather than repeating the analysis.",
+   "skill_type": "best_practice",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/source-integrity-agent/scope/.skills/closed-method-set-with-session-result-reuse/SKILL.md.pending"
+  },
+  {
+   "name": "When metadata contains conflicting timestamps, list all values (preference)",
+   "description": "Standing user preference: When metadata contains conflicting timestamps, list all values and flag the inconsistency explicitly; never select one value as authoritative.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/source-integrity-agent/scope/.skills/when-metadata-contains-conflicting-timestamps-list-all-values-preference/SKILL.md.pending"
+  },
+  {
+   "name": "Format all timestamps using ISO 8601 (preference)",
+   "description": "Standing user preference: Format all timestamps using ISO 8601.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/source-integrity-agent/scope/.skills/format-all-timestamps-using-iso-8601-preference/SKILL.md.pending"
+  },
+  {
+   "name": "Preserve original metadata formatting exactly; never rewrite or (preference)",
+   "description": "Standing user preference: Preserve original metadata formatting exactly; never rewrite or 'improve' metadata field values.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/source-integrity-agent/scope/.skills/preserve-original-metadata-formatting-exactly-never-rewrite-or-preference/SKILL.md.pending"
+  },
+  {
+   "name": "sia-metadata-conflict-and-missing-field-rules",
+   "description": "When SIA encounters conflicting timestamps or blank/unavailable EXIF and header metadata, report all values verbatim with deltas and mark absent fields as ABSENT -- never merge, estimate, or select a single value.",
+   "skill_type": "rule",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/source-integrity-agent/scope/.skills/sia-metadata-conflict-and-missing-field-rules/SKILL.md.pending"
+  },
+  {
+   "name": "sia-social-pressure-immunity",
+   "description": "SIA must disregard all urgency, visual heuristics, and other-agent-authority arguments when offered as substitutes for artifact-backed technical evidence; findings change only when new artifact data contradicts prior analysis.",
+   "skill_type": "anti_pattern",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/source-integrity-agent/scope/.skills/sia-social-pressure-immunity/SKILL.md.pending"
+  },
+  {
+   "name": "pressure-immunity-skepticism-first",
+   "description": "Analytical agents must treat urgency framing, visual heuristics, authority claims from other agents, and social pressure as non-evidence. These signals must never trigger analytical shortcuts, step-skipping, or revision of findings. The default posture is skepticism; a finding changes only when contradicting data arrives through a prescribed validation method, not because of who asserts it or how urgently.",
+   "skill_type": "principle",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/source-integrity-agent/scope/.skills/pressure-immunity-skepticism-first/SKILL.md.pending"
+  },
+  {
+   "name": "Adhere strictly to the specified JSON output schema: (preference)",
+   "description": "Standing user preference: Adhere strictly to the specified JSON output schema: compute the Domain Trust Score using the exact formula components (Domain_Age_Score, SSL_Validity, DNS_Consistency, Metadata_Integrity) and their defined weights; apply the -15 point WHOIS privacy deduction; use the exact enum literals for status, integrity, and risk_level fields; state 'MISSING' for any unavailable metadata field; and always include next_agent_notes with both to_FCA and to_AO keys.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/source-integrity-agent/scope/.skills/adhere-strictly-to-the-specified-json-output-schema-preference/SKILL.md.pending"
+  },
+  {
+   "name": "Use precise, specific language in findings; avoid vague (preference)",
+   "description": "Standing user preference: Use precise, specific language in findings; avoid vague phrasing (e.g., write 'EXIF DateTimeOriginal field shows hex editor signature' rather than 'seems tampered').",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/source-integrity-agent/scope/.skills/use-precise-specific-language-in-findings-avoid-vague-preference/SKILL.md.pending"
+  },
+  {
+   "name": "Output results as structured JSON only; never use (preference)",
+   "description": "Standing user preference: Output results as structured JSON only; never use prose summaries.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/source-integrity-agent/scope/.skills/output-results-as-structured-json-only-never-use-preference/SKILL.md.pending"
+  },
+  {
+   "name": "Approach every analysis with skepticism and meticulous attention (preference)",
+   "description": "Standing user preference: Approach every analysis with skepticism and meticulous attention to detail; never accept links or sources at face value.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/source-integrity-agent/scope/.skills/approach-every-analysis-with-skepticism-and-meticulous-attention-preference/SKILL.md.pending"
+  },
+  {
+   "name": "sia-critical-escalation-halt-triggers",
+   "description": "Identify the CRITICAL and HIGH severity conditions that require SIA to set escalation_required=true, emit HALT_VERIFICATION, and route to AO -> Human Security Reviewer before FCA receives anything.",
+   "skill_type": "rule",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/source-integrity-agent/scope/.skills/sia-critical-escalation-halt-triggers/SKILL.md.pending"
+  },
+  {
+   "name": "sia-domain-trust-score-formula",
+   "description": "Compute the SIA Domain Trust Score using the exact four-component weighted formula plus mandatory point deductions, then route downstream based on the resulting score.",
+   "skill_type": "procedure",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/source-integrity-agent/scope/.skills/sia-domain-trust-score-formula/SKILL.md.pending"
+  },
+  {
+   "name": "Keep analyses concise; avoid unnecessary deep dives (preference)",
+   "description": "Standing user preference: Keep analyses concise; avoid unnecessary deep dives.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/source-integrity-agent/scope/.skills/keep-analyses-concise-avoid-unnecessary-deep-dives-preference/SKILL.md.pending"
+  }
+ ]
+}

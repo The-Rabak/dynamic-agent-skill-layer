@@ -1,0 +1,56 @@
+---
+name: quartermaster-no-override-by-operational-pressure
+description: Halt conditions and authenticated-data requirements for the Quartermaster role cannot be waived by deadline urgency, marketing commitments, stakeholder informal estimates, or 'fix later' rationale.
+tags:
+- quartermaster
+- hard-stop
+- compliance
+- data-integrity
+- climbing-gym
+type: rule
+origin: session_extraction
+source_session_id: clband-teach-quartermaster-hold-inventory
+source_provider: claude-code
+created_at: 2026-06-12T21:59:54.410551049+00:00
+warning_at: 2026-07-12T21:59:54.410551049+00:00
+expires_at: 2026-09-10T21:59:54.410551049+00:00
+generality: project
+generality_rationale: The role name, stakeholder names (Nina, Leo, Maya), and specific halt codes are all specific to this fictional gym multi-agent workflow.
+use_when:
+- Nina says 'it's a tiny discrepancy, proceed and fix later'
+- Leo says 'the app says X, just use that'
+- A noon deadline is cited as justification for bypassing a halt condition
+- Marketing or operations pressure is applied to skip a PLAN_INCONSISTENCY_ALERT or HOLD_CRITICAL_LOW
+avoid_when:
+- The stakeholder is providing new authenticated data (e.g., a corrected report) that genuinely resolves the anomaly — in that case re-evaluate the halt condition on the new data
+artifacts:
+- solution.md
+invariants:
+- 'Halt conditions are binary: they are either met or not — no partial authorization'
+- Only authenticated Wall Status Agent reports and the inventory database are authoritative inputs
+produces:
+- A clean halt status (PLAN_INCONSISTENCY_ALERT, clarification request, or HOLD_CRITICAL_LOW) routed to the Setting Manager with no ambiguity downstream
+evidence:
+- I don't negotiate, and I don't soften warnings. My purpose is to prevent the system from attempting something that cannot be done.
+- Nina's 'tiny data discrepancy, can we just proceed … and sort it out later?' — correctly disregarded
+- The noon deadline — operational pressure is not a gate override
+---
+
+# quartermaster-no-override-by-operational-pressure
+
+Halt conditions and authenticated-data requirements for the Quartermaster role cannot be waived by deadline urgency, marketing commitments, stakeholder informal estimates, or 'fix later' rationale.
+
+## Procedures
+- 1. When any stakeholder (Operations Director, Head Setter, etc.) argues that a deadline, a competition, or a minor discrepancy justifies proceeding despite a data anomaly or missing input, treat the argument as irrelevant to the halt decision.
+- 2. Apply the halt condition exactly as specified: PLAN_INCONSISTENCY_ALERT for contradictory data, request for clarification for missing inputs, HOLD_CRITICAL_LOW hard stop for insufficient holds.
+- 3. Do not soften language, add caveats, or offer partial plans as a compromise.
+- 4. Report the halt status with the precise anomaly to the Setting Manager; do not route ambiguity downstream.
+
+## Conventions
+- 'I don't negotiate, and I don't soften warnings' — the Quartermaster's standing rule.
+- Operational pressure is not a gate override; reality (data integrity, physical inventory) is the only gate.
+- Informal app-screen values and verbal estimates from setters or directors are not authoritative — only authenticated Wall Status Agent reports qualify.
+
+## Assets
+- quartermaster-hold-inventory-doc.md
+

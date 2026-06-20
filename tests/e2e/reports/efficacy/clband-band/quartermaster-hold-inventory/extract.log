@@ -1,0 +1,26 @@
+=== clband extract: quartermaster-hold-inventory -> /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/quartermaster-hold-inventory/scope ===
+[clband] purged queue; rows now: 0
+[clband] teach-delivery ON: doc injected as user turn (+4118 bytes)
+[clband] ingest transcript.jsonl (105KB+doc) -> {'content_hash': '4b1c3b6f80687835042a38ba78d451709af55a3b8d996527e19b71f19902a9ab', 'id': '019ebdd5-cd31-7742-84f8-3af08a5bcd65', 'status': 'enqueued'}
+[clband] sweep 1: 1 pending -> worker
+[clband] running maintenance-worker (claude-code); scope=/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/quartermaster-hold-inventory/scope; log=/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/logs/worker-quartermaster-hold-inventory-005606-s1.log
+[clband] worker exited rc=0
+[clband] queue drained (sweep 2)
+
+=== quartermaster-hold-inventory: 14 .pending draft(s) in 229s rc=0 -> /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/extract_quartermaster-hold-inventory.json ===
+   Do not speculate, incorporate estimates, or send ambiguity (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/quartermaster-hold-inventory/scope/.skills/do-not-speculate-incorporate-estimates-or-send-ambiguity-preference/SKILL.md.pending
+   Every plan from the Setting Manager must include (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/quartermaster-hold-inventory/scope/.skills/every-plan-from-the-setting-manager-must-include-preference/SKILL.md.pending
+   uncertainty-must-surface-not-pass-through  [principle]  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/quartermaster-hold-inventory/scope/.skills/uncertainty-must-surface-not-pass-through/SKILL.md.pending
+   hard-stop-over-graceful-degradation  [anti_pattern]  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/quartermaster-hold-inventory/scope/.skills/hard-stop-over-graceful-degradation/SKILL.md.pending
+   quartermaster-no-override-by-operational-pressure  [rule]  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/quartermaster-hold-inventory/scope/.skills/quartermaster-no-override-by-operational-pressure/SKILL.md.pending
+   Always use fixed consumption values — no improvisation (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/quartermaster-hold-inventory/scope/.skills/always-use-fixed-consumption-values-no-improvisation-preference/SKILL.md.pending
+   quartermaster-hold-inventory-status-assessment  [procedure]  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/quartermaster-hold-inventory/scope/.skills/quartermaster-hold-inventory-status-assessment/SKILL.md.pending
+   Inventory counts include only clean, ready-to-use holds; dirty (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/quartermaster-hold-inventory/scope/.skills/inventory-counts-include-only-clean-ready-to-use-holds-dirty-preference/SKILL.md.pending
+   Do not schedule until complete, confirmed data is (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/quartermaster-hold-inventory/scope/.skills/do-not-schedule-until-complete-confirmed-data-is-preference/SKILL.md.pending
+   fixed-constants-over-contextual-estimation  [principle]  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/quartermaster-hold-inventory/scope/.skills/fixed-constants-over-contextual-estimation/SKILL.md.pending
+   Optimistic planning is not tolerated: if holds run (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/quartermaster-hold-inventory/scope/.skills/optimistic-planning-is-not-tolerated-if-holds-run-preference/SKILL.md.pending
+   Always produce an Inventory Status report with a (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/quartermaster-hold-inventory/scope/.skills/always-produce-an-inventory-status-report-with-a-preference/SKILL.md.pending
+   quartermaster-wall-selection-policy  [procedure]  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/quartermaster-hold-inventory/scope/.skills/quartermaster-wall-selection-policy/SKILL.md.pending
+   quartermaster-plan-inconsistency-alert  [rule]  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/quartermaster-hold-inventory/scope/.skills/quartermaster-plan-inconsistency-alert/SKILL.md.pending
+
+--- STDERR ---

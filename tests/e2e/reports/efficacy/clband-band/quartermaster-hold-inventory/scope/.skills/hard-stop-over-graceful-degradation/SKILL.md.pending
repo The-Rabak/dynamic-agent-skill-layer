@@ -1,0 +1,47 @@
+---
+name: hard-stop-over-graceful-degradation
+description: When a planning system encounters an unmet hard constraint — insufficient inventory, missing required data, contradictory status — the correct response is an explicit, named halt. Gracefully degrading (producing a reduced plan, skipping a required element, improvising values) masks the violation and perpetuates operational errors downstream. Halt loudly; do not silently produce a diminished success.
+tags:
+- halt
+- constraints
+- no-workaround
+- planning
+- anti-pattern
+type: anti_pattern
+origin: session_extraction
+source_session_id: clband-teach-quartermaster-hold-inventory
+source_provider: claude-code
+created_at: 2026-06-12T21:59:54.415119023+00:00
+warning_at: 2026-07-12T21:59:54.415119023+00:00
+expires_at: 2026-09-10T21:59:54.415119023+00:00
+generality: general
+generality_rationale: Applies to any constraint-driven planning or inventory management system where partial compliance should not be silently accepted.
+use_when:
+- A required resource or confirmed datum is insufficient or missing.
+- Operational pressure such as a deadline or season is present but constraints remain unmet.
+- A best-effort partial output is being considered as a substitute for a complete, constraint-satisfying plan.
+avoid_when:
+- The pipeline operates in a scenario-planning mode where partial outputs are explicitly declared as drafts.
+- The constraint is optional and explicitly marked as advisory rather than hard.
+invariants:
+- 'Hard constraints are binary: either satisfied or halted — no partial satisfaction.'
+- No urgency or external pressure can convert a halt condition into a pass.
+produces:
+- Named halt with the violated constraint identified
+evidence:
+- quartermaster-no-override-by-operational-pressure
+- 'Optimistic planning is not tolerated: if holds run out, the week''s setting stops (preference)'
+- quartermaster-plan-inconsistency-alert
+- Always use fixed consumption values — no improvisation, no creative reductions (preference)
+---
+
+# hard-stop-over-graceful-degradation
+
+When a planning system encounters an unmet hard constraint — insufficient inventory, missing required data, contradictory status — the correct response is an explicit, named halt. Gracefully degrading (producing a reduced plan, skipping a required element, improvising values) masks the violation and perpetuates operational errors downstream. Halt loudly; do not silently produce a diminished success.
+
+## Procedures
+- Enumerate hard constraints before generating any plan output.
+- If any hard constraint is unmet, emit a named halt signal identifying the violated constraint.
+- Do not produce a partial or reduced plan as a fallback — produce no plan at all.
+- Require explicit resolution (restocked inventory, corrected status, new confirmed data) before retrying.
+

@@ -1,0 +1,23 @@
+---
+name: May answer short, general questions on various topics (preference)
+description: 'Standing user preference: May answer short, general questions on various topics, but treats work-related discussion as the main purpose and steers conversations back to it.'
+tags:
+- preference
+- convention
+origin: session_extraction
+source_session_id: clband-teach-123corp-hr-policy
+source_provider: claude-code
+created_at: 2026-06-12T22:57:46.915243384+00:00
+warning_at: 2026-07-12T22:57:46.915243384+00:00
+expires_at: 2026-09-10T22:57:46.915243384+00:00
+generality: general
+generality_rationale: Detected as a standing user directive; generality inferred from scope signals.
+---
+
+# May answer short, general questions on various topics (preference)
+
+Standing user preference: May answer short, general questions on various topics, but treats work-related discussion as the main purpose and steers conversations back to it.
+
+## Conventions
+- May answer short, general questions on various topics, but treats work-related discussion as the main purpose and steers conversations back to it.
+

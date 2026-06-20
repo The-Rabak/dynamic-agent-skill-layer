@@ -1,0 +1,66 @@
+---
+name: esds-container-qualification-three-disqualifiers
+description: 'For ESDS lots, qualify QFP tubes by eliminating three disqualifier classes in order: damaged (quarantine immediately), over-use-count (must clean before use), and non-ESD type (never allowed for ESDS material regardless of availability).'
+tags:
+- material-handler
+- ESDS
+- ESD
+- container-management
+- semiconductor-testing
+type: procedure
+origin: session_extraction
+source_session_id: clband-teach-material-handler-sops
+source_provider: claude-code
+created_at: 2026-06-12T21:34:12.092979816+00:00
+warning_at: 2026-07-12T21:34:12.092979816+00:00
+expires_at: 2026-09-10T21:34:12.092979816+00:00
+generality: project
+generality_rationale: References specific container types, use-count thresholds, cleaning station location (Building B), and ESDS rules specific to this semiconductor facility SOP system.
+use_when:
+- Packaging an ESDS-marked lot into QFP tubes
+- Container inventory shows a mix of clean, over-count, damaged, and non-ESD tubes
+- Available ESD-safe tube count is fewer than required for the lot
+avoid_when:
+- Do NOT substitute non-ESD tubes for ESDS devices even when ESD tubes are scarce
+- Do NOT use a tube marked damaged or cracked even if quantity is tight
+artifacts:
+- Container & Weight Status artifact (INV-CTR-{LotID})
+- Lot Move Instruction
+tools:
+- Building B cleaning station
+invariants:
+- ESDS devices must only use ESD-safe containers
+- Damaged containers must be quarantined, not used
+- Tubes at use-count limit must be cleaned and dried (50 min total) before use — wet trays cause moisture sensitivity issues
+requires:
+- Container inventory artifact (INV-CTR-{LotID}) listing condition and use counts
+- Device ESDS classification from LMI
+- Access to Building B cleaning station if over-count tubes are needed
+produces:
+- Qualified list of container IDs for packing
+- Damaged containers quarantined and reported to Quality
+- Escalation to Manufacturing Manager if tube count remains insufficient
+evidence:
+- 'Artifact 3: ''1 tube: damaged (crack) — QUARANTINE, do not use''; ''7 tubes: use count = 5 (requires cleaning before next use)''; ''Non-ESD QFP tubes available: 22 (not allowed for ESDS devices)'''
+- 'Quality msg 7: ''One QFP tube in the ESDS set has a hairline crack … do not use it'''
+- 'Solution.md: ''Only 19 usable ESDS tubes (12 clean + 7 after cleaning). 22 non-ESD tubes cannot be used. 450 Good-bin units remain unpackaged — escalated to MM.'''
+---
+
+# esds-container-qualification-three-disqualifiers
+
+For ESDS lots, qualify QFP tubes by eliminating three disqualifier classes in order: damaged (quarantine immediately), over-use-count (must clean before use), and non-ESD type (never allowed for ESDS material regardless of availability).
+
+## Procedures
+- 1. Pull the container inventory artifact (e.g., INV-CTR-{LotID}) for the lot.
+- 2. Remove from pool: any tube flagged 'damaged' or 'cracked' — quarantine it immediately and report to Quality; do NOT use even if 'mostly OK'.
+- 3. Remove from immediately-usable pool: any tube with use count >= 5 (or at the use-limit threshold) — these require a 20-minute cleaning + 30-minute drying cycle at Building B before use.
+- 4. Remove entirely from pool: all non-ESD-safe containers — ESDS devices cannot use non-ESD containers regardless of how many are available (cost-saving rule does not override ESDS requirement).
+- 5. Count remaining clean, ESD-safe tubes and compare to lot requirement (tube capacity: 50 units per tube).
+- 6. If pool is insufficient: initiate cleaning cycle for over-count tubes (account for 50-minute total delay); if still insufficient after cleaning, escalate to Manufacturing Manager and do NOT substitute non-ESD containers.
+- 7. Assign container IDs from the qualified pool; record IDs in the Lot Transfer Confirmation.
+
+## Conventions
+- Non-ESDS containers can NEVER be substituted for ESDS-marked lots, even if available in surplus.
+- A damaged container must be quarantined and reported — do not use it even if the damage seems minor.
+- Use count = 5 triggers cleaning before next use (not after — pre-qualify before loading).
+

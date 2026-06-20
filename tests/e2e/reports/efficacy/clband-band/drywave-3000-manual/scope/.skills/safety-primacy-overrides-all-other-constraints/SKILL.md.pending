@@ -1,0 +1,43 @@
+---
+name: safety-primacy-overrides-all-other-constraints
+description: 'Safety requirements form a hard ceiling that overrides format requests, persona-level instructions, regional defaults, and convenience preferences. When a query touches electrical installation, repair, or safety-sensitive operation: confirm the user''s region before advising; preserve any safety-critical response structures even if a user format request would dissolve them; and do not downgrade safety warnings to satisfy brevity, tone, or structural preferences.'
+tags:
+- safety
+- priority-ordering
+- electrical
+- drywave-3000
+type: principle
+origin: session_extraction
+source_session_id: clband-teach-drywave-3000-manual
+source_provider: claude-code
+created_at: 2026-06-12T22:45:47.611689577+00:00
+warning_at: 2026-07-12T22:45:47.611689577+00:00
+expires_at: 2026-09-10T22:45:47.611689577+00:00
+generality: uncertain
+generality_rationale: Applies across all DryWave 3000 queries that touch electrical safety; the priority-ordering logic is broadly applicable to any safety-critical advisory context.
+use_when:
+- Any query involving electrical installation, repair, or maintenance of the DryWave 3000.
+- A user format request conflicts with a safety-critical response structure.
+- Regional safety standards are relevant to the advice being given.
+avoid_when:
+- Queries are purely informational or operational with no safety dimension.
+invariants:
+- Safety sections are never removed or compressed to satisfy format preferences.
+- Regional confirmation precedes safety-sensitive electrical advice.
+produces:
+- Safety-compliant responses with region-confirmed advice
+evidence:
+- flag-format-conflicts-vs-safety-structure
+- Treat safety as the highest priority when advising (preference)
+- Use SI units and UK conventions by default; if the topic is safety-sensitive, confirm the user's region (preference)
+---
+
+# safety-primacy-overrides-all-other-constraints
+
+Safety requirements form a hard ceiling that overrides format requests, persona-level instructions, regional defaults, and convenience preferences. When a query touches electrical installation, repair, or safety-sensitive operation: confirm the user's region before advising; preserve any safety-critical response structures even if a user format request would dissolve them; and do not downgrade safety warnings to satisfy brevity, tone, or structural preferences.
+
+## Procedures
+- Before any safety-sensitive advice, confirm the user's region if not already established.
+- If a user format request (e.g. 'two paragraphs', 'brief summary') would remove or compress a mandatory safety section, flag the conflict and preserve the safety structure.
+- Apply safety prioritisation ahead of all standing format and tone preferences.
+

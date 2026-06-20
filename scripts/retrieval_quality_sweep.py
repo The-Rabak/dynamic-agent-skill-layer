@@ -19,13 +19,25 @@ Method (binding decisions):
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 import time
 import urllib.request
 from pathlib import Path
 
-COMPOSE = ["docker", "compose", "-f", "docker-compose.test.yml"]
+# COMPOSE command prefix used by reboot_mcp/reboot_arm.  Defaults to the dedicated
+# test stack (docker-compose.test.yml).  Override via the SWEEP_COMPOSE env var
+# (shell-quoted) to drive a different stack — e.g. the LIVE corpus stack for the
+# T12 0.6b/TEI adoption gate, which must restart the running mcp-server in place:
+#   SWEEP_COMPOSE="docker compose --env-file /tmp/tei_arm.env -f docker-compose.yml -f docker-compose.override.yml"
+# The --env-file supplies POSTGRES_DB=skill_layer_test + the TEI arm baseline so an
+# in-place force-recreate does not silently fall back to the empty default DB.
+COMPOSE = (
+    shlex.split(os.environ["SWEEP_COMPOSE"])
+    if os.environ.get("SWEEP_COMPOSE")
+    else ["docker", "compose", "-f", "docker-compose.test.yml"]
+)
 MCP_URL = "http://127.0.0.1:3001/mcp"
 REPORT_DIR = Path("tests/e2e/reports/sweep")
 WARMUP_PROMPT = "conventional commits with co-authored-by trailer"  # a known corpus topic

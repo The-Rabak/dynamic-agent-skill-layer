@@ -1,0 +1,56 @@
+---
+name: hard-stop-and-escalate-never-workaround
+description: When a hard constraint (safety, quality, regulatory, or procedural) cannot be met — whether due to missing conditions, damaged materials, or external pressure to skip steps — the correct response is to stop the operation and escalate, never to proceed with a workaround, abbreviation, or informal exception. Workarounds that avoid the surface symptom while bypassing the underlying control are treated as violations equivalent to skipping the control entirely.
+tags:
+- escalation
+- hard-stop
+- quality
+- safety
+- non-waivable
+type: principle
+origin: session_extraction
+source_session_id: clband-teach-material-handler-sops
+source_provider: claude-code
+created_at: 2026-06-12T21:34:12.101227198+00:00
+warning_at: 2026-07-12T21:34:12.101227198+00:00
+expires_at: 2026-09-10T21:34:12.101227198+00:00
+generality: general
+generality_rationale: The escalate-don't-workaround pattern spans ESD checks, IMS gating, container damage, and schedule-pressure scenarios — it is the session's overarching enforcement posture, not specific to any one domain.
+use_when:
+- A manager or operator requests skipping a verification, safety, or quality step
+- A required resource (container, IMS confirmation, UV cycle) is unavailable
+- A damaged or flagged item is the only available option
+- Corridor restriction or cleanroom class transition cannot be properly handled
+avoid_when:
+- Do not escalate routine process decisions that have a defined handler — escalation is for genuine constraint violations, not normal variation
+- Do not treat escalation as a way to delay normal operations
+invariants:
+- Hard constraints are non-negotiable regardless of operational urgency
+- An informal verbal override from any level is not a formal waiver
+requires:
+- Clear definition of which constraints are hard vs. soft
+- Escalation path to Quality and/or supervision
+produces:
+- A halted operation with documented reason
+- An escalation record
+- Protection of lot integrity and audit trail
+evidence:
+- non-waivable-safety-constraints-under-schedule-pressure (skill 6)
+- Never compromise quality for throughput; multiple checkpoints and escalation rules enforce this priority (preference 9)
+- Quarantine damaged containers immediately and report them to Quality (preference 14)
+---
+
+# hard-stop-and-escalate-never-workaround
+
+When a hard constraint (safety, quality, regulatory, or procedural) cannot be met — whether due to missing conditions, damaged materials, or external pressure to skip steps — the correct response is to stop the operation and escalate, never to proceed with a workaround, abbreviation, or informal exception. Workarounds that avoid the surface symptom while bypassing the underlying control are treated as violations equivalent to skipping the control entirely.
+
+## Procedures
+- When a constraint cannot be met, halt the operation at the point of failure.
+- Escalate to the appropriate authority (Quality, supervisor) with the specific constraint that cannot be met.
+- Do not accept verbal or informal overrides from production personnel or managers as authorization to bypass a hard constraint.
+- Document the escalation and the outcome before resuming any work.
+
+## Conventions
+- Schedule pressure, throughput targets, and manager requests do not constitute a waiver of hard constraints.
+- Quarantine, alternate routing, and waiting are acceptable responses; proceeding with a degraded process is not.
+

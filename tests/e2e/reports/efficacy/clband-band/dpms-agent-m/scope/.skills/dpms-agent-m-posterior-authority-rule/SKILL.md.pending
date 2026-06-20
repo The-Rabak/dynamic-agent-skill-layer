@@ -1,0 +1,63 @@
+---
+name: dpms-agent-m-posterior-authority-rule
+description: In DPMS, Agent F's (Bayesian Update) posterior mean is the authoritative headline probability; Agent J simulation and Agent L narrative estimates are secondary cross-checks and must never replace the posterior as the report's headline figure.
+tags:
+- dpms
+- probability
+- bayesian
+- agent-m
+- taught-system
+type: rule
+origin: session_extraction
+source_session_id: clband-teach-dpms-agent-m
+source_provider: claude-code
+created_at: 2026-06-12T23:18:42.281725450+00:00
+warning_at: 2026-07-12T23:18:42.281725450+00:00
+expires_at: 2026-09-10T23:18:42.281725450+00:00
+generality: project
+generality_rationale: The rule references DPMS-specific agent identifiers (Agent F, Agent J, Agent L), flag codes (FLAG-M-02), and the specific Beta distribution authority chain that are unique to this invented system.
+use_when:
+- Composing a DPMS final report and multiple agents report different probability values
+- Agent L narrative says 'about X' and Agent F posterior mean is a different value
+- Agent J expected_event_probability differs from Agent F posterior mean
+- Table 1 Key Results requires an 'Event Probability' entry
+avoid_when:
+- Do NOT use Agent J's expected_event_probability as the headline figure even when it is the most recent simulation result
+- Do NOT use Agent L's narrative probability estimate as the authoritative value even when it differs only slightly from the posterior
+artifacts:
+- Artifact 1 (Agent F posterior)
+- Artifact 3 (Agent J simulation)
+- Artifact 5 (Agent L narrative)
+invariants:
+- Headline probability = Agent F posterior mean (e.g., 0.5871 for Beta(36.4, 25.6))
+- All other probability estimates from other agents are labeled as cross-checks or secondary results
+- FLAG-M-02 must be assigned whenever Agent L's narrative probability diverges from the posterior mean
+requires:
+- Agent F output with explicit posterior distribution parameters (alpha, beta) and mean
+- Artifacts from Agent J and Agent L for cross-check comparison
+produces:
+- Table 1 with correct headline probability from Agent F posterior mean
+- FLAG-M-02 entry in validation log if Agent L narrative diverges
+- Pre-composition validation log with consistency table for all probability values
+evidence:
+- The headline probability throughout the report is 0.5871 (Agent F's posterior mean, Beta(36.4, 25.6))
+- Agent J's simulation 0.62 is reported as a secondary Monte Carlo cross-check (consistent within the 90% CI)
+- Agent L's narrative 'about 0.55' was flagged as a rounding error and corrected (FLAG-M-02)
+---
+
+# dpms-agent-m-posterior-authority-rule
+
+In DPMS, Agent F's (Bayesian Update) posterior mean is the authoritative headline probability; Agent J simulation and Agent L narrative estimates are secondary cross-checks and must never replace the posterior as the report's headline figure.
+
+## Procedures
+- 1. Identify Agent F's posterior mean from the Bayesian Update artifact as the headline probability.
+- 2. Record Agent J's expected_event_probability and Agent L's narrative estimate separately as cross-checks.
+- 3. If Agent L's narrative probability diverges from the posterior mean, assign FLAG-M-02 and correct the narrative to use the posterior mean.
+- 4. In the Key Results table (Table 1), display the posterior mean as 'Event Probability'; reference simulation and narrative values in the body text as 'consistent with' or 'Monte Carlo cross-check'.
+- 5. Document the discrepancy and resolution in the report's pre-composition validation log.
+
+## Conventions
+- Posterior mean from Agent F is always the headline figure, even when Agent J or Agent L report slightly different values.
+- Agent L narrative rounding (e.g., 'about 0.55') is a rounding artifact, not an authoritative update.
+- Agent J simulation result (e.g., 0.62) is a secondary cross-check, reported as such.
+

@@ -1,0 +1,23 @@
+---
+name: When displaying chess games given in algebraic notation (preference)
+description: 'Standing user preference: When displaying chess games given in algebraic notation, export each move as an 8×8 markdown grid where each cell contains a period (.) unless a piece occupies it.'
+tags:
+- preference
+- convention
+origin: session_extraction
+source_session_id: clband-teach-dartman-game
+source_provider: claude-code
+created_at: 2026-06-12T22:33:38.137876847+00:00
+warning_at: 2026-07-12T22:33:38.137876847+00:00
+expires_at: 2026-09-10T22:33:38.137876847+00:00
+generality: uncertain
+generality_rationale: Detected as a standing user directive; generality inferred from scope signals.
+---
+
+# When displaying chess games given in algebraic notation (preference)
+
+Standing user preference: When displaying chess games given in algebraic notation, export each move as an 8×8 markdown grid where each cell contains a period (.) unless a piece occupies it.
+
+## Conventions
+- When displaying chess games given in algebraic notation, export each move as an 8×8 markdown grid where each cell contains a period (.) unless a piece occupies it.
+

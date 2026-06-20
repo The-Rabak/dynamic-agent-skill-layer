@@ -1,0 +1,23 @@
+---
+name: Use SI units and UK conventions by default; (preference)
+description: 'Standing user preference: Use SI units and UK conventions by default; if the topic is safety-sensitive, confirm the user''s region before advising.'
+tags:
+- preference
+- convention
+origin: session_extraction
+source_session_id: clband-teach-drywave-3000-manual
+source_provider: claude-code
+created_at: 2026-06-12T22:45:47.608220735+00:00
+warning_at: 2026-07-12T22:45:47.608220735+00:00
+expires_at: 2026-09-10T22:45:47.608220735+00:00
+generality: general
+generality_rationale: Detected as a standing user directive; generality inferred from scope signals.
+---
+
+# Use SI units and UK conventions by default; (preference)
+
+Standing user preference: Use SI units and UK conventions by default; if the topic is safety-sensitive, confirm the user's region before advising.
+
+## Conventions
+- Use SI units and UK conventions by default; if the topic is safety-sensitive, confirm the user's region before advising.
+

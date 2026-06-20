@@ -1,0 +1,48 @@
+---
+name: fixed-constants-over-contextual-estimation
+description: Operational planning pipelines that consume finite, countable resources must use pre-agreed, fixed consumption constants rather than context-sensitive estimates, creative reductions, or per-cycle improvisations. Fixed constants ensure auditability, prevent shortfall masking, and make consumption predictable and comparable across planning cycles.
+tags:
+- fixed-values
+- consumption
+- planning
+- auditability
+- inventory
+type: principle
+origin: session_extraction
+source_session_id: clband-teach-quartermaster-hold-inventory
+source_provider: claude-code
+created_at: 2026-06-12T21:59:54.416029031+00:00
+warning_at: 2026-07-12T21:59:54.416029031+00:00
+expires_at: 2026-09-10T21:59:54.416029031+00:00
+generality: general
+generality_rationale: 'Applies to any domain where physical resource consumption must be planned against finite inventory: manufacturing, events, supply chain, and similar.'
+use_when:
+- A plan requires consuming a finite, trackable resource.
+- Multiple plan cycles need to be comparable and auditable.
+- There is a risk that planners might reduce consumption estimates to make a plan appear feasible on paper.
+avoid_when:
+- Resource consumption is genuinely variable by design and variability is tracked explicitly.
+- The system is in a forecasting mode clearly labeled as such and never promoted to a hard plan.
+invariants:
+- Fixed consumption rates are not modified to accommodate available supply.
+- The same rates apply to every plan cycle — no per-cycle improvisation.
+requires:
+- Pre-agreed consumption constants documented before planning begins
+produces:
+- Auditable, reproducible resource consumption calculations
+evidence:
+- quartermaster-hold-inventory-status-assessment
+- Always use fixed consumption values — no improvisation, no creative reductions (preference)
+- Inventory counts include only clean, ready-to-use holds (preference)
+---
+
+# fixed-constants-over-contextual-estimation
+
+Operational planning pipelines that consume finite, countable resources must use pre-agreed, fixed consumption constants rather than context-sensitive estimates, creative reductions, or per-cycle improvisations. Fixed constants ensure auditability, prevent shortfall masking, and make consumption predictable and comparable across planning cycles.
+
+## Procedures
+- Establish and document fixed consumption rates per resource type before any plan is generated.
+- Apply those constants uniformly — never adjust them based on available supply or time pressure.
+- Validate that available inventory meets the full fixed-rate requirement before producing a plan.
+- If the fixed rate cannot be met by available supply, halt — do not silently reduce the rate to fit.
+

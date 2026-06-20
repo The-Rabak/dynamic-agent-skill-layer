@@ -1,0 +1,59 @@
+---
+name: dartman-movement-and-line-of-fire-rules
+description: 'Dartman movement mechanics: Deflectors move like chess Rooks; the Dartman piece has unstoppable momentum and must travel until hitting the board edge or its own Deflector; crossing the opponent Dartman''s line of fire is an instant loss.'
+tags:
+- dartman
+- game-rules
+- taught-system
+- movement
+- instant-loss
+type: rule
+origin: session_extraction
+source_session_id: clband-teach-dartman-game
+source_provider: claude-code
+created_at: 2026-06-12T22:33:38.137144305+00:00
+warning_at: 2026-07-12T22:33:38.137144305+00:00
+expires_at: 2026-09-10T22:33:38.137144305+00:00
+generality: project
+generality_rationale: All movement semantics are specific to the invented Dartman game system and do not generalize to other contexts.
+use_when:
+- determining legal Dartman moves during a game
+- evaluating whether a Dartman move crosses the opponent's line of fire
+- deciding how far a Dartman piece travels on a given move
+- checking if a move results in an instant loss
+avoid_when:
+- moving Deflector pieces — Deflectors do NOT have momentum-based movement; they stop wherever the player chooses (like a standard Rook).
+artifacts:
+- dartman-rules.md
+- solution.md
+invariants:
+- A Dartman move that enters the opponent Dartman's horizontal or vertical line of fire with no intervening Deflector (either color) is always an instant loss — there are no exceptions.
+- A Dartman piece must travel the maximum possible distance in its chosen direction; it cannot stop short voluntarily.
+- The 1x2 Deflector must always occupy two vertically adjacent squares — it cannot be rotated.
+requires:
+- Current positions of all six pieces on the board
+- Knowledge of which player's turn it is
+produces:
+- A legal new board state after one valid move, or a game-over declaration if an illegal Dartman move was attempted
+evidence:
+- Once moving, he moves in a straight line until he hits something, and stops. The Dartman piece must move as far as possible until he hits either the edge of the board or one of the players deflector pieces. He cannot use one of the other players deflector pieces as a stopping point.
+- If a player tries to move their Dartman in the horizontal or vertical line of fire of the other players Dartman, that is an illegal move and results in instantly losing the game.
+- unless there is a deflector piece of either players color between them
+---
+
+# dartman-movement-and-line-of-fire-rules
+
+Dartman movement mechanics: Deflectors move like chess Rooks; the Dartman piece has unstoppable momentum and must travel until hitting the board edge or its own Deflector; crossing the opponent Dartman's line of fire is an instant loss.
+
+## Procedures
+- 1. Deflector moves (X1, X2, Y1, Y2): move any number of squares horizontally or vertically, exactly like a chess Rook. The 1x2 Deflector (X2/Y2) moves as a unit; both squares travel together. Deflectors cannot be rotated — the 1x2 piece always stays vertical.
+- 2. Dartman moves (P1, P2): choose a horizontal or vertical direction. The Dartman travels as far as possible in that direction — it MUST stop only when it hits (a) the edge of the board, or (b) one of the moving player's own Deflector pieces. It cannot voluntarily stop mid-path and cannot use the opponent's Deflector pieces as a stopping point.
+- 3. Before executing any Dartman move, check the line-of-fire rule: identify the full horizontal and vertical lines extending from the OPPONENT'S Dartman. If the move would place or pass P1/P2 onto any square in those lines — and there is no Deflector piece of EITHER player sitting between the two Dartmen along that line — the move is ILLEGAL and results in an INSTANT LOSS for the player who attempted it.
+- 4. A Deflector piece of either color located between the two Dartmen along the line of fire acts as a blocker and makes a move through that line legal.
+- 5. Players alternate turns; each turn one piece is moved once.
+
+## Conventions
+- The line-of-fire check must be applied BEFORE committing a Dartman move — attempting an illegal Dartman move forfeits the game immediately.
+- Only the Dartman's OWN Deflectors can stop its momentum; the opponent's Deflectors are transparent as stopping points.
+- Deflectors cannot jump over other pieces (same as chess Rook movement).
+

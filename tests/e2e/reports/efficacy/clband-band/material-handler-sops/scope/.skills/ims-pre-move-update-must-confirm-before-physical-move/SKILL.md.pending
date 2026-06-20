@@ -1,0 +1,59 @@
+---
+name: ims-pre-move-update-must-confirm-before-physical-move
+description: 'Rule 10: the inventory management system (IMS) location update must be submitted AND confirmed before any physical lot movement begins; if IMS is degraded/slow, wait for confirmation regardless of schedule pressure.'
+tags:
+- material-handler
+- IMS
+- inventory
+- Rule-10
+- semiconductor-testing
+type: rule
+origin: session_extraction
+source_session_id: clband-teach-material-handler-sops
+source_provider: claude-code
+created_at: 2026-06-12T21:34:12.094573189+00:00
+warning_at: 2026-07-12T21:34:12.094573189+00:00
+expires_at: 2026-09-10T21:34:12.094573189+00:00
+generality: project
+generality_rationale: References Rule 10 by number and the IMS system specific to this semiconductor facility's Material Handler SOP.
+use_when:
+- About to physically move a lot to a new location
+- IMS is slow or degraded and operators are waiting
+- Manufacturing Manager says 'use judgment' and implies skipping IMS steps
+avoid_when:
+- Do NOT move lot first and update IMS after — even if IMS is slow
+- Do NOT interpret 'degraded but functional' as permission to proceed without confirmation
+artifacts:
+- Inventory System Advisory (ITS-INV-{date})
+tools:
+- IMS inventory system
+invariants:
+- IMS location update must confirm BEFORE physical movement begins (Rule 10)
+- If system is down, physical movement is halted — not deferred-and-done-later
+requires:
+- IMS accessible (even if slow)
+- New destination known and entered into IMS
+produces:
+- IMS transaction confirmation (commit)
+- System-of-record location matches physical location throughout move
+evidence:
+- 'IT Systems msg 6: ''Do not move lots until pre-move location update confirms'''
+- 'SOP Rule 10: ''You must update the inventory tracking system with the new location BEFORE physically moving the lot. If the system is down or slow, you cannot proceed with the move until the system accepts the transaction'''
+- 'Artifact 6: ''Status: Degraded performance; transactions commit in 30–90 seconds. Instruction: Do not move lots until pre-move location update confirms.'''
+---
+
+# ims-pre-move-update-must-confirm-before-physical-move
+
+Rule 10: the inventory management system (IMS) location update must be submitted AND confirmed before any physical lot movement begins; if IMS is degraded/slow, wait for confirmation regardless of schedule pressure.
+
+## Procedures
+- 1. Before touching or moving any lot, submit the pre-move location update to IMS with the new destination.
+- 2. Wait for IMS to confirm the transaction. Per degraded-performance advisory (30–90 second commit time), do not begin physical movement during this window.
+- 3. If the transaction times out, retry; do not move the lot until a confirmation is received.
+- 4. If IMS goes fully offline (outage), hold all physical movement until the system recovers — operators waiting is an acceptable consequence.
+- 5. Only after IMS confirms the location update may you physically pick up and move the lot.
+
+## Conventions
+- IMS update always precedes physical movement — the system of record must lead the physical state.
+- Schedule pressure from operators or managers does not justify moving before IMS confirms.
+

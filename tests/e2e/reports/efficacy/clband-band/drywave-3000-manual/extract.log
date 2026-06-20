@@ -1,0 +1,35 @@
+=== clband extract: drywave-3000-manual -> /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/drywave-3000-manual/scope ===
+[clband] purged queue; rows now: 0
+[clband] teach-delivery ON: doc injected as user turn (+52027 bytes)
+[clband] ingest transcript.jsonl (206KB+doc) -> {'content_hash': '0779ac2759b2e472a708aa19cab63ffc7f495be4c8f018dea332aaa500ed8552', 'id': '019ebdfe-9677-7bb1-b439-5b9e4648d73c', 'status': 'enqueued'}
+[clband] sweep 1: 1 pending -> worker
+[clband] running maintenance-worker (claude-code); scope=/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/drywave-3000-manual/scope; log=/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/logs/worker-drywave-3000-manual-014039-s1.log
+[clband] worker exited rc=1
+[clband] queue drained (sweep 2)
+
+=== drywave-3000-manual: 23 .pending draft(s) in 729s rc=1 -> /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/extract_drywave-3000-manual.json ===
+   Do not output live hyperlinks, access the web (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/drywave-3000-manual/scope/.skills/do-not-output-live-hyperlinks-access-the-web-preference/SKILL.md.pending
+   Warn that steam condensation on the air intake (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/drywave-3000-manual/scope/.skills/warn-that-steam-condensation-on-the-air-intake-preference/SKILL.md.pending
+   Advise that effective use of the DryWave 3000 (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/drywave-3000-manual/scope/.skills/advise-that-effective-use-of-the-drywave-3000-preference/SKILL.md.pending
+   Treat safety as the highest priority when advising (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/drywave-3000-manual/scope/.skills/treat-safety-as-the-highest-priority-when-advising-preference/SKILL.md.pending
+   Do not recommend QUIET mode as the primary (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/drywave-3000-manual/scope/.skills/do-not-recommend-quiet-mode-as-the-primary-preference/SKILL.md.pending
+   infoaid-operational-rules  [best_practice]  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/drywave-3000-manual/scope/.skills/infoaid-operational-rules/SKILL.md.pending
+   Do not invent or infer details not present (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/drywave-3000-manual/scope/.skills/do-not-invent-or-infer-details-not-present-preference/SKILL.md.pending
+   flag-format-conflicts-vs-safety-structure  [rule]  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/drywave-3000-manual/scope/.skills/flag-format-conflicts-vs-safety-structure/SKILL.md.pending
+   Specify optimal unit placement to avoid airflow short-circuiting (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/drywave-3000-manual/scope/.skills/specify-optimal-unit-placement-to-avoid-airflow-short-circuiting-preference/SKILL.md.pending
+   Always position the condensate outlet lower than the (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/drywave-3000-manual/scope/.skills/always-position-the-condensate-outlet-lower-than-the-preference/SKILL.md.pending
+   Explain how the unit's safety protections and sensor (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/drywave-3000-manual/scope/.skills/explain-how-the-unit-s-safety-protections-and-sensor-preference/SKILL.md.pending
+   Use SI units and UK conventions by default; (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/drywave-3000-manual/scope/.skills/use-si-units-and-uk-conventions-by-default-preference/SKILL.md.pending
+   proactive-environmental-sensor-precondition-surfacing  [best_practice]  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/drywave-3000-manual/scope/.skills/proactive-environmental-sensor-precondition-surfacing/SKILL.md.pending
+   safety-primacy-overrides-all-other-constraints  [principle]  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/drywave-3000-manual/scope/.skills/safety-primacy-overrides-all-other-constraints/SKILL.md.pending
+   Reposition the unit if localised humidity pockets persist (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/drywave-3000-manual/scope/.skills/reposition-the-unit-if-localised-humidity-pockets-persist-preference/SKILL.md.pending
+   strict-source-grounding-no-inference  [principle]  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/drywave-3000-manual/scope/.skills/strict-source-grounding-no-inference/SKILL.md.pending
+   Do not place the unit near bed frames (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/drywave-3000-manual/scope/.skills/do-not-place-the-unit-near-bed-frames-preference/SKILL.md.pending
+   multi-constraint-placement-optimisation  [best_practice]  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/drywave-3000-manual/scope/.skills/multi-constraint-placement-optimisation/SKILL.md.pending
+   Thermal feedback sensors monitor coil temperature to prevent (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/drywave-3000-manual/scope/.skills/thermal-feedback-sensors-monitor-coil-temperature-to-prevent-preference/SKILL.md.pending
+   Note that an open door may cause a (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/drywave-3000-manual/scope/.skills/note-that-an-open-door-may-cause-a-preference/SKILL.md.pending
+   Maintaining target humidity levels helps prevent corrosion of (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/drywave-3000-manual/scope/.skills/maintaining-target-humidity-levels-helps-prevent-corrosion-of-preference/SKILL.md.pending
+   Format responses using bullet points and subheadings where (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/drywave-3000-manual/scope/.skills/format-responses-using-bullet-points-and-subheadings-where-preference/SKILL.md.pending
+   Use a neutral, impersonal, business-appropriate tone; avoid slang (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/drywave-3000-manual/scope/.skills/use-a-neutral-impersonal-business-appropriate-tone-avoid-slang-preference/SKILL.md.pending
+
+--- STDERR ---

@@ -23,3 +23,7 @@ tests/e2e/reports/replica-run/
 # uploads them). Same policy as the reports/*.json + replica-run/ ignores above.
 tests/e2e/reports/console-*.log
 tests/e2e/reports/runs/
+
+# Python bytecode
+__pycache__/
+*.pyc

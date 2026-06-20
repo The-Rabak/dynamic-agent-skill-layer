@@ -1,0 +1,23 @@
+---
+name: Produce complete, validated, professionally formatted reports that meet (preference)
+description: 'Standing user preference: Produce complete, validated, professionally formatted reports that meet schema requirements, contain all required sections, maintain internal consistency, and are ready for immediate operational use or archival storage, using provided inputs and conforming to the DPMS v4 standard.'
+tags:
+- preference
+- convention
+origin: session_extraction
+source_session_id: clband-teach-dpms-agent-m
+source_provider: claude-code
+created_at: 2026-06-12T23:18:42.285954503+00:00
+warning_at: 2026-07-12T23:18:42.285954503+00:00
+expires_at: 2026-09-10T23:18:42.285954503+00:00
+generality: general
+generality_rationale: Detected as a standing user directive; generality inferred from scope signals.
+---
+
+# Produce complete, validated, professionally formatted reports that meet (preference)
+
+Standing user preference: Produce complete, validated, professionally formatted reports that meet schema requirements, contain all required sections, maintain internal consistency, and are ready for immediate operational use or archival storage, using provided inputs and conforming to the DPMS v4 standard.
+
+## Conventions
+- Produce complete, validated, professionally formatted reports that meet schema requirements, contain all required sections, maintain internal consistency, and are ready for immediate operational use or archival storage, using provided inputs and conforming to the DPMS v4 standard.
+

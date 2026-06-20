@@ -1,0 +1,33 @@
+diff --git a/django/core/files/storage.py b/django/core/files/storage.py
+index 4c27fce605..5a99557c26 100644
+--- a/django/core/files/storage.py
++++ b/django/core/files/storage.py
+@@ -332,7 +332,13 @@ class FileSystemStorage(Storage):
+         url = filepath_to_uri(name)
+         if url is not None:
+             url = url.lstrip('/')
+-        return urljoin(self.base_url, url)
++        url = urljoin(self.base_url, url)
++        if url.startswith('/'):
++            # Prepend SCRIPT_NAME when the URL is a path-only URL, so that
++            # the URL is correct when the application is mounted on a sub-path.
++            from django.urls import get_script_prefix
++            url = '%s%s' % (get_script_prefix().rstrip('/'), url)
++        return url
+ 
+     def _datetime_from_timestamp(self, ts):
+         """
+diff --git a/django/templatetags/static.py b/django/templatetags/static.py
+index 39712aaba0..f4cff5fce1 100644
+--- a/django/templatetags/static.py
++++ b/django/templatetags/static.py
+@@ -44,6 +44,9 @@ class PrefixNode(template.Node):
+             prefix = ''
+         else:
+             prefix = iri_to_uri(getattr(settings, name, ''))
++        if prefix.startswith('/'):
++            from django.urls import get_script_prefix
++            prefix = '%s%s' % (get_script_prefix().rstrip('/'), prefix)
+         return prefix
+ 
+     def render(self, context):

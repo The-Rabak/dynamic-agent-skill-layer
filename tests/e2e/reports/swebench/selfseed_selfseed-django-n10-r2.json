@@ -1,0 +1,763 @@
+{
+  "run_id": "selfseed-django-n10-r2",
+  "design": "self-seed-same-set",
+  "server_url": "http://127.0.0.1:3002",
+  "resumed_from": "tests/e2e/reports/swebench/selfseed_selfseed-django-n10.json",
+  "instances": [
+    "django__django-14999",
+    "django__django-16046",
+    "django__django-13447",
+    "django__django-15789",
+    "django__django-11099",
+    "django__django-10924",
+    "django__django-11564",
+    "django__django-13321",
+    "django__django-11133",
+    "django__django-13660"
+  ],
+  "n": 10,
+  "model": "sonnet",
+  "max_turns": 40,
+  "scope": "/tmp/t15-swebench/project/swebench-django-selfseed",
+  "seeding": {
+    "ingested": 10,
+    "gated_skills": [
+      {
+        "name": "ASCIIUsernameValidator and UnicodeUsernameValidator use regex for validation (preference)",
+        "dir": "asciiusernamevalidator-and-unicodeusernamevalidator-use-regex-for-validation-preference",
+        "source_session_id": "selfseed-django-n10-off-django__django-11099"
+      },
+      {
+        "name": "django-field-callable-argument-pattern",
+        "dir": "django-field-callable-argument-pattern",
+        "source_session_id": "selfseed-django-n10-off-django__django-10924"
+      },
+      {
+        "name": "django-model-design-first-class-dynamic-values",
+        "dir": "django-model-design-first-class-dynamic-values",
+        "source_session_id": "selfseed-django-n10-off-django__django-10924"
+      },
+      {
+        "name": "django-renamemodel-dbtable-noop-guard",
+        "dir": "django-renamemodel-dbtable-noop-guard",
+        "source_session_id": "selfseed-django-n10-off-django__django-14999"
+      },
+      {
+        "name": "django-script-name-prefix-relative-urls",
+        "dir": "django-script-name-prefix-relative-urls",
+        "source_session_id": "selfseed-django-n10-off-django__django-11564"
+      },
+      {
+        "name": "ensure-all-decode-ops-inside-try-except",
+        "dir": "ensure-all-decode-ops-inside-try-except",
+        "source_session_id": "selfseed-django-n10-off-django__django-13321"
+      },
+      {
+        "name": "exec-with-globals-dict-for-function-visibility",
+        "dir": "exec-with-globals-dict-for-function-visibility",
+        "source_session_id": "selfseed-django-n10-off-django__django-13660"
+      },
+      {
+        "name": "guard-string-index-before-access",
+        "dir": "guard-string-index-before-access",
+        "source_session_id": "selfseed-django-n10-off-django__django-16046"
+      },
+      {
+        "name": "handle-memoryview-before-str-fallback-in-type-dispatch",
+        "dir": "handle-memoryview-before-str-fallback-in-type-dispatch",
+        "source_session_id": "selfseed-django-n10-off-django__django-11133"
+      },
+      {
+        "name": "I want to customize the JSON encoding of (preference)",
+        "dir": "i-want-to-customize-the-json-encoding-of-preference",
+        "source_session_id": "selfseed-django-n10-off-django__django-15789"
+      },
+      {
+        "name": "python-regex-use-anchors-az-for-strict-validation",
+        "dir": "python-regex-use-anchors-az-for-strict-validation",
+        "source_session_id": "selfseed-django-n10-off-django__django-11099"
+      },
+      {
+        "name": "python-regex-validators-use-string-anchors-not-line-anchors",
+        "dir": "python-regex-validators-use-string-anchors-not-line-anchors",
+        "source_session_id": "selfseed-django-n10-off-django__django-11099"
+      },
+      {
+        "name": "Use \\A and \\Z anchors instead of ^ (preference)",
+        "dir": "use-a-and-z-anchors-instead-of-preference",
+        "source_session_id": "selfseed-django-n10-off-django__django-11099"
+      },
+      {
+        "name": "Use Python 3 for code examples (preference)",
+        "dir": "use-python-3-for-code-examples-preference",
+        "source_session_id": "selfseed-django-n10-off-django__django-13660"
+      },
+      {
+        "name": "When creating a model that references local file (preference)",
+        "dir": "when-creating-a-model-that-references-local-file-preference",
+        "source_session_id": "selfseed-django-n10-off-django__django-10924"
+      }
+    ],
+    "skill_source": {
+      "ASCIIUsernameValidator and UnicodeUsernameValidator use regex for validation (preference)": "django__django-11099",
+      "django-field-callable-argument-pattern": "django__django-10924",
+      "django-model-design-first-class-dynamic-values": "django__django-10924",
+      "django-renamemodel-dbtable-noop-guard": "django__django-14999",
+      "django-script-name-prefix-relative-urls": "django__django-11564",
+      "ensure-all-decode-ops-inside-try-except": "django__django-13321",
+      "exec-with-globals-dict-for-function-visibility": "django__django-13660",
+      "guard-string-index-before-access": "django__django-16046",
+      "handle-memoryview-before-str-fallback-in-type-dispatch": "django__django-11133",
+      "I want to customize the JSON encoding of (preference)": "django__django-15789",
+      "python-regex-use-anchors-az-for-strict-validation": "django__django-11099",
+      "python-regex-validators-use-string-anchors-not-line-anchors": "django__django-11099",
+      "Use \\A and \\Z anchors instead of ^ (preference)": "django__django-11099",
+      "Use Python 3 for code examples (preference)": "django__django-13660",
+      "When creating a model that references local file (preference)": "django__django-10924"
+    },
+    "drain_passes": 1
+  },
+  "round1_off": [
+    {
+      "instance_id": "django__django-14999",
+      "resolved": false,
+      "efficiency": {
+        "num_turns": 41,
+        "input_tokens": 42,
+        "output_tokens": 54137,
+        "cache_read_input_tokens": 2148043,
+        "cache_creation_input_tokens": 75888,
+        "total_cost_usd": 1.9126649000000002,
+        "duration_ms": 786781,
+        "is_error": true,
+        "subtype": "error_max_turns"
+      },
+      "transcript": "/home/rabak/.claude/projects/-tmp-t15-swebench-solve-django--django-14999--off/6240216b-946a-475e-9378-2a47386a9f5a.jsonl",
+      "empty_patch": true
+    },
+    {
+      "instance_id": "django__django-16046",
+      "resolved": true,
+      "efficiency": {
+        "num_turns": 11,
+        "input_tokens": 13,
+        "output_tokens": 1439,
+        "cache_read_input_tokens": 313037,
+        "cache_creation_input_tokens": 14087,
+        "total_cost_usd": 0.2008131,
+        "duration_ms": 48883,
+        "is_error": false,
+        "subtype": "success"
+      },
+      "transcript": "/home/rabak/.claude/projects/-tmp-t15-swebench-solve-django--django-16046--off/6a00f02d-645b-4757-ace8-3e5839eaf264.jsonl",
+      "empty_patch": false
+    },
+    {
+      "instance_id": "django__django-13447",
+      "resolved": true,
+      "efficiency": {
+        "num_turns": 22,
+        "input_tokens": 24,
+        "output_tokens": 3677,
+        "cache_read_input_tokens": 664945,
+        "cache_creation_input_tokens": 17768,
+        "total_cost_usd": 0.3620925,
+        "duration_ms": 126915,
+        "is_error": false,
+        "subtype": "success"
+      },
+      "transcript": "/home/rabak/.claude/projects/-tmp-t15-swebench-solve-django--django-13447--off/e53a9baf-1fc7-4bf5-aae3-ed44cecbdbb0.jsonl",
+      "empty_patch": false
+    },
+    {
+      "instance_id": "django__django-15789",
+      "resolved": true,
+      "efficiency": {
+        "num_turns": 14,
+        "input_tokens": 14,
+        "output_tokens": 1877,
+        "cache_read_input_tokens": 347199,
+        "cache_creation_input_tokens": 4639,
+        "total_cost_usd": 0.1610027,
+        "duration_ms": 46970,
+        "is_error": false,
+        "subtype": "success"
+      },
+      "transcript": "/home/rabak/.claude/projects/-tmp-t15-swebench-solve-django--django-15789--off/f4b262b1-5c3c-45e0-91e3-6b195dcae2f3.jsonl",
+      "empty_patch": false
+    },
+    {
+      "instance_id": "django__django-11099",
+      "resolved": true,
+      "efficiency": {
+        "num_turns": 16,
+        "input_tokens": 18,
+        "output_tokens": 2809,
+        "cache_read_input_tokens": 465019,
+        "cache_creation_input_tokens": 16569,
+        "total_cost_usd": 0.28197069999999996,
+        "duration_ms": 65566,
+        "is_error": false,
+        "subtype": "success"
+      },
+      "transcript": "/home/rabak/.claude/projects/-tmp-t15-swebench-solve-django--django-11099--off/2c329481-6702-496d-a042-5de947bd2323.jsonl",
+      "empty_patch": false
+    },
+    {
+      "instance_id": "django__django-10924",
+      "resolved": true,
+      "efficiency": {
+        "num_turns": 26,
+        "input_tokens": 26,
+        "output_tokens": 5372,
+        "cache_read_input_tokens": 766738,
+        "cache_creation_input_tokens": 22073,
+        "total_cost_usd": 0.4439784,
+        "duration_ms": 120516,
+        "is_error": false,
+        "subtype": "success"
+      },
+      "transcript": "/home/rabak/.claude/projects/-tmp-t15-swebench-solve-django--django-10924--off/934aaeed-bf42-4f2d-9f83-8d8d506d9869.jsonl",
+      "empty_patch": false
+    },
+    {
+      "instance_id": "django__django-11564",
+      "resolved": false,
+      "efficiency": {
+        "num_turns": 45,
+        "input_tokens": 29,
+        "output_tokens": 18697,
+        "cache_read_input_tokens": 1246945,
+        "cache_creation_input_tokens": 44826,
+        "total_cost_usd": 1.0914101999999999,
+        "duration_ms": 617680,
+        "is_error": false,
+        "subtype": "success"
+      },
+      "transcript": "/home/rabak/.claude/projects/-tmp-t15-swebench-solve-django--django-11564--off/7ac6bbe1-d8b9-465c-a507-09b8373ddac4.jsonl",
+      "empty_patch": false
+    },
+    {
+      "instance_id": "django__django-13321",
+      "resolved": false,
+      "efficiency": {
+        "num_turns": 17,
+        "input_tokens": 19,
+        "output_tokens": 4881,
+        "cache_read_input_tokens": 538209,
+        "cache_creation_input_tokens": 19866,
+        "total_cost_usd": 0.3560157,
+        "duration_ms": 100061,
+        "is_error": false,
+        "subtype": "success"
+      },
+      "transcript": "/home/rabak/.claude/projects/-tmp-t15-swebench-solve-django--django-13321--off/a8fca7da-e3ac-4a18-b34f-6bfcaf2499c9.jsonl",
+      "empty_patch": false
+    },
+    {
+      "instance_id": "django__django-11133",
+      "resolved": true,
+      "efficiency": {
+        "num_turns": 21,
+        "input_tokens": 23,
+        "output_tokens": 3459,
+        "cache_read_input_tokens": 652831,
+        "cache_creation_input_tokens": 18486,
+        "total_cost_usd": 0.3595983,
+        "duration_ms": 91572,
+        "is_error": false,
+        "subtype": "success"
+      },
+      "transcript": "/home/rabak/.claude/projects/-tmp-t15-swebench-solve-django--django-11133--off/2798eba8-618d-4e61-93a1-c3ab63a4bfb6.jsonl",
+      "empty_patch": false
+    },
+    {
+      "instance_id": "django__django-13660",
+      "resolved": false,
+      "efficiency": {
+        "num_turns": 17,
+        "input_tokens": 19,
+        "output_tokens": 2286,
+        "cache_read_input_tokens": 512452,
+        "cache_creation_input_tokens": 16740,
+        "total_cost_usd": 0.2899316,
+        "duration_ms": 60795,
+        "is_error": false,
+        "subtype": "success"
+      },
+      "transcript": "/home/rabak/.claude/projects/-tmp-t15-swebench-solve-django--django-13660--off/d4bc0496-9c3f-480b-9f04-e782a3437b2f.jsonl",
+      "empty_patch": false
+    }
+  ],
+  "round2_treat": [
+    {
+      "instance_id": "django__django-14999",
+      "resolved": true,
+      "efficiency": {
+        "num_turns": 32,
+        "input_tokens": 33,
+        "output_tokens": 6049,
+        "cache_read_input_tokens": 1098030,
+        "cache_creation_input_tokens": 16667,
+        "total_cost_usd": 0.5359980000000001,
+        "duration_ms": 139314,
+        "is_error": false,
+        "subtype": "success"
+      },
+      "empty_patch": false,
+      "seed_hits": [
+        "django-renamemodel-dbtable-noop-guard"
+      ],
+      "own_skill_hits": [
+        "django-renamemodel-dbtable-noop-guard"
+      ],
+      "cross_skill_hits": [],
+      "status": "ok"
+    },
+    {
+      "instance_id": "django__django-16046",
+      "resolved": true,
+      "efficiency": {
+        "num_turns": 15,
+        "input_tokens": 17,
+        "output_tokens": 3723,
+        "cache_read_input_tokens": 490006,
+        "cache_creation_input_tokens": 20657,
+        "total_cost_usd": 0.3294218,
+        "duration_ms": 85746,
+        "is_error": false,
+        "subtype": "success"
+      },
+      "empty_patch": false,
+      "seed_hits": [
+        "guard-string-index-before-access",
+        "django-field-callable-argument-pattern",
+        "python-regex-use-anchors-az-for-strict-validation",
+        "Use Python 3 for code examples (preference)",
+        "python-regex-validators-use-string-anchors-not-line-anchors"
+      ],
+      "own_skill_hits": [
+        "guard-string-index-before-access"
+      ],
+      "cross_skill_hits": [
+        "django-field-callable-argument-pattern",
+        "python-regex-use-anchors-az-for-strict-validation",
+        "Use Python 3 for code examples (preference)",
+        "python-regex-validators-use-string-anchors-not-line-anchors"
+      ],
+      "status": "ok"
+    },
+    {
+      "instance_id": "django__django-13447",
+      "resolved": true,
+      "efficiency": {
+        "num_turns": 25,
+        "input_tokens": 27,
+        "output_tokens": 4661,
+        "cache_read_input_tokens": 844424,
+        "cache_creation_input_tokens": 22450,
+        "total_cost_usd": 0.46054019999999996,
+        "duration_ms": 146587,
+        "is_error": false,
+        "subtype": "success"
+      },
+      "empty_patch": false,
+      "seed_hits": [
+        "django-model-design-first-class-dynamic-values",
+        "django-renamemodel-dbtable-noop-guard",
+        "django-field-callable-argument-pattern",
+        "django-script-name-prefix-relative-urls",
+        "When creating a model that references local file (preference)"
+      ],
+      "own_skill_hits": [],
+      "cross_skill_hits": [
+        "django-model-design-first-class-dynamic-values",
+        "django-renamemodel-dbtable-noop-guard",
+        "django-field-callable-argument-pattern",
+        "django-script-name-prefix-relative-urls",
+        "When creating a model that references local file (preference)"
+      ],
+      "status": "ok"
+    },
+    {
+      "instance_id": "django__django-15789",
+      "resolved": true,
+      "efficiency": {
+        "num_turns": 12,
+        "input_tokens": 11,
+        "output_tokens": 1723,
+        "cache_read_input_tokens": 263678,
+        "cache_creation_input_tokens": 15534,
+        "total_cost_usd": 0.20082740000000002,
+        "duration_ms": 42968,
+        "is_error": false,
+        "subtype": "success"
+      },
+      "empty_patch": false,
+      "seed_hits": [
+        "django-script-name-prefix-relative-urls",
+        "I want to customize the JSON encoding of (preference)",
+        "django-field-callable-argument-pattern",
+        "django-model-design-first-class-dynamic-values",
+        "handle-memoryview-before-str-fallback-in-type-dispatch"
+      ],
+      "own_skill_hits": [
+        "I want to customize the JSON encoding of (preference)"
+      ],
+      "cross_skill_hits": [
+        "django-script-name-prefix-relative-urls",
+        "django-field-callable-argument-pattern",
+        "django-model-design-first-class-dynamic-values",
+        "handle-memoryview-before-str-fallback-in-type-dispatch"
+      ],
+      "status": "ok"
+    },
+    {
+      "instance_id": "django__django-11099",
+      "resolved": true,
+      "efficiency": {
+        "num_turns": 10,
+        "input_tokens": 12,
+        "output_tokens": 1180,
+        "cache_read_input_tokens": 289753,
+        "cache_creation_input_tokens": 15313,
+        "total_cost_usd": 0.19933990000000001,
+        "duration_ms": 33833,
+        "is_error": false,
+        "subtype": "success"
+      },
+      "empty_patch": false,
+      "seed_hits": [
+        "python-regex-use-anchors-az-for-strict-validation",
+        "python-regex-validators-use-string-anchors-not-line-anchors",
+        "ASCIIUsernameValidator and UnicodeUsernameValidator use regex for validation (preference)",
+        "Use \\A and \\Z anchors instead of ^ (preference)",
+        "django-script-name-prefix-relative-urls"
+      ],
+      "own_skill_hits": [
+        "python-regex-use-anchors-az-for-strict-validation",
+        "python-regex-validators-use-string-anchors-not-line-anchors",
+        "ASCIIUsernameValidator and UnicodeUsernameValidator use regex for validation (preference)",
+        "Use \\A and \\Z anchors instead of ^ (preference)"
+      ],
+      "cross_skill_hits": [
+        "django-script-name-prefix-relative-urls"
+      ],
+      "status": "ok"
+    },
+    {
+      "instance_id": "django__django-10924",
+      "resolved": true,
+      "efficiency": {
+        "num_turns": 36,
+        "input_tokens": 27,
+        "output_tokens": 6404,
+        "cache_read_input_tokens": 867449,
+        "cache_creation_input_tokens": 24444,
+        "total_cost_usd": 0.5275499,
+        "duration_ms": 133334,
+        "is_error": false,
+        "subtype": "success"
+      },
+      "empty_patch": false,
+      "seed_hits": [
+        "django-field-callable-argument-pattern",
+        "django-model-design-first-class-dynamic-values",
+        "When creating a model that references local file (preference)",
+        "django-script-name-prefix-relative-urls",
+        "django-renamemodel-dbtable-noop-guard"
+      ],
+      "own_skill_hits": [
+        "django-field-callable-argument-pattern",
+        "django-model-design-first-class-dynamic-values",
+        "When creating a model that references local file (preference)"
+      ],
+      "cross_skill_hits": [
+        "django-script-name-prefix-relative-urls",
+        "django-renamemodel-dbtable-noop-guard"
+      ],
+      "status": "ok"
+    },
+    {
+      "instance_id": "django__django-11564",
+      "resolved": false,
+      "efficiency": {
+        "num_turns": 46,
+        "input_tokens": 36,
+        "output_tokens": 16593,
+        "cache_read_input_tokens": 1793758,
+        "cache_creation_input_tokens": 48739,
+        "total_cost_usd": 1.0814524000000003,
+        "duration_ms": 298698,
+        "is_error": false,
+        "subtype": "success"
+      },
+      "empty_patch": false,
+      "seed_hits": [
+        "django-script-name-prefix-relative-urls",
+        "django-field-callable-argument-pattern",
+        "django-model-design-first-class-dynamic-values"
+      ],
+      "own_skill_hits": [
+        "django-script-name-prefix-relative-urls"
+      ],
+      "cross_skill_hits": [
+        "django-field-callable-argument-pattern",
+        "django-model-design-first-class-dynamic-values"
+      ],
+      "status": "ok"
+    },
+    {
+      "instance_id": "django__django-13321",
+      "resolved": false,
+      "efficiency": {
+        "num_turns": 11,
+        "input_tokens": 13,
+        "output_tokens": 2001,
+        "cache_read_input_tokens": 353516,
+        "cache_creation_input_tokens": 18950,
+        "total_cost_usd": 0.2549938,
+        "duration_ms": 43568,
+        "is_error": false,
+        "subtype": "success"
+      },
+      "empty_patch": false,
+      "seed_hits": [
+        "ensure-all-decode-ops-inside-try-except",
+        "django-script-name-prefix-relative-urls",
+        "Use Python 3 for code examples (preference)",
+        "django-field-callable-argument-pattern",
+        "handle-memoryview-before-str-fallback-in-type-dispatch"
+      ],
+      "own_skill_hits": [
+        "ensure-all-decode-ops-inside-try-except"
+      ],
+      "cross_skill_hits": [
+        "django-script-name-prefix-relative-urls",
+        "Use Python 3 for code examples (preference)",
+        "django-field-callable-argument-pattern",
+        "handle-memoryview-before-str-fallback-in-type-dispatch"
+      ],
+      "status": "ok"
+    },
+    {
+      "instance_id": "django__django-11133",
+      "resolved": true,
+      "efficiency": {
+        "num_turns": 12,
+        "input_tokens": 14,
+        "output_tokens": 2008,
+        "cache_read_input_tokens": 358873,
+        "cache_creation_input_tokens": 16963,
+        "total_cost_usd": 0.24236290000000002,
+        "duration_ms": 51257,
+        "is_error": false,
+        "subtype": "success"
+      },
+      "empty_patch": false,
+      "seed_hits": [
+        "handle-memoryview-before-str-fallback-in-type-dispatch",
+        "django-renamemodel-dbtable-noop-guard",
+        "django-field-callable-argument-pattern",
+        "django-model-design-first-class-dynamic-values",
+        "django-script-name-prefix-relative-urls"
+      ],
+      "own_skill_hits": [
+        "handle-memoryview-before-str-fallback-in-type-dispatch"
+      ],
+      "cross_skill_hits": [
+        "django-renamemodel-dbtable-noop-guard",
+        "django-field-callable-argument-pattern",
+        "django-model-design-first-class-dynamic-values",
+        "django-script-name-prefix-relative-urls"
+      ],
+      "status": "ok"
+    },
+    {
+      "instance_id": "django__django-13660",
+      "resolved": false,
+      "efficiency": {
+        "num_turns": 15,
+        "input_tokens": 17,
+        "output_tokens": 2296,
+        "cache_read_input_tokens": 490702,
+        "cache_creation_input_tokens": 19181,
+        "total_cost_usd": 0.30064660000000004,
+        "duration_ms": 60024,
+        "is_error": false,
+        "subtype": "success"
+      },
+      "empty_patch": false,
+      "seed_hits": [
+        "exec-with-globals-dict-for-function-visibility",
+        "guard-string-index-before-access",
+        "Use Python 3 for code examples (preference)",
+        "django-model-design-first-class-dynamic-values",
+        "django-script-name-prefix-relative-urls"
+      ],
+      "own_skill_hits": [
+        "exec-with-globals-dict-for-function-visibility",
+        "Use Python 3 for code examples (preference)"
+      ],
+      "cross_skill_hits": [
+        "guard-string-index-before-access",
+        "django-model-design-first-class-dynamic-values",
+        "django-script-name-prefix-relative-urls"
+      ],
+      "status": "ok"
+    }
+  ],
+  "per_instance_resolved": [
+    {
+      "instance_id": "django__django-14999",
+      "off": 0,
+      "treat": 1
+    },
+    {
+      "instance_id": "django__django-16046",
+      "off": 1,
+      "treat": 1
+    },
+    {
+      "instance_id": "django__django-13447",
+      "off": 1,
+      "treat": 1
+    },
+    {
+      "instance_id": "django__django-15789",
+      "off": 1,
+      "treat": 1
+    },
+    {
+      "instance_id": "django__django-11099",
+      "off": 1,
+      "treat": 1
+    },
+    {
+      "instance_id": "django__django-10924",
+      "off": 1,
+      "treat": 1
+    },
+    {
+      "instance_id": "django__django-11564",
+      "off": 0,
+      "treat": 0
+    },
+    {
+      "instance_id": "django__django-13321",
+      "off": 0,
+      "treat": 0
+    },
+    {
+      "instance_id": "django__django-11133",
+      "off": 1,
+      "treat": 1
+    },
+    {
+      "instance_id": "django__django-13660",
+      "off": 0,
+      "treat": 0
+    }
+  ],
+  "scores": {
+    "X_off_resolved_rate": 0.6,
+    "Y_treat_resolved_rate": 0.7,
+    "delta_Y_minus_X": 0.09999999999999998
+  },
+  "mcnemar_treat_vs_off": {
+    "treat_resolved_off_not": 1,
+    "off_resolved_treat_not": 0,
+    "discordant_pairs": 1,
+    "p_value": 1.0
+  },
+  "efficiency_aggregate": {
+    "resolved_only": true,
+    "metrics": {
+      "num_turns": {
+        "n_pairs": 6,
+        "dropped": 4,
+        "off_mean": 18.333333333333332,
+        "treat_mean": 18.333333333333332,
+        "off_median": 18.5,
+        "treat_median": 13.5,
+        "mean_delta_treat_minus_off": 0.0,
+        "median_delta_treat_minus_off": 0.5,
+        "treat_cheaper_count": 3,
+        "off_cheaper_count": 3,
+        "sign_test_p": 1.0,
+        "bootstrap_ci_mean_delta": {
+          "ci_lo": -5.166666666666667,
+          "ci_hi": 5.0,
+          "excludes_zero": false,
+          "iterations": 10000,
+          "seed": 20260619,
+          "alpha": 0.05
+        }
+      },
+      "output_tokens": {
+        "n_pairs": 6,
+        "dropped": 4,
+        "off_mean": 3105.5,
+        "treat_mean": 3283.1666666666665,
+        "off_median": 3134.0,
+        "treat_median": 2865.5,
+        "mean_delta_treat_minus_off": 177.66666666666666,
+        "median_delta_treat_minus_off": 415.0,
+        "treat_cheaper_count": 3,
+        "off_cheaper_count": 3,
+        "sign_test_p": 1.0,
+        "bootstrap_ci_mean_delta": {
+          "ci_lo": -910.0,
+          "ci_hi": 1243.6666666666667,
+          "excludes_zero": false,
+          "iterations": 10000,
+          "seed": 20260619,
+          "alpha": 0.05
+        }
+      },
+      "total_cost_usd": {
+        "n_pairs": 6,
+        "dropped": 4,
+        "off_mean": 0.30157595,
+        "treat_mean": 0.3266736833333333,
+        "off_median": 0.3207845,
+        "treat_median": 0.28589235,
+        "mean_delta_treat_minus_off": 0.025097733333333348,
+        "median_delta_treat_minus_off": 0.06169810000000002,
+        "treat_cheaper_count": 2,
+        "off_cheaper_count": 4,
+        "sign_test_p": 0.6875,
+        "bootstrap_ci_mean_delta": {
+          "ci_lo": -0.05182346666666663,
+          "ci_hi": 0.09398719999999999,
+          "excludes_zero": false,
+          "iterations": 10000,
+          "seed": 20260619,
+          "alpha": 0.05
+        }
+      },
+      "duration_ms": {
+        "n_pairs": 6,
+        "dropped": 4,
+        "off_mean": 83403.66666666667,
+        "treat_mean": 82287.5,
+        "off_median": 78569.0,
+        "treat_median": 68501.5,
+        "mean_delta_treat_minus_off": -1116.1666666666667,
+        "median_delta_treat_minus_off": 4408.0,
+        "treat_cheaper_count": 3,
+        "off_cheaper_count": 3,
+        "sign_test_p": 1.0,
+        "bootstrap_ci_mean_delta": {
+          "ci_lo": -23161.0,
+          "ci_hi": 20252.5,
+          "excludes_zero": false,
+          "iterations": 10000,
+          "seed": 20260619,
+          "alpha": 0.05
+        }
+      }
+    }
+  },
+  "treat_seed_injected_count": 10
+}

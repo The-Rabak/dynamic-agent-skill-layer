@@ -1,0 +1,17 @@
+=== fidelity gate: quartermaster-hold-inventory (b2bdc827) — 14 skill file(s) under /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/quartermaster-hold-inventory/scope ===
+--- document tier (reported, NOT gating) ---
+  present  'Hold Inventory Agent'
+  present  'The Quartermaster'
+  absent   'supply chain conscience'
+--- operative tier (sentinels_operative, GATING) ---
+  PRESENT  'HOLD_CRITICAL_LOW'  (2 file(s))
+  PRESENT  'HOLD_LOW'  (1 file(s))
+  PRESENT  'HOLD_OK'  (1 file(s))
+  PRESENT  '500 holds'  (1 file(s))
+  PRESENT  'requires exactly 100'  (1 file(s))
+  PRESENT  'Inventory Status report'  (2 file(s))
+  PRESENT  '150 percent'  (1 file(s))
+  MISSING  '100 percent of requirement'
+FIDELITY FAIL: 1/8 OPERATIVE sentinels missing -> INSTRUMENT-FAILURE(extraction) for quartermaster-hold-inventory
+
+--- STDERR ---

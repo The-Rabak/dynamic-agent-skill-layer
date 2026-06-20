@@ -1,0 +1,104 @@
+# T15 Phase 2 — ISOLATED clean data layer for the SWE-bench compounding DiD.
+#
+# HARD INVARIANT (plan "Data-layer isolation"): the experiment runs on its OWN
+# empty data layer; the 277-skill dogfood corpus (`skill_layer_test`) is NEVER in
+# any arm's retrieval pool. This override stands up a dedicated mcp-server +
+# graph-builder that:
+#   * point DATABASE_URL at a SEPARATE database `swebench_t15` (auto-created at
+#     boot by ensure_database_exists; migrations auto-applied; starts at 0 skills),
+#   * write/read a DISTINCT Qdrant collection `skills__t15_swebench`
+#     (QDRANT_COLLECTION override — keeps the snapshot_dense CQRS write path from
+#     bleeding into the dogfood collection),
+#   * keep the REAL embedding model `qwen3-embedding:4b` (OLLAMA_EMBED_MODEL is the
+#     model NAME for the ollama call; only the COLLECTION is renamed for isolation),
+#   * resolve project scope by `.skills` marker (SKILL_PROJECT_MARKER) so the
+#     django and sympy seed scopes separate purely by the per-query repo_path.
+#
+# Shares the existing infra containers (postgres:15432 / redis / qdrant / ollama)
+# by attaching to their network — only the server + graph-builder are dedicated,
+# so there is no second ollama (no GPU contention).
+#
+# The host workspace `/tmp/t15-swebench/project` is mounted at the IDENTICAL path
+# inside the container so a host-side `repo_path` (e.g.
+# /tmp/t15-swebench/project/swebench-django) resolves to the same `.skills`-marked
+# root inside the container.
+#
+# Bring up:
+#   mkdir -p /tmp/t15-swebench/project /tmp/t15-swebench/global /tmp/t15-swebench/transcripts
+#   docker compose -f docker-compose.t15.yml -p dast15 up -d
+# Health:   curl -s http://127.0.0.1:3002/health
+# Tear down (leaves the dogfood stack untouched):
+#   docker compose -f docker-compose.t15.yml -p dast15 down
+
+networks:
+  default:
+    name: dynamic-agent-skill-layer_default
+    external: true
+
+services:
+  mcp-server-t15:
+    image: skill-layer/mcp-server:latest
+    container_name: dast15-mcp-server
+    ports:
+      - "127.0.0.1:3002:3001"
+    environment:
+      RUST_LOG: ${RUST_LOG:-info}
+      MCP_SERVER_ADDR: 0.0.0.0:3001
+      # ── ISOLATION: separate DB + separate Qdrant collection ──────────────
+      DATABASE_URL: postgres://skill_layer:skill_layer@postgres:5432/swebench_t15
+      QDRANT_COLLECTION: skills__t15_swebench
+      REDIS_URL: redis://redis:6379
+      QDRANT_URL: http://qdrant:6333
+      OLLAMA_URL: http://ollama:11434
+      EMBEDDING_PROVIDER: ollama
+      OLLAMA_EMBED_MODEL: qwen3-embedding:4b
+      RETRIEVAL_BACKEND: snapshot_dense
+      RETRIEVAL_PRIMING_MAX_SEGMENTS: 8
+      # ── dual-scope separation: each `.skills`-bearing dir is its own project
+      #    root, so repo_path alone selects django-vs-sympy seed skills. ──────
+      SKILL_PROJECT_MARKER: .skills
+      GRAPH_BUILDER_PROJECT_ROOT: /tmp/t15-swebench/project
+      CLAUDE_TRANSCRIPT_ROOT: /tmp/t15-swebench/transcripts
+      SKILL_GLOBAL_PATHS: /tmp/t15-swebench/global
+      SKILL_GLOBAL_ALLOWED_ROOTS: /tmp/t15-swebench/project,/tmp/t15-swebench/global
+      EXTRACT_SESSION_PROVIDER: ollama
+      TRANSCRIPT_INGEST_SECRET: ${TRANSCRIPT_INGEST_SECRET:-}
+    volumes:
+      # Identical-path mount so a host repo_path resolves inside the container.
+      - /tmp/t15-swebench/project:/tmp/t15-swebench/project:ro
+      - /tmp/t15-swebench/global:/tmp/t15-swebench/global
+      - /tmp/t15-swebench/transcripts:/tmp/t15-swebench/transcripts:ro
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3001/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  graph-builder-t15:
+    image: skill-layer/graph-builder:latest
+    container_name: dast15-graph-builder
+    ports:
+      - "127.0.0.1:8081:8080"
+    environment:
+      RUST_LOG: ${RUST_LOG:-info}
+      DATABASE_URL: postgres://skill_layer:skill_layer@postgres:5432/swebench_t15
+      QDRANT_COLLECTION: skills__t15_swebench
+      REDIS_URL: redis://redis:6379
+      QDRANT_URL: http://qdrant:6333
+      OLLAMA_URL: http://ollama:11434
+      EMBEDDING_PROVIDER: ollama
+      OLLAMA_EMBED_MODEL: qwen3-embedding:4b
+      SKILL_PROJECT_MARKER: .skills
+      GRAPH_BUILDER_PROJECT_ROOT: /tmp/t15-swebench/project
+      GRAPH_BUILDER_GLOBAL_ROOT: /tmp/t15-swebench/global
+      GRAPH_BUILDER_ADDR: 0.0.0.0:8080
+    volumes:
+      - /tmp/t15-swebench/project:/tmp/t15-swebench/project:ro
+      - /tmp/t15-swebench/global:/tmp/t15-swebench/global
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped

@@ -1,0 +1,71 @@
+2026-06-20 16:16:34,337 - INFO - Creating container for django__django-12915...
+2026-06-20 16:16:34,548 - INFO - Container for django__django-12915 created: dd5a6ad5c5d1aa6c218d68c3ec58ca24cd8a6877fd6431e21a1f0ca985305478
+2026-06-20 16:16:34,924 - INFO - Container for django__django-12915 started: dd5a6ad5c5d1aa6c218d68c3ec58ca24cd8a6877fd6431e21a1f0ca985305478
+2026-06-20 16:16:34,925 - INFO - Intermediate patch for django__django-12915 written to logs/run_evaluation/selfseed-django-n40-r1-django-django-12915-off/t15-off/django__django-12915/patch.diff, now applying to container...
+2026-06-20 16:16:35,057 - INFO - >>>>> Applied Patch:
+Checking patch django/contrib/staticfiles/handlers.py...
+Applied patch django/contrib/staticfiles/handlers.py cleanly.
+
+2026-06-20 16:16:35,836 - INFO - Git diff before:
+diff --git a/django/contrib/staticfiles/handlers.py b/django/contrib/staticfiles/handlers.py
+index 711d8864ad..44fef0722d 100644
+--- a/django/contrib/staticfiles/handlers.py
++++ b/django/contrib/staticfiles/handlers.py
+@@ -1,6 +1,8 @@
+ from urllib.parse import urlparse
+ from urllib.request import url2pathname
+ 
++from asgiref.sync import sync_to_async
++
+ from django.conf import settings
+ from django.contrib.staticfiles import utils
+ from django.contrib.staticfiles.views import serve
+@@ -52,6 +54,12 @@ class StaticFilesHandlerMixin:
+         except Http404 as e:
+             return response_for_exception(request, e)
+ 
++    async def get_response_async(self, request):
++        try:
++            return await sync_to_async(self.serve, thread_sensitive=False)(request)
++        except Http404 as e:
++            return await sync_to_async(response_for_exception, thread_sensitive=False)(request, e)
++
+ 
+ class StaticFilesHandler(StaticFilesHandlerMixin, WSGIHandler):
+     """
+2026-06-20 16:16:35,836 - INFO - Eval script for django__django-12915 written to logs/run_evaluation/selfseed-django-n40-r1-django-django-12915-off/t15-off/django__django-12915/eval.sh; copying to container...
+2026-06-20 16:16:45,675 - INFO - Test runtime: 9.79 seconds
+2026-06-20 16:16:45,675 - INFO - Test output for django__django-12915 written to logs/run_evaluation/selfseed-django-n40-r1-django-django-12915-off/t15-off/django__django-12915/test_output.txt
+2026-06-20 16:16:45,742 - INFO - Git diff after:
+diff --git a/django/contrib/staticfiles/handlers.py b/django/contrib/staticfiles/handlers.py
+index 711d8864ad..44fef0722d 100644
+--- a/django/contrib/staticfiles/handlers.py
++++ b/django/contrib/staticfiles/handlers.py
+@@ -1,6 +1,8 @@
+ from urllib.parse import urlparse
+ from urllib.request import url2pathname
+ 
++from asgiref.sync import sync_to_async
++
+ from django.conf import settings
+ from django.contrib.staticfiles import utils
+ from django.contrib.staticfiles.views import serve
+@@ -52,6 +54,12 @@ class StaticFilesHandlerMixin:
+         except Http404 as e:
+             return response_for_exception(request, e)
+ 
++    async def get_response_async(self, request):
++        try:
++            return await sync_to_async(self.serve, thread_sensitive=False)(request)
++        except Http404 as e:
++            return await sync_to_async(response_for_exception, thread_sensitive=False)(request, e)
++
+ 
+ class StaticFilesHandler(StaticFilesHandlerMixin, WSGIHandler):
+     """
+2026-06-20 16:16:45,742 - INFO - Grading answer for django__django-12915...
+2026-06-20 16:16:45,743 - INFO - report: {'django__django-12915': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['test_get_async_response (staticfiles_tests.test_handlers.TestASGIStaticFilesHandler)', 'test_get_async_response_not_found (staticfiles_tests.test_handlers.TestASGIStaticFilesHandler)', 'test_static_file_response (asgi.tests.ASGITest)'], 'failure': []}, 'PASS_TO_PASS': {'success': ['test_disconnect (asgi.tests.ASGITest)', 'test_file_response (asgi.tests.ASGITest)', 'test_get_asgi_application (asgi.tests.ASGITest)', 'test_get_query_string (asgi.tests.ASGITest)', 'test_headers (asgi.tests.ASGITest)', 'test_non_unicode_query_string (asgi.tests.ASGITest)', 'test_request_lifecycle_signals_dispatched_with_thread_sensitive (asgi.tests.ASGITest)', 'test_wrong_connection_type (asgi.tests.ASGITest)'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for django__django-12915: resolved: True
+2026-06-20 16:16:45,744 - INFO - Attempting to stop container sweb.eval.django__django-12915.selfseed-django-n40-r1-django-django-12915-off...
+2026-06-20 16:17:01,310 - INFO - Attempting to remove container sweb.eval.django__django-12915.selfseed-django-n40-r1-django-django-12915-off...
+2026-06-20 16:17:01,369 - INFO - Container sweb.eval.django__django-12915.selfseed-django-n40-r1-django-django-12915-off removed.

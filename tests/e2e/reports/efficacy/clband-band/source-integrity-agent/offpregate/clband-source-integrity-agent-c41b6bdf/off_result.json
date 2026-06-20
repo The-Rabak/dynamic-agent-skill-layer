@@ -1,0 +1,7 @@
+{
+  "off_outcome": "loss",
+  "verifier_reason": "LOSS: missing required top-level key 'domain_trust_score' (invented SIA JSON schema)",
+  "solve_exit": 0,
+  "elapsed_s": 139.7,
+  "discriminating": true
+}

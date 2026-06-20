@@ -1,0 +1,7 @@
+{
+  "off_outcome": "loss",
+  "verifier_reason": "2. **11:33** \u2014 perform wrist strap test. verify reading is within spec (typically 750 k\u03a9 \u2013 35 m\u03a9 per facility standard).\n3. if station #5 also fails: retrieve a new wrist strap from supply cage (~10\u201315 min), then re-verify before proceeding.\n4. log strap verification result, station id, and timestamp in the handler log.\n1. **12:05** \u2014 re-verify esd wrist strap at station #5 (or whichever operational station is nearest) if more than 2 hours have elapsed since last verification; otherwise proceed.\n- [ ] **11:33** esd wrist strap verified at station #5 west (pass)\nLOSS: wrist strap mentioned but missing the <1 megaohm resistance specification (invented SOP value)",
+  "solve_exit": 0,
+  "elapsed_s": 117.8,
+  "discriminating": true
+}

@@ -5,6 +5,7 @@ use domain::ExtractionError;
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use tokio::time::timeout;
+use tracing::warn;
 
 use crate::extraction::{
     http::{extraction_ollama_num_ctx, post_json},
@@ -140,6 +141,41 @@ struct OllamaEquivalencePayload {
     rationale: String,
 }
 
+/// Conservatively degrade a malformed merge-verifier JSON body into a
+/// NOT-equivalent decision instead of failing the whole maintenance pass.
+///
+/// The merge verifier is an advisory component on a background churner. When the
+/// LLM returns a transport-level success but a body that does not match the
+/// `{equivalent, rationale}` contract (the Phase-0 `missing field 'rationale'`
+/// crash), the safe, honest outcome is "could not confirm equivalence → do NOT
+/// merge" — the pair is simply skipped. The anomaly is logged loudly (so it is
+/// observable) and we return `equivalent: false`.
+///
+/// This is deliberately stricter than `#[serde(default)]` on `rationale`: a
+/// partial `{"equivalent": true}` would otherwise be TRUSTED and cause a FALSE
+/// merge. Transport/HTTP errors still propagate via `?` (real infra failures
+/// must fail loud) — only a well-formed-HTTP / malformed-JSON body degrades here.
+fn degrade_malformed_equivalence(
+    provider: &str,
+    error: &serde_json::Error,
+    raw: &str,
+) -> EquivalenceDecision {
+    warn!(
+        provider,
+        %error,
+        raw_response = %raw,
+        "merge-verifier returned a body that is not valid {{equivalent, rationale}} JSON; \
+         conservatively treating the pair as NOT equivalent (skip merge) rather than failing \
+         the maintenance pass [reason_code=merge_verifier_malformed_json_degraded]"
+    );
+    EquivalenceDecision {
+        equivalent: false,
+        rationale: format!(
+            "merge-verifier JSON unparseable ({provider}); conservatively not-equivalent: {error}"
+        ),
+    }
+}
+
 #[async_trait]
 impl LlmEquivalenceVerifier for OllamaMergeVerifier {
     async fn decide_equivalence(
@@ -168,13 +204,18 @@ impl LlmEquivalenceVerifier for OllamaMergeVerifier {
         )
         .await?;
 
-        let payload: OllamaEquivalencePayload =
-            serde_json::from_str(&raw.response).map_err(|error| {
-                ExtractionError::Unexpected(format!(
-                    "ollama merge-verifier response was not valid JSON \
-                     {{equivalent, rationale}}: {error}"
-                ))
-            })?;
+        let payload: OllamaEquivalencePayload = match serde_json::from_str(&raw.response) {
+            Ok(payload) => payload,
+            // Degrade-don't-drop: a malformed body skips this pair (not-equivalent)
+            // instead of crashing the worker (Phase-0 `missing field 'rationale'`).
+            Err(error) => {
+                return Ok(degrade_malformed_equivalence(
+                    "ollama",
+                    &error,
+                    &raw.response,
+                ));
+            }
+        };
 
         Ok(EquivalenceDecision {
             equivalent: payload.equivalent,
@@ -446,13 +487,17 @@ impl LlmEquivalenceVerifier for TextLlmEquivalenceVerifier {
         let prompt = build_equivalence_prompt(left_text, right_text);
         let raw = self.llm.generate_json(prompt).await?;
 
-        let payload: OllamaEquivalencePayload = serde_json::from_str(&raw).map_err(|error| {
-            ExtractionError::Unexpected(format!(
-                "{} merge-verifier response was not valid JSON {{equivalent, rationale}}: \
-                     {error}; raw={raw}",
-                self.llm.provider_label()
-            ))
-        })?;
+        let payload: OllamaEquivalencePayload = match serde_json::from_str(&raw) {
+            Ok(payload) => payload,
+            // Degrade-don't-drop (same contract as the ollama path above).
+            Err(error) => {
+                return Ok(degrade_malformed_equivalence(
+                    self.llm.provider_label(),
+                    &error,
+                    &raw,
+                ));
+            }
+        };
 
         Ok(EquivalenceDecision {
             equivalent: payload.equivalent,
@@ -568,5 +613,32 @@ mod tests {
         assert!(prompt.contains("skill beta content"));
         assert!(prompt.contains("equivalent"));
         assert!(prompt.contains("rationale"));
+    }
+
+    // E3 (T15 Phase 2): a malformed merge-verifier body (the Phase-0
+    // `missing field 'rationale'` crash) must DEGRADE to a conservative
+    // not-equivalent decision, never propagate an error that fails the worker.
+    #[test]
+    fn malformed_json_degrades_to_not_equivalent() {
+        // A real serde miss: `equivalent` present, `rationale` absent.
+        let error = serde_json::from_str::<OllamaEquivalencePayload>(r#"{"equivalent": true}"#)
+            .expect_err("missing rationale must be a serde error");
+        let decision = degrade_malformed_equivalence("ollama", &error, r#"{"equivalent": true}"#);
+        // Conservative: a partial `{"equivalent": true}` is NOT trusted into a merge.
+        assert!(
+            !decision.equivalent,
+            "malformed body must degrade to NOT equivalent (no false merge)"
+        );
+        assert!(decision.rationale.contains("unparseable"));
+    }
+
+    #[test]
+    fn wellformed_json_still_parses_normally() {
+        // The happy path is untouched by the degrade seam.
+        let payload: OllamaEquivalencePayload =
+            serde_json::from_str(r#"{"equivalent": true, "rationale": "same idea"}"#)
+                .expect("well-formed body parses");
+        assert!(payload.equivalent);
+        assert_eq!(payload.rationale, "same idea");
     }
 }

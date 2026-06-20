@@ -1,0 +1,23 @@
+---
+name: Treat safety as the highest priority when advising (preference)
+description: 'Standing user preference: Treat safety as the highest priority when advising on the installation, use, or repair of electrical equipment.'
+tags:
+- preference
+- convention
+origin: session_extraction
+source_session_id: clband-teach-drywave-3000-manual
+source_provider: claude-code
+created_at: 2026-06-12T22:45:47.608509148+00:00
+warning_at: 2026-07-12T22:45:47.608509148+00:00
+expires_at: 2026-09-10T22:45:47.608509148+00:00
+generality: uncertain
+generality_rationale: Detected as a standing user directive; generality inferred from scope signals.
+---
+
+# Treat safety as the highest priority when advising (preference)
+
+Standing user preference: Treat safety as the highest priority when advising on the installation, use, or repair of electrical equipment.
+
+## Conventions
+- Treat safety as the highest priority when advising on the installation, use, or repair of electrical equipment.
+

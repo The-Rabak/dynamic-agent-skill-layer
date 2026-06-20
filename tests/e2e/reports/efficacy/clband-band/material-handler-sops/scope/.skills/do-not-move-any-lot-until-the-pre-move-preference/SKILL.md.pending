@@ -1,0 +1,23 @@
+---
+name: Do not move any lot until the pre-move (preference)
+description: 'Standing user preference: Do not move any lot until the pre-move location update transaction confirms.'
+tags:
+- preference
+- convention
+origin: session_extraction
+source_session_id: clband-teach-material-handler-sops
+source_provider: claude-code
+created_at: 2026-06-12T21:34:12.098644719+00:00
+warning_at: 2026-07-12T21:34:12.098644719+00:00
+expires_at: 2026-09-10T21:34:12.098644719+00:00
+generality: uncertain
+generality_rationale: Detected as a standing user directive; generality inferred from scope signals.
+---
+
+# Do not move any lot until the pre-move (preference)
+
+Standing user preference: Do not move any lot until the pre-move location update transaction confirms.
+
+## Conventions
+- Do not move any lot until the pre-move location update transaction confirms.
+

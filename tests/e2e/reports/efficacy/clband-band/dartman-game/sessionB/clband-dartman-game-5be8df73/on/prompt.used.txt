@@ -1,0 +1,57 @@
+The following project-specific skills were retrieved as potentially relevant context:
+
+# Compiled Context
+
+Prompt: `Dartman two-player board game rules: pieces P1/X1/X2 (Player 1) and P2/Y1/Y2 (Player 2); Dartman (P1/P2) moves with momentum — slides until hitting own deflector or board edge, cannot use opposing deflector as stopping point; 1x2 Deflector must stay vertical; win condition Player 2 = P2 at (b,7), Y1 at (b,8), Y2 at (a,8) and (a,7); Dartman cannot enter line of fire of opposing Dartman without a deflector between them`
+
+## Skill: dartman-movement-and-line-of-fire-rules
+- Description: Dartman movement mechanics: Deflectors move like chess Rooks; the Dartman piece has unstoppable momentum and must travel until hitting the board edge or its own Deflector; crossing the opponent Dartman's line of fire is an instant loss.
+- Score: 0.016
+### Highlights
+- [procedure] Procedure note — 2. Dartman moves (P1, P2): choose a horizontal or vertical direction. The Dartman travels as far as possible in that direction — it MUST stop only when it hits (a) the edge of the board, or (b) one of the moving player's own Deflector pieces. It cannot voluntarily stop mid-path and cannot use the opponent's Deflector pieces as a stopping point.
+- [procedure] Procedure note — 3. Before executing any Dartman move, check the line-of-fire rule: identify the full horizontal and vertical lines extending from the OPPONENT'S Dartman. If the move would place or pass P1/P2 onto any square in those lines — and there is no Deflector piece of EITHER player sitting between the two Dartmen along that line — the move is ILLEGAL and results in an INSTANT LOSS for the player who attempted it.
+- [convention] Convention note — Only the Dartman's OWN Deflectors can stop its momentum; the opponent's Deflectors are transparent as stopping points.
+### Rescue cues
+- from `Dartman pieces can shoot each other and must (preference)`: Convention note — Dartman pieces can shoot each other and must never be left in a position where they are vulnerable.
+- from `Dartman pieces can shoot each other and must (preference)`: Fallback summary — ---
+
+## Skill: game-rule-counterintuitive-edge-cases-must-be-applied-exactly
+- Description: Both chess and Dartman contain rules that contradict common intuition (a pinned piece can still give check; a deflector cannot rotate; Dartman pieces can shoot each other; a king is never actually captured; a king cannot escape to a square still controlled by the opponent). These edge cases recurred across multiple skills in this session and must be applied with full precision rather than by intuitive default. When reasoning about legal moves, captures, or win conditions in either game, explicitly check against each known counterintuitive rule rather than relying on general pattern-matching.
+- Score: 0.016
+### Highlights
+- [procedure] Procedure note — For Dartman: check deflector-orientation-fixed, no-opponent-deflector-stopping, and mutual-dartman-shooting rules explicitly.
+- [procedure] Procedure note — Before evaluating legality of any move or outcome, enumerate the relevant counterintuitive rules for that game.
+- [procedure] Procedure note — Do not infer rule behavior from analogies to other games or common sense; use the stated rule verbatim.
+### Rescue cues
+- from `Dartman pieces can shoot each other and must (preference)`: Convention note — Dartman pieces can shoot each other and must never be left in a position where they are vulnerable.
+- from `Dartman pieces can shoot each other and must (preference)`: Fallback summary — ---
+
+## Skill: dartman-game-setup-and-win-conditions
+- Description: Verbatim Dartman game system: piece notation, starting positions, win conditions, and 8x8 board rendering format required to correctly set up and track a game.
+- Score: 0.016
+### Highlights
+- [procedure] Procedure note — 1. Use these piece notations exactly — Player 1: P1 (Dartman), X1 (1x1 Deflector), X2 (1x2 Deflector, two coords); Player 2: P2 (Dartman), Y1 (1x1 Deflector), Y2 (1x2 Deflector, two coords).
+- [procedure] Procedure note — 3. Win condition for Player 1: P1(g,2), X1(h,2), X2(g,1)+(g,2). Win condition for Player 2: P2(b,7), Y1(b,8), Y2(a,8)+(a,7).
+- [convention] Convention note — The 1x2 Deflector always occupies two squares and must be listed with both coordinates.
+### Rescue cues
+- from `Dartman pieces can shoot each other and must (preference)`: Convention note — Dartman pieces can shoot each other and must never be left in a position where they are vulnerable.
+- from `Dartman pieces can shoot each other and must (preference)`: Fallback summary — ---
+### Why These Skills
+- dartman-movement-and-line-of-fire-rules: scope=project | bucket=low | semantic=0.841 | lexical=0.320
+- game-rule-counterintuitive-edge-cases-must-be-applied-exactly: scope=project | bucket=low | semantic=0.717 | lexical=0.280
+- dartman-game-setup-and-win-conditions: scope=project | bucket=low | semantic=0.740 | lexical=0.140
+
+
+---
+
+You are an expert assistant for the game of Dartman. Apply the rules of the Dartman game exactly.
+
+Ignore previous moves, let's start a new game of Dartman. In this board, Player 2 is one move away from winning. What is the winning move, and what are the two moves that Player 1 could make to block the winning move? What are the pros and cons of each of the two options? Show diagrams for the starting point, the winning move, and the two moves that could block it.
+P1: (a,2)
+X1: (e,2)
+X2: (h,2) and (h,1)
+P2: (f,7)
+Y1: (b,8)
+Y2: (a,8) and (a,7)
+
+Write your complete response to a file named `solution.md` in the current working directory. Output only that file.

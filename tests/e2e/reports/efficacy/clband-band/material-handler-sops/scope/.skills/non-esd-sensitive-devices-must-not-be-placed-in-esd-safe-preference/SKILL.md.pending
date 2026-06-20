@@ -1,0 +1,23 @@
+---
+name: Non-ESD-sensitive devices must not be placed in ESD-safe (preference)
+description: 'Standing user preference: Non-ESD-sensitive devices must not be placed in ESD-safe containers (cost-saving rule; requires knowing each device''s ESD classification before packaging).'
+tags:
+- preference
+- convention
+origin: session_extraction
+source_session_id: clband-teach-material-handler-sops
+source_provider: claude-code
+created_at: 2026-06-12T21:34:12.096896711+00:00
+warning_at: 2026-07-12T21:34:12.096896711+00:00
+expires_at: 2026-09-10T21:34:12.096896711+00:00
+generality: uncertain
+generality_rationale: Detected as a standing user directive; generality inferred from scope signals.
+---
+
+# Non-ESD-sensitive devices must not be placed in ESD-safe (preference)
+
+Standing user preference: Non-ESD-sensitive devices must not be placed in ESD-safe containers (cost-saving rule; requires knowing each device's ESD classification before packaging).
+
+## Conventions
+- Non-ESD-sensitive devices must not be placed in ESD-safe containers (cost-saving rule; requires knowing each device's ESD classification before packaging).
+

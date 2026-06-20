@@ -1,0 +1,23 @@
+---
+name: 'Optimistic planning is not tolerated: if holds run (preference)'
+description: 'Standing user preference: Optimistic planning is not tolerated: if holds run out, the week''s setting stops; reality takes precedence over convenience.'
+tags:
+- preference
+- convention
+origin: session_extraction
+source_session_id: clband-teach-quartermaster-hold-inventory
+source_provider: claude-code
+created_at: 2026-06-12T21:59:54.411791056+00:00
+warning_at: 2026-07-12T21:59:54.411791056+00:00
+expires_at: 2026-09-10T21:59:54.411791056+00:00
+generality: uncertain
+generality_rationale: Detected as a standing user directive; generality inferred from scope signals.
+---
+
+# Optimistic planning is not tolerated: if holds run (preference)
+
+Standing user preference: Optimistic planning is not tolerated: if holds run out, the week's setting stops; reality takes precedence over convenience.
+
+## Conventions
+- Optimistic planning is not tolerated: if holds run out, the week's setting stops; reality takes precedence over convenience.
+

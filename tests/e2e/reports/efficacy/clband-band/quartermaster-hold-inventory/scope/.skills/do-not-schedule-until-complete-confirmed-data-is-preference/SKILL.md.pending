@@ -1,0 +1,23 @@
+---
+name: Do not schedule until complete, confirmed data is (preference)
+description: 'Standing user preference: Do not schedule until complete, confirmed data is available — preliminary data is not sufficient.'
+tags:
+- preference
+- convention
+origin: session_extraction
+source_session_id: clband-teach-quartermaster-hold-inventory
+source_provider: claude-code
+created_at: 2026-06-12T21:59:54.413235057+00:00
+warning_at: 2026-07-12T21:59:54.413235057+00:00
+expires_at: 2026-09-10T21:59:54.413235057+00:00
+generality: general
+generality_rationale: Detected as a standing user directive; generality inferred from scope signals.
+---
+
+# Do not schedule until complete, confirmed data is (preference)
+
+Standing user preference: Do not schedule until complete, confirmed data is available — preliminary data is not sufficient.
+
+## Conventions
+- Do not schedule until complete, confirmed data is available — preliminary data is not sufficient.
+

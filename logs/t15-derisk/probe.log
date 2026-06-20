@@ -1,0 +1,38 @@
+=== T15 SWE-bench DiD runner (t15-derisk-probe) ===
+server=http://127.0.0.1:3002  arms=['off', 'treat']  N_test=5  model=sonnet
+TREAT scope=/tmp/t15-swebench/project/swebench-django  CTRL scope=/tmp/t15-swebench/project/swebench-sympy
+NOTE: dry/smoke run — 5 TEST instance(s); proves the chain, NOT the pre-registered DiD verdict (N locked at Phase 3).
+
+── TEST instance django__django-15789 ──
+   [verify] swebench oracle: django__django-15789 run_id=t15-derisk-probe-django-django-15789-off
+  [OFF  ] resolved=True patch_bytes=931 seed_hits=[]
+   [verify] swebench oracle: django__django-15789 run_id=t15-derisk-probe-django-django-15789-treat
+  [TREAT] resolved=True patch_bytes=931 seed_hits=['assert-migration-noop-with-assertnumqueries-zero']
+
+── TEST instance django__django-11099 ──
+   [verify] swebench oracle: django__django-11099 run_id=t15-derisk-probe-django-django-11099-off
+  [OFF  ] resolved=True patch_bytes=901 seed_hits=[]
+   [verify] swebench oracle: django__django-11099 run_id=t15-derisk-probe-django-django-11099-treat
+  [TREAT] resolved=True patch_bytes=901 seed_hits=['guard-empty-string-before-index-access-python', 'django-migration-rename-noop-guard']
+
+── TEST instance django__django-10924 ──
+   [verify] swebench oracle: django__django-10924 run_id=t15-derisk-probe-django-django-10924-off
+  [OFF  ] resolved=True patch_bytes=1241 seed_hits=[]
+   [verify] swebench oracle: django__django-10924 run_id=t15-derisk-probe-django-django-10924-treat
+  [TREAT] resolved=True patch_bytes=135577 seed_hits=['django-migration-rename-noop-guard', 'assert-migration-noop-with-assertnumqueries-zero']
+
+── TEST instance django__django-11564 ──
+   [verify] swebench oracle: django__django-11564 run_id=t15-derisk-probe-django-django-11564-off
+  [OFF  ] resolved=False patch_bytes=1018 seed_hits=[]
+   [verify] swebench oracle: django__django-11564 run_id=t15-derisk-probe-django-django-11564-treat
+  [TREAT] resolved=False patch_bytes=1214 seed_hits=[]
+
+── TEST instance django__django-13321 ──
+   [verify] swebench oracle: django__django-13321 run_id=t15-derisk-probe-django-django-13321-off
+  [OFF  ] resolved=False patch_bytes=720 seed_hits=[]
+   [verify] swebench oracle: django__django-13321 run_id=t15-derisk-probe-django-django-13321-treat
+  [TREAT] resolved=False patch_bytes=720 seed_hits=['guard-empty-string-before-index-access-python', 'assert-migration-noop-with-assertnumqueries-zero', 'django-migration-rename-noop-guard']
+
+[report] /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/swebench/did_t15-derisk-probe.json
+VERDICT: (DiD not computed — need all 3 arms off/ctrl/treat)
+=== PROBE RUNNER EXITED rc=0 05:53:40 ===

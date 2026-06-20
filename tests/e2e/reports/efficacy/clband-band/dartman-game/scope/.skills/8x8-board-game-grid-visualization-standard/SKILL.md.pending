@@ -1,0 +1,49 @@
+---
+name: 8x8-board-game-grid-visualization-standard
+description: Any 8×8 board game (whether chess or Dartman) should be rendered as an 8×8 markdown grid where each cell contains a period (.) for an empty square or the appropriate piece symbol for an occupied square. This convention recurs across both game systems in this session and is the expected default display format.
+tags:
+- board-game
+- rendering
+- markdown
+- visualization
+type: best_practice
+origin: session_extraction
+source_session_id: clband-teach-dartman-game
+source_provider: claude-code
+created_at: 2026-06-12T22:33:38.142090691+00:00
+warning_at: 2026-07-12T22:33:38.142090691+00:00
+expires_at: 2026-09-10T22:33:38.142090691+00:00
+generality: project
+generality_rationale: Spans two distinct game systems (chess and Dartman) within this session, establishing it as a cross-game convention rather than a single-game rule.
+use_when:
+- Displaying any chess position or move sequence
+- Displaying any Dartman board state or move
+- Any 8×8 grid-based game where a snapshot is requested
+avoid_when:
+- Non-8×8 board sizes (would need a different grid dimension)
+- Pure move-list output without positional display is requested
+invariants:
+- Grid is always exactly 8×8
+- Empty squares are always '.' — never a space, dash, or blank
+produces:
+- 8×8 markdown grid snapshot of the board state
+evidence:
+- dartman-game-setup-and-win-conditions (skill 1) — 8×8 board rendering format for Dartman
+- dartman-movement-and-line-of-fire-rules (skill 2) — board state displayed on 8×8 grid
+- When displaying chess games given in algebraic notation (skill 3) — chess moves exported as 8×8 markdown grid with '.' for empty cells
+---
+
+# 8x8-board-game-grid-visualization-standard
+
+Any 8×8 board game (whether chess or Dartman) should be rendered as an 8×8 markdown grid where each cell contains a period (.) for an empty square or the appropriate piece symbol for an occupied square. This convention recurs across both game systems in this session and is the expected default display format.
+
+## Procedures
+- Produce a grid of exactly 8 rows × 8 columns.
+- Fill empty squares with '.' (period).
+- Fill occupied squares with the piece's designated symbol.
+- Emit one grid per move/state being shown, not a single summary.
+
+## Conventions
+- Row order should reflect the board's natural orientation (rank 8 at top for chess; board top at top for Dartman).
+- Use consistent spacing so columns align.
+

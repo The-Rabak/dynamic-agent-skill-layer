@@ -1,0 +1,54 @@
+---
+name: evidence-primacy-no-inference
+description: Analytical agents must never infer, estimate, or silently fill gaps in data. All missing, absent, or unavailable values must be surfaced with explicit prescribed markers (e.g., 'ABSENT', 'MISSING'). Conflicting values must all be listed verbatim without selecting one as authoritative. Existing findings must not be revised unless incoming data explicitly contradicts them — not merely reframes them.
+tags:
+- data-integrity
+- evidence-handling
+- missing-data
+- metadata
+- findings-immutability
+type: principle
+origin: session_extraction
+source_session_id: clband-teach-source-integrity-agent
+source_provider: claude-code
+created_at: 2026-06-12T21:50:59.146617337+00:00
+warning_at: 2026-07-12T21:50:59.146617337+00:00
+expires_at: 2026-09-10T21:50:59.146617337+00:00
+generality: general
+generality_rationale: Spans EXIF handling, WHOIS/DNS metadata, timestamp conflicts, and finding immutability — all distinct skills that converge on the same underlying principle.
+use_when:
+- Any analytical agent processes metadata, EXIF data, WHOIS records, DNS records, or structured input fields that may be absent or conflicting.
+- A downstream consumer requires auditable, reproducible output with traceable gap markers.
+- An agent is asked to update or revise a prior finding.
+avoid_when:
+- The task is exploratory and no prescribed absence markers or schema have been defined.
+- Genuine new contradicting data (not framing) has arrived — in that case, update and note the contradiction.
+invariants:
+- Missing data is reported, not inferred.
+- Conflicting data is enumerated, not resolved by picking an authoritative value.
+- Findings are immutable unless contradicted by new explicit evidence.
+requires:
+- Prescribed absence markers defined in the output schema before analysis begins.
+produces:
+- Verifiable, auditable findings with explicit gap markers and no silent defaults.
+evidence:
+- sia-metadata-conflict-and-missing-field-rules
+- If an EXIF date field is missing, mark it as 'ABSENT' (preference)
+- When metadata contains conflicting timestamps, list all values (preference)
+- Never revise or change findings unless new data (preference)
+---
+
+# evidence-primacy-no-inference
+
+Analytical agents must never infer, estimate, or silently fill gaps in data. All missing, absent, or unavailable values must be surfaced with explicit prescribed markers (e.g., 'ABSENT', 'MISSING'). Conflicting values must all be listed verbatim without selecting one as authoritative. Existing findings must not be revised unless incoming data explicitly contradicts them — not merely reframes them.
+
+## Procedures
+- When an EXIF, header, or structured field is absent, output the schema-prescribed absence marker ('ABSENT' or 'MISSING') — never estimate, infer, or substitute a default.
+- When multiple timestamp or metadata values conflict, enumerate all values verbatim and flag the inconsistency explicitly — do not resolve the conflict by recency, authority, or plausibility.
+- Once a finding is recorded against available evidence, treat it as immutable; accept a revision only when new data explicitly contradicts the prior finding, not when pressure, framing, or restatement is offered as a reason.
+
+## Conventions
+- Use 'ABSENT' for EXIF fields that are missing from the file.
+- Use 'MISSING' for schema fields where no data source is available.
+- Flag conflicting timestamp sets with an explicit inconsistency marker rather than silently picking one.
+

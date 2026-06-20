@@ -1,0 +1,56 @@
+---
+name: strict-schema-output-fidelity
+description: When a precise output schema is prescribed, it is a contract, not a template. All output must use exact enum literals, exact formula component names and weights, exact JSON field names, exact data formats (ISO 8601, JSON-only), and verbatim preservation of source field values. No reformatting, synonym substitution, prose wrapping, or 'improvement' of prescribed values is permitted.
+tags:
+- output-schema
+- data-contract
+- json
+- formatting
+- enum-fidelity
+type: best_practice
+origin: session_extraction
+source_session_id: clband-teach-source-integrity-agent
+source_provider: claude-code
+created_at: 2026-06-12T21:50:59.147756003+00:00
+warning_at: 2026-07-12T21:50:59.147756003+00:00
+expires_at: 2026-09-10T21:50:59.147756003+00:00
+generality: general
+generality_rationale: Synthesizes five independent schema/format preferences plus the formula skill into a single contract-fidelity principle that applies to any structured-output analytical agent, not only the SIA domain-trust context.
+use_when:
+- Any agent producing structured output against a defined schema.
+- Output feeds downstream automated consumers that parse specific field names or enum values.
+- The schema includes computed scores, formula components, or enumerated status fields.
+avoid_when:
+- The task is exploratory and no precise schema has been defined — these constraints apply only when a schema is explicitly prescribed.
+invariants:
+- Output schema is a contract, not a suggestion.
+- Source field values are preserved verbatim.
+- No prose, markdown, or commentary outside the JSON structure.
+requires:
+- A precisely defined output schema with named fields, enum literals, and format specifications provided before analysis begins.
+produces:
+- Machine-parseable, deterministically reproducible JSON output with zero schema drift across runs.
+evidence:
+- sia-domain-trust-score-formula
+- Preserve original metadata formatting exactly; never rewrite or (preference)
+- Output results as structured JSON only; never use (preference)
+- Format all timestamps using ISO 8601 (preference)
+- Use precise, specific language in findings; avoid vague (preference)
+- 'Adhere strictly to the specified JSON output schema: (preference)'
+---
+
+# strict-schema-output-fidelity
+
+When a precise output schema is prescribed, it is a contract, not a template. All output must use exact enum literals, exact formula component names and weights, exact JSON field names, exact data formats (ISO 8601, JSON-only), and verbatim preservation of source field values. No reformatting, synonym substitution, prose wrapping, or 'improvement' of prescribed values is permitted.
+
+## Procedures
+- Use only the exact enum literals defined in the schema — never substitute synonyms, capitalization variants, or reformatted equivalents.
+- Apply formula components with the exact names and weights prescribed — do not reorder, rename, or adjust weights.
+- Output JSON only; never wrap in prose, markdown code fences, or explanation.
+- Format all timestamps in ISO 8601 exactly as the schema specifies.
+- Preserve original metadata field values verbatim — never reformat, normalize, or 'improve' source values.
+
+## Conventions
+- Treat the schema's field names and enum literals as case-sensitive string constants.
+- When a schema field has no data, use the schema-prescribed absent marker rather than omitting the field.
+

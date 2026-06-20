@@ -1,0 +1,23 @@
+---
+name: Do not recommend QUIET mode as the primary (preference)
+description: 'Standing user preference: Do not recommend QUIET mode as the primary setting in high-humidity environments, as its extraction rate is reduced.'
+tags:
+- preference
+- convention
+origin: session_extraction
+source_session_id: clband-teach-drywave-3000-manual
+source_provider: claude-code
+created_at: 2026-06-12T22:45:47.610909993+00:00
+warning_at: 2026-07-12T22:45:47.610909993+00:00
+expires_at: 2026-09-10T22:45:47.610909993+00:00
+generality: uncertain
+generality_rationale: Detected as a standing user directive; generality inferred from scope signals.
+---
+
+# Do not recommend QUIET mode as the primary (preference)
+
+Standing user preference: Do not recommend QUIET mode as the primary setting in high-humidity environments, as its extraction rate is reduced.
+
+## Conventions
+- Do not recommend QUIET mode as the primary setting in high-humidity environments, as its extraction rate is reduced.
+

@@ -1,0 +1,2618 @@
+{
+  "round1": {
+    "django__django-16873": {
+      "instance_id": "django__django-16873",
+      "resolved": true,
+      "efficiency": {
+        "num_turns": 20,
+        "input_tokens": 22,
+        "output_tokens": 4149,
+        "cache_read_input_tokens": 606512,
+        "cache_creation_input_tokens": 18326,
+        "total_cost_usd": 0.3555916,
+        "duration_ms": 85169,
+        "is_error": false,
+        "subtype": "success"
+      },
+      "transcript": "/home/rabak/.claude/projects/-tmp-t15-swebench-solve-django--django-16873--off/c14add36-0c07-449c-881b-3f531810f5a8.jsonl",
+      "empty_patch": false
+    },
+    "django__django-14997": {
+      "instance_id": "django__django-14997",
+      "resolved": true,
+      "efficiency": {
+        "num_turns": 37,
+        "input_tokens": 30,
+        "output_tokens": 35005,
+        "cache_read_input_tokens": 1725984,
+        "cache_creation_input_tokens": 49123,
+        "total_cost_usd": 1.3403162,
+        "duration_ms": 558866,
+        "is_error": false,
+        "subtype": "success"
+      },
+      "transcript": "/home/rabak/.claude/projects/-tmp-t15-swebench-solve-django--django-14997--off/39299cde-61e3-443f-8eaa-5421cb4de72a.jsonl",
+      "empty_patch": false
+    },
+    "django__django-15061": {
+      "instance_id": "django__django-15061",
+      "resolved": true,
+      "efficiency": {
+        "num_turns": 17,
+        "input_tokens": 19,
+        "output_tokens": 3177,
+        "cache_read_input_tokens": 497633,
+        "cache_creation_input_tokens": 15719,
+        "total_cost_usd": 0.29208189999999995,
+        "duration_ms": 86053,
+        "is_error": false,
+        "subtype": "success"
+      },
+      "transcript": "/home/rabak/.claude/projects/-tmp-t15-swebench-solve-django--django-15061--off/03a9186c-7917-4a8e-a0c7-858ac7a257ab.jsonl",
+      "empty_patch": false
+    },
+    "django__django-15498": {
+      "instance_id": "django__django-15498",
+      "resolved": true,
+      "efficiency": {
+        "num_turns": 39,
+        "input_tokens": 31,
+        "output_tokens": 8795,
+        "cache_read_input_tokens": 1118355,
+        "cache_creation_input_tokens": 30983,
+        "total_cost_usd": 0.6541795,
+        "duration_ms": 188089,
+        "is_error": false,
+        "subtype": "success"
+      },
+      "transcript": "/home/rabak/.claude/projects/-tmp-t15-swebench-solve-django--django-15498--off/57a9512e-a31c-4e29-bdca-f540e9c9b446.jsonl",
+      "empty_patch": false
+    },
+    "django__django-15738": {
+      "instance_id": "django__django-15738",
+      "resolved": false,
+      "efficiency": {
+        "num_turns": 41,
+        "input_tokens": 42,
+        "output_tokens": 16985,
+        "cache_read_input_tokens": 1605508,
+        "cache_creation_input_tokens": 33275,
+        "total_cost_usd": 0.9374804000000001,
+        "duration_ms": 327686,
+        "is_error": true,
+        "subtype": "error_max_turns",
+        "api_error_status": null,
+        "terminal_reason": "max_turns",
+        "stop_reason": "tool_use"
+      },
+      "transcript": "/home/rabak/.claude/projects/-tmp-t15-swebench-solve-django--django-15738--off/f740dfe3-6e55-4426-a4d3-7ff51f8b0e12.jsonl",
+      "empty_patch": true
+    },
+    "django__django-15252": {
+      "instance_id": "django__django-15252",
+      "resolved": false,
+      "efficiency": {
+        "num_turns": 41,
+        "input_tokens": 42,
+        "output_tokens": 19728,
+        "cache_read_input_tokens": 1791457,
+        "cache_creation_input_tokens": 46655,
+        "total_cost_usd": 1.1145131,
+        "duration_ms": 379752,
+        "is_error": true,
+        "subtype": "error_max_turns",
+        "api_error_status": null,
+        "terminal_reason": "max_turns",
+        "stop_reason": "tool_use"
+      },
+      "transcript": "/home/rabak/.claude/projects/-tmp-t15-swebench-solve-django--django-15252--off/00d798ef-1933-4f44-a649-ef87f869c293.jsonl",
+      "empty_patch": false
+    },
+    "django__django-15996": {
+      "instance_id": "django__django-15996",
+      "resolved": false,
+      "efficiency": {
+        "num_turns": 41,
+        "input_tokens": 42,
+        "output_tokens": 9942,
+        "cache_read_input_tokens": 1407279,
+        "cache_creation_input_tokens": 26828,
+        "total_cost_usd": 0.7332277,
+        "duration_ms": 193362,
+        "is_error": true,
+        "subtype": "error_max_turns",
+        "api_error_status": null,
+        "terminal_reason": "max_turns",
+        "stop_reason": "tool_use"
+      },
+      "transcript": "/home/rabak/.claude/projects/-tmp-t15-swebench-solve-django--django-15996--off/4f1be104-964b-484f-aba3-1ee712e5c024.jsonl",
+      "empty_patch": false
+    },
+    "django__django-14016": {
+      "instance_id": "django__django-14016",
+      "resolved": true,
+      "efficiency": {
+        "num_turns": 34,
+        "input_tokens": 33,
+        "output_tokens": 37434,
+        "cache_read_input_tokens": 1885782,
+        "cache_creation_input_tokens": 58371,
+        "total_cost_usd": 1.4784155999999997,
+        "duration_ms": 596424,
+        "is_error": false,
+        "subtype": "success",
+        "api_error_status": null,
+        "terminal_reason": "completed",
+        "stop_reason": "end_turn"
+      },
+      "transcript": "/home/rabak/.claude/projects/-tmp-t15-swebench-solve-django--django-14016--off/22de2375-6c22-4105-89d5-88ad8b47a207.jsonl",
+      "empty_patch": false
+    },
+    "django__django-15202": {
+      "instance_id": "django__django-15202",
+      "resolved": false,
+      "efficiency": {
+        "num_turns": 34,
+        "input_tokens": 35,
+        "output_tokens": 11500,
+        "cache_read_input_tokens": 1181130,
+        "cache_creation_input_tokens": 28838,
+        "total_cost_usd": 0.7008030000000001,
+        "duration_ms": 227149,
+        "is_error": false,
+        "subtype": "success",
+        "api_error_status": null,
+        "terminal_reason": "completed",
+        "stop_reason": "end_turn"
+      },
+      "transcript": "/home/rabak/.claude/projects/-tmp-t15-swebench-solve-django--django-15202--off/b35b7a5e-722d-4f36-b89f-8dee4e84abbb.jsonl",
+      "empty_patch": false
+    },
+    "django__django-14787": {
+      "instance_id": "django__django-14787",
+      "resolved": true,
+      "efficiency": {
+        "num_turns": 17,
+        "input_tokens": 19,
+        "output_tokens": 3295,
+        "cache_read_input_tokens": 525437,
+        "cache_creation_input_tokens": 18955,
+        "total_cost_usd": 0.3217071,
+        "duration_ms": 72668,
+        "is_error": false,
+        "subtype": "success",
+        "api_error_status": null,
+        "terminal_reason": "completed",
+        "stop_reason": "end_turn"
+      },
+      "transcript": "/home/rabak/.claude/projects/-tmp-t15-swebench-solve-django--django-14787--off/004e8480-fdcb-498e-9d91-a46281d5a0a3.jsonl",
+      "empty_patch": false
+    },
+    "django__django-13551": {
+      "instance_id": "django__django-13551",
+      "resolved": true,
+      "efficiency": {
+        "num_turns": 29,
+        "input_tokens": 31,
+        "output_tokens": 6734,
+        "cache_read_input_tokens": 1005052,
+        "cache_creation_input_tokens": 24552,
+        "total_cost_usd": 0.5507316000000001,
+        "duration_ms": 160353,
+        "is_error": false,
+        "subtype": "success",
+        "api_error_status": null,
+        "terminal_reason": "completed",
+        "stop_reason": "end_turn"
+      },
+      "transcript": "/home/rabak/.claude/projects/-tmp-t15-swebench-solve-django--django-13551--off/6781334f-e530-4b8a-8c2b-5e5453c7cdf2.jsonl",
+      "empty_patch": false
+    },
+    "django__django-12700": {
+      "instance_id": "django__django-12700",
+      "resolved": false,
+      "efficiency": {
+        "num_turns": 14,
+        "input_tokens": 16,
+        "output_tokens": 2780,
+        "cache_read_input_tokens": 405596,
+        "cache_creation_input_tokens": 16039,
+        "total_cost_usd": 0.2609148,
+        "duration_ms": 84681,
+        "is_error": false,
+        "subtype": "success",
+        "api_error_status": null,
+        "terminal_reason": "completed",
+        "stop_reason": "end_turn"
+      },
+      "transcript": "/home/rabak/.claude/projects/-tmp-t15-swebench-solve-django--django-12700--off/b8eb621e-052a-49e1-91f6-430d223d6f97.jsonl",
+      "empty_patch": false
+    },
+    "django__django-16041": {
+      "instance_id": "django__django-16041",
+      "resolved": true,
+      "efficiency": {
+        "num_turns": 18,
+        "input_tokens": 20,
+        "output_tokens": 5194,
+        "cache_read_input_tokens": 556309,
+        "cache_creation_input_tokens": 19189,
+        "total_cost_usd": 0.3610577000000001,
+        "duration_ms": 111427,
+        "is_error": false,
+        "subtype": "success",
+        "api_error_status": null,
+        "terminal_reason": "completed",
+        "stop_reason": "end_turn"
+      },
+      "transcript": "/home/rabak/.claude/projects/-tmp-t15-swebench-solve-django--django-16041--off/5715bee1-725f-4a50-81f8-85ba4dce544d.jsonl",
+      "empty_patch": false
+    },
+    "django__django-14534": {
+      "instance_id": "django__django-14534",
+      "resolved": false,
+      "efficiency": {
+        "num_turns": 28,
+        "input_tokens": 30,
+        "output_tokens": 7567,
+        "cache_read_input_tokens": 926236,
+        "cache_creation_input_tokens": 24906,
+        "total_cost_usd": 0.5420767999999999,
+        "duration_ms": 178822,
+        "is_error": false,
+        "subtype": "success",
+        "api_error_status": null,
+        "terminal_reason": "completed",
+        "stop_reason": "end_turn"
+      },
+      "transcript": "/home/rabak/.claude/projects/-tmp-t15-swebench-solve-django--django-14534--off/18f5c6f9-320f-4188-880b-a956bd64a10c.jsonl",
+      "empty_patch": false
+    },
+    "django__django-15320": {
+      "instance_id": "django__django-15320",
+      "resolved": false,
+      "efficiency": {
+        "num_turns": 32,
+        "input_tokens": 33,
+        "output_tokens": 5705,
+        "cache_read_input_tokens": 1021455,
+        "cache_creation_input_tokens": 22057,
+        "total_cost_usd": 0.5254354999999998,
+        "duration_ms": 145021,
+        "is_error": false,
+        "subtype": "success",
+        "api_error_status": null,
+        "terminal_reason": "completed",
+        "stop_reason": "end_turn"
+      },
+      "transcript": "/home/rabak/.claude/projects/-tmp-t15-swebench-solve-django--django-15320--off/0ffdefe1-630c-4cd0-8935-1d9be9024d35.jsonl",
+      "empty_patch": false
+    },
+    "django__django-11620": {
+      "instance_id": "django__django-11620",
+      "resolved": true,
+      "efficiency": {
+        "num_turns": 41,
+        "input_tokens": 42,
+        "output_tokens": 15795,
+        "cache_read_input_tokens": 1700088,
+        "cache_creation_input_tokens": 39645,
+        "total_cost_usd": 0.9858134000000002,
+        "duration_ms": 300875,
+        "is_error": true,
+        "subtype": "error_max_turns",
+        "api_error_status": null,
+        "terminal_reason": "max_turns",
+        "stop_reason": "tool_use"
+      },
+      "transcript": "/home/rabak/.claude/projects/-tmp-t15-swebench-solve-django--django-11620--off/9bbcc2e3-7365-424f-a1bd-b391ab23f162.jsonl",
+      "empty_patch": false
+    },
+    "django__django-11630": {
+      "instance_id": "django__django-11630",
+      "resolved": false,
+      "efficiency": {
+        "num_turns": 34,
+        "input_tokens": 36,
+        "output_tokens": 11607,
+        "cache_read_input_tokens": 1313181,
+        "cache_creation_input_tokens": 33233,
+        "total_cost_usd": 0.7683913000000001,
+        "duration_ms": 239552,
+        "is_error": false,
+        "subtype": "success",
+        "api_error_status": null,
+        "terminal_reason": "completed",
+        "stop_reason": "end_turn"
+      },
+      "transcript": "/home/rabak/.claude/projects/-tmp-t15-swebench-solve-django--django-11630--off/e88f70c0-da79-4864-823e-2c95785704c2.jsonl",
+      "empty_patch": false
+    },
+    "django__django-14667": {
+      "instance_id": "django__django-14667",
+      "resolved": false,
+      "efficiency": {
+        "num_turns": 27,
+        "input_tokens": 29,
+        "output_tokens": 7072,
+        "cache_read_input_tokens": 899853,
+        "cache_creation_input_tokens": 23501,
+        "total_cost_usd": 0.5180869,
+        "duration_ms": 166911,
+        "is_error": false,
+        "subtype": "success",
+        "api_error_status": null,
+        "terminal_reason": "completed",
+        "stop_reason": "end_turn"
+      },
+      "transcript": "/home/rabak/.claude/projects/-tmp-t15-swebench-solve-django--django-14667--off/ad5d8e8c-ebad-4b9f-b55b-5beee742b330.jsonl",
+      "empty_patch": false
+    },
+    "django__django-14580": {
+      "instance_id": "django__django-14580",
+      "resolved": true,
+      "efficiency": {
+        "num_turns": 20,
+        "input_tokens": 21,
+        "output_tokens": 4914,
+        "cache_read_input_tokens": 651511,
+        "cache_creation_input_tokens": 22920,
+        "total_cost_usd": 0.4078653,
+        "duration_ms": 116841,
+        "is_error": false,
+        "subtype": "success",
+        "api_error_status": null,
+        "terminal_reason": "completed",
+        "stop_reason": "end_turn"
+      },
+      "transcript": "/home/rabak/.claude/projects/-tmp-t15-swebench-solve-django--django-14580--off/7678b48f-4d56-4bca-aa32-ee832fc88961.jsonl",
+      "empty_patch": false
+    },
+    "django__django-10914": {
+      "instance_id": "django__django-10914",
+      "resolved": true,
+      "efficiency": {
+        "num_turns": 25,
+        "input_tokens": 24,
+        "output_tokens": 6005,
+        "cache_read_input_tokens": 731601,
+        "cache_creation_input_tokens": 22037,
+        "total_cost_usd": 0.44278429999999996,
+        "duration_ms": 134802,
+        "is_error": false,
+        "subtype": "success",
+        "api_error_status": null,
+        "terminal_reason": "completed",
+        "stop_reason": "end_turn"
+      },
+      "transcript": "/home/rabak/.claude/projects/-tmp-t15-swebench-solve-django--django-10914--off/af0c7f7a-c62c-4e8b-8637-9c3c539c3e41.jsonl",
+      "empty_patch": false
+    },
+    "django__django-11910": {
+      "instance_id": "django__django-11910",
+      "resolved": true,
+      "efficiency": {
+        "num_turns": 41,
+        "input_tokens": 42,
+        "output_tokens": 33117,
+        "cache_read_input_tokens": 2178356,
+        "cache_creation_input_tokens": 55127,
+        "total_cost_usd": 1.4822038,
+        "duration_ms": 519250,
+        "is_error": true,
+        "subtype": "error_max_turns",
+        "api_error_status": null,
+        "terminal_reason": "max_turns",
+        "stop_reason": "tool_use"
+      },
+      "transcript": "/home/rabak/.claude/projects/-tmp-t15-swebench-solve-django--django-11910--off/d446b346-9d81-4dc9-aeb6-8afd0e81852b.jsonl",
+      "empty_patch": false
+    },
+    "django__django-16408": {
+      "instance_id": "django__django-16408",
+      "resolved": false,
+      "efficiency": {
+        "num_turns": 41,
+        "input_tokens": 42,
+        "output_tokens": 24919,
+        "cache_read_input_tokens": 1908503,
+        "cache_creation_input_tokens": 55555,
+        "total_cost_usd": 1.2807509,
+        "duration_ms": 442852,
+        "is_error": true,
+        "subtype": "error_max_turns",
+        "api_error_status": null,
+        "terminal_reason": "max_turns",
+        "stop_reason": "tool_use"
+      },
+      "transcript": "/home/rabak/.claude/projects/-tmp-t15-swebench-solve-django--django-16408--off/bea0a3ad-5e62-4e82-b9b7-4dce10ee1cb6.jsonl",
+      "empty_patch": true
+    },
+    "django__django-12983": {
+      "instance_id": "django__django-12983",
+      "resolved": true,
+      "efficiency": {
+        "num_turns": 41,
+        "input_tokens": 42,
+        "output_tokens": 9387,
+        "cache_read_input_tokens": 1387317,
+        "cache_creation_input_tokens": 25877,
+        "total_cost_usd": 0.7131740999999999,
+        "duration_ms": 206386,
+        "is_error": true,
+        "subtype": "error_max_turns",
+        "api_error_status": null,
+        "terminal_reason": "max_turns",
+        "stop_reason": "tool_use"
+      },
+      "transcript": "/home/rabak/.claude/projects/-tmp-t15-swebench-solve-django--django-12983--off/6648740c-c61e-4444-ae8e-6f7ad8d887e8.jsonl",
+      "empty_patch": false
+    },
+    "django__django-16820": {
+      "instance_id": "django__django-16820",
+      "resolved": false,
+      "efficiency": {
+        "num_turns": 41,
+        "input_tokens": 42,
+        "output_tokens": 26962,
+        "cache_read_input_tokens": 1992482,
+        "cache_creation_input_tokens": 63800,
+        "total_cost_usd": 1.3858495999999998,
+        "duration_ms": 474331,
+        "is_error": true,
+        "subtype": "error_max_turns",
+        "api_error_status": null,
+        "terminal_reason": "max_turns",
+        "stop_reason": "tool_use"
+      },
+      "transcript": "/home/rabak/.claude/projects/-tmp-t15-swebench-solve-django--django-16820--off/28bcf44a-f5ed-49b5-a45e-705994261fad.jsonl",
+      "empty_patch": true
+    },
+    "django__django-12308": {
+      "instance_id": "django__django-12308",
+      "resolved": false,
+      "efficiency": {
+        "num_turns": 32,
+        "input_tokens": 30,
+        "output_tokens": 5588,
+        "cache_read_input_tokens": 906421,
+        "cache_creation_input_tokens": 20624,
+        "total_cost_usd": 0.4803493,
+        "duration_ms": 152670,
+        "is_error": false,
+        "subtype": "success",
+        "api_error_status": null,
+        "terminal_reason": "completed",
+        "stop_reason": "end_turn"
+      },
+      "transcript": "/home/rabak/.claude/projects/-tmp-t15-swebench-solve-django--django-12308--off/9ec190ca-ae4c-42a9-ae6e-f3122b13db07.jsonl",
+      "empty_patch": false
+    },
+    "django__django-13964": {
+      "instance_id": "django__django-13964",
+      "resolved": true,
+      "efficiency": {
+        "num_turns": 41,
+        "input_tokens": 42,
+        "output_tokens": 24667,
+        "cache_read_input_tokens": 1928089,
+        "cache_creation_input_tokens": 50274,
+        "total_cost_usd": 1.2513446999999998,
+        "duration_ms": 447512,
+        "is_error": true,
+        "subtype": "error_max_turns",
+        "api_error_status": null,
+        "terminal_reason": "max_turns",
+        "stop_reason": "tool_use"
+      },
+      "transcript": "/home/rabak/.claude/projects/-tmp-t15-swebench-solve-django--django-13964--off/68aaa1d0-0ebd-4765-b773-3a544e8ec17c.jsonl",
+      "empty_patch": false
+    },
+    "django__django-14155": {
+      "instance_id": "django__django-14155",
+      "resolved": false,
+      "efficiency": {
+        "num_turns": 34,
+        "input_tokens": 35,
+        "output_tokens": 8794,
+        "cache_read_input_tokens": 1154536,
+        "cache_creation_input_tokens": 25727,
+        "total_cost_usd": 0.6335527999999999,
+        "duration_ms": 161442,
+        "is_error": false,
+        "subtype": "success",
+        "api_error_status": null,
+        "terminal_reason": "completed",
+        "stop_reason": "end_turn"
+      },
+      "transcript": "/home/rabak/.claude/projects/-tmp-t15-swebench-solve-django--django-14155--off/10294c30-1b58-48cd-855e-533ca5258a7b.jsonl",
+      "empty_patch": false
+    },
+    "django__django-12589": {
+      "instance_id": "django__django-12589",
+      "resolved": false,
+      "efficiency": {
+        "num_turns": 41,
+        "input_tokens": 42,
+        "output_tokens": 58833,
+        "cache_read_input_tokens": 2422411,
+        "cache_creation_input_tokens": 93975,
+        "total_cost_usd": 2.1748273,
+        "duration_ms": 978270,
+        "is_error": true,
+        "subtype": "error_max_turns",
+        "api_error_status": null,
+        "terminal_reason": "max_turns",
+        "stop_reason": "tool_use"
+      },
+      "transcript": "/home/rabak/.claude/projects/-tmp-t15-swebench-solve-django--django-12589--off/7caa112d-daa9-475f-80ee-83855d74ff48.jsonl",
+      "empty_patch": false
+    },
+    "django__django-16910": {
+      "instance_id": "django__django-16910",
+      "resolved": true,
+      "efficiency": {
+        "num_turns": 41,
+        "input_tokens": 42,
+        "output_tokens": 35213,
+        "cache_read_input_tokens": 2268642,
+        "cache_creation_input_tokens": 63668,
+        "total_cost_usd": 1.5921326,
+        "duration_ms": 572285,
+        "is_error": true,
+        "subtype": "error_max_turns",
+        "api_error_status": null,
+        "terminal_reason": "max_turns",
+        "stop_reason": "tool_use"
+      },
+      "transcript": "/home/rabak/.claude/projects/-tmp-t15-swebench-solve-django--django-16910--off/0d3624d2-6e00-40bc-b1b1-879b8a04e600.jsonl",
+      "empty_patch": false
+    },
+    "django__django-13933": {
+      "instance_id": "django__django-13933",
+      "resolved": true,
+      "efficiency": {
+        "num_turns": 35,
+        "input_tokens": 37,
+        "output_tokens": 6951,
+        "cache_read_input_tokens": 1196498,
+        "cache_creation_input_tokens": 24967,
+        "total_cost_usd": 0.6141253999999998,
+        "duration_ms": 178918,
+        "is_error": false,
+        "subtype": "success",
+        "api_error_status": null,
+        "terminal_reason": "completed",
+        "stop_reason": "end_turn"
+      },
+      "transcript": "/home/rabak/.claude/projects/-tmp-t15-swebench-solve-django--django-13933--off/b64cf22d-f422-4f56-8535-931d8fc16936.jsonl",
+      "empty_patch": false
+    },
+    "django__django-11999": {
+      "instance_id": "django__django-11999",
+      "resolved": true,
+      "efficiency": {
+        "num_turns": 40,
+        "input_tokens": 42,
+        "output_tokens": 7500,
+        "cache_read_input_tokens": 1424583,
+        "cache_creation_input_tokens": 25982,
+        "total_cost_usd": 0.6967649,
+        "duration_ms": 183226,
+        "is_error": false,
+        "subtype": "success",
+        "api_error_status": null,
+        "terminal_reason": "completed",
+        "stop_reason": "end_turn"
+      },
+      "transcript": "/home/rabak/.claude/projects/-tmp-t15-swebench-solve-django--django-11999--off/bca909ff-24df-4ffa-8441-e4a936213dac.jsonl",
+      "empty_patch": false
+    },
+    "django__django-11283": {
+      "instance_id": "django__django-11283",
+      "resolved": false,
+      "efficiency": {
+        "num_turns": 25,
+        "input_tokens": 23,
+        "output_tokens": 11042,
+        "cache_read_input_tokens": 769507,
+        "cache_creation_input_tokens": 29545,
+        "total_cost_usd": 0.5747861,
+        "duration_ms": 208841,
+        "is_error": false,
+        "subtype": "success",
+        "api_error_status": null,
+        "terminal_reason": "completed",
+        "stop_reason": "end_turn"
+      },
+      "transcript": "/home/rabak/.claude/projects/-tmp-t15-swebench-solve-django--django-11283--off/35e7970e-00a1-42be-935c-cca296f9210b.jsonl",
+      "empty_patch": false
+    },
+    "django__django-13710": {
+      "instance_id": "django__django-13710",
+      "resolved": true,
+      "efficiency": {
+        "num_turns": 41,
+        "input_tokens": 42,
+        "output_tokens": 15623,
+        "cache_read_input_tokens": 1452822,
+        "cache_creation_input_tokens": 32484,
+        "total_cost_usd": 0.8661196000000001,
+        "duration_ms": 260276,
+        "is_error": true,
+        "subtype": "error_max_turns",
+        "api_error_status": null,
+        "terminal_reason": "max_turns",
+        "stop_reason": "tool_use"
+      },
+      "transcript": "/home/rabak/.claude/projects/-tmp-t15-swebench-solve-django--django-13710--off/4c7e445a-9ab1-4890-b326-968f25f1032f.jsonl",
+      "empty_patch": false
+    },
+    "django__django-13315": {
+      "instance_id": "django__django-13315",
+      "resolved": true,
+      "efficiency": {
+        "num_turns": 41,
+        "input_tokens": 42,
+        "output_tokens": 8679,
+        "cache_read_input_tokens": 1400759,
+        "cache_creation_input_tokens": 26845,
+        "total_cost_usd": 0.7123697000000001,
+        "duration_ms": 184554,
+        "is_error": true,
+        "subtype": "error_max_turns",
+        "api_error_status": null,
+        "terminal_reason": "max_turns",
+        "stop_reason": "tool_use"
+      },
+      "transcript": "/home/rabak/.claude/projects/-tmp-t15-swebench-solve-django--django-13315--off/8261c0de-d325-46e5-a591-01512c216a53.jsonl",
+      "empty_patch": false
+    },
+    "django__django-14382": {
+      "instance_id": "django__django-14382",
+      "resolved": true,
+      "efficiency": {
+        "num_turns": 10,
+        "input_tokens": 12,
+        "output_tokens": 1489,
+        "cache_read_input_tokens": 272052,
+        "cache_creation_input_tokens": 12811,
+        "total_cost_usd": 0.1816796,
+        "duration_ms": 67467,
+        "is_error": false,
+        "subtype": "success",
+        "api_error_status": null,
+        "terminal_reason": "completed",
+        "stop_reason": "end_turn"
+      },
+      "transcript": "/home/rabak/.claude/projects/-tmp-t15-swebench-solve-django--django-14382--off/d8225734-bb1f-4ca4-8f63-01ed527439c2.jsonl",
+      "empty_patch": false
+    },
+    "django__django-15695": {
+      "instance_id": "django__django-15695",
+      "resolved": true,
+      "efficiency": {
+        "num_turns": 19,
+        "input_tokens": 21,
+        "output_tokens": 6600,
+        "cache_read_input_tokens": 633486,
+        "cache_creation_input_tokens": 22206,
+        "total_cost_usd": 0.4233898000000001,
+        "duration_ms": 128665,
+        "is_error": false,
+        "subtype": "success",
+        "api_error_status": null,
+        "terminal_reason": "completed",
+        "stop_reason": "end_turn"
+      },
+      "transcript": "/home/rabak/.claude/projects/-tmp-t15-swebench-solve-django--django-15695--off/dfd80b62-3d62-4cdd-ae26-d9ca33f43458.jsonl",
+      "empty_patch": false
+    },
+    "django__django-16255": {
+      "instance_id": "django__django-16255",
+      "resolved": true,
+      "efficiency": {
+        "num_turns": 8,
+        "input_tokens": 9,
+        "output_tokens": 828,
+        "cache_read_input_tokens": 187668,
+        "cache_creation_input_tokens": 12820,
+        "total_cost_usd": 0.1589712,
+        "duration_ms": 42051,
+        "is_error": false,
+        "subtype": "success",
+        "api_error_status": null,
+        "terminal_reason": "completed",
+        "stop_reason": "end_turn"
+      },
+      "transcript": "/home/rabak/.claude/projects/-tmp-t15-swebench-solve-django--django-16255--off/96452c55-13a3-4a9c-b4e5-06f5fe9657fa.jsonl",
+      "empty_patch": false
+    },
+    "django__django-11742": {
+      "instance_id": "django__django-11742",
+      "resolved": false,
+      "efficiency": {
+        "num_turns": 41,
+        "input_tokens": 41,
+        "output_tokens": 12000,
+        "cache_read_input_tokens": 1520914,
+        "cache_creation_input_tokens": 32370,
+        "total_cost_usd": 0.8313441999999996,
+        "duration_ms": 230593,
+        "is_error": false,
+        "subtype": "success",
+        "api_error_status": null,
+        "terminal_reason": "completed",
+        "stop_reason": "end_turn"
+      },
+      "transcript": "/home/rabak/.claude/projects/-tmp-t15-swebench-solve-django--django-11742--off/4cb2b947-7fdd-4822-ad70-da17b389eeaa.jsonl",
+      "empty_patch": false
+    },
+    "django__django-14238": {
+      "instance_id": "django__django-14238",
+      "resolved": true,
+      "efficiency": {
+        "num_turns": 20,
+        "input_tokens": 22,
+        "output_tokens": 3487,
+        "cache_read_input_tokens": 615253,
+        "cache_creation_input_tokens": 19517,
+        "total_cost_usd": 0.35559889999999994,
+        "duration_ms": 82114,
+        "is_error": false,
+        "subtype": "success",
+        "api_error_status": null,
+        "terminal_reason": "completed",
+        "stop_reason": "end_turn"
+      },
+      "transcript": "/home/rabak/.claude/projects/-tmp-t15-swebench-solve-django--django-14238--off/afea99c7-48cd-450e-bd60-abe17a3f0ac4.jsonl",
+      "empty_patch": false
+    },
+    "django__django-12915": {
+      "instance_id": "django__django-12915",
+      "resolved": true,
+      "efficiency": {
+        "num_turns": 32,
+        "input_tokens": 34,
+        "output_tokens": 7810,
+        "cache_read_input_tokens": 1112083,
+        "cache_creation_input_tokens": 24507,
+        "total_cost_usd": 0.5988829000000001,
+        "duration_ms": 186424,
+        "is_error": false,
+        "subtype": "success",
+        "api_error_status": null,
+        "terminal_reason": "completed",
+        "stop_reason": "end_turn"
+      },
+      "transcript": "/home/rabak/.claude/projects/-tmp-t15-swebench-solve-django--django-12915--off/394d9a15-a64c-413f-9a9a-0de841ae5072.jsonl",
+      "empty_patch": false
+    }
+  },
+  "seeding": {
+    "ingested": 40,
+    "gated_skills": [
+      {
+        "name": "Actually use ChoiceField's implementation rather than bypassing or (preference)",
+        "dir": "actually-use-choicefield-s-implementation-rather-than-bypassing-or-preference",
+        "source_session_id": "selfseed-django-n40-off-django__django-13933"
+      },
+      {
+        "name": "apply-update-wrapper-to-functools-partial",
+        "dir": "apply-update-wrapper-to-functools-partial",
+        "source_session_id": "selfseed-django-n40-off-django__django-14787"
+      },
+      {
+        "name": "Audit and remove constraint dependencies in migration files before generating a structural field-type change migration",
+        "dir": "audit-and-remove-constraint-dependencies-in-migration-files-before-generating-a-structural-field-type-change-migration",
+        "source_session_id": "selfseed-django-n40-off-django__django-15738"
+      },
+      {
+        "name": "avoid-deepcopy-on-non-pickleable-user-data",
+        "dir": "avoid-deepcopy-on-non-pickleable-user-data",
+        "source_session_id": "selfseed-django-n40-off-django__django-14016"
+      },
+      {
+        "name": "avoid-sed-for-python-regex-edits",
+        "dir": "avoid-sed-for-python-regex-edits",
+        "source_session_id": "selfseed-django-n40-off-django__django-12983"
+      },
+      {
+        "name": "bulk-update-unique-constraint-pre-dedup",
+        "dir": "bulk-update-unique-constraint-pre-dedup",
+        "source_session_id": "selfseed-django-n40-off-django__django-11283"
+      },
+      {
+        "name": "catch-urlsplit-valueerror-in-validators",
+        "dir": "catch-urlsplit-valueerror-in-validators",
+        "source_session_id": "selfseed-django-n40-off-django__django-15202"
+      },
+      {
+        "name": "code-generator-special-case-must-include-imports",
+        "dir": "code-generator-special-case-must-include-imports",
+        "source_session_id": "selfseed-django-n40-off-django__django-14580"
+      },
+      {
+        "name": "django-admin-readonly-field-display-via-prepare-value",
+        "dir": "django-admin-readonly-field-display-via-prepare-value",
+        "source_session_id": "selfseed-django-n40-off-django__django-12308"
+      },
+      {
+        "name": "django-asgi-mixin-override-get-response-async",
+        "dir": "django-asgi-mixin-override-get-response-async",
+        "source_session_id": "selfseed-django-n40-off-django__django-12915"
+      },
+      {
+        "name": "django-autodetector-fk-to-field-pk-rename-fix",
+        "dir": "django-autodetector-fk-to-field-pk-rename-fix",
+        "source_session_id": "selfseed-django-n40-off-django__django-11910"
+      },
+      {
+        "name": "django-choices-flat-vs-grouped-iteration",
+        "dir": "django-choices-flat-vs-grouped-iteration",
+        "source_session_id": "selfseed-django-n40-off-django__django-11742"
+      },
+      {
+        "name": "django-e028-false-positive-multi-db-router-fix",
+        "dir": "django-e028-false-positive-multi-db-router-fix",
+        "source_session_id": "selfseed-django-n40-off-django__django-11630"
+      },
+      {
+        "name": "django-field-system-check-addition",
+        "dir": "django-field-system-check-addition",
+        "source_session_id": "selfseed-django-n40-off-django__django-11742"
+      },
+      {
+        "name": "django-filter-autoescape-all-args-must-be-conditional",
+        "dir": "django-filter-autoescape-all-args-must-be-conditional",
+        "source_session_id": "selfseed-django-n40-off-django__django-16873"
+      },
+      {
+        "name": "django-fk-empty-string-non-auto-charfield-pk",
+        "dir": "django-fk-empty-string-non-auto-charfield-pk",
+        "source_session_id": "selfseed-django-n40-off-django__django-13964"
+      },
+      {
+        "name": "django-only-defer-chaining-early-return-guard",
+        "dir": "django-only-defer-chaining-early-return-guard",
+        "source_session_id": "selfseed-django-n40-off-django__django-14667"
+      },
+      {
+        "name": "django-orm-join-filter-distinct",
+        "dir": "django-orm-join-filter-distinct",
+        "source_session_id": "selfseed-django-n40-off-django__django-13315"
+      },
+      {
+        "name": "django-orm-only-defer-asymmetry-diagnostic",
+        "dir": "django-orm-only-defer-asymmetry-diagnostic",
+        "source_session_id": "selfseed-django-n40-off-django__django-16910"
+      },
+      {
+        "name": "django-orm-only-select-mask-reverse-relation-key-mismatch",
+        "dir": "django-orm-only-select-mask-reverse-relation-key-mismatch",
+        "source_session_id": "selfseed-django-n40-off-django__django-16910"
+      },
+      {
+        "name": "django-path-converter-http404-vs-valueerror-semantics",
+        "dir": "django-path-converter-http404-vs-valueerror-semantics",
+        "source_session_id": "selfseed-django-n40-off-django__django-11620"
+      },
+      {
+        "name": "django-rename-index-idempotent-forward-guard",
+        "dir": "django-rename-index-idempotent-forward-guard",
+        "source_session_id": "selfseed-django-n40-off-django__django-15695"
+      },
+      {
+        "name": "Django should only create tables on the first (preference)",
+        "dir": "django-should-only-create-tables-on-the-first-preference",
+        "source_session_id": "selfseed-django-n40-off-django__django-15252"
+      },
+      {
+        "name": "django-sqlite-index-expression-table-qualifier-crash",
+        "dir": "django-sqlite-index-expression-table-qualifier-crash",
+        "source_session_id": "selfseed-django-n40-off-django__django-14997"
+      },
+      {
+        "name": "django-subquery-corrupts-sql-without-subquery-flag",
+        "dir": "django-subquery-corrupts-sql-without-subquery-flag",
+        "source_session_id": "selfseed-django-n40-off-django__django-15320"
+      },
+      {
+        "name": "django-template-autoescape-never-trust-implicit-safety",
+        "dir": "django-template-autoescape-never-trust-implicit-safety",
+        "source_session_id": "selfseed-django-n40-off-django__django-16873"
+      },
+      {
+        "name": "django-validationerror-include-invalid-value",
+        "dir": "django-validationerror-include-invalid-value",
+        "source_session_id": "selfseed-django-n40-off-django__django-13933"
+      },
+      {
+        "name": "Ensure ASGIStaticFilesHandler works without raising a traceback (preference)",
+        "dir": "ensure-asgistaticfileshandler-works-without-raising-a-traceback-preference",
+        "source_session_id": "selfseed-django-n40-off-django__django-12915"
+      },
+      {
+        "name": "Ensure the directory name is a valid identifier (preference)",
+        "dir": "ensure-the-directory-name-is-a-valid-identifier-preference",
+        "source_session_id": "selfseed-django-n40-off-django__django-14382"
+      },
+      {
+        "name": "exhaustive-structural-dispatch-in-recursive-processors",
+        "dir": "exhaustive-structural-dispatch-in-recursive-processors",
+        "source_session_id": "selfseed-django-n40-off-django__django-12700"
+      },
+      {
+        "name": "explicit-value-is-source-of-truth-for-derived-defaults",
+        "dir": "explicit-value-is-source-of-truth-for-derived-defaults",
+        "source_session_id": "selfseed-django-n40-off-django__django-13710"
+      },
+      {
+        "name": "Flag or investigate unexpected behavior in autoescape or (preference)",
+        "dir": "flag-or-investigate-unexpected-behavior-in-autoescape-or-preference",
+        "source_session_id": "selfseed-django-n40-off-django__django-16873"
+      },
+      {
+        "name": "guard-setattr-with-class-dict-before-overwriting-user-methods",
+        "dir": "guard-setattr-with-class-dict-before-overwriting-user-methods",
+        "source_session_id": "selfseed-django-n40-off-django__django-11999"
+      },
+      {
+        "name": "In cleanse_setting(), handle all iterable types (not just (preference)",
+        "dir": "in-cleanse-setting-handle-all-iterable-types-not-just-preference",
+        "source_session_id": "selfseed-django-n40-off-django__django-12700"
+      },
+      {
+        "name": "include-email-in-django-password-reset-token-hash",
+        "dir": "include-email-in-django-password-reset-token-hash",
+        "source_session_id": "selfseed-django-n40-off-django__django-13551"
+      },
+      {
+        "name": "Partial functions must expose their pre-provided arguments in (preference)",
+        "dir": "partial-functions-must-expose-their-pre-provided-arguments-in-preference",
+        "source_session_id": "selfseed-django-n40-off-django__django-14155"
+      },
+      {
+        "name": "pop-conflicting-kwarg-before-dict-unpack",
+        "dir": "pop-conflicting-kwarg-before-dict-unpack",
+        "source_session_id": "selfseed-django-n40-off-django__django-16041"
+      },
+      {
+        "name": "Prefer using enums when applicable (preference)",
+        "dir": "prefer-using-enums-when-applicable-preference",
+        "source_session_id": "selfseed-django-n40-off-django__django-15996"
+      },
+      {
+        "name": "Production migration correctness lives in migration files, not database state",
+        "dir": "production-migration-correctness-lives-in-migration-files-not-database-state",
+        "source_session_id": "selfseed-django-n40-off-django__django-15738"
+      },
+      {
+        "name": "re-match-subscript-vs-group-none-exception-type",
+        "dir": "re-match-subscript-vs-group-none-exception-type",
+        "source_session_id": "selfseed-django-n40-off-django__django-15498"
+      },
+      {
+        "name": "recursive-sanitizer-must-handle-all-container-types",
+        "dir": "recursive-sanitizer-must-handle-all-container-types",
+        "source_session_id": "selfseed-django-n40-off-django__django-12700"
+      },
+      {
+        "name": "sanitize-and-validate-filesystem-inputs-before-use",
+        "dir": "sanitize-and-validate-filesystem-inputs-before-use",
+        "source_session_id": "selfseed-django-n40-off-django__django-14382"
+      },
+      {
+        "name": "save-explicit-set-flag-before-init-default-assignment",
+        "dir": "save-explicit-set-flag-before-init-default-assignment",
+        "source_session_id": "selfseed-django-n40-off-django__django-13710"
+      },
+      {
+        "name": "serialize-combined-enum-flags-with-decompose",
+        "dir": "serialize-combined-enum-flags-with-decompose",
+        "source_session_id": "selfseed-django-n40-off-django__django-15996"
+      },
+      {
+        "name": "strip-trailing-sep-before-basename",
+        "dir": "strip-trailing-sep-before-basename",
+        "source_session_id": "selfseed-django-n40-off-django__django-14382"
+      },
+      {
+        "name": "subclasscheck-use-issubclass-not-in",
+        "dir": "subclasscheck-use-issubclass-not-in",
+        "source_session_id": "selfseed-django-n40-off-django__django-14238"
+      },
+      {
+        "name": "tempfile-rename-preserves-restrictive-permissions",
+        "dir": "tempfile-rename-preserves-restrictive-permissions",
+        "source_session_id": "selfseed-django-n40-off-django__django-10914"
+      },
+      {
+        "name": "The database is in production, so previous initial (preference)",
+        "dir": "the-database-is-in-production-so-previous-initial-preference",
+        "source_session_id": "selfseed-django-n40-off-django__django-15738"
+      },
+      {
+        "name": "Treat the inability to eliminate index_together deprecation warnings (preference)",
+        "dir": "treat-the-inability-to-eliminate-index-together-deprecation-warnings-preference",
+        "source_session_id": "selfseed-django-n40-off-django__django-16820"
+      },
+      {
+        "name": "triage-preexisting-failures-before-updating-tests",
+        "dir": "triage-preexisting-failures-before-updating-tests",
+        "source_session_id": "selfseed-django-n40-off-django__django-14534"
+      },
+      {
+        "name": "unwrap-functools-partial-for-repr-and-introspection",
+        "dir": "unwrap-functools-partial-for-repr-and-introspection",
+        "source_session_id": "selfseed-django-n40-off-django__django-14155"
+      },
+      {
+        "name": "use-attrs-get-for-optional-html-id",
+        "dir": "use-attrs-get-for-optional-html-id",
+        "source_session_id": "selfseed-django-n40-off-django__django-14534"
+      },
+      {
+        "name": "use-framework-abstractions-as-designed-not-routed-around",
+        "dir": "use-framework-abstractions-as-designed-not-routed-around",
+        "source_session_id": "selfseed-django-n40-off-django__django-13933"
+      },
+      {
+        "name": "Use the Admin Inline `verbose_name` as the default (preference)",
+        "dir": "use-the-admin-inline-verbose-name-as-the-default-preference",
+        "source_session_id": "selfseed-django-n40-off-django__django-13710"
+      },
+      {
+        "name": "Use widget['attrs']['id'] as the id when rendering the (preference)",
+        "dir": "use-widget-attrs-id-as-the-id-when-rendering-the-preference",
+        "source_session_id": "selfseed-django-n40-off-django__django-14534"
+      },
+      {
+        "name": "When changing the `project_data_set` field on the `Authors` (preference)",
+        "dir": "when-changing-the-project-data-set-field-on-the-authors-preference",
+        "source_session_id": "selfseed-django-n40-off-django__django-15738"
+      }
+    ],
+    "skill_source": {
+      "Actually use ChoiceField's implementation rather than bypassing or (preference)": "django__django-13933",
+      "apply-update-wrapper-to-functools-partial": "django__django-14787",
+      "Audit and remove constraint dependencies in migration files before generating a structural field-type change migration": "django__django-15738",
+      "avoid-deepcopy-on-non-pickleable-user-data": "django__django-14016",
+      "avoid-sed-for-python-regex-edits": "django__django-12983",
+      "bulk-update-unique-constraint-pre-dedup": "django__django-11283",
+      "catch-urlsplit-valueerror-in-validators": "django__django-15202",
+      "code-generator-special-case-must-include-imports": "django__django-14580",
+      "django-admin-readonly-field-display-via-prepare-value": "django__django-12308",
+      "django-asgi-mixin-override-get-response-async": "django__django-12915",
+      "django-autodetector-fk-to-field-pk-rename-fix": "django__django-11910",
+      "django-choices-flat-vs-grouped-iteration": "django__django-11742",
+      "django-e028-false-positive-multi-db-router-fix": "django__django-11630",
+      "django-field-system-check-addition": "django__django-11742",
+      "django-filter-autoescape-all-args-must-be-conditional": "django__django-16873",
+      "django-fk-empty-string-non-auto-charfield-pk": "django__django-13964",
+      "django-only-defer-chaining-early-return-guard": "django__django-14667",
+      "django-orm-join-filter-distinct": "django__django-13315",
+      "django-orm-only-defer-asymmetry-diagnostic": "django__django-16910",
+      "django-orm-only-select-mask-reverse-relation-key-mismatch": "django__django-16910",
+      "django-path-converter-http404-vs-valueerror-semantics": "django__django-11620",
+      "django-rename-index-idempotent-forward-guard": "django__django-15695",
+      "Django should only create tables on the first (preference)": "django__django-15252",
+      "django-sqlite-index-expression-table-qualifier-crash": "django__django-14997",
+      "django-subquery-corrupts-sql-without-subquery-flag": "django__django-15320",
+      "django-template-autoescape-never-trust-implicit-safety": "django__django-16873",
+      "django-validationerror-include-invalid-value": "django__django-13933",
+      "Ensure ASGIStaticFilesHandler works without raising a traceback (preference)": "django__django-12915",
+      "Ensure the directory name is a valid identifier (preference)": "django__django-14382",
+      "exhaustive-structural-dispatch-in-recursive-processors": "django__django-12700",
+      "explicit-value-is-source-of-truth-for-derived-defaults": "django__django-13710",
+      "Flag or investigate unexpected behavior in autoescape or (preference)": "django__django-16873",
+      "guard-setattr-with-class-dict-before-overwriting-user-methods": "django__django-11999",
+      "In cleanse_setting(), handle all iterable types (not just (preference)": "django__django-12700",
+      "include-email-in-django-password-reset-token-hash": "django__django-13551",
+      "Partial functions must expose their pre-provided arguments in (preference)": "django__django-14155",
+      "pop-conflicting-kwarg-before-dict-unpack": "django__django-16041",
+      "Prefer using enums when applicable (preference)": "django__django-15996",
+      "Production migration correctness lives in migration files, not database state": "django__django-15738",
+      "re-match-subscript-vs-group-none-exception-type": "django__django-15498",
+      "recursive-sanitizer-must-handle-all-container-types": "django__django-12700",
+      "sanitize-and-validate-filesystem-inputs-before-use": "django__django-14382",
+      "save-explicit-set-flag-before-init-default-assignment": "django__django-13710",
+      "serialize-combined-enum-flags-with-decompose": "django__django-15996",
+      "strip-trailing-sep-before-basename": "django__django-14382",
+      "subclasscheck-use-issubclass-not-in": "django__django-14238",
+      "tempfile-rename-preserves-restrictive-permissions": "django__django-10914",
+      "The database is in production, so previous initial (preference)": "django__django-15738",
+      "Treat the inability to eliminate index_together deprecation warnings (preference)": "django__django-16820",
+      "triage-preexisting-failures-before-updating-tests": "django__django-14534",
+      "unwrap-functools-partial-for-repr-and-introspection": "django__django-14155",
+      "use-attrs-get-for-optional-html-id": "django__django-14534",
+      "use-framework-abstractions-as-designed-not-routed-around": "django__django-13933",
+      "Use the Admin Inline `verbose_name` as the default (preference)": "django__django-13710",
+      "Use widget['attrs']['id'] as the id when rendering the (preference)": "django__django-14534",
+      "When changing the `project_data_set` field on the `Authors` (preference)": "django__django-15738"
+    },
+    "drain_passes": 1
+  },
+  "round2": {
+    "django__django-16873": {
+      "instance_id": "django__django-16873",
+      "resolved": true,
+      "efficiency": {
+        "num_turns": 14,
+        "input_tokens": 16,
+        "output_tokens": 2207,
+        "cache_read_input_tokens": 439146,
+        "cache_creation_input_tokens": 18326,
+        "total_cost_usd": 0.27907680000000007,
+        "duration_ms": 54377,
+        "is_error": false,
+        "subtype": "success",
+        "api_error_status": null,
+        "terminal_reason": "completed",
+        "stop_reason": "end_turn"
+      },
+      "empty_patch": false,
+      "seed_hits": [
+        "django-filter-autoescape-all-args-must-be-conditional",
+        "django-template-autoescape-never-trust-implicit-safety",
+        "triage-preexisting-failures-before-updating-tests",
+        "Flag or investigate unexpected behavior in autoescape or (preference)",
+        "django-validationerror-include-invalid-value"
+      ],
+      "own_skill_hits": [
+        "django-filter-autoescape-all-args-must-be-conditional",
+        "django-template-autoescape-never-trust-implicit-safety",
+        "Flag or investigate unexpected behavior in autoescape or (preference)"
+      ],
+      "cross_skill_hits": [
+        "triage-preexisting-failures-before-updating-tests",
+        "django-validationerror-include-invalid-value"
+      ],
+      "status": "ok"
+    },
+    "django__django-14997": {
+      "instance_id": "django__django-14997",
+      "resolved": true,
+      "efficiency": {
+        "num_turns": 34,
+        "input_tokens": 26,
+        "output_tokens": 13079,
+        "cache_read_input_tokens": 1248109,
+        "cache_creation_input_tokens": 47111,
+        "total_cost_usd": 0.8600417,
+        "duration_ms": 254896,
+        "is_error": false,
+        "subtype": "success",
+        "api_error_status": null,
+        "terminal_reason": "completed",
+        "stop_reason": "end_turn"
+      },
+      "empty_patch": false,
+      "seed_hits": [
+        "django-sqlite-index-expression-table-qualifier-crash",
+        "Audit and remove constraint dependencies in migration files before generating a structural field-type change migration",
+        "bulk-update-unique-constraint-pre-dedup",
+        "django-autodetector-fk-to-field-pk-rename-fix",
+        "django-rename-index-idempotent-forward-guard"
+      ],
+      "own_skill_hits": [
+        "django-sqlite-index-expression-table-qualifier-crash"
+      ],
+      "cross_skill_hits": [
+        "Audit and remove constraint dependencies in migration files before generating a structural field-type change migration",
+        "bulk-update-unique-constraint-pre-dedup",
+        "django-autodetector-fk-to-field-pk-rename-fix",
+        "django-rename-index-idempotent-forward-guard"
+      ],
+      "status": "ok"
+    },
+    "django__django-15061": {
+      "instance_id": "django__django-15061",
+      "resolved": true,
+      "efficiency": {
+        "num_turns": 41,
+        "input_tokens": 42,
+        "output_tokens": 7840,
+        "cache_read_input_tokens": 1507891,
+        "cache_creation_input_tokens": 29457,
+        "total_cost_usd": 0.7497273,
+        "duration_ms": 187636,
+        "is_error": true,
+        "subtype": "error_max_turns",
+        "api_error_status": null,
+        "terminal_reason": "max_turns",
+        "stop_reason": "tool_use"
+      },
+      "empty_patch": false,
+      "seed_hits": [
+        "use-attrs-get-for-optional-html-id",
+        "Use widget['attrs']['id'] as the id when rendering the (preference)",
+        "django-validationerror-include-invalid-value",
+        "django-choices-flat-vs-grouped-iteration",
+        "django-admin-readonly-field-display-via-prepare-value"
+      ],
+      "own_skill_hits": [],
+      "cross_skill_hits": [
+        "use-attrs-get-for-optional-html-id",
+        "Use widget['attrs']['id'] as the id when rendering the (preference)",
+        "django-validationerror-include-invalid-value",
+        "django-choices-flat-vs-grouped-iteration",
+        "django-admin-readonly-field-display-via-prepare-value"
+      ],
+      "status": "ok"
+    },
+    "django__django-15498": {
+      "instance_id": "django__django-15498",
+      "resolved": true,
+      "efficiency": {
+        "num_turns": 23,
+        "input_tokens": 23,
+        "output_tokens": 5335,
+        "cache_read_input_tokens": 745851,
+        "cache_creation_input_tokens": 24234,
+        "total_cost_usd": 0.4519533,
+        "duration_ms": 109962,
+        "is_error": false,
+        "subtype": "success",
+        "api_error_status": null,
+        "terminal_reason": "completed",
+        "stop_reason": "end_turn"
+      },
+      "empty_patch": false,
+      "seed_hits": [
+        "re-match-subscript-vs-group-none-exception-type",
+        "triage-preexisting-failures-before-updating-tests",
+        "Ensure the directory name is a valid identifier (preference)",
+        "Ensure ASGIStaticFilesHandler works without raising a traceback (preference)",
+        "In cleanse_setting(), handle all iterable types (not just (preference)"
+      ],
+      "own_skill_hits": [
+        "re-match-subscript-vs-group-none-exception-type"
+      ],
+      "cross_skill_hits": [
+        "triage-preexisting-failures-before-updating-tests",
+        "Ensure the directory name is a valid identifier (preference)",
+        "Ensure ASGIStaticFilesHandler works without raising a traceback (preference)",
+        "In cleanse_setting(), handle all iterable types (not just (preference)"
+      ],
+      "status": "ok"
+    },
+    "django__django-15738": {
+      "instance_id": "django__django-15738",
+      "resolved": false,
+      "efficiency": {
+        "num_turns": 41,
+        "input_tokens": 42,
+        "output_tokens": 27877,
+        "cache_read_input_tokens": 2071150,
+        "cache_creation_input_tokens": 58334,
+        "total_cost_usd": 1.3935899999999999,
+        "duration_ms": 420884,
+        "is_error": true,
+        "subtype": "error_max_turns",
+        "api_error_status": null,
+        "terminal_reason": "max_turns",
+        "stop_reason": "tool_use"
+      },
+      "empty_patch": true,
+      "seed_hits": [
+        "Audit and remove constraint dependencies in migration files before generating a structural field-type change migration",
+        "django-autodetector-fk-to-field-pk-rename-fix",
+        "When changing the `project_data_set` field on the `Authors` (preference)",
+        "bulk-update-unique-constraint-pre-dedup",
+        "django-rename-index-idempotent-forward-guard"
+      ],
+      "own_skill_hits": [
+        "Audit and remove constraint dependencies in migration files before generating a structural field-type change migration",
+        "When changing the `project_data_set` field on the `Authors` (preference)"
+      ],
+      "cross_skill_hits": [
+        "django-autodetector-fk-to-field-pk-rename-fix",
+        "bulk-update-unique-constraint-pre-dedup",
+        "django-rename-index-idempotent-forward-guard"
+      ],
+      "status": "ok"
+    },
+    "django__django-15252": {
+      "instance_id": "django__django-15252",
+      "resolved": false,
+      "efficiency": {
+        "num_turns": 33,
+        "input_tokens": 28,
+        "output_tokens": 18919,
+        "cache_read_input_tokens": 1150587,
+        "cache_creation_input_tokens": 43438,
+        "total_cost_usd": 0.8931431,
+        "duration_ms": 297415,
+        "is_error": false,
+        "subtype": "success",
+        "api_error_status": null,
+        "terminal_reason": "completed",
+        "stop_reason": "end_turn"
+      },
+      "empty_patch": false,
+      "seed_hits": [
+        "django-e028-false-positive-multi-db-router-fix",
+        "Django should only create tables on the first (preference)",
+        "django-rename-index-idempotent-forward-guard",
+        "Production migration correctness lives in migration files, not database state",
+        "django-autodetector-fk-to-field-pk-rename-fix"
+      ],
+      "own_skill_hits": [
+        "Django should only create tables on the first (preference)"
+      ],
+      "cross_skill_hits": [
+        "django-e028-false-positive-multi-db-router-fix",
+        "django-rename-index-idempotent-forward-guard",
+        "Production migration correctness lives in migration files, not database state",
+        "django-autodetector-fk-to-field-pk-rename-fix"
+      ],
+      "status": "ok"
+    },
+    "django__django-15996": {
+      "instance_id": "django__django-15996",
+      "resolved": false,
+      "efficiency": {
+        "num_turns": 32,
+        "input_tokens": 34,
+        "output_tokens": 5975,
+        "cache_read_input_tokens": 1222656,
+        "cache_creation_input_tokens": 27386,
+        "total_cost_usd": 0.6239468,
+        "duration_ms": 153542,
+        "is_error": false,
+        "subtype": "success",
+        "api_error_status": null,
+        "terminal_reason": "completed",
+        "stop_reason": "end_turn"
+      },
+      "empty_patch": false,
+      "seed_hits": [
+        "serialize-combined-enum-flags-with-decompose",
+        "django-autodetector-fk-to-field-pk-rename-fix",
+        "Audit and remove constraint dependencies in migration files before generating a structural field-type change migration",
+        "django-choices-flat-vs-grouped-iteration",
+        "django-field-system-check-addition"
+      ],
+      "own_skill_hits": [
+        "serialize-combined-enum-flags-with-decompose"
+      ],
+      "cross_skill_hits": [
+        "django-autodetector-fk-to-field-pk-rename-fix",
+        "Audit and remove constraint dependencies in migration files before generating a structural field-type change migration",
+        "django-choices-flat-vs-grouped-iteration",
+        "django-field-system-check-addition"
+      ],
+      "status": "ok"
+    },
+    "django__django-14016": {
+      "instance_id": "django__django-14016",
+      "resolved": true,
+      "efficiency": {
+        "num_turns": 23,
+        "input_tokens": 21,
+        "output_tokens": 8163,
+        "cache_read_input_tokens": 729901,
+        "cache_creation_input_tokens": 27480,
+        "total_cost_usd": 0.5095953,
+        "duration_ms": 180804,
+        "is_error": false,
+        "subtype": "success",
+        "api_error_status": null,
+        "terminal_reason": "completed",
+        "stop_reason": "end_turn"
+      },
+      "empty_patch": false,
+      "seed_hits": [
+        "django-orm-join-filter-distinct",
+        "avoid-deepcopy-on-non-pickleable-user-data",
+        "django-only-defer-chaining-early-return-guard",
+        "pop-conflicting-kwarg-before-dict-unpack",
+        "serialize-combined-enum-flags-with-decompose"
+      ],
+      "own_skill_hits": [
+        "avoid-deepcopy-on-non-pickleable-user-data"
+      ],
+      "cross_skill_hits": [
+        "django-orm-join-filter-distinct",
+        "django-only-defer-chaining-early-return-guard",
+        "pop-conflicting-kwarg-before-dict-unpack",
+        "serialize-combined-enum-flags-with-decompose"
+      ],
+      "status": "ok"
+    },
+    "django__django-15202": {
+      "instance_id": "django__django-15202",
+      "resolved": false,
+      "efficiency": {
+        "num_turns": 41,
+        "input_tokens": 42,
+        "output_tokens": 20361,
+        "cache_read_input_tokens": 1776890,
+        "cache_creation_input_tokens": 44990,
+        "total_cost_usd": 1.111521,
+        "duration_ms": 357663,
+        "is_error": true,
+        "subtype": "error_max_turns",
+        "api_error_status": null,
+        "terminal_reason": "max_turns",
+        "stop_reason": "tool_use"
+      },
+      "empty_patch": true,
+      "seed_hits": [
+        "catch-urlsplit-valueerror-in-validators",
+        "django-validationerror-include-invalid-value",
+        "django-path-converter-http404-vs-valueerror-semantics",
+        "django-field-system-check-addition",
+        "django-admin-readonly-field-display-via-prepare-value"
+      ],
+      "own_skill_hits": [
+        "catch-urlsplit-valueerror-in-validators"
+      ],
+      "cross_skill_hits": [
+        "django-validationerror-include-invalid-value",
+        "django-path-converter-http404-vs-valueerror-semantics",
+        "django-field-system-check-addition",
+        "django-admin-readonly-field-display-via-prepare-value"
+      ],
+      "status": "ok"
+    },
+    "django__django-14787": {
+      "instance_id": "django__django-14787",
+      "resolved": true,
+      "efficiency": {
+        "num_turns": 17,
+        "input_tokens": 19,
+        "output_tokens": 2892,
+        "cache_read_input_tokens": 558476,
+        "cache_creation_input_tokens": 20971,
+        "total_cost_usd": 0.33990580000000004,
+        "duration_ms": 75293,
+        "is_error": false,
+        "subtype": "success",
+        "api_error_status": null,
+        "terminal_reason": "completed",
+        "stop_reason": "end_turn"
+      },
+      "empty_patch": false,
+      "seed_hits": [
+        "apply-update-wrapper-to-functools-partial",
+        "unwrap-functools-partial-for-repr-and-introspection",
+        "guard-setattr-with-class-dict-before-overwriting-user-methods",
+        "Partial functions must expose their pre-provided arguments in (preference)",
+        "save-explicit-set-flag-before-init-default-assignment"
+      ],
+      "own_skill_hits": [
+        "apply-update-wrapper-to-functools-partial"
+      ],
+      "cross_skill_hits": [
+        "unwrap-functools-partial-for-repr-and-introspection",
+        "guard-setattr-with-class-dict-before-overwriting-user-methods",
+        "Partial functions must expose their pre-provided arguments in (preference)",
+        "save-explicit-set-flag-before-init-default-assignment"
+      ],
+      "status": "ok"
+    },
+    "django__django-13551": {
+      "instance_id": "django__django-13551",
+      "resolved": false,
+      "efficiency": {
+        "num_turns": 31,
+        "input_tokens": 33,
+        "output_tokens": 7456,
+        "cache_read_input_tokens": 1176557,
+        "cache_creation_input_tokens": 29916,
+        "total_cost_usd": 0.6475311000000001,
+        "duration_ms": 166825,
+        "is_error": false,
+        "subtype": "success",
+        "api_error_status": null,
+        "terminal_reason": "completed",
+        "stop_reason": "end_turn"
+      },
+      "empty_patch": false,
+      "seed_hits": [
+        "include-email-in-django-password-reset-token-hash",
+        "guard-setattr-with-class-dict-before-overwriting-user-methods",
+        "django-fk-empty-string-non-auto-charfield-pk",
+        "django-template-autoescape-never-trust-implicit-safety",
+        "django-e028-false-positive-multi-db-router-fix"
+      ],
+      "own_skill_hits": [
+        "include-email-in-django-password-reset-token-hash"
+      ],
+      "cross_skill_hits": [
+        "guard-setattr-with-class-dict-before-overwriting-user-methods",
+        "django-fk-empty-string-non-auto-charfield-pk",
+        "django-template-autoescape-never-trust-implicit-safety",
+        "django-e028-false-positive-multi-db-router-fix"
+      ],
+      "status": "ok"
+    },
+    "django__django-12700": {
+      "instance_id": "django__django-12700",
+      "resolved": true,
+      "efficiency": {
+        "num_turns": 12,
+        "input_tokens": 14,
+        "output_tokens": 2715,
+        "cache_read_input_tokens": 373184,
+        "cache_creation_input_tokens": 17963,
+        "total_cost_usd": 0.2643042,
+        "duration_ms": 56739,
+        "is_error": false,
+        "subtype": "success",
+        "api_error_status": null,
+        "terminal_reason": "completed",
+        "stop_reason": "end_turn"
+      },
+      "empty_patch": false,
+      "seed_hits": [
+        "recursive-sanitizer-must-handle-all-container-types",
+        "In cleanse_setting(), handle all iterable types (not just (preference)",
+        "django-template-autoescape-never-trust-implicit-safety",
+        "django-filter-autoescape-all-args-must-be-conditional",
+        "django-admin-readonly-field-display-via-prepare-value"
+      ],
+      "own_skill_hits": [
+        "recursive-sanitizer-must-handle-all-container-types",
+        "In cleanse_setting(), handle all iterable types (not just (preference)"
+      ],
+      "cross_skill_hits": [
+        "django-template-autoescape-never-trust-implicit-safety",
+        "django-filter-autoescape-all-args-must-be-conditional",
+        "django-admin-readonly-field-display-via-prepare-value"
+      ],
+      "status": "ok"
+    },
+    "django__django-16041": {
+      "instance_id": "django__django-16041",
+      "resolved": true,
+      "efficiency": {
+        "num_turns": 18,
+        "input_tokens": 20,
+        "output_tokens": 4253,
+        "cache_read_input_tokens": 595485,
+        "cache_creation_input_tokens": 20562,
+        "total_cost_usd": 0.36932850000000006,
+        "duration_ms": 88058,
+        "is_error": false,
+        "subtype": "success",
+        "api_error_status": null,
+        "terminal_reason": "completed",
+        "stop_reason": "end_turn"
+      },
+      "empty_patch": false,
+      "seed_hits": [
+        "pop-conflicting-kwarg-before-dict-unpack",
+        "django-validationerror-include-invalid-value",
+        "use-attrs-get-for-optional-html-id",
+        "django-admin-readonly-field-display-via-prepare-value",
+        "django-orm-join-filter-distinct"
+      ],
+      "own_skill_hits": [
+        "pop-conflicting-kwarg-before-dict-unpack"
+      ],
+      "cross_skill_hits": [
+        "django-validationerror-include-invalid-value",
+        "use-attrs-get-for-optional-html-id",
+        "django-admin-readonly-field-display-via-prepare-value",
+        "django-orm-join-filter-distinct"
+      ],
+      "status": "ok"
+    },
+    "django__django-14534": {
+      "instance_id": "django__django-14534",
+      "resolved": false,
+      "efficiency": {
+        "num_turns": 41,
+        "input_tokens": 42,
+        "output_tokens": 17033,
+        "cache_read_input_tokens": 1690494,
+        "cache_creation_input_tokens": 39290,
+        "total_cost_usd": 1.0021132000000001,
+        "duration_ms": 326509,
+        "is_error": true,
+        "subtype": "error_max_turns",
+        "api_error_status": null,
+        "terminal_reason": "max_turns",
+        "stop_reason": "tool_use"
+      },
+      "empty_patch": false,
+      "seed_hits": [
+        "use-attrs-get-for-optional-html-id",
+        "Use widget['attrs']['id'] as the id when rendering the (preference)",
+        "django-validationerror-include-invalid-value",
+        "django-choices-flat-vs-grouped-iteration",
+        "django-admin-readonly-field-display-via-prepare-value"
+      ],
+      "own_skill_hits": [
+        "use-attrs-get-for-optional-html-id",
+        "Use widget['attrs']['id'] as the id when rendering the (preference)"
+      ],
+      "cross_skill_hits": [
+        "django-validationerror-include-invalid-value",
+        "django-choices-flat-vs-grouped-iteration",
+        "django-admin-readonly-field-display-via-prepare-value"
+      ],
+      "status": "ok"
+    },
+    "django__django-15320": {
+      "instance_id": "django__django-15320",
+      "resolved": false,
+      "efficiency": {
+        "num_turns": 17,
+        "input_tokens": 19,
+        "output_tokens": 3337,
+        "cache_read_input_tokens": 552408,
+        "cache_creation_input_tokens": 20272,
+        "total_cost_usd": 0.34065239999999997,
+        "duration_ms": 80993,
+        "is_error": false,
+        "subtype": "success",
+        "api_error_status": null,
+        "terminal_reason": "completed",
+        "stop_reason": "end_turn"
+      },
+      "empty_patch": false,
+      "seed_hits": [
+        "django-subquery-corrupts-sql-without-subquery-flag",
+        "django-orm-only-defer-asymmetry-diagnostic",
+        "django-orm-join-filter-distinct",
+        "django-orm-only-select-mask-reverse-relation-key-mismatch",
+        "django-only-defer-chaining-early-return-guard"
+      ],
+      "own_skill_hits": [
+        "django-subquery-corrupts-sql-without-subquery-flag"
+      ],
+      "cross_skill_hits": [
+        "django-orm-only-defer-asymmetry-diagnostic",
+        "django-orm-join-filter-distinct",
+        "django-orm-only-select-mask-reverse-relation-key-mismatch",
+        "django-only-defer-chaining-early-return-guard"
+      ],
+      "status": "ok"
+    },
+    "django__django-11620": {
+      "instance_id": "django__django-11620",
+      "resolved": true,
+      "efficiency": {
+        "num_turns": 41,
+        "input_tokens": 40,
+        "output_tokens": 14824,
+        "cache_read_input_tokens": 1565629,
+        "cache_creation_input_tokens": 36847,
+        "total_cost_usd": 0.9609465,
+        "duration_ms": 332080,
+        "is_error": true,
+        "subtype": "error_max_turns",
+        "api_error_status": null,
+        "terminal_reason": "max_turns",
+        "stop_reason": "tool_use"
+      },
+      "empty_patch": false,
+      "seed_hits": [
+        "django-path-converter-http404-vs-valueerror-semantics",
+        "django-validationerror-include-invalid-value",
+        "Ensure ASGIStaticFilesHandler works without raising a traceback (preference)",
+        "django-admin-readonly-field-display-via-prepare-value",
+        "catch-urlsplit-valueerror-in-validators"
+      ],
+      "own_skill_hits": [
+        "django-path-converter-http404-vs-valueerror-semantics"
+      ],
+      "cross_skill_hits": [
+        "django-validationerror-include-invalid-value",
+        "Ensure ASGIStaticFilesHandler works without raising a traceback (preference)",
+        "django-admin-readonly-field-display-via-prepare-value",
+        "catch-urlsplit-valueerror-in-validators"
+      ],
+      "status": "ok"
+    },
+    "django__django-11630": {
+      "instance_id": "django__django-11630",
+      "resolved": false,
+      "efficiency": {
+        "num_turns": 41,
+        "input_tokens": 42,
+        "output_tokens": 21604,
+        "cache_read_input_tokens": 1720697,
+        "cache_creation_input_tokens": 44133,
+        "total_cost_usd": 1.1083151000000004,
+        "duration_ms": 355423,
+        "is_error": true,
+        "subtype": "error_max_turns",
+        "api_error_status": null,
+        "terminal_reason": "max_turns",
+        "stop_reason": "tool_use"
+      },
+      "empty_patch": false,
+      "seed_hits": [
+        "django-e028-false-positive-multi-db-router-fix",
+        "Treat the inability to eliminate index_together deprecation warnings (preference)",
+        "django-autodetector-fk-to-field-pk-rename-fix",
+        "triage-preexisting-failures-before-updating-tests",
+        "django-admin-readonly-field-display-via-prepare-value"
+      ],
+      "own_skill_hits": [
+        "django-e028-false-positive-multi-db-router-fix"
+      ],
+      "cross_skill_hits": [
+        "Treat the inability to eliminate index_together deprecation warnings (preference)",
+        "django-autodetector-fk-to-field-pk-rename-fix",
+        "triage-preexisting-failures-before-updating-tests",
+        "django-admin-readonly-field-display-via-prepare-value"
+      ],
+      "status": "ok"
+    },
+    "django__django-14667": {
+      "instance_id": "django__django-14667",
+      "resolved": false,
+      "efficiency": {
+        "num_turns": 35,
+        "input_tokens": 35,
+        "output_tokens": 7674,
+        "cache_read_input_tokens": 1242835,
+        "cache_creation_input_tokens": 28218,
+        "total_cost_usd": 0.6607624999999999,
+        "duration_ms": 165269,
+        "is_error": false,
+        "subtype": "success",
+        "api_error_status": null,
+        "terminal_reason": "completed",
+        "stop_reason": "end_turn"
+      },
+      "empty_patch": false,
+      "seed_hits": [
+        "django-only-defer-chaining-early-return-guard",
+        "django-orm-only-defer-asymmetry-diagnostic",
+        "django-orm-only-select-mask-reverse-relation-key-mismatch",
+        "django-orm-join-filter-distinct",
+        "django-subquery-corrupts-sql-without-subquery-flag"
+      ],
+      "own_skill_hits": [
+        "django-only-defer-chaining-early-return-guard"
+      ],
+      "cross_skill_hits": [
+        "django-orm-only-defer-asymmetry-diagnostic",
+        "django-orm-only-select-mask-reverse-relation-key-mismatch",
+        "django-orm-join-filter-distinct",
+        "django-subquery-corrupts-sql-without-subquery-flag"
+      ],
+      "status": "ok"
+    },
+    "django__django-14580": {
+      "instance_id": "django__django-14580",
+      "resolved": true,
+      "efficiency": {
+        "num_turns": 19,
+        "input_tokens": 18,
+        "output_tokens": 3319,
+        "cache_read_input_tokens": 600348,
+        "cache_creation_input_tokens": 27124,
+        "total_cost_usd": 0.39618840000000005,
+        "duration_ms": 71031,
+        "is_error": false,
+        "subtype": "success",
+        "api_error_status": null,
+        "terminal_reason": "completed",
+        "stop_reason": "end_turn"
+      },
+      "empty_patch": false,
+      "seed_hits": [
+        "code-generator-special-case-must-include-imports",
+        "django-e028-false-positive-multi-db-router-fix",
+        "django-autodetector-fk-to-field-pk-rename-fix",
+        "django-rename-index-idempotent-forward-guard",
+        "django-sqlite-index-expression-table-qualifier-crash"
+      ],
+      "own_skill_hits": [
+        "code-generator-special-case-must-include-imports"
+      ],
+      "cross_skill_hits": [
+        "django-e028-false-positive-multi-db-router-fix",
+        "django-autodetector-fk-to-field-pk-rename-fix",
+        "django-rename-index-idempotent-forward-guard",
+        "django-sqlite-index-expression-table-qualifier-crash"
+      ],
+      "status": "ok"
+    },
+    "django__django-10914": {
+      "instance_id": "django__django-10914",
+      "resolved": true,
+      "efficiency": {
+        "num_turns": 36,
+        "input_tokens": 35,
+        "output_tokens": 8828,
+        "cache_read_input_tokens": 1267309,
+        "cache_creation_input_tokens": 30187,
+        "total_cost_usd": 0.6971857,
+        "duration_ms": 179122,
+        "is_error": false,
+        "subtype": "success",
+        "api_error_status": null,
+        "terminal_reason": "completed",
+        "stop_reason": "end_turn"
+      },
+      "empty_patch": false,
+      "seed_hits": [
+        "tempfile-rename-preserves-restrictive-permissions",
+        "django-admin-readonly-field-display-via-prepare-value",
+        "django-e028-false-positive-multi-db-router-fix",
+        "django-fk-empty-string-non-auto-charfield-pk",
+        "django-validationerror-include-invalid-value"
+      ],
+      "own_skill_hits": [
+        "tempfile-rename-preserves-restrictive-permissions"
+      ],
+      "cross_skill_hits": [
+        "django-admin-readonly-field-display-via-prepare-value",
+        "django-e028-false-positive-multi-db-router-fix",
+        "django-fk-empty-string-non-auto-charfield-pk",
+        "django-validationerror-include-invalid-value"
+      ],
+      "status": "ok"
+    },
+    "django__django-11910": {
+      "instance_id": "django__django-11910",
+      "resolved": true,
+      "efficiency": {
+        "num_turns": 41,
+        "input_tokens": 42,
+        "output_tokens": 21706,
+        "cache_read_input_tokens": 1894916,
+        "cache_creation_input_tokens": 45541,
+        "total_cost_usd": 1.1710787999999996,
+        "duration_ms": 362041,
+        "is_error": true,
+        "subtype": "error_max_turns",
+        "api_error_status": null,
+        "terminal_reason": "max_turns",
+        "stop_reason": "tool_use"
+      },
+      "empty_patch": false,
+      "seed_hits": [
+        "django-autodetector-fk-to-field-pk-rename-fix",
+        "django-fk-empty-string-non-auto-charfield-pk",
+        "Audit and remove constraint dependencies in migration files before generating a structural field-type change migration",
+        "django-rename-index-idempotent-forward-guard",
+        "django-e028-false-positive-multi-db-router-fix"
+      ],
+      "own_skill_hits": [
+        "django-autodetector-fk-to-field-pk-rename-fix"
+      ],
+      "cross_skill_hits": [
+        "django-fk-empty-string-non-auto-charfield-pk",
+        "Audit and remove constraint dependencies in migration files before generating a structural field-type change migration",
+        "django-rename-index-idempotent-forward-guard",
+        "django-e028-false-positive-multi-db-router-fix"
+      ],
+      "status": "ok"
+    },
+    "django__django-16408": {
+      "instance_id": "django__django-16408",
+      "resolved": true,
+      "efficiency": {
+        "num_turns": 41,
+        "input_tokens": 42,
+        "output_tokens": 35948,
+        "cache_read_input_tokens": 2215042,
+        "cache_creation_input_tokens": 64476,
+        "total_cost_usd": 1.5938826000000001,
+        "duration_ms": 574973,
+        "is_error": true,
+        "subtype": "error_max_turns",
+        "api_error_status": null,
+        "terminal_reason": "max_turns",
+        "stop_reason": "tool_use"
+      },
+      "empty_patch": false,
+      "seed_hits": [
+        "django-orm-only-select-mask-reverse-relation-key-mismatch",
+        "django-orm-join-filter-distinct",
+        "Treat the inability to eliminate index_together deprecation warnings (preference)",
+        "Flag or investigate unexpected behavior in autoescape or (preference)",
+        "Prefer using enums when applicable (preference)"
+      ],
+      "own_skill_hits": [],
+      "cross_skill_hits": [
+        "django-orm-only-select-mask-reverse-relation-key-mismatch",
+        "django-orm-join-filter-distinct",
+        "Treat the inability to eliminate index_together deprecation warnings (preference)",
+        "Flag or investigate unexpected behavior in autoescape or (preference)",
+        "Prefer using enums when applicable (preference)"
+      ],
+      "status": "ok"
+    },
+    "django__django-12983": {
+      "instance_id": "django__django-12983",
+      "resolved": true,
+      "efficiency": {
+        "num_turns": 40,
+        "input_tokens": 42,
+        "output_tokens": 8928,
+        "cache_read_input_tokens": 1436351,
+        "cache_creation_input_tokens": 25623,
+        "total_cost_usd": 0.7215103,
+        "duration_ms": 183644,
+        "is_error": false,
+        "subtype": "success",
+        "api_error_status": null,
+        "terminal_reason": "completed",
+        "stop_reason": "end_turn"
+      },
+      "empty_patch": false,
+      "seed_hits": [
+        "include-email-in-django-password-reset-token-hash",
+        "Use the Admin Inline `verbose_name` as the default (preference)",
+        "Ensure the directory name is a valid identifier (preference)",
+        "django-filter-autoescape-all-args-must-be-conditional",
+        "django-template-autoescape-never-trust-implicit-safety"
+      ],
+      "own_skill_hits": [],
+      "cross_skill_hits": [
+        "include-email-in-django-password-reset-token-hash",
+        "Use the Admin Inline `verbose_name` as the default (preference)",
+        "Ensure the directory name is a valid identifier (preference)",
+        "django-filter-autoescape-all-args-must-be-conditional",
+        "django-template-autoescape-never-trust-implicit-safety"
+      ],
+      "status": "ok"
+    },
+    "django__django-16820": {
+      "instance_id": "django__django-16820",
+      "resolved": false,
+      "efficiency": {
+        "num_turns": 41,
+        "input_tokens": 42,
+        "output_tokens": 13197,
+        "cache_read_input_tokens": 1839261,
+        "cache_creation_input_tokens": 42916,
+        "total_cost_usd": 1.0103523000000003,
+        "duration_ms": 271480,
+        "is_error": true,
+        "subtype": "error_max_turns",
+        "api_error_status": null,
+        "terminal_reason": "max_turns",
+        "stop_reason": "tool_use"
+      },
+      "empty_patch": true,
+      "seed_hits": [
+        "Treat the inability to eliminate index_together deprecation warnings (preference)",
+        "Audit and remove constraint dependencies in migration files before generating a structural field-type change migration",
+        "django-rename-index-idempotent-forward-guard",
+        "django-autodetector-fk-to-field-pk-rename-fix",
+        "django-e028-false-positive-multi-db-router-fix"
+      ],
+      "own_skill_hits": [
+        "Treat the inability to eliminate index_together deprecation warnings (preference)"
+      ],
+      "cross_skill_hits": [
+        "Audit and remove constraint dependencies in migration files before generating a structural field-type change migration",
+        "django-rename-index-idempotent-forward-guard",
+        "django-autodetector-fk-to-field-pk-rename-fix",
+        "django-e028-false-positive-multi-db-router-fix"
+      ],
+      "status": "ok"
+    },
+    "django__django-12308": {
+      "instance_id": "django__django-12308",
+      "resolved": false,
+      "efficiency": {
+        "num_turns": 30,
+        "input_tokens": 30,
+        "output_tokens": 6586,
+        "cache_read_input_tokens": 952289,
+        "cache_creation_input_tokens": 24036,
+        "total_cost_usd": 0.5316816999999999,
+        "duration_ms": 134693,
+        "is_error": false,
+        "subtype": "success",
+        "api_error_status": null,
+        "terminal_reason": "completed",
+        "stop_reason": "end_turn"
+      },
+      "empty_patch": false,
+      "seed_hits": [
+        "django-admin-readonly-field-display-via-prepare-value",
+        "django-validationerror-include-invalid-value",
+        "use-attrs-get-for-optional-html-id",
+        "django-fk-empty-string-non-auto-charfield-pk",
+        "django-choices-flat-vs-grouped-iteration"
+      ],
+      "own_skill_hits": [
+        "django-admin-readonly-field-display-via-prepare-value"
+      ],
+      "cross_skill_hits": [
+        "django-validationerror-include-invalid-value",
+        "use-attrs-get-for-optional-html-id",
+        "django-fk-empty-string-non-auto-charfield-pk",
+        "django-choices-flat-vs-grouped-iteration"
+      ],
+      "status": "ok"
+    },
+    "django__django-13964": {
+      "instance_id": "django__django-13964",
+      "resolved": true,
+      "efficiency": {
+        "num_turns": 40,
+        "input_tokens": 42,
+        "output_tokens": 25837,
+        "cache_read_input_tokens": 2061239,
+        "cache_creation_input_tokens": 51153,
+        "total_cost_usd": 1.3168037000000004,
+        "duration_ms": 457598,
+        "is_error": false,
+        "subtype": "success",
+        "api_error_status": null,
+        "terminal_reason": "completed",
+        "stop_reason": "end_turn"
+      },
+      "empty_patch": false,
+      "seed_hits": [
+        "django-fk-empty-string-non-auto-charfield-pk",
+        "bulk-update-unique-constraint-pre-dedup",
+        "django-autodetector-fk-to-field-pk-rename-fix",
+        "django-only-defer-chaining-early-return-guard",
+        "django-orm-only-defer-asymmetry-diagnostic"
+      ],
+      "own_skill_hits": [
+        "django-fk-empty-string-non-auto-charfield-pk"
+      ],
+      "cross_skill_hits": [
+        "bulk-update-unique-constraint-pre-dedup",
+        "django-autodetector-fk-to-field-pk-rename-fix",
+        "django-only-defer-chaining-early-return-guard",
+        "django-orm-only-defer-asymmetry-diagnostic"
+      ],
+      "status": "ok"
+    },
+    "django__django-14155": {
+      "instance_id": "django__django-14155",
+      "resolved": false,
+      "efficiency": {
+        "num_turns": 30,
+        "input_tokens": 29,
+        "output_tokens": 12899,
+        "cache_read_input_tokens": 1085740,
+        "cache_creation_input_tokens": 33197,
+        "total_cost_usd": 0.721496,
+        "duration_ms": 222594,
+        "is_error": false,
+        "subtype": "success",
+        "api_error_status": null,
+        "terminal_reason": "completed",
+        "stop_reason": "end_turn"
+      },
+      "empty_patch": false,
+      "seed_hits": [
+        "unwrap-functools-partial-for-repr-and-introspection",
+        "Partial functions must expose their pre-provided arguments in (preference)",
+        "apply-update-wrapper-to-functools-partial",
+        "django-path-converter-http404-vs-valueerror-semantics",
+        "django-admin-readonly-field-display-via-prepare-value"
+      ],
+      "own_skill_hits": [
+        "unwrap-functools-partial-for-repr-and-introspection",
+        "Partial functions must expose their pre-provided arguments in (preference)"
+      ],
+      "cross_skill_hits": [
+        "apply-update-wrapper-to-functools-partial",
+        "django-path-converter-http404-vs-valueerror-semantics",
+        "django-admin-readonly-field-display-via-prepare-value"
+      ],
+      "status": "ok"
+    },
+    "django__django-12589": {
+      "instance_id": "django__django-12589",
+      "resolved": false,
+      "efficiency": {
+        "num_turns": 41,
+        "input_tokens": 42,
+        "output_tokens": 30978,
+        "cache_read_input_tokens": 1980950,
+        "cache_creation_input_tokens": 55007,
+        "total_cost_usd": 1.3938209999999998,
+        "duration_ms": 564152,
+        "is_error": true,
+        "subtype": "error_max_turns",
+        "api_error_status": null,
+        "terminal_reason": "max_turns",
+        "stop_reason": "tool_use"
+      },
+      "empty_patch": true,
+      "seed_hits": [
+        "django-sqlite-index-expression-table-qualifier-crash",
+        "django-subquery-corrupts-sql-without-subquery-flag",
+        "django-orm-join-filter-distinct",
+        "django-orm-only-defer-asymmetry-diagnostic",
+        "django-only-defer-chaining-early-return-guard"
+      ],
+      "own_skill_hits": [],
+      "cross_skill_hits": [
+        "django-sqlite-index-expression-table-qualifier-crash",
+        "django-subquery-corrupts-sql-without-subquery-flag",
+        "django-orm-join-filter-distinct",
+        "django-orm-only-defer-asymmetry-diagnostic",
+        "django-only-defer-chaining-early-return-guard"
+      ],
+      "status": "ok"
+    },
+    "django__django-16910": {
+      "instance_id": "django__django-16910",
+      "resolved": true,
+      "efficiency": {
+        "num_turns": 41,
+        "input_tokens": 42,
+        "output_tokens": 26398,
+        "cache_read_input_tokens": 2072429,
+        "cache_creation_input_tokens": 55823,
+        "total_cost_usd": 1.3567136999999998,
+        "duration_ms": 435256,
+        "is_error": true,
+        "subtype": "error_max_turns",
+        "api_error_status": null,
+        "terminal_reason": "max_turns",
+        "stop_reason": "tool_use"
+      },
+      "empty_patch": false,
+      "seed_hits": [
+        "django-orm-only-select-mask-reverse-relation-key-mismatch",
+        "django-orm-join-filter-distinct",
+        "django-orm-only-defer-asymmetry-diagnostic",
+        "django-only-defer-chaining-early-return-guard",
+        "django-fk-empty-string-non-auto-charfield-pk"
+      ],
+      "own_skill_hits": [
+        "django-orm-only-select-mask-reverse-relation-key-mismatch",
+        "django-orm-only-defer-asymmetry-diagnostic"
+      ],
+      "cross_skill_hits": [
+        "django-orm-join-filter-distinct",
+        "django-only-defer-chaining-early-return-guard",
+        "django-fk-empty-string-non-auto-charfield-pk"
+      ],
+      "status": "ok"
+    },
+    "django__django-13933": {
+      "instance_id": "django__django-13933",
+      "resolved": true,
+      "efficiency": {
+        "num_turns": 41,
+        "input_tokens": 42,
+        "output_tokens": 13500,
+        "cache_read_input_tokens": 1638190,
+        "cache_creation_input_tokens": 35113,
+        "total_cost_usd": 0.9080270000000001,
+        "duration_ms": 248092,
+        "is_error": true,
+        "subtype": "error_max_turns",
+        "api_error_status": null,
+        "terminal_reason": "max_turns",
+        "stop_reason": "tool_use"
+      },
+      "empty_patch": false,
+      "seed_hits": [
+        "django-validationerror-include-invalid-value",
+        "django-choices-flat-vs-grouped-iteration",
+        "django-orm-join-filter-distinct",
+        "Actually use ChoiceField's implementation rather than bypassing or (preference)",
+        "Prefer using enums when applicable (preference)"
+      ],
+      "own_skill_hits": [
+        "django-validationerror-include-invalid-value",
+        "Actually use ChoiceField's implementation rather than bypassing or (preference)"
+      ],
+      "cross_skill_hits": [
+        "django-choices-flat-vs-grouped-iteration",
+        "django-orm-join-filter-distinct",
+        "Prefer using enums when applicable (preference)"
+      ],
+      "status": "ok"
+    },
+    "django__django-11999": {
+      "instance_id": "django__django-11999",
+      "resolved": true,
+      "efficiency": {
+        "num_turns": 19,
+        "input_tokens": 21,
+        "output_tokens": 3290,
+        "cache_read_input_tokens": 594430,
+        "cache_creation_input_tokens": 18095,
+        "total_cost_usd": 0.33938599999999997,
+        "duration_ms": 75073,
+        "is_error": false,
+        "subtype": "success",
+        "api_error_status": null,
+        "terminal_reason": "completed",
+        "stop_reason": "end_turn"
+      },
+      "empty_patch": false,
+      "seed_hits": [
+        "guard-setattr-with-class-dict-before-overwriting-user-methods",
+        "django-admin-readonly-field-display-via-prepare-value",
+        "django-validationerror-include-invalid-value",
+        "django-choices-flat-vs-grouped-iteration",
+        "django-orm-join-filter-distinct"
+      ],
+      "own_skill_hits": [
+        "guard-setattr-with-class-dict-before-overwriting-user-methods"
+      ],
+      "cross_skill_hits": [
+        "django-admin-readonly-field-display-via-prepare-value",
+        "django-validationerror-include-invalid-value",
+        "django-choices-flat-vs-grouped-iteration",
+        "django-orm-join-filter-distinct"
+      ],
+      "status": "ok"
+    },
+    "django__django-11283": {
+      "instance_id": "django__django-11283",
+      "resolved": false,
+      "efficiency": {
+        "num_turns": 26,
+        "input_tokens": 25,
+        "output_tokens": 10045,
+        "cache_read_input_tokens": 918980,
+        "cache_creation_input_tokens": 34190,
+        "total_cost_usd": 0.6350029999999998,
+        "duration_ms": 192262,
+        "is_error": false,
+        "subtype": "success",
+        "api_error_status": null,
+        "terminal_reason": "completed",
+        "stop_reason": "end_turn"
+      },
+      "empty_patch": false,
+      "seed_hits": [
+        "bulk-update-unique-constraint-pre-dedup",
+        "django-e028-false-positive-multi-db-router-fix",
+        "django-autodetector-fk-to-field-pk-rename-fix",
+        "django-rename-index-idempotent-forward-guard",
+        "The database is in production, so previous initial (preference)"
+      ],
+      "own_skill_hits": [
+        "bulk-update-unique-constraint-pre-dedup"
+      ],
+      "cross_skill_hits": [
+        "django-e028-false-positive-multi-db-router-fix",
+        "django-autodetector-fk-to-field-pk-rename-fix",
+        "django-rename-index-idempotent-forward-guard",
+        "The database is in production, so previous initial (preference)"
+      ],
+      "status": "ok"
+    },
+    "django__django-13710": {
+      "instance_id": "django__django-13710",
+      "resolved": true,
+      "efficiency": {
+        "num_turns": 29,
+        "input_tokens": 31,
+        "output_tokens": 7301,
+        "cache_read_input_tokens": 1029202,
+        "cache_creation_input_tokens": 26532,
+        "total_cost_usd": 0.5807655999999999,
+        "duration_ms": 152223,
+        "is_error": false,
+        "subtype": "success",
+        "api_error_status": null,
+        "terminal_reason": "completed",
+        "stop_reason": "end_turn"
+      },
+      "empty_patch": false,
+      "seed_hits": [
+        "Use the Admin Inline `verbose_name` as the default (preference)",
+        "explicit-value-is-source-of-truth-for-derived-defaults",
+        "save-explicit-set-flag-before-init-default-assignment",
+        "django-validationerror-include-invalid-value",
+        "django-e028-false-positive-multi-db-router-fix"
+      ],
+      "own_skill_hits": [
+        "Use the Admin Inline `verbose_name` as the default (preference)",
+        "explicit-value-is-source-of-truth-for-derived-defaults",
+        "save-explicit-set-flag-before-init-default-assignment"
+      ],
+      "cross_skill_hits": [
+        "django-validationerror-include-invalid-value",
+        "django-e028-false-positive-multi-db-router-fix"
+      ],
+      "status": "ok"
+    },
+    "django__django-13315": {
+      "instance_id": "django__django-13315",
+      "resolved": true,
+      "efficiency": {
+        "num_turns": 41,
+        "input_tokens": 42,
+        "output_tokens": 9406,
+        "cache_read_input_tokens": 1482220,
+        "cache_creation_input_tokens": 29939,
+        "total_cost_usd": 0.7684929999999999,
+        "duration_ms": 204145,
+        "is_error": true,
+        "subtype": "error_max_turns",
+        "api_error_status": null,
+        "terminal_reason": "max_turns",
+        "stop_reason": "tool_use"
+      },
+      "empty_patch": false,
+      "seed_hits": [
+        "django-orm-join-filter-distinct",
+        "triage-preexisting-failures-before-updating-tests",
+        "django-validationerror-include-invalid-value",
+        "django-choices-flat-vs-grouped-iteration",
+        "django-orm-only-select-mask-reverse-relation-key-mismatch"
+      ],
+      "own_skill_hits": [
+        "django-orm-join-filter-distinct"
+      ],
+      "cross_skill_hits": [
+        "triage-preexisting-failures-before-updating-tests",
+        "django-validationerror-include-invalid-value",
+        "django-choices-flat-vs-grouped-iteration",
+        "django-orm-only-select-mask-reverse-relation-key-mismatch"
+      ],
+      "status": "ok"
+    },
+    "django__django-14382": {
+      "instance_id": "django__django-14382",
+      "resolved": true,
+      "efficiency": {
+        "num_turns": 8,
+        "input_tokens": 10,
+        "output_tokens": 1116,
+        "cache_read_input_tokens": 229210,
+        "cache_creation_input_tokens": 14879,
+        "total_cost_usd": 0.177834,
+        "duration_ms": 42950,
+        "is_error": false,
+        "subtype": "success",
+        "api_error_status": null,
+        "terminal_reason": "completed",
+        "stop_reason": "end_turn"
+      },
+      "empty_patch": false,
+      "seed_hits": [
+        "strip-trailing-sep-before-basename",
+        "sanitize-and-validate-filesystem-inputs-before-use",
+        "Ensure the directory name is a valid identifier (preference)",
+        "django-validationerror-include-invalid-value",
+        "django-e028-false-positive-multi-db-router-fix"
+      ],
+      "own_skill_hits": [
+        "strip-trailing-sep-before-basename",
+        "sanitize-and-validate-filesystem-inputs-before-use",
+        "Ensure the directory name is a valid identifier (preference)"
+      ],
+      "cross_skill_hits": [
+        "django-validationerror-include-invalid-value",
+        "django-e028-false-positive-multi-db-router-fix"
+      ],
+      "status": "ok"
+    },
+    "django__django-15695": {
+      "instance_id": "django__django-15695",
+      "resolved": true,
+      "efficiency": {
+        "num_turns": 27,
+        "input_tokens": 29,
+        "output_tokens": 5615,
+        "cache_read_input_tokens": 1003394,
+        "cache_creation_input_tokens": 26247,
+        "total_cost_usd": 0.5463142,
+        "duration_ms": 118982,
+        "is_error": false,
+        "subtype": "success",
+        "api_error_status": null,
+        "terminal_reason": "completed",
+        "stop_reason": "end_turn"
+      },
+      "empty_patch": false,
+      "seed_hits": [
+        "django-rename-index-idempotent-forward-guard",
+        "django-sqlite-index-expression-table-qualifier-crash",
+        "django-autodetector-fk-to-field-pk-rename-fix",
+        "bulk-update-unique-constraint-pre-dedup",
+        "django-e028-false-positive-multi-db-router-fix"
+      ],
+      "own_skill_hits": [
+        "django-rename-index-idempotent-forward-guard"
+      ],
+      "cross_skill_hits": [
+        "django-sqlite-index-expression-table-qualifier-crash",
+        "django-autodetector-fk-to-field-pk-rename-fix",
+        "bulk-update-unique-constraint-pre-dedup",
+        "django-e028-false-positive-multi-db-router-fix"
+      ],
+      "status": "ok"
+    },
+    "django__django-16255": {
+      "instance_id": "django__django-16255",
+      "resolved": true,
+      "efficiency": {
+        "num_turns": 12,
+        "input_tokens": 14,
+        "output_tokens": 1682,
+        "cache_read_input_tokens": 362968,
+        "cache_creation_input_tokens": 16291,
+        "total_cost_usd": 0.2354154,
+        "duration_ms": 40768,
+        "is_error": false,
+        "subtype": "success",
+        "api_error_status": null,
+        "terminal_reason": "completed",
+        "stop_reason": "end_turn"
+      },
+      "empty_patch": false,
+      "seed_hits": [
+        "django-asgi-mixin-override-get-response-async",
+        "Ensure ASGIStaticFilesHandler works without raising a traceback (preference)",
+        "django-path-converter-http404-vs-valueerror-semantics",
+        "django-validationerror-include-invalid-value",
+        "django-e028-false-positive-multi-db-router-fix"
+      ],
+      "own_skill_hits": [],
+      "cross_skill_hits": [
+        "django-asgi-mixin-override-get-response-async",
+        "Ensure ASGIStaticFilesHandler works without raising a traceback (preference)",
+        "django-path-converter-http404-vs-valueerror-semantics",
+        "django-validationerror-include-invalid-value",
+        "django-e028-false-positive-multi-db-router-fix"
+      ],
+      "status": "ok"
+    },
+    "django__django-11742": {
+      "instance_id": "django__django-11742",
+      "resolved": false,
+      "efficiency": {
+        "num_turns": 37,
+        "input_tokens": 34,
+        "output_tokens": 9606,
+        "cache_read_input_tokens": 1267078,
+        "cache_creation_input_tokens": 31925,
+        "total_cost_usd": 0.7186324,
+        "duration_ms": 176900,
+        "is_error": false,
+        "subtype": "success",
+        "api_error_status": null,
+        "terminal_reason": "completed",
+        "stop_reason": "end_turn"
+      },
+      "empty_patch": false,
+      "seed_hits": [
+        "django-choices-flat-vs-grouped-iteration",
+        "django-validationerror-include-invalid-value",
+        "django-field-system-check-addition",
+        "django-orm-join-filter-distinct",
+        "Actually use ChoiceField's implementation rather than bypassing or (preference)"
+      ],
+      "own_skill_hits": [
+        "django-choices-flat-vs-grouped-iteration",
+        "django-field-system-check-addition"
+      ],
+      "cross_skill_hits": [
+        "django-validationerror-include-invalid-value",
+        "django-orm-join-filter-distinct",
+        "Actually use ChoiceField's implementation rather than bypassing or (preference)"
+      ],
+      "status": "ok"
+    },
+    "django__django-14238": {
+      "instance_id": "django__django-14238",
+      "resolved": true,
+      "efficiency": {
+        "num_turns": 21,
+        "input_tokens": 23,
+        "output_tokens": 3169,
+        "cache_read_input_tokens": 696691,
+        "cache_creation_input_tokens": 20371,
+        "total_cost_usd": 0.3832833,
+        "duration_ms": 78107,
+        "is_error": false,
+        "subtype": "success",
+        "api_error_status": null,
+        "terminal_reason": "completed",
+        "stop_reason": "end_turn"
+      },
+      "empty_patch": false,
+      "seed_hits": [
+        "subclasscheck-use-issubclass-not-in",
+        "django-e028-false-positive-multi-db-router-fix",
+        "django-field-system-check-addition",
+        "django-autodetector-fk-to-field-pk-rename-fix",
+        "django-fk-empty-string-non-auto-charfield-pk"
+      ],
+      "own_skill_hits": [
+        "subclasscheck-use-issubclass-not-in"
+      ],
+      "cross_skill_hits": [
+        "django-e028-false-positive-multi-db-router-fix",
+        "django-field-system-check-addition",
+        "django-autodetector-fk-to-field-pk-rename-fix",
+        "django-fk-empty-string-non-auto-charfield-pk"
+      ],
+      "status": "ok"
+    },
+    "django__django-12915": {
+      "instance_id": "django__django-12915",
+      "resolved": true,
+      "efficiency": {
+        "num_turns": 19,
+        "input_tokens": 19,
+        "output_tokens": 3994,
+        "cache_read_input_tokens": 616367,
+        "cache_creation_input_tokens": 25395,
+        "total_cost_usd": 0.4004541,
+        "duration_ms": 97785,
+        "is_error": false,
+        "subtype": "success",
+        "api_error_status": null,
+        "terminal_reason": "completed",
+        "stop_reason": "end_turn"
+      },
+      "empty_patch": false,
+      "seed_hits": [
+        "django-asgi-mixin-override-get-response-async",
+        "Ensure ASGIStaticFilesHandler works without raising a traceback (preference)",
+        "django-path-converter-http404-vs-valueerror-semantics",
+        "django-e028-false-positive-multi-db-router-fix",
+        "re-match-subscript-vs-group-none-exception-type"
+      ],
+      "own_skill_hits": [
+        "django-asgi-mixin-override-get-response-async",
+        "Ensure ASGIStaticFilesHandler works without raising a traceback (preference)"
+      ],
+      "cross_skill_hits": [
+        "django-path-converter-http404-vs-valueerror-semantics",
+        "django-e028-false-positive-multi-db-router-fix",
+        "re-match-subscript-vs-group-none-exception-type"
+      ],
+      "status": "ok"
+    }
+  },
+  "meta": {
+    "instances": [
+      "django__django-16873",
+      "django__django-14997",
+      "django__django-15061",
+      "django__django-15498",
+      "django__django-15738",
+      "django__django-15252",
+      "django__django-15996",
+      "django__django-14016",
+      "django__django-15202",
+      "django__django-14787",
+      "django__django-13551",
+      "django__django-12700",
+      "django__django-16041",
+      "django__django-14534",
+      "django__django-15320",
+      "django__django-11620",
+      "django__django-11630",
+      "django__django-14667",
+      "django__django-14580",
+      "django__django-10914",
+      "django__django-11910",
+      "django__django-16408",
+      "django__django-12983",
+      "django__django-16820",
+      "django__django-12308",
+      "django__django-13964",
+      "django__django-14155",
+      "django__django-12589",
+      "django__django-16910",
+      "django__django-13933",
+      "django__django-11999",
+      "django__django-11283",
+      "django__django-13710",
+      "django__django-13315",
+      "django__django-14382",
+      "django__django-15695",
+      "django__django-16255",
+      "django__django-11742",
+      "django__django-14238",
+      "django__django-12915"
+    ],
+    "scope": "/tmp/t15-swebench/project/swebench-django-n40"
+  }
+}

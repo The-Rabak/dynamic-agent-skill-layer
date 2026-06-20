@@ -1,0 +1,7 @@
+{
+  "off_outcome": "loss",
+  "verifier_reason": "\"domain_trust_score\": {\n    \"calculation_basis\": [\n    \"justification\": \"score of 10/100. near-zero trust driven by a physically impossible ssl certificate timeline (certificate issued and revoked before domain existed), 19-day domain age, expired and ocsp-revoked certificate, rfc 5737 address appearing as x-server-ip in live headers, and opaque privacy-protected registration updated the day before publication. no single factor reaches acceptable threshold. combined, these indicators are consistent with a newly registered domain impersonating or proxying content from another origin.\"\nLOSS: missing required key 'next_agent_notes' (invented SIA JSON schema)",
+  "solve_exit": 0,
+  "elapsed_s": 238.8,
+  "discriminating": true
+}

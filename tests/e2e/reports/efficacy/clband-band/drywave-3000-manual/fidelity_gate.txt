@@ -1,0 +1,16 @@
+=== fidelity gate: drywave-3000-manual (c0bcb15a) — 23 skill file(s) under /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/drywave-3000-manual/scope ===
+--- document tier (reported, NOT gating) ---
+  present  'DryWave 3000'
+  present  'InfoAID'
+--- operative tier (sentinels_operative, GATING) ---
+  MISSING  'Maintaining humidity below 40% for extended periods'
+  MISSING  'human discomfort'
+  MISSING  'wood materials contracting'
+  MISSING  'below 35% RH'
+  MISSING  'should not be operated in Continuous mode'
+  MISSING  'AUTO mode'
+  MISSING  '45–50%'
+  MISSING  'external calibrated hygrometer'
+FIDELITY FAIL: 8/8 OPERATIVE sentinels missing -> INSTRUMENT-FAILURE(extraction) for drywave-3000-manual
+
+--- STDERR ---

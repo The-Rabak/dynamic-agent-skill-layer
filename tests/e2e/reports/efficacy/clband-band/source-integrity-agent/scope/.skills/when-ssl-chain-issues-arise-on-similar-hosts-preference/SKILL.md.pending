@@ -1,0 +1,23 @@
+---
+name: When SSL chain issues arise on similar hosts (preference)
+description: 'Standing user preference: When SSL chain issues arise on similar hosts, reference previously validated internal digests before conducting fresh analysis.'
+tags:
+- preference
+- convention
+origin: session_extraction
+source_session_id: clband-teach-source-integrity-agent
+source_provider: claude-code
+created_at: 2026-06-12T21:50:59.146408351+00:00
+warning_at: 2026-07-12T21:50:59.146408351+00:00
+expires_at: 2026-09-10T21:50:59.146408351+00:00
+generality: uncertain
+generality_rationale: Detected as a standing user directive; generality inferred from scope signals.
+---
+
+# When SSL chain issues arise on similar hosts (preference)
+
+Standing user preference: When SSL chain issues arise on similar hosts, reference previously validated internal digests before conducting fresh analysis.
+
+## Conventions
+- When SSL chain issues arise on similar hosts, reference previously validated internal digests before conducting fresh analysis.
+

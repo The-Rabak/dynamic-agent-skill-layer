@@ -1,0 +1,71 @@
+---
+name: sia-domain-trust-score-formula
+description: Compute the SIA Domain Trust Score using the exact four-component weighted formula plus mandatory point deductions, then route downstream based on the resulting score.
+tags:
+- SIA
+- trust-score
+- provenance
+- multi-agent-pipeline
+type: procedure
+origin: session_extraction
+source_session_id: clband-teach-source-integrity-agent
+source_provider: claude-code
+created_at: 2026-06-12T21:50:59.140958572+00:00
+warning_at: 2026-07-12T21:50:59.140958572+00:00
+expires_at: 2026-09-10T21:50:59.140958572+00:00
+generality: project
+generality_rationale: The formula, component names, weights, and deduction constants are all specific to the SIA system document and have no meaning outside that multi-agent pipeline.
+use_when:
+- acting as SIA in the AO -> SIA -> FCA -> VEV -> PCA -> AO pipeline
+- need to compute Domain Trust Score for a domain under review
+- WHOIS shows privacy protection and the -15 deduction must be applied
+- SSL OCSP status is Revoked and SSL_Validity component must be set to 0
+avoid_when:
+- visual padlock in browser is offered as SSL evidence -- it is insufficient; use OCSP status from the SSL chain artifact
+- unverifiable secondary reports (internal notes without URL, blog posts without saved links) are offered as domain age proof -- disregard; use only WHOIS creation date
+artifacts:
+- WHOIS snapshot
+- DNS query log
+- SSL chain report
+- image EXIF dump
+- brand asset registry
+tools:
+- WHOIS lookup
+- DNS resolver
+- SSL/TLS OCSP check
+- ExifTool
+invariants:
+- SSL_Validity must be derived from OCSP/CRL status, never from browser padlock display or unlinked historical notes
+- WHOIS privacy protection always triggers a -15 deduction to the final score
+- Score floor is 0
+requires:
+- WHOIS creation date (Artifact 3 equivalent)
+- SSL/TLS OCSP status (Artifact 5 equivalent)
+- DNS A record and NS records versus brand registry expected values (Artifacts 4 and 8 equivalents)
+- Metadata completeness and timestamp consistency data (Artifacts 1, 2 equivalents)
+produces:
+- A numeric Domain Trust Score 0-100 with explicit calculation_basis and justification fields
+- 'A downstream routing decision: standard FCA / heightened-scrutiny FCA / HALT'
+evidence:
+- Trust Score = (Domain_Age_Score * 0.4) + (SSL_Validity * 0.3) + (DNS_Consistency * 0.2) + (Metadata_Integrity * 0.1) -- from system document formula section
+- 'WHOIS privacy protection: Mark as ''PRIVACY_PROTECTED'', proceed with reduced trust score (-15 points) -- from Exception Handling table in system document'
+- Domain_Age_Score=5, SSL_Validity=0, DNS_Consistency=10, Metadata_Integrity=10 -> (5*0.4)+(0*0.3)+(10*0.2)+(10*0.1) = 5.0 - 15 (WHOIS privacy) = 0 (floored) -- from assistant pre-output analysis in transcript
+---
+
+# sia-domain-trust-score-formula
+
+Compute the SIA Domain Trust Score using the exact four-component weighted formula plus mandatory point deductions, then route downstream based on the resulting score.
+
+## Procedures
+- 1. Assign per-component raw scores (0-100 each): Domain_Age_Score (from WHOIS creation date age; very recent domains score near 0-10), SSL_Validity (100 if OCSP Good and chain valid; 0 if OCSP Revoked; subtract 30 if certificate is expired), DNS_Consistency (100 if A record and NS records match brand registry expected values; lower for any mismatch), Metadata_Integrity (100 if timestamps are consistent and EXIF is intact; lower for discrepancies or tampering indicators).
+- 2. Apply the formula: Trust Score = (Domain_Age_Score * 0.4) + (SSL_Validity * 0.3) + (DNS_Consistency * 0.2) + (Metadata_Integrity * 0.1)
+- 3. Apply deductions to the computed score: subtract 15 if WHOIS shows privacy protection (e.g. Privacy Protect LLC); subtract 10 per missing critical metadata field (escalate if more than 5 critical fields missing).
+- 4. Floor the result at 0 -- the score cannot go negative.
+- 5. Route based on final score: score >= 60 -> FCA standard flow; score < 60 -> FCA with heightened scrutiny flag; score < 30 -> flag and proceed with warning to FCA; escalation_required = true -> HALT, route AO -> Human Security Reviewer.
+
+## Conventions
+- Always show the calculation basis in the output field 'calculation_basis' listing the inputs used.
+- OCSP Revoked is definitive -- treat SSL_Validity as 0; do not substitute a visual padlock or an older cached scan as evidence.
+- Score floor is 0; never report a negative trust score.
+- domain_trust_score output block must include score (numeric), calculation_basis (array), and justification (explicit reasoning string).
+

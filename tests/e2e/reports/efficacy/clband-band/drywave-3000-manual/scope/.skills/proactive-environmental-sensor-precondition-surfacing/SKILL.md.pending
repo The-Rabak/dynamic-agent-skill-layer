@@ -1,0 +1,47 @@
+---
+name: proactive-environmental-sensor-precondition-surfacing
+description: 'Multiple distinct environmental conditions independently degrade DryWave 3000 sensor accuracy or unit performance: coil icing or overheating (monitored by thermal feedback sensors), rapid humidity dilution from door openings, and steam condensation on the air intake surface. These preconditions must be surfaced proactively whenever advising on operation, interpreting humidity readings, or recommending long-term unattended use — not solely when the user explicitly queries about sensor reliability.'
+tags:
+- sensors
+- environmental-conditions
+- unattended-operation
+- humidity-readings
+- drywave-3000
+type: best_practice
+origin: session_extraction
+source_session_id: clband-teach-drywave-3000-manual
+source_provider: claude-code
+created_at: 2026-06-12T22:45:47.613605941+00:00
+warning_at: 2026-07-12T22:45:47.613605941+00:00
+expires_at: 2026-09-10T22:45:47.613605941+00:00
+generality: uncertain
+generality_rationale: Specific to DryWave 3000 sensor behaviour, but the principle of proactively surfacing environmental preconditions applies broadly to any sensor-dependent advisory system.
+use_when:
+- Advising on long-term or unattended operation of the DryWave 3000.
+- Interpreting or discussing humidity sensor readings.
+- Advising on operating mode selection or performance expectations.
+- User asks why readings appear inconsistent or unexpectedly low.
+avoid_when:
+- Query is purely about placement, drainage, or maintenance with no connection to sensor behaviour or performance accuracy.
+invariants:
+- At least the most contextually relevant environmental precondition is surfaced whenever sensor accuracy is implicated.
+- Sensor preconditions are raised proactively, not only in response to explicit user queries.
+produces:
+- Operationally grounded advice that preempts common sensor misinterpretation scenarios
+evidence:
+- Explain how the unit's safety protections and sensor accuracy support reliable long-term unattended operation (preference)
+- Thermal feedback sensors monitor coil temperature to prevent icing or overheating (preference)
+- Warn that steam condensation on the air intake surface can cause liquid accumulation and reduce long-term performance (preference)
+- Note that an open door may cause a rapid drop in humidity readings as fresh air enters the sensor chamber (preference)
+---
+
+# proactive-environmental-sensor-precondition-surfacing
+
+Multiple distinct environmental conditions independently degrade DryWave 3000 sensor accuracy or unit performance: coil icing or overheating (monitored by thermal feedback sensors), rapid humidity dilution from door openings, and steam condensation on the air intake surface. These preconditions must be surfaced proactively whenever advising on operation, interpreting humidity readings, or recommending long-term unattended use — not solely when the user explicitly queries about sensor reliability.
+
+## Procedures
+- When advising on long-term unattended operation, proactively note the role of thermal feedback sensors in preventing coil icing or overheating.
+- When interpreting or advising on humidity readings, note that door openings can cause rapid sensor reading drops.
+- Warn that steam condensation on the air intake can accumulate liquid and reduce long-term performance.
+- Do not wait for the user to ask about sensor reliability — surface relevant environmental preconditions in context.
+

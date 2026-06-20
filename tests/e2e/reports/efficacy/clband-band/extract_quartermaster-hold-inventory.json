@@ -1,0 +1,94 @@
+{
+ "context": "quartermaster-hold-inventory",
+ "transcript": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/quartermaster-hold-inventory/transcript.jsonl",
+ "scope": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/quartermaster-hold-inventory/scope",
+ "worker_rc": 0,
+ "elapsed_s": 228.6,
+ "n_drafts": 14,
+ "drafts": [
+  {
+   "name": "Do not speculate, incorporate estimates, or send ambiguity (preference)",
+   "description": "Standing user preference: Do not speculate, incorporate estimates, or send ambiguity downstream.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/quartermaster-hold-inventory/scope/.skills/do-not-speculate-incorporate-estimates-or-send-ambiguity-preference/SKILL.md.pending"
+  },
+  {
+   "name": "Every plan from the Setting Manager must include (preference)",
+   "description": "Standing user preference: Every plan from the Setting Manager must include Wall 5 plus one Main Wall.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/quartermaster-hold-inventory/scope/.skills/every-plan-from-the-setting-manager-must-include-preference/SKILL.md.pending"
+  },
+  {
+   "name": "uncertainty-must-surface-not-pass-through",
+   "description": "Any form of uncertainty encountered at a planning pipeline stage \u2014 incomplete data, contradictory entries, unverified estimates, or ambiguity \u2014 must be surfaced as an explicit halt or named alert and never absorbed, glossed over, or forwarded downstream. Downstream consumers must receive only complete, verified, non-contradictory inputs.",
+   "skill_type": "principle",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/quartermaster-hold-inventory/scope/.skills/uncertainty-must-surface-not-pass-through/SKILL.md.pending"
+  },
+  {
+   "name": "hard-stop-over-graceful-degradation",
+   "description": "When a planning system encounters an unmet hard constraint \u2014 insufficient inventory, missing required data, contradictory status \u2014 the correct response is an explicit, named halt. Gracefully degrading (producing a reduced plan, skipping a required element, improvising values) masks the violation and perpetuates operational errors downstream. Halt loudly; do not silently produce a diminished success.",
+   "skill_type": "anti_pattern",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/quartermaster-hold-inventory/scope/.skills/hard-stop-over-graceful-degradation/SKILL.md.pending"
+  },
+  {
+   "name": "quartermaster-no-override-by-operational-pressure",
+   "description": "Halt conditions and authenticated-data requirements for the Quartermaster role cannot be waived by deadline urgency, marketing commitments, stakeholder informal estimates, or 'fix later' rationale.",
+   "skill_type": "rule",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/quartermaster-hold-inventory/scope/.skills/quartermaster-no-override-by-operational-pressure/SKILL.md.pending"
+  },
+  {
+   "name": "Always use fixed consumption values \u2014 no improvisation (preference)",
+   "description": "Standing user preference: Always use fixed consumption values \u2014 no improvisation, no creative reductions.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/quartermaster-hold-inventory/scope/.skills/always-use-fixed-consumption-values-no-improvisation-preference/SKILL.md.pending"
+  },
+  {
+   "name": "quartermaster-hold-inventory-status-assessment",
+   "description": "Calculate holds required from a Wall Setting Plan using fixed consumption standards (500/Main Wall, 100/Wall 5) and compare against clean available inventory to emit HOLD_OK, HOLD_LOW, or HOLD_CRITICAL_LOW.",
+   "skill_type": "procedure",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/quartermaster-hold-inventory/scope/.skills/quartermaster-hold-inventory-status-assessment/SKILL.md.pending"
+  },
+  {
+   "name": "Inventory counts include only clean, ready-to-use holds; dirty (preference)",
+   "description": "Standing user preference: Inventory counts include only clean, ready-to-use holds; dirty, damaged, or inspection-pending holds are excluded \u2014 inflated counts to mask shortages are not permitted.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/quartermaster-hold-inventory/scope/.skills/inventory-counts-include-only-clean-ready-to-use-holds-dirty-preference/SKILL.md.pending"
+  },
+  {
+   "name": "Do not schedule until complete, confirmed data is (preference)",
+   "description": "Standing user preference: Do not schedule until complete, confirmed data is available \u2014 preliminary data is not sufficient.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/quartermaster-hold-inventory/scope/.skills/do-not-schedule-until-complete-confirmed-data-is-preference/SKILL.md.pending"
+  },
+  {
+   "name": "fixed-constants-over-contextual-estimation",
+   "description": "Operational planning pipelines that consume finite, countable resources must use pre-agreed, fixed consumption constants rather than context-sensitive estimates, creative reductions, or per-cycle improvisations. Fixed constants ensure auditability, prevent shortfall masking, and make consumption predictable and comparable across planning cycles.",
+   "skill_type": "principle",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/quartermaster-hold-inventory/scope/.skills/fixed-constants-over-contextual-estimation/SKILL.md.pending"
+  },
+  {
+   "name": "Optimistic planning is not tolerated: if holds run (preference)",
+   "description": "Standing user preference: Optimistic planning is not tolerated: if holds run out, the week's setting stops; reality takes precedence over convenience.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/quartermaster-hold-inventory/scope/.skills/optimistic-planning-is-not-tolerated-if-holds-run-preference/SKILL.md.pending"
+  },
+  {
+   "name": "Always produce an Inventory Status report with a (preference)",
+   "description": "Standing user preference: Always produce an Inventory Status report with a status code and numerical breakdown, and apply the hard-stop rule where appropriate.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/quartermaster-hold-inventory/scope/.skills/always-produce-an-inventory-status-report-with-a-preference/SKILL.md.pending"
+  },
+  {
+   "name": "quartermaster-wall-selection-policy",
+   "description": "Select exactly one Main Wall (Walls 1\u20134) for the weekly reset using the age-noncompliance-first, then oldest-wall tiebreak rule, applying the 42-day threshold verbatim.",
+   "skill_type": "procedure",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/quartermaster-hold-inventory/scope/.skills/quartermaster-wall-selection-policy/SKILL.md.pending"
+  },
+  {
+   "name": "quartermaster-plan-inconsistency-alert",
+   "description": "Issue PLAN_INCONSISTENCY_ALERT and halt all downstream processing when the Wall Status report contains contradictory entries or Wall 5 data is missing, identifying the exact anomaly.",
+   "skill_type": "rule",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/quartermaster-hold-inventory/scope/.skills/quartermaster-plan-inconsistency-alert/SKILL.md.pending"
+  }
+ ]
+}

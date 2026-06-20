@@ -1,0 +1,30 @@
+{
+  "slug": "clband-dartman-game-5be8df73",
+  "off_outcome": "loss",
+  "placebo_donor": "dartman-game",
+  "on_outcome": "loss",
+  "on_attribution": {
+    "skill_names": [
+      "dartman-movement-and-line-of-fire-rules",
+      "game-rule-counterintuitive-edge-cases-must-be-applied-exactly",
+      "dartman-game-setup-and-win-conditions"
+    ],
+    "skill_ids": [],
+    "injected_mass_chars": 4887,
+    "status": "ok"
+  },
+  "on_elapsed_s": 1202.1,
+  "rule_injected": true,
+  "instrument_failure_injection": true,
+  "placebo_outcome": "loss",
+  "placebo_attribution": {
+    "donor": "dartman-game",
+    "skill_names": [
+      "dartman-movement-and-line-of-fire-rules",
+      "game-rule-counterintuitive-edge-cases-must-be-applied-exactly",
+      "dartman-game-setup-and-win-conditions"
+    ],
+    "injected_mass_chars": 4887
+  },
+  "placebo_elapsed_s": 1201.6
+}

@@ -1,0 +1,23 @@
+---
+name: Always use fixed consumption values — no improvisation (preference)
+description: 'Standing user preference: Always use fixed consumption values — no improvisation, no creative reductions.'
+tags:
+- preference
+- convention
+origin: session_extraction
+source_session_id: clband-teach-quartermaster-hold-inventory
+source_provider: claude-code
+created_at: 2026-06-12T21:59:54.412530737+00:00
+warning_at: 2026-07-12T21:59:54.412530737+00:00
+expires_at: 2026-09-10T21:59:54.412530737+00:00
+generality: uncertain
+generality_rationale: Detected as a standing user directive; generality inferred from scope signals.
+---
+
+# Always use fixed consumption values — no improvisation (preference)
+
+Standing user preference: Always use fixed consumption values — no improvisation, no creative reductions.
+
+## Conventions
+- Always use fixed consumption values — no improvisation, no creative reductions.
+

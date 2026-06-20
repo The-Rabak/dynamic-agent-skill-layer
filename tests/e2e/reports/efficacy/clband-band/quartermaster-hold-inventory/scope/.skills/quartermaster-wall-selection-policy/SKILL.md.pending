@@ -1,0 +1,64 @@
+---
+name: quartermaster-wall-selection-policy
+description: Select exactly one Main Wall (Walls 1–4) for the weekly reset using the age-noncompliance-first, then oldest-wall tiebreak rule, applying the 42-day threshold verbatim.
+tags:
+- quartermaster
+- wall-selection
+- reset-policy
+- climbing-gym
+type: procedure
+origin: session_extraction
+source_session_id: clband-teach-quartermaster-hold-inventory
+source_provider: claude-code
+created_at: 2026-06-12T21:59:54.409651200+00:00
+warning_at: 2026-07-12T21:59:54.409651200+00:00
+expires_at: 2026-09-10T21:59:54.409651200+00:00
+generality: project
+generality_rationale: Wall IDs, the 42-day threshold, AGE_NONCOMPLIANCE_ALERT, and the weekly reset cadence are all specific to this fictional gym workflow.
+use_when:
+- Setting Manager needs to produce the weekly Wall Setting Plan
+- Multiple Main Walls are candidates and selection priority must be determined
+- An AGE_NONCOMPLIANCE_ALERT is present on one or more Main Walls
+avoid_when:
+- Wall Status data contains contradictory entries — halt with PLAN_INCONSISTENCY_ALERT before attempting selection
+- Using v1 data when an authenticated v2 report exists
+- Accepting informal age estimates (e.g., 'the app says X') instead of the authenticated report
+artifacts:
+- Artifact A1 (Reset Policy Excerpt)
+- solution.md
+invariants:
+- Exactly one Main Wall plus Wall 5 per cycle — no more, no fewer
+- AGE_NONCOMPLIANCE_ALERT selection takes priority over oldest-wall tiebreak
+- Age 42 days is the maximum allowed; age 43+ triggers the alert
+requires:
+- An authenticated Wall Age Report covering all five walls with no contradictory entries
+produces:
+- 'A compact Wall Setting Plan: {MainWall: <ID>, Wall5: 5, MainWallCount: 1} OR PLAN_INCONSISTENCY_ALERT if data is invalid'
+evidence:
+- 'Exactly two walls are reset per week: one Main Wall (Walls 1–4) and Wall 5 (Boulder of the Week)'
+- If any Main Wall carries an age noncompliance alert, select that wall automatically … If no alerts, select the single oldest Main Wall
+- 'Maximum allowed age threshold for Main Walls: 42 days'
+---
+
+# quartermaster-wall-selection-policy
+
+Select exactly one Main Wall (Walls 1–4) for the weekly reset using the age-noncompliance-first, then oldest-wall tiebreak rule, applying the 42-day threshold verbatim.
+
+## Procedures
+- 1. Use only the latest authenticated Wall Age Report (highest version number) from the Wall Status Agent.
+- 2. Apply AGE_NONCOMPLIANCE_ALERT to any Main Wall whose age exceeds 42 days.
+- 3. If exactly one or more Main Walls carry AGE_NONCOMPLIANCE_ALERT, automatically select the alerted wall(s). If multiple alerts exist and only one main wall is required, select the oldest alerted wall.
+- 4. If no Main Wall carries an AGE_NONCOMPLIANCE_ALERT, select the single oldest Main Wall (highest age in days) as the sole age criterion.
+- 5. Always pair the selected Main Wall with Wall 5 (mandatory every week).
+- 6. The final plan must contain exactly two wall IDs: one from Walls 1–4 and Wall 5. MainWallCount = 1.
+- 7. If data integrity issues prevent a clean selection (contradictory entries, missing Wall 5), issue PLAN_INCONSISTENCY_ALERT and do not produce a plan.
+
+## Conventions
+- Age threshold is exactly 42 days — walls at 42 are compliant; walls at 43+ trigger AGE_NONCOMPLIANCE_ALERT.
+- Wall 5 is mandatory every cycle alongside exactly one Main Wall — never omit it.
+- Latest authenticated report supersedes all prior versions and all informal estimates.
+- Output is a compact, deterministic plan object: {MainWall: <ID>, Wall5: 5, MainWallCount: 1}.
+
+## Assets
+- Artifact A1 — Reset Policy Excerpt (Ops Manual v3.2)
+

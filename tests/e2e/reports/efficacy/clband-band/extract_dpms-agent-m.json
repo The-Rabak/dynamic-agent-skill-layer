@@ -1,0 +1,52 @@
+{
+ "context": "dpms-agent-m",
+ "transcript": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/dpms-agent-m/transcript.jsonl",
+ "scope": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/dpms-agent-m/scope",
+ "worker_rc": 1,
+ "elapsed_s": 659.6,
+ "n_drafts": 7,
+ "drafts": [
+  {
+   "name": "Produce complete, validated, professionally formatted reports that meet (preference)",
+   "description": "Standing user preference: Produce complete, validated, professionally formatted reports that meet schema requirements, contain all required sections, maintain internal consistency, and are ready for immediate operational use or archival storage, using provided inputs and conforming to the DPMS v4 standard.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/dpms-agent-m/scope/.skills/produce-complete-validated-professionally-formatted-reports-that-meet-preference/SKILL.md.pending"
+  },
+  {
+   "name": "dpms-agent-m-schema-compliance-fallback",
+   "description": "DPMS Agent M schema compliance is non-waivable: if PDF compilation or template prerequisites fail, invoke the defined fallback sequence (structured Markdown preserving all required sections), document in metadata, and never skip schema checks or drop appendices to meet a deadline.",
+   "skill_type": "rule",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/dpms-agent-m/scope/.skills/dpms-agent-m-schema-compliance-fallback/SKILL.md.pending"
+  },
+  {
+   "name": "dpms-agent-m-conflict-flagging-procedure",
+   "description": "When DPMS agent outputs conflict numerically (e.g., a flow trigger exceeds an operational bound, or a CI label contradicts validated intervals), Agent M assigns a FLAG-M-XX code, applies the conservative or authoritative value, and escalates safety-critical conflicts for human resolution.",
+   "skill_type": "procedure",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/dpms-agent-m/scope/.skills/dpms-agent-m-conflict-flagging-procedure/SKILL.md.pending"
+  },
+  {
+   "name": "dpms-agent-m-risk-classification-integrity",
+   "description": "Agent M must never alter an analytically derived DPMS risk classification (low/moderate/elevated/critical) in response to political pressure, stakeholder optics requests, or narrative smoothing; refuse such requests explicitly and preserve the analytically supported classification.",
+   "skill_type": "anti_pattern",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/dpms-agent-m/scope/.skills/dpms-agent-m-risk-classification-integrity/SKILL.md.pending"
+  },
+  {
+   "name": "dpms-agent-m-posterior-authority-rule",
+   "description": "In DPMS, Agent F's (Bayesian Update) posterior mean is the authoritative headline probability; Agent J simulation and Agent L narrative estimates are secondary cross-checks and must never replace the posterior as the report's headline figure.",
+   "skill_type": "rule",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/dpms-agent-m/scope/.skills/dpms-agent-m-posterior-authority-rule/SKILL.md.pending"
+  },
+  {
+   "name": "dpms-agent-m-routing-protocol",
+   "description": "Agent M in DPMS delivers the final report package exclusively to Orchestrator (Agent A); routing output directly to external stakeholders (Mayor, City Manager) or bypassing the Orchestrator is a protocol violation that must be refused.",
+   "skill_type": "anti_pattern",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/dpms-agent-m/scope/.skills/dpms-agent-m-routing-protocol/SKILL.md.pending"
+  },
+  {
+   "name": "dpms-agent-m-input-verification-gate",
+   "description": "Before composing any DPMS report, Agent M must verify all nine mandatory input categories are present; missing inputs generate FLAG-M-XX codes; the gate returns PROCEED or PROCEED WITH FLAGS but never silently omits required data.",
+   "skill_type": "procedure",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/dpms-agent-m/scope/.skills/dpms-agent-m-input-verification-gate/SKILL.md.pending"
+  }
+ ]
+}

@@ -1,0 +1,37 @@
+diff --git a/django/db/migrations/recorder.py b/django/db/migrations/recorder.py
+index 1a37c6b7d0..a7bafcaf06 100644
+--- a/django/db/migrations/recorder.py
++++ b/django/db/migrations/recorder.py
+@@ -1,5 +1,6 @@
+ from django.apps.registry import Apps
+ from django.db import DatabaseError, models
++from django.db import router
+ from django.utils.functional import classproperty
+ from django.utils.timezone import now
+ 
+@@ -58,6 +59,9 @@ class MigrationRecorder:
+ 
+     def ensure_schema(self):
+         """Ensure the table exists and has the correct schema."""
++        # If the router says not to migrate this database, silently skip.
++        if not router.allow_migrate(self.connection.alias, self.Migration._meta.app_label):
++            return
+         # If the table's there, that's fine - we've never changed its schema
+         # in the codebase.
+         if self.has_table():
+@@ -84,11 +88,15 @@ class MigrationRecorder:
+     def record_applied(self, app, name):
+         """Record that a migration was applied."""
+         self.ensure_schema()
++        if not router.allow_migrate(self.connection.alias, self.Migration._meta.app_label):
++            return
+         self.migration_qs.create(app=app, name=name)
+ 
+     def record_unapplied(self, app, name):
+         """Record that a migration was unapplied."""
+         self.ensure_schema()
++        if not router.allow_migrate(self.connection.alias, self.Migration._meta.app_label):
++            return
+         self.migration_qs.filter(app=app, name=name).delete()
+ 
+     def flush(self):

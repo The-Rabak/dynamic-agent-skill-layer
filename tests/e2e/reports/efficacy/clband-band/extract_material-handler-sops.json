@@ -1,0 +1,160 @@
+{
+ "context": "material-handler-sops",
+ "transcript": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/material-handler-sops/transcript.jsonl",
+ "scope": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/material-handler-sops/scope",
+ "worker_rc": 0,
+ "elapsed_s": 338.4,
+ "n_drafts": 25,
+ "drafts": [
+  {
+   "name": "Never use wet trays; they create moisture sensitivity (preference)",
+   "description": "Standing user preference: Never use wet trays; they create moisture sensitivity issues.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/material-handler-sops/scope/.skills/never-use-wet-trays-they-create-moisture-sensitivity-preference/SKILL.md.pending"
+  },
+  {
+   "name": "Quarantine damaged containers immediately and report them to (preference)",
+   "description": "Standing user preference: Quarantine damaged containers immediately and report them to Quality; do not use a damaged container even if it appears mostly intact.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/material-handler-sops/scope/.skills/quarantine-damaged-containers-immediately-and-report-them-to-preference/SKILL.md.pending"
+  },
+  {
+   "name": "msl-seal-breach-mandatory-bakeout-15min",
+   "description": "Cold Chain Rule 3: if an MSL dry-bag seal is broken for ANY reason (including re-taping), the lot must be returned to the bake-out oven area within 15 minutes, regardless of scheduled destination or schedule pressure.",
+   "skill_type": "rule",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/material-handler-sops/scope/.skills/msl-seal-breach-mandatory-bakeout-15min/SKILL.md.pending"
+  },
+  {
+   "name": "ordered-disqualification-for-use-no-use-decisions",
+   "description": "When deciding whether a container or lot is safe to use, evaluate disqualifiers in strict priority order from most severe to least severe, stopping and acting at the first disqualifier found. Do not proceed to lower-priority checks once a disqualifier is found. This prevents wasted effort on already-disqualified items and ensures the most serious issues (e.g., physical damage) are caught and acted on before subtler ones (e.g., use count).",
+   "skill_type": "best_practice",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/material-handler-sops/scope/.skills/ordered-disqualification-for-use-no-use-decisions/SKILL.md.pending"
+  },
+  {
+   "name": "contamination-and-mixing-prevention-as-a-rule-class",
+   "description": "A coherent class of rules across the session all enforce a single meta-principle: once a quality class, purity state, or environmental category is established for a lot or container, it must be protected from contamination or mixing with incompatible classes. This class includes bin-category segregation, moisture contamination prevention, MSL integrity enforcement, ESD class matching, and cleanroom-boundary crossing protocols. Rules in this class share a common enforcement posture: physical separation, mandatory remediation before re-use, and hard stops rather than warnings.",
+   "skill_type": "principle",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/material-handler-sops/scope/.skills/contamination-and-mixing-prevention-as-a-rule-class/SKILL.md.pending"
+  },
+  {
+   "name": "Always confirm the lot ID matches before initiating (preference)",
+   "description": "Standing user preference: Always confirm the lot ID matches before initiating any move.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/material-handler-sops/scope/.skills/always-confirm-the-lot-id-matches-before-initiating-preference/SKILL.md.pending"
+  },
+  {
+   "name": "Assess QFP tube condition before use: use count (preference)",
+   "description": "Standing user preference: Assess QFP tube condition before use: use count \u22644 is clean and usable; use count = 5 requires cleaning before next use; cracked or otherwise damaged tubes must be quarantined and not used.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/material-handler-sops/scope/.skills/assess-qfp-tube-condition-before-use-use-count-preference/SKILL.md.pending"
+  },
+  {
+   "name": "Staged lots must be moved to their final (preference)",
+   "description": "Standing user preference: Staged lots must be moved to their final destination or returned to secure warehouse storage within 2 hours, even if the destination tester is not yet ready.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/material-handler-sops/scope/.skills/staged-lots-must-be-moved-to-their-final-preference/SKILL.md.pending"
+  },
+  {
+   "name": "Non-ESD-sensitive devices must not be placed in ESD-safe (preference)",
+   "description": "Standing user preference: Non-ESD-sensitive devices must not be placed in ESD-safe containers (cost-saving rule; requires knowing each device's ESD classification before packaging).",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/material-handler-sops/scope/.skills/non-esd-sensitive-devices-must-not-be-placed-in-esd-safe-preference/SKILL.md.pending"
+  },
+  {
+   "name": "verify-before-act-universal-gate",
+   "description": "Every physical action in the warehouse (move, package, transport, container selection) must pass through a multi-layered pre-condition verification gate before the action is initiated. No single check is sufficient; the pattern recurs across lot identity, system confirmation, container state, and environmental conditions. Skipping any check invalidates the entire gate.",
+   "skill_type": "principle",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/material-handler-sops/scope/.skills/verify-before-act-universal-gate/SKILL.md.pending"
+  },
+  {
+   "name": "During restricted corridor hours (11:30\u201313:00 and 17:00\u201317:30), use (preference)",
+   "description": "Standing user preference: During restricted corridor hours (11:30\u201313:00 and 17:00\u201317:30), use alternate routes (even if 3\u00d7 longer) or wait until the corridor is clear.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/material-handler-sops/scope/.skills/during-restricted-corridor-hours-11-30-13-00-and-17-00-17-30-use-preference/SKILL.md.pending"
+  },
+  {
+   "name": "Never mix different bin categories (Good, Rework, Scrap) (preference)",
+   "description": "Standing user preference: Never mix different bin categories (Good, Rework, Scrap) during transport or staging; mixing risks financial loss and damages customer trust.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/material-handler-sops/scope/.skills/never-mix-different-bin-categories-good-rework-scrap-preference/SKILL.md.pending"
+  },
+  {
+   "name": "non-waivable-safety-constraints-under-schedule-pressure",
+   "description": "When a manager or operator pressures the Material Handler to skip or abbreviate safety steps (ESD verification, IMS pre-move update, UV transfer cycle, MSL bake-out, bin segregation) to meet a schedule, all such constraints are non-waivable \u2014 'use judgment' does not override them.",
+   "skill_type": "principle",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/material-handler-sops/scope/.skills/non-waivable-safety-constraints-under-schedule-pressure/SKILL.md.pending"
+  },
+  {
+   "name": "Never compromise quality for throughput; multiple checkpoints and (preference)",
+   "description": "Standing user preference: Never compromise quality for throughput; multiple checkpoints and escalation rules enforce this priority.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/material-handler-sops/scope/.skills/never-compromise-quality-for-throughput-multiple-checkpoints-and-preference/SKILL.md.pending"
+  },
+  {
+   "name": "Do not move any lot until the pre-move (preference)",
+   "description": "Standing user preference: Do not move any lot until the pre-move location update transaction confirms.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/material-handler-sops/scope/.skills/do-not-move-any-lot-until-the-pre-move-preference/SKILL.md.pending"
+  },
+  {
+   "name": "When crossing between cleanroom classes, always use the (preference)",
+   "description": "Standing user preference: When crossing between cleanroom classes, always use the transfer chamber UV cycle.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/material-handler-sops/scope/.skills/when-crossing-between-cleanroom-classes-always-use-the-preference/SKILL.md.pending"
+  },
+  {
+   "name": "Act as an expert in warehouse management and (preference)",
+   "description": "Standing user preference: Act as an expert in warehouse management and material tracking, including transporting devices between staging areas, testers, and warehouse locations.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/material-handler-sops/scope/.skills/act-as-an-expert-in-warehouse-management-and-preference/SKILL.md.pending"
+  },
+  {
+   "name": "ims-pre-move-update-must-confirm-before-physical-move",
+   "description": "Rule 10: the inventory management system (IMS) location update must be submitted AND confirmed before any physical lot movement begins; if IMS is degraded/slow, wait for confirmation regardless of schedule pressure.",
+   "skill_type": "rule",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/material-handler-sops/scope/.skills/ims-pre-move-update-must-confirm-before-physical-move/SKILL.md.pending"
+  },
+  {
+   "name": "single-lot-transport-bin-segregation-multi-trip",
+   "description": "Rule 1+2 enforcement: transport one lot at a time with each bin category (Good, Rework, Scrap) in a separate sealed, color-coded container; co-transport with other lots or mixing bins even with dividers is prohibited, requiring multiple sequential trips.",
+   "skill_type": "rule",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/material-handler-sops/scope/.skills/single-lot-transport-bin-segregation-multi-trip/SKILL.md.pending"
+  },
+  {
+   "name": "hard-stop-and-escalate-never-workaround",
+   "description": "When a hard constraint (safety, quality, regulatory, or procedural) cannot be met \u2014 whether due to missing conditions, damaged materials, or external pressure to skip steps \u2014 the correct response is to stop the operation and escalate, never to proceed with a workaround, abbreviation, or informal exception. Workarounds that avoid the surface symptom while bypassing the underlying control are treated as violations equivalent to skipping the control entirely.",
+   "skill_type": "principle",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/material-handler-sops/scope/.skills/hard-stop-and-escalate-never-workaround/SKILL.md.pending"
+  },
+  {
+   "name": "esds-container-qualification-three-disqualifiers",
+   "description": "For ESDS lots, qualify QFP tubes by eliminating three disqualifier classes in order: damaged (quarantine immediately), over-use-count (must clean before use), and non-ESD type (never allowed for ESDS material regardless of availability).",
+   "skill_type": "procedure",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/material-handler-sops/scope/.skills/esds-container-qualification-three-disqualifiers/SKILL.md.pending"
+  },
+  {
+   "name": "high-value-lot-escort-authoritative-valuation-source",
+   "description": "For high-value escort threshold ($500K per SEC-HV-01), use the current LMI artifact value \u2014 not the Finance team's older estimate. If LMI value exceeds $500,000, continuous escort is mandatory and cannot be waived.",
+   "skill_type": "rule",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/material-handler-sops/scope/.skills/high-value-lot-escort-authoritative-valuation-source/SKILL.md.pending"
+  },
+  {
+   "name": "system-of-record-leads-physical-state",
+   "description": "The IMS (inventory management system) is the authoritative source of truth for lot location. Physical state changes must always be preceded and authorized by a confirmed IMS transaction \u2014 never concurrent with or after. Physical actions that outrun IMS confirmation create unrecoverable divergence between recorded and actual state, which corrupts downstream traceability and audit trails.",
+   "skill_type": "principle",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/material-handler-sops/scope/.skills/system-of-record-leads-physical-state/SKILL.md.pending"
+  },
+  {
+   "name": "Verify container availability before planning any move: BGA (preference)",
+   "description": "Standing user preference: Verify container availability before planning any move: BGA trays (50 total, 3 needed per lot, 8 currently available), wafer carriers (30 total, 1\u20132 per lot, 2 currently available), QFP tubes (200 total, 5\u201310 per lot, 20 currently available).",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/material-handler-sops/scope/.skills/verify-container-availability-before-planning-any-move-bga-preference/SKILL.md.pending"
+  },
+  {
+   "name": "Do not use containers flagged in the container (preference)",
+   "description": "Standing user preference: Do not use containers flagged in the container inventory list.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/material-handler-sops/scope/.skills/do-not-use-containers-flagged-in-the-container-preference/SKILL.md.pending"
+  }
+ ]
+}

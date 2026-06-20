@@ -1,0 +1,62 @@
+---
+name: dpms-agent-m-input-verification-gate
+description: Before composing any DPMS report, Agent M must verify all nine mandatory input categories are present; missing inputs generate FLAG-M-XX codes; the gate returns PROCEED or PROCEED WITH FLAGS but never silently omits required data.
+tags:
+- dpms
+- input-validation
+- agent-m
+- taught-system
+type: procedure
+origin: session_extraction
+source_session_id: clband-teach-dpms-agent-m
+source_provider: claude-code
+created_at: 2026-06-12T23:18:42.285305978+00:00
+warning_at: 2026-07-12T23:18:42.285305978+00:00
+expires_at: 2026-09-10T23:18:42.285305978+00:00
+generality: project
+generality_rationale: Lists DPMS-specific agent designations (Agent A through Agent N), artifact numbers, flag codes, and input field names (normalized_event_type, harmonized_probability_grid, etc.) that are unique to this invented system.
+use_when:
+- Starting composition of a DPMS final report
+- One or more upstream agents have not delivered their artifacts
+- Agent I (Sensitivity Analyzer) output is absent
+- Before populating any report section that depends on upstream agent data
+avoid_when:
+- Do NOT begin section assembly without completing the input verification gate
+- Do NOT silently populate a section with default or placeholder values without a FLAG-M-XX entry
+artifacts:
+- Artifacts 1–7
+- Orchestrator turn metadata
+invariants:
+- All nine mandatory input categories must be checked before composition begins
+- Every missing input must be flagged with a FLAG-M-XX code
+- Gate result (PROCEED or PROCEED WITH FLAGS) must be recorded in report metadata
+requires:
+- Artifacts or messages from all 13 upstream agents (A through L) before gate can complete
+- Orchestrator metadata (RUN_ID, REQUESTED_FORMAT, USER_PERSONA, GENERATION_TIMESTAMP, AGENT_VERSIONS, RESOURCE_BUDGET)
+produces:
+- 'Gate result: PROCEED or PROCEED WITH FLAGS'
+- FLAG-M-XX log entries for each missing input
+- Inventory of which report sections have complete vs. partial input coverage
+evidence:
+- 'Input verification gate: All nine mandatory input categories were checked against arriving artifacts'
+- 'One gap: Agent I (Sensitivity Analyzer) produced no output (FLAG-M-01)'
+- All other inputs present; gate returned PROCEED WITH FLAGS
+---
+
+# dpms-agent-m-input-verification-gate
+
+Before composing any DPMS report, Agent M must verify all nine mandatory input categories are present; missing inputs generate FLAG-M-XX codes; the gate returns PROCEED or PROCEED WITH FLAGS but never silently omits required data.
+
+## Procedures
+- 1. Before beginning report composition, check for inputs from all nine mandatory source agents: (1) Agent L — interpretation text, risk classification, decision flags, recommendations; (2) Agent K — feasibility assessment, critical_violation flag, violation_codes, operational bounds; (3) Agent J — simulation results, expected_event_probability, exceedance probabilities, numerical_stability flag; (4) Agent I — sensitivity coefficients, ranked parameters, instability_detected flag; (5) Agent H — credible intervals (90%, 95%, 99%), uncertainty_status; (6) Agent G — harmonized_probability_grid, fusion_weights; (7) Agent F — posterior distribution, prior distribution; (8) Agent C — cleaning_metadata, sensor_data_summary; (9) Agent B — normalized_event_type, location_coordinates, time_horizon.
+- 2. Also confirm Orchestrator metadata: RUN_ID, REQUESTED_FORMAT, USER_PERSONA, GENERATION_TIMESTAMP, AGENT_VERSIONS, RESOURCE_BUDGET.
+- 3. For each missing mandatory input, assign a FLAG-M-XX code (starting at FLAG-M-01) and document the missing agent and impact.
+- 4. If all nine are present: gate returns PROCEED.
+- 5. If any are missing: gate returns PROCEED WITH FLAGS; note which downstream sections will have gaps and mark them as incomplete in the report.
+- 6. Never suppress a missing-input flag or proceed as if the input were present.
+
+## Conventions
+- FLAG-M-01 is reserved for a missing Agent I (Sensitivity Analyzer) input.
+- Gate result of PROCEED WITH FLAGS does not block composition — it documents gaps and proceeds.
+- Missing sensitivity data results in a proxy chart or placeholder section, not a silent omission.
+

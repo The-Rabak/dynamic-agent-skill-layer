@@ -1,0 +1,23 @@
+---
+name: Dartman pieces can shoot each other and must (preference)
+description: 'Standing user preference: Dartman pieces can shoot each other and must never be left in a position where they are vulnerable.'
+tags:
+- preference
+- convention
+origin: session_extraction
+source_session_id: clband-teach-dartman-game
+source_provider: claude-code
+created_at: 2026-06-12T22:33:38.138907444+00:00
+warning_at: 2026-07-12T22:33:38.138907444+00:00
+expires_at: 2026-09-10T22:33:38.138907444+00:00
+generality: uncertain
+generality_rationale: Detected as a standing user directive; generality inferred from scope signals.
+---
+
+# Dartman pieces can shoot each other and must (preference)
+
+Standing user preference: Dartman pieces can shoot each other and must never be left in a position where they are vulnerable.
+
+## Conventions
+- Dartman pieces can shoot each other and must never be left in a position where they are vulnerable.
+

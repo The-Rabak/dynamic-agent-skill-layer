@@ -1,0 +1,58 @@
+---
+name: verify-before-act-universal-gate
+description: Every physical action in the warehouse (move, package, transport, container selection) must pass through a multi-layered pre-condition verification gate before the action is initiated. No single check is sufficient; the pattern recurs across lot identity, system confirmation, container state, and environmental conditions. Skipping any check invalidates the entire gate.
+tags:
+- verification
+- pre-conditions
+- lot-handling
+- containers
+- ims
+type: principle
+origin: session_extraction
+source_session_id: clband-teach-material-handler-sops
+source_provider: claude-code
+created_at: 2026-06-12T21:34:12.099388546+00:00
+warning_at: 2026-07-12T21:34:12.099388546+00:00
+expires_at: 2026-09-10T21:34:12.099388546+00:00
+generality: general
+generality_rationale: Applies to every physical action class in the warehouse; verified across container selection, lot identity, system transactions, and environmental routing.
+use_when:
+- Initiating any lot move, packaging step, or container assignment
+- Any transition between locations, testers, or storage areas
+- Selecting and staging containers before transport
+avoid_when:
+- Do not collapse multiple verification gates into a single informal visual check
+- Do not defer verification to post-action reconciliation under schedule pressure
+invariants:
+- Physical state must never lead system (IMS) state
+- Lot ID confirmation is required even when the lot appears obviously correct
+- Container qualification checks must precede container assignment
+requires:
+- IMS access and transaction confirmation capability
+- Current container inventory list with flags and use counts
+- Lot manifest with ID and ESD classification
+produces:
+- A cleared, documented pre-condition state that authorizes physical action
+- An auditable record that all gates were passed before the move
+evidence:
+- ims-pre-move-update-must-confirm-before-physical-move (skill 5)
+- Always confirm the lot ID matches before initiating any move (preference 10)
+- Verify container availability before planning any move (preference 12)
+- Do not use containers flagged in the container inventory list (preference 15)
+- Assess QFP tube condition before use (preference 16)
+- Do not move any lot until the pre-move location update transaction confirms (preference 18)
+---
+
+# verify-before-act-universal-gate
+
+Every physical action in the warehouse (move, package, transport, container selection) must pass through a multi-layered pre-condition verification gate before the action is initiated. No single check is sufficient; the pattern recurs across lot identity, system confirmation, container state, and environmental conditions. Skipping any check invalidates the entire gate.
+
+## Procedures
+- Before initiating any physical move: confirm lot ID matches, confirm IMS pre-move update is confirmed, verify container availability and condition, check for flags or disqualifiers.
+- Treat each verification as a hard gate — a pending or failed check is a hard stop, not a soft advisory.
+- Perform checks in dependency order: system state (IMS) → lot identity → container qualification → environmental clearance (corridor hours, cleanroom class).
+
+## Conventions
+- No physical action proceeds until ALL applicable gates are cleared.
+- A partial check set is treated the same as no check.
+

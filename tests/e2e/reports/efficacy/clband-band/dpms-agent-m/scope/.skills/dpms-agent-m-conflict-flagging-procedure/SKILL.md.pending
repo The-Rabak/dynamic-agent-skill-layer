@@ -1,0 +1,71 @@
+---
+name: dpms-agent-m-conflict-flagging-procedure
+description: When DPMS agent outputs conflict numerically (e.g., a flow trigger exceeds an operational bound, or a CI label contradicts validated intervals), Agent M assigns a FLAG-M-XX code, applies the conservative or authoritative value, and escalates safety-critical conflicts for human resolution.
+tags:
+- dpms
+- conflict-resolution
+- agent-m
+- flags
+- taught-system
+type: procedure
+origin: session_extraction
+source_session_id: clband-teach-dpms-agent-m
+source_provider: claude-code
+created_at: 2026-06-12T23:18:42.284508009+00:00
+warning_at: 2026-07-12T23:18:42.284508009+00:00
+expires_at: 2026-09-10T23:18:42.284508009+00:00
+generality: project
+generality_rationale: References DPMS-specific flag codes (FLAG-M-01 through FLAG-M-05), agent designations (Agent K, Agent H, Agent L, Agent J), and DPMS operational bound parameter names that are unique to this invented system.
+use_when:
+- Agent L flow trigger (e.g., 450 m³/s) exceeds Agent K max_safe_flow bound (e.g., 420 m³/s)
+- A figure label CI contradicts Agent H's validated credible interval
+- Scenario analysis deltas do not arithmetic-check against the stated baseline
+- Any two agents report numerically inconsistent values for the same quantity
+avoid_when:
+- Do NOT silently pick one conflicting value without logging the conflict and resolution
+- Do NOT use the higher (less conservative) value for safety-critical parameters when agents conflict
+artifacts:
+- Artifact 3 (Agent J scenarios)
+- Artifact 4 (Agent H uncertainty)
+- Artifact 5 (Agent L recommendations)
+- Artifact 6 (Agent K operational bounds)
+- Appendix B
+invariants:
+- Every detected conflict must receive a FLAG-M-XX code and be documented in metadata
+- For safety-critical conflicts (Flag-M-05), the conservative value is active until human resolution
+- Original erroneous values must be preserved (in Appendix B) alongside corrections
+requires:
+- Agent K (Feasibility & Constraints) output with explicit operational bounds (max_safe_flow, max_safe_saturation_index)
+- Agent H (Uncertainty) validated credible intervals as the authoritative CI source
+- Agent F posterior mean as the authoritative probability source
+produces:
+- FLAG-M-XX log entries in report metadata
+- Corrected Table 2 with arithmetic-verified scenario deltas
+- Appendix B with preserved original values
+- Escalation marker for FLAG-M-05 conflicts requiring human resolution
+evidence:
+- 'FLAG-M-05 (escalation required): Agent L''s flow trigger (450 m³/s) exceeds Agent K''s max_safe_flow bound (420 m³/s) — conservative 420 m³/s is the active recommendation until resolved'
+- 'FLAG-M-03: Artifact 1 figure label (95% CI [0.49, 0.68]) contradicts Agent H''s validated [0.47, 0.76]; authoritative value used'
+- 'FLAG-M-04: Both scenario deltas in Artifact 3 are arithmetically wrong (Rainfall: +0.05 should be +0.04; Soil: +0.03 should be +0.02); corrected in Table 2, originals preserved in Appendix B'
+---
+
+# dpms-agent-m-conflict-flagging-procedure
+
+When DPMS agent outputs conflict numerically (e.g., a flow trigger exceeds an operational bound, or a CI label contradicts validated intervals), Agent M assigns a FLAG-M-XX code, applies the conservative or authoritative value, and escalates safety-critical conflicts for human resolution.
+
+## Procedures
+- 1. During pre-composition validation, compare all numerically related values across agent artifacts (probability estimates, CI bounds, flow rates, thresholds).
+- 2. When a conflict is detected, assign the next available FLAG-M-XX code (FLAG-M-01, FLAG-M-02, etc., sequentially).
+- 3. For probability/CI conflicts: use the value from the authoritative agent (Agent F for probabilities, Agent H for credible intervals) and document the discarded value.
+- 4. For arithmetic errors in scenario deltas: compute the correct value from the stated baseline, use the corrected value in Table 2, and preserve the original erroneous value in Appendix B.
+- 5. For safety-critical conflicts (e.g., a recommended threshold exceeds an operational bound from Agent K): apply the conservative (lower/safer) value as the active recommendation, mark as FLAG-M-05 level (escalation required), and flag for human resolution.
+- 6. List all FLAG-M-XX entries in the report metadata with: source agents, conflicting values, resolution applied, and escalation status.
+
+## Conventions
+- FLAG-M-01: Missing mandatory input from an upstream agent.
+- FLAG-M-02: Agent L narrative probability diverges from Agent F posterior mean.
+- FLAG-M-03: Figure label CI contradicts Agent H validated CI — use Agent H value.
+- FLAG-M-04: Scenario delta arithmetic error — correct and preserve original in Appendix B.
+- FLAG-M-05: Safety-critical conflict between agent recommendations and Agent K operational bounds — escalation required.
+- Conservative value is always the active recommendation for safety-critical conflicts until human resolution.
+

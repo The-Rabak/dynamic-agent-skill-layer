@@ -1,0 +1,51 @@
+---
+name: system-of-record-leads-physical-state
+description: The IMS (inventory management system) is the authoritative source of truth for lot location. Physical state changes must always be preceded and authorized by a confirmed IMS transaction — never concurrent with or after. Physical actions that outrun IMS confirmation create unrecoverable divergence between recorded and actual state, which corrupts downstream traceability and audit trails.
+tags:
+- ims
+- system-of-record
+- transaction-ordering
+- audit-trail
+type: principle
+origin: session_extraction
+source_session_id: clband-teach-material-handler-sops
+source_provider: claude-code
+created_at: 2026-06-12T21:34:12.100044024+00:00
+warning_at: 2026-07-12T21:34:12.100044024+00:00
+expires_at: 2026-09-10T21:34:12.100044024+00:00
+generality: general
+generality_rationale: This is the underlying WHY behind two independent skills, making it a higher-altitude principle neither skill stated explicitly.
+use_when:
+- Any lot is about to be physically relocated
+- Moving between staging areas, testers, and warehouse locations
+- Any container or lot assignment that changes the recorded location
+avoid_when:
+- Do not treat IMS update as a paperwork step that can follow the physical move
+- Do not proceed if IMS is slow or unresponsive — wait or escalate, do not move
+invariants:
+- At no point in time should the physical lot location precede the IMS-recorded location
+- Confirmation (not just submission) is the gate
+requires:
+- IMS transaction access
+- Network/system availability before physical move
+produces:
+- Consistent physical-to-digital state
+- Clean audit trail for lot traceability
+evidence:
+- ims-pre-move-update-must-confirm-before-physical-move (skill 5)
+- Do not move any lot until the pre-move location update transaction confirms (preference 18)
+---
+
+# system-of-record-leads-physical-state
+
+The IMS (inventory management system) is the authoritative source of truth for lot location. Physical state changes must always be preceded and authorized by a confirmed IMS transaction — never concurrent with or after. Physical actions that outrun IMS confirmation create unrecoverable divergence between recorded and actual state, which corrupts downstream traceability and audit trails.
+
+## Procedures
+- Submit the IMS pre-move location update transaction before touching the lot.
+- Wait for explicit confirmation of the transaction (not just submission) before initiating physical movement.
+- If IMS confirmation is delayed or unavailable, hold the lot in place — do not move and update IMS retroactively.
+
+## Conventions
+- IMS confirmation is a hard prerequisite, not a concurrent or post-action step.
+- Retroactive IMS updates after a physical move are a process violation, not a recovery path.
+

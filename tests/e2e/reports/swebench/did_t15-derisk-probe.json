@@ -1,0 +1,204 @@
+{
+  "run_id": "t15-derisk-probe",
+  "server_url": "http://127.0.0.1:3002",
+  "arms": [
+    "off",
+    "treat"
+  ],
+  "n_test": 5,
+  "model": "sonnet",
+  "max_turns": 40,
+  "split_fixture": "/home/rabak/projects/dynamic-agent-skill-layer/tests/fixtures/t15_swebench_split.json",
+  "prereg_salt": "t15-preereg-2026-06-19",
+  "treat_scope": "/tmp/t15-swebench/project/swebench-django",
+  "ctrl_scope": "/tmp/t15-swebench/project/swebench-sympy",
+  "treat_seed_injected_count": 4,
+  "corpus_inventory": {
+    "treat_seed_skills": [
+      "assert-migration-noop-with-assertnumqueries-zero",
+      "django-migration-rename-noop-guard",
+      "guard-empty-string-before-index-access-python"
+    ],
+    "ctrl_seed_skills": [
+      "slots-hierarchy-full-audit-principle",
+      "slots-mixin-missing-slots-restores-dict",
+      "symbolic-float-precision-mismatch-prevents-cancellation",
+      "sympy-codeprinter-unsupported-fn-via-piecewise",
+      "treat-missing-slots-in-a-parent-class-as-preference"
+    ]
+  },
+  "per_instance_resolved": [
+    {
+      "instance_id": "django__django-15789",
+      "off": 1,
+      "treat": 1
+    },
+    {
+      "instance_id": "django__django-11099",
+      "off": 1,
+      "treat": 1
+    },
+    {
+      "instance_id": "django__django-10924",
+      "off": 1,
+      "treat": 1
+    },
+    {
+      "instance_id": "django__django-11564",
+      "off": 0,
+      "treat": 0
+    },
+    {
+      "instance_id": "django__django-13321",
+      "off": 0,
+      "treat": 0
+    }
+  ],
+  "attribution": [
+    {
+      "instance_id": "django__django-15789",
+      "arm": "off",
+      "skill_names": [],
+      "skill_ids": [],
+      "seed_hits": [],
+      "status": null,
+      "repo_path": null,
+      "injected": false,
+      "resolved": true,
+      "empty_patch": false
+    },
+    {
+      "instance_id": "django__django-15789",
+      "arm": "treat",
+      "skill_names": [
+        "assert-migration-noop-with-assertnumqueries-zero"
+      ],
+      "skill_ids": [],
+      "seed_hits": [
+        "assert-migration-noop-with-assertnumqueries-zero"
+      ],
+      "status": "ok",
+      "repo_path": "/tmp/t15-swebench/project/swebench-django",
+      "injected": true,
+      "resolved": true,
+      "empty_patch": false
+    },
+    {
+      "instance_id": "django__django-11099",
+      "arm": "off",
+      "skill_names": [],
+      "skill_ids": [],
+      "seed_hits": [],
+      "status": null,
+      "repo_path": null,
+      "injected": false,
+      "resolved": true,
+      "empty_patch": false
+    },
+    {
+      "instance_id": "django__django-11099",
+      "arm": "treat",
+      "skill_names": [
+        "guard-empty-string-before-index-access-python",
+        "django-migration-rename-noop-guard"
+      ],
+      "skill_ids": [],
+      "seed_hits": [
+        "guard-empty-string-before-index-access-python",
+        "django-migration-rename-noop-guard"
+      ],
+      "status": "ok",
+      "repo_path": "/tmp/t15-swebench/project/swebench-django",
+      "injected": true,
+      "resolved": true,
+      "empty_patch": false
+    },
+    {
+      "instance_id": "django__django-10924",
+      "arm": "off",
+      "skill_names": [],
+      "skill_ids": [],
+      "seed_hits": [],
+      "status": null,
+      "repo_path": null,
+      "injected": false,
+      "resolved": true,
+      "empty_patch": false
+    },
+    {
+      "instance_id": "django__django-10924",
+      "arm": "treat",
+      "skill_names": [
+        "django-migration-rename-noop-guard",
+        "assert-migration-noop-with-assertnumqueries-zero"
+      ],
+      "skill_ids": [],
+      "seed_hits": [
+        "django-migration-rename-noop-guard",
+        "assert-migration-noop-with-assertnumqueries-zero"
+      ],
+      "status": "ok",
+      "repo_path": "/tmp/t15-swebench/project/swebench-django",
+      "injected": true,
+      "resolved": true,
+      "empty_patch": false
+    },
+    {
+      "instance_id": "django__django-11564",
+      "arm": "off",
+      "skill_names": [],
+      "skill_ids": [],
+      "seed_hits": [],
+      "status": null,
+      "repo_path": null,
+      "injected": false,
+      "resolved": false,
+      "empty_patch": false
+    },
+    {
+      "instance_id": "django__django-11564",
+      "arm": "treat",
+      "skill_names": [],
+      "skill_ids": [],
+      "seed_hits": [],
+      "status": "no_match",
+      "repo_path": "/tmp/t15-swebench/project/swebench-django",
+      "injected": false,
+      "resolved": false,
+      "empty_patch": false
+    },
+    {
+      "instance_id": "django__django-13321",
+      "arm": "off",
+      "skill_names": [],
+      "skill_ids": [],
+      "seed_hits": [],
+      "status": null,
+      "repo_path": null,
+      "injected": false,
+      "resolved": false,
+      "empty_patch": false
+    },
+    {
+      "instance_id": "django__django-13321",
+      "arm": "treat",
+      "skill_names": [
+        "guard-empty-string-before-index-access-python",
+        "assert-migration-noop-with-assertnumqueries-zero",
+        "django-migration-rename-noop-guard"
+      ],
+      "skill_ids": [],
+      "seed_hits": [
+        "guard-empty-string-before-index-access-python",
+        "assert-migration-noop-with-assertnumqueries-zero",
+        "django-migration-rename-noop-guard"
+      ],
+      "status": "ok",
+      "repo_path": "/tmp/t15-swebench/project/swebench-django",
+      "injected": true,
+      "resolved": false,
+      "empty_patch": false
+    }
+  ],
+  "aggregate": null
+}

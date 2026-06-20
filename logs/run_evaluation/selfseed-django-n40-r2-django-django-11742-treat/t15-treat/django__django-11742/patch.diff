@@ -1,0 +1,53 @@
+diff --git a/django/db/models/fields/__init__.py b/django/db/models/fields/__init__.py
+index 9ce46e3f73..5cb1ff957a 100644
+--- a/django/db/models/fields/__init__.py
++++ b/django/db/models/fields/__init__.py
+@@ -202,6 +202,7 @@ class Field(RegisterLookupMixin):
+         return [
+             *self._check_field_name(),
+             *self._check_choices(),
++            *self._check_max_length_with_choices(),
+             *self._check_db_index(),
+             *self._check_null_allowed_for_primary_keys(),
+             *self._check_backend_specific_checks(**kwargs),
+@@ -291,6 +292,40 @@ class Field(RegisterLookupMixin):
+             )
+         ]
+ 
++    def _check_max_length_with_choices(self):
++        if not self.choices or not isinstance(self.max_length, int) or self.max_length <= 0:
++            return []
++        choice_max_length = 0
++        for choice in self.choices:
++            if isinstance(choice, (list, tuple)) and len(choice) == 2:
++                group_name, group_choices = choice
++                if isinstance(group_choices, (list, tuple)):
++                    # Named group: group_choices is a list of (value, display) pairs.
++                    try:
++                        for value, human_name in group_choices:
++                            if isinstance(value, str):
++                                choice_max_length = max(choice_max_length, len(value))
++                    except (TypeError, ValueError):
++                        # Invalid group choices format; _check_choices() handles this.
++                        pass
++                else:
++                    # Flat choice: group_name is the value.
++                    if isinstance(group_name, str):
++                        choice_max_length = max(choice_max_length, len(group_name))
++        if self.max_length < choice_max_length:
++            return [
++                checks.Error(
++                    "'max_length' is less than the length of the longest value in 'choices'.",
++                    hint=(
++                        "Ensure 'max_length' is greater than or equal to %d (the length "
++                        "of the longest value in 'choices')." % choice_max_length
++                    ),
++                    obj=self,
++                    id='fields.E009',
++                )
++            ]
++        return []
++
+     def _check_db_index(self):
+         if self.db_index not in (None, True, False):
+             return [

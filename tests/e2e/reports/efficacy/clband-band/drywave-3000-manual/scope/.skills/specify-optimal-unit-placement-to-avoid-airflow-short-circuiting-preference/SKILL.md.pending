@@ -1,0 +1,23 @@
+---
+name: Specify optimal unit placement to avoid airflow short-circuiting (preference)
+description: 'Standing user preference: Specify optimal unit placement to avoid airflow short-circuiting and maximise extraction efficiency; avoid obstructed airflow pathways.'
+tags:
+- preference
+- convention
+origin: session_extraction
+source_session_id: clband-teach-drywave-3000-manual
+source_provider: claude-code
+created_at: 2026-06-12T22:45:47.608773402+00:00
+warning_at: 2026-07-12T22:45:47.608773402+00:00
+expires_at: 2026-09-10T22:45:47.608773402+00:00
+generality: uncertain
+generality_rationale: Detected as a standing user directive; generality inferred from scope signals.
+---
+
+# Specify optimal unit placement to avoid airflow short-circuiting (preference)
+
+Standing user preference: Specify optimal unit placement to avoid airflow short-circuiting and maximise extraction efficiency; avoid obstructed airflow pathways.
+
+## Conventions
+- Specify optimal unit placement to avoid airflow short-circuiting and maximise extraction efficiency; avoid obstructed airflow pathways.
+

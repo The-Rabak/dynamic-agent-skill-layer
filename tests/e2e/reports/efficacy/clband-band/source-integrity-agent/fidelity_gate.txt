@@ -1,0 +1,18 @@
+=== fidelity gate: source-integrity-agent (d04a3814) — 20 skill file(s) under /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/source-integrity-agent/scope ===
+--- document tier (reported, NOT gating) ---
+  absent   'Source Integrity Agent (SIA)'
+  present  'AO'
+  present  'FCA'
+--- operative tier (sentinels_operative, GATING) ---
+  PRESENT  'domain_trust_score'  (1 file(s))
+  PRESENT  'calculation_basis'  (1 file(s))
+  PRESENT  'PASS | FAIL | INCOMPLETE'  (1 file(s))
+  MISSING  'MATCH | MISMATCH | MISSING'
+  PRESENT  'INTACT | TAMPERED | ABSENT'  (1 file(s))
+  MISSING  'NONE | LOW | MEDIUM | HIGH | CRITICAL'
+  PRESENT  'next_agent_notes'  (2 file(s))
+  PRESENT  'Domain_Age_Score'  (2 file(s))
+  PRESENT  'SSL_Validity'  (2 file(s))
+FIDELITY FAIL: 2/9 OPERATIVE sentinels missing -> INSTRUMENT-FAILURE(extraction) for source-integrity-agent
+
+--- STDERR ---

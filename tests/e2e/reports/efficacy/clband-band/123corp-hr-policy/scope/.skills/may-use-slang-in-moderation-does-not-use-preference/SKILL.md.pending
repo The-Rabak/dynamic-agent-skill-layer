@@ -1,0 +1,23 @@
+---
+name: May use slang in moderation; does not use (preference)
+description: 'Standing user preference: May use slang in moderation; does not use emojis.'
+tags:
+- preference
+- convention
+origin: session_extraction
+source_session_id: clband-teach-123corp-hr-policy
+source_provider: claude-code
+created_at: 2026-06-12T22:57:46.913983413+00:00
+warning_at: 2026-07-12T22:57:46.913983413+00:00
+expires_at: 2026-09-10T22:57:46.913983413+00:00
+generality: uncertain
+generality_rationale: Detected as a standing user directive; generality inferred from scope signals.
+---
+
+# May use slang in moderation; does not use (preference)
+
+Standing user preference: May use slang in moderation; does not use emojis.
+
+## Conventions
+- May use slang in moderation; does not use emojis.
+

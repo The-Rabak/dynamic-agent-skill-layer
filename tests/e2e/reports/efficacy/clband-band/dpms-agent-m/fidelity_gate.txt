@@ -1,0 +1,17 @@
+=== fidelity gate: dpms-agent-m (886449e2) — 7 skill file(s) under /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/dpms-agent-m/scope ===
+--- document tier (reported, NOT gating) ---
+  absent   'Agent M: Report Composer & Formatter Agent - DPMS'
+  absent   'Disaster Probability Modeling System'
+  absent   '14-agent system'
+--- operative tier (sentinels_operative, GATING) ---
+  PRESENT  'all required sections'  (2 file(s))
+  PRESENT  'schema compliance'  (1 file(s))
+  PRESENT  'DPMS'  (7 file(s))
+  PRESENT  'Bayesian Update'  (1 file(s))
+  MISSING  'POSTERIOR_DISTRIBUTION'
+  PRESENT  'RISK_CLASSIFICATION'  (1 file(s))
+  PRESENT  'VIOLATION_CODES'  (1 file(s))
+  PRESENT  'Orchestrator'  (4 file(s))
+FIDELITY FAIL: 1/8 OPERATIVE sentinels missing -> INSTRUMENT-FAILURE(extraction) for dpms-agent-m
+
+--- STDERR ---

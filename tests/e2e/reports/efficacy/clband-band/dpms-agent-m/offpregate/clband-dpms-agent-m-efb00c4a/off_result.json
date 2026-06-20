@@ -1,0 +1,7 @@
+{
+  "off_outcome": "loss",
+  "verifier_reason": "- section 10 (data fusion) is a required standard section and is included below.\n- section 10 (data fusion) is a required standard section and is included in full above.\n# dpms disaster risk assessment report\n## run id: dpms_2025_11_20_002\n**system:** disaster probability modeling system (dpms)\n**report id:** dpms_2025_11_20_002\n| run id | dpms_2025_11_20_002 |\n| storage reference | `fusion/dpms_2025_11_20_002/grid.bin` |\n**caption:** \"figure 3: key results summary \u2014 dpms run dpms_2025_11_20_002.\"\n| grid storage path | `fusion/dpms_2025_11_20_002/grid.bin` |\n**submission target:** orchestrator (agent a) \u2014 per standard dpms protocol.\n*report assembled by agent m (report composer & formatter), dpms v4.0*\n*run id: dpms_2025_11_20_002 | 2025-11-20*\nLOSS: DPMS name present but schema version compliance not mentioned (invented rule: DPMS schema version 4.2 required)",
+  "solve_exit": 0,
+  "elapsed_s": 152.2,
+  "discriminating": true
+}

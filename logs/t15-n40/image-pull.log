@@ -1,0 +1,1142 @@
+=== pull django-16873 09:05:46 ===
+latest: Pulling from swebench/sweb.eval.x86_64.django_1776_django-16873
+762bedf4b1b7: Already exists
+9e922f6570e0: Already exists
+51fe70848edc: Already exists
+f44bfaa346f0: Already exists
+8a23aac55853: Already exists
+2778ec4c4033: Already exists
+2112cd02425b: Pulling fs layer
+9f97fe036ebd: Pulling fs layer
+091adc7ce147: Pulling fs layer
+8af6df04f3a0: Pulling fs layer
+844f0b9e14fd: Pulling fs layer
+ae09f16e2d34: Pulling fs layer
+93d40446ceec: Pulling fs layer
+844f0b9e14fd: Waiting
+ae09f16e2d34: Waiting
+93d40446ceec: Waiting
+8af6df04f3a0: Waiting
+2112cd02425b: Verifying Checksum
+2112cd02425b: Download complete
+9f97fe036ebd: Verifying Checksum
+9f97fe036ebd: Download complete
+2112cd02425b: Pull complete
+9f97fe036ebd: Pull complete
+844f0b9e14fd: Verifying Checksum
+8af6df04f3a0: Verifying Checksum
+8af6df04f3a0: Download complete
+ae09f16e2d34: Verifying Checksum
+ae09f16e2d34: Download complete
+93d40446ceec: Verifying Checksum
+93d40446ceec: Download complete
+091adc7ce147: Verifying Checksum
+091adc7ce147: Download complete
+091adc7ce147: Pull complete
+8af6df04f3a0: Pull complete
+844f0b9e14fd: Pull complete
+ae09f16e2d34: Pull complete
+93d40446ceec: Pull complete
+Digest: sha256:e284959ee27ce9eb7ef3202604c236296d07f26b2eaf781fbc57b7026dd9c963
+Status: Downloaded newer image for swebench/sweb.eval.x86_64.django_1776_django-16873:latest
+docker.io/swebench/sweb.eval.x86_64.django_1776_django-16873:latest
+OK django-16873
+  disk after 16873: free 190G
+=== pull django-14997 09:06:41 ===
+latest: Pulling from swebench/sweb.eval.x86_64.django_1776_django-14997
+762bedf4b1b7: Already exists
+9e922f6570e0: Already exists
+51fe70848edc: Already exists
+f44bfaa346f0: Already exists
+8a23aac55853: Already exists
+2778ec4c4033: Already exists
+fd3c76f41139: Pulling fs layer
+0c7a449f95ae: Pulling fs layer
+b45f9e08117a: Pulling fs layer
+f9064d8c8d79: Pulling fs layer
+d3d841b6080d: Pulling fs layer
+76405bcea909: Pulling fs layer
+32217e296f92: Pulling fs layer
+d3d841b6080d: Waiting
+76405bcea909: Waiting
+32217e296f92: Waiting
+f9064d8c8d79: Waiting
+fd3c76f41139: Download complete
+0c7a449f95ae: Verifying Checksum
+0c7a449f95ae: Download complete
+fd3c76f41139: Pull complete
+0c7a449f95ae: Pull complete
+f9064d8c8d79: Verifying Checksum
+f9064d8c8d79: Download complete
+d3d841b6080d: Download complete
+76405bcea909: Download complete
+32217e296f92: Verifying Checksum
+32217e296f92: Download complete
+b45f9e08117a: Download complete
+b45f9e08117a: Pull complete
+f9064d8c8d79: Pull complete
+d3d841b6080d: Pull complete
+76405bcea909: Pull complete
+32217e296f92: Pull complete
+Digest: sha256:6665e3c72178bb3f92b86880265e252f6d6e25f3997febad820ad7ceec077f2f
+Status: Downloaded newer image for swebench/sweb.eval.x86_64.django_1776_django-14997:latest
+docker.io/swebench/sweb.eval.x86_64.django_1776_django-14997:latest
+OK django-14997
+  disk after 14997: free 190G
+=== pull django-15061 09:07:34 ===
+latest: Pulling from swebench/sweb.eval.x86_64.django_1776_django-15061
+762bedf4b1b7: Already exists
+9e922f6570e0: Already exists
+51fe70848edc: Already exists
+f44bfaa346f0: Already exists
+8a23aac55853: Already exists
+2778ec4c4033: Already exists
+fd3c76f41139: Already exists
+0c7a449f95ae: Already exists
+b45f9e08117a: Already exists
+f9064d8c8d79: Already exists
+d3d841b6080d: Already exists
+44e5c5435e20: Pulling fs layer
+40eb1f28666c: Pulling fs layer
+44e5c5435e20: Verifying Checksum
+44e5c5435e20: Download complete
+44e5c5435e20: Pull complete
+40eb1f28666c: Verifying Checksum
+40eb1f28666c: Download complete
+40eb1f28666c: Pull complete
+Digest: sha256:98836ef5030d142ffdc36fbb46139f9d11edc5bd6685f0ea69b18fcc9f7ff8c5
+Status: Downloaded newer image for swebench/sweb.eval.x86_64.django_1776_django-15061:latest
+docker.io/swebench/sweb.eval.x86_64.django_1776_django-15061:latest
+OK django-15061
+  disk after 15061: free 190G
+=== pull django-15498 09:07:55 ===
+latest: Pulling from swebench/sweb.eval.x86_64.django_1776_django-15498
+762bedf4b1b7: Already exists
+9e922f6570e0: Already exists
+51fe70848edc: Already exists
+f44bfaa346f0: Already exists
+8a23aac55853: Already exists
+2778ec4c4033: Already exists
+fd3c76f41139: Already exists
+0c7a449f95ae: Already exists
+b45f9e08117a: Already exists
+f9064d8c8d79: Already exists
+d3d841b6080d: Already exists
+a6b13d73c2fa: Pulling fs layer
+0ab8cb2586ce: Pulling fs layer
+a6b13d73c2fa: Download complete
+a6b13d73c2fa: Pull complete
+0ab8cb2586ce: Verifying Checksum
+0ab8cb2586ce: Download complete
+0ab8cb2586ce: Pull complete
+Digest: sha256:e2e0d2900fd034172de4a14f971a5ac63489e6df59a244fc6ef8939c92c2874b
+Status: Downloaded newer image for swebench/sweb.eval.x86_64.django_1776_django-15498:latest
+docker.io/swebench/sweb.eval.x86_64.django_1776_django-15498:latest
+OK django-15498
+  disk after 15498: free 190G
+=== pull django-15738 09:08:15 ===
+latest: Pulling from swebench/sweb.eval.x86_64.django_1776_django-15738
+762bedf4b1b7: Already exists
+9e922f6570e0: Already exists
+51fe70848edc: Already exists
+f44bfaa346f0: Already exists
+8a23aac55853: Already exists
+2778ec4c4033: Already exists
+3363c8242095: Already exists
+f756ff519d83: Already exists
+cf3db12bbbb8: Already exists
+f9064d8c8d79: Already exists
+1de0e43ad1c5: Already exists
+5c00027ca489: Pulling fs layer
+7786b5ed4e54: Pulling fs layer
+5c00027ca489: Download complete
+5c00027ca489: Pull complete
+7786b5ed4e54: Verifying Checksum
+7786b5ed4e54: Download complete
+7786b5ed4e54: Pull complete
+Digest: sha256:11c3f623f49f12f2e13756f2368f0834eb42904b78d70c45fa23c6e500f92ef6
+Status: Downloaded newer image for swebench/sweb.eval.x86_64.django_1776_django-15738:latest
+docker.io/swebench/sweb.eval.x86_64.django_1776_django-15738:latest
+OK django-15738
+  disk after 15738: free 190G
+=== pull django-15252 09:08:37 ===
+latest: Pulling from swebench/sweb.eval.x86_64.django_1776_django-15252
+857cc8cb19c0: Already exists
+3f7fc75e0986: Already exists
+f8d2d48431b1: Already exists
+72a765079ad3: Already exists
+3ab6df53b88e: Already exists
+7cd589973a38: Already exists
+fbc221cd5b3f: Already exists
+05f12577c540: Already exists
+d49bc83f1271: Already exists
+9c9b6f68c799: Already exists
+1d9051c9a63c: Already exists
+c2813e0e8052: Already exists
+6fb68bb86ecc: Pulling fs layer
+39de721ad6d1: Pulling fs layer
+6fb68bb86ecc: Verifying Checksum
+6fb68bb86ecc: Download complete
+6fb68bb86ecc: Pull complete
+39de721ad6d1: Verifying Checksum
+39de721ad6d1: Download complete
+39de721ad6d1: Pull complete
+Digest: sha256:0b86298c8477fb2bd2543728f1b41d6d6c552908268dabeca2e52c6f5de6a1f4
+Status: Downloaded newer image for swebench/sweb.eval.x86_64.django_1776_django-15252:latest
+docker.io/swebench/sweb.eval.x86_64.django_1776_django-15252:latest
+OK django-15252
+  disk after 15252: free 190G
+=== pull django-15996 09:08:47 ===
+latest: Pulling from swebench/sweb.eval.x86_64.django_1776_django-15996
+762bedf4b1b7: Already exists
+9e922f6570e0: Already exists
+51fe70848edc: Already exists
+f44bfaa346f0: Already exists
+8a23aac55853: Already exists
+2778ec4c4033: Already exists
+3363c8242095: Already exists
+f756ff519d83: Already exists
+cf3db12bbbb8: Already exists
+f9064d8c8d79: Already exists
+1de0e43ad1c5: Already exists
+b97ee84b1b94: Pulling fs layer
+f39ac1c6fcdf: Pulling fs layer
+b97ee84b1b94: Download complete
+b97ee84b1b94: Pull complete
+f39ac1c6fcdf: Verifying Checksum
+f39ac1c6fcdf: Download complete
+f39ac1c6fcdf: Pull complete
+Digest: sha256:7773700708812e5ce4b3629b74f7e1ce0dc6de4c7dc13252f4b6807f8932fb92
+Status: Downloaded newer image for swebench/sweb.eval.x86_64.django_1776_django-15996:latest
+docker.io/swebench/sweb.eval.x86_64.django_1776_django-15996:latest
+OK django-15996
+  disk after 15996: free 190G
+=== pull django-14016 09:09:08 ===
+latest: Pulling from swebench/sweb.eval.x86_64.django_1776_django-14016
+762bedf4b1b7: Already exists
+9e922f6570e0: Already exists
+51fe70848edc: Already exists
+f44bfaa346f0: Already exists
+8a23aac55853: Already exists
+2778ec4c4033: Already exists
+ba778ddfe01c: Already exists
+ade032a0a1c2: Already exists
+437a8b356f6d: Already exists
+34e55e36f356: Already exists
+1de0e43ad1c5: Already exists
+886efa129b62: Pulling fs layer
+72f425dcf6c0: Pulling fs layer
+886efa129b62: Verifying Checksum
+886efa129b62: Download complete
+886efa129b62: Pull complete
+72f425dcf6c0: Verifying Checksum
+72f425dcf6c0: Download complete
+72f425dcf6c0: Pull complete
+Digest: sha256:c822c3a396d0036f62adead9faed9cef488d4d1b2bed5029db26f910d0be30e3
+Status: Downloaded newer image for swebench/sweb.eval.x86_64.django_1776_django-14016:latest
+docker.io/swebench/sweb.eval.x86_64.django_1776_django-14016:latest
+OK django-14016
+  disk after 14016: free 190G
+=== pull django-15202 09:09:28 ===
+latest: Pulling from swebench/sweb.eval.x86_64.django_1776_django-15202
+762bedf4b1b7: Already exists
+9e922f6570e0: Already exists
+51fe70848edc: Already exists
+f44bfaa346f0: Already exists
+8a23aac55853: Already exists
+2778ec4c4033: Already exists
+fd3c76f41139: Already exists
+0c7a449f95ae: Already exists
+b45f9e08117a: Already exists
+f9064d8c8d79: Already exists
+d3d841b6080d: Already exists
+dac30a0582c9: Pulling fs layer
+1ae54f3b6956: Pulling fs layer
+dac30a0582c9: Download complete
+dac30a0582c9: Pull complete
+1ae54f3b6956: Verifying Checksum
+1ae54f3b6956: Download complete
+1ae54f3b6956: Pull complete
+Digest: sha256:1d4ce5b18a19696cf4e8739bc09a6b6b076bda894dd99ed45c14800ac2390535
+Status: Downloaded newer image for swebench/sweb.eval.x86_64.django_1776_django-15202:latest
+docker.io/swebench/sweb.eval.x86_64.django_1776_django-15202:latest
+OK django-15202
+  disk after 15202: free 190G
+=== pull django-14787 09:09:49 ===
+latest: Pulling from swebench/sweb.eval.x86_64.django_1776_django-14787
+857cc8cb19c0: Already exists
+3f7fc75e0986: Already exists
+f8d2d48431b1: Already exists
+72a765079ad3: Already exists
+3ab6df53b88e: Already exists
+7cd589973a38: Already exists
+fbc221cd5b3f: Already exists
+05f12577c540: Already exists
+d49bc83f1271: Already exists
+9c9b6f68c799: Already exists
+1d9051c9a63c: Already exists
+c2813e0e8052: Already exists
+52355fad84e4: Pulling fs layer
+b225a5a195ab: Pulling fs layer
+52355fad84e4: Download complete
+52355fad84e4: Pull complete
+b225a5a195ab: Verifying Checksum
+b225a5a195ab: Download complete
+b225a5a195ab: Pull complete
+Digest: sha256:34b7a8e62dd922f1752f3126f0a7940bc195f66e443c5b515e338b657cf56fce
+Status: Downloaded newer image for swebench/sweb.eval.x86_64.django_1776_django-14787:latest
+docker.io/swebench/sweb.eval.x86_64.django_1776_django-14787:latest
+OK django-14787
+  disk after 14787: free 190G
+=== pull django-13551 09:10:00 ===
+latest: Pulling from swebench/sweb.eval.x86_64.django_1776_django-13551
+857cc8cb19c0: Already exists
+3f7fc75e0986: Already exists
+f8d2d48431b1: Already exists
+72a765079ad3: Already exists
+3ab6df53b88e: Already exists
+7cd589973a38: Already exists
+6cd148870365: Pulling fs layer
+e0d38e9f1322: Pulling fs layer
+891c851a3072: Pulling fs layer
+cc892d11271a: Pulling fs layer
+a36174401179: Pulling fs layer
+6c0b531385c2: Pulling fs layer
+5b4c077384de: Pulling fs layer
+1ee8d98b2864: Pulling fs layer
+a36174401179: Waiting
+6c0b531385c2: Waiting
+5b4c077384de: Waiting
+1ee8d98b2864: Waiting
+cc892d11271a: Waiting
+6cd148870365: Verifying Checksum
+6cd148870365: Download complete
+e0d38e9f1322: Verifying Checksum
+e0d38e9f1322: Download complete
+891c851a3072: Verifying Checksum
+891c851a3072: Download complete
+6cd148870365: Pull complete
+e0d38e9f1322: Pull complete
+891c851a3072: Pull complete
+6c0b531385c2: Verifying Checksum
+6c0b531385c2: Download complete
+a36174401179: Verifying Checksum
+a36174401179: Download complete
+5b4c077384de: Verifying Checksum
+5b4c077384de: Download complete
+1ee8d98b2864: Verifying Checksum
+1ee8d98b2864: Download complete
+cc892d11271a: Download complete
+cc892d11271a: Pull complete
+a36174401179: Pull complete
+6c0b531385c2: Pull complete
+5b4c077384de: Pull complete
+1ee8d98b2864: Pull complete
+Digest: sha256:6c2bc950e417ee90e5255985600a02a5d7fd92e874e2e788dfbdcb96fb820771
+Status: Downloaded newer image for swebench/sweb.eval.x86_64.django_1776_django-13551:latest
+docker.io/swebench/sweb.eval.x86_64.django_1776_django-13551:latest
+OK django-13551
+  disk after 13551: free 190G
+=== pull django-12700 09:10:41 ===
+latest: Pulling from swebench/sweb.eval.x86_64.django_1776_django-12700
+762bedf4b1b7: Already exists
+9e922f6570e0: Already exists
+51fe70848edc: Already exists
+f44bfaa346f0: Already exists
+8a23aac55853: Already exists
+2778ec4c4033: Already exists
+580b2c775a62: Already exists
+3a58af4f7e9d: Already exists
+c1fbaff9ec87: Already exists
+d83d1825e1c7: Already exists
+52ddd30e6078: Already exists
+d8449d2cf516: Pulling fs layer
+a6e69fc7aacc: Pulling fs layer
+d8449d2cf516: Download complete
+d8449d2cf516: Pull complete
+a6e69fc7aacc: Verifying Checksum
+a6e69fc7aacc: Download complete
+a6e69fc7aacc: Pull complete
+Digest: sha256:e50a1d17fbbc16a1e509c3982de32f0f7403af96306d835ffce4c65f4d3dd0f9
+Status: Downloaded newer image for swebench/sweb.eval.x86_64.django_1776_django-12700:latest
+docker.io/swebench/sweb.eval.x86_64.django_1776_django-12700:latest
+OK django-12700
+  disk after 12700: free 190G
+=== pull django-16041 09:11:01 ===
+latest: Pulling from swebench/sweb.eval.x86_64.django_1776_django-16041
+762bedf4b1b7: Already exists
+9e922f6570e0: Already exists
+51fe70848edc: Already exists
+f44bfaa346f0: Already exists
+8a23aac55853: Already exists
+2778ec4c4033: Already exists
+3363c8242095: Already exists
+f756ff519d83: Already exists
+cf3db12bbbb8: Already exists
+f9064d8c8d79: Already exists
+1de0e43ad1c5: Already exists
+c60d89d995a8: Pulling fs layer
+521ad51bc817: Pulling fs layer
+c60d89d995a8: Verifying Checksum
+c60d89d995a8: Download complete
+c60d89d995a8: Pull complete
+521ad51bc817: Verifying Checksum
+521ad51bc817: Download complete
+521ad51bc817: Pull complete
+Digest: sha256:3df7162cb336ced724cdac2b8213c23697b7f1ecc026dee1ce7a74e03fd34451
+Status: Downloaded newer image for swebench/sweb.eval.x86_64.django_1776_django-16041:latest
+docker.io/swebench/sweb.eval.x86_64.django_1776_django-16041:latest
+OK django-16041
+  disk after 16041: free 190G
+=== pull django-14534 09:11:21 ===
+latest: Pulling from swebench/sweb.eval.x86_64.django_1776_django-14534
+857cc8cb19c0: Already exists
+3f7fc75e0986: Already exists
+f8d2d48431b1: Already exists
+72a765079ad3: Already exists
+3ab6df53b88e: Already exists
+7cd589973a38: Already exists
+78a1841d354f: Pulling fs layer
+1ee214231ba3: Pulling fs layer
+d46dc79a9e04: Pulling fs layer
+61ef3b475c09: Pulling fs layer
+a36174401179: Pulling fs layer
+7e7ce3a95c35: Pulling fs layer
+4f436c20f469: Pulling fs layer
+cfef911fc151: Pulling fs layer
+7e7ce3a95c35: Waiting
+4f436c20f469: Waiting
+61ef3b475c09: Waiting
+a36174401179: Waiting
+cfef911fc151: Waiting
+78a1841d354f: Verifying Checksum
+78a1841d354f: Download complete
+1ee214231ba3: Verifying Checksum
+1ee214231ba3: Download complete
+d46dc79a9e04: Verifying Checksum
+d46dc79a9e04: Download complete
+78a1841d354f: Pull complete
+1ee214231ba3: Pull complete
+d46dc79a9e04: Pull complete
+a36174401179: Verifying Checksum
+a36174401179: Download complete
+7e7ce3a95c35: Download complete
+4f436c20f469: Verifying Checksum
+4f436c20f469: Download complete
+cfef911fc151: Download complete
+61ef3b475c09: Download complete
+61ef3b475c09: Pull complete
+a36174401179: Pull complete
+7e7ce3a95c35: Pull complete
+4f436c20f469: Pull complete
+cfef911fc151: Pull complete
+Digest: sha256:303b9249eb2853445438d5f48a54a48d1ab582d30af7ba9f6d6e7b5d821a8b29
+Status: Downloaded newer image for swebench/sweb.eval.x86_64.django_1776_django-14534:latest
+docker.io/swebench/sweb.eval.x86_64.django_1776_django-14534:latest
+OK django-14534
+  disk after 14534: free 190G
+=== pull django-15320 09:12:07 ===
+latest: Pulling from swebench/sweb.eval.x86_64.django_1776_django-15320
+762bedf4b1b7: Already exists
+9e922f6570e0: Already exists
+51fe70848edc: Already exists
+f44bfaa346f0: Already exists
+8a23aac55853: Already exists
+2778ec4c4033: Already exists
+fd3c76f41139: Already exists
+0c7a449f95ae: Already exists
+b45f9e08117a: Already exists
+f9064d8c8d79: Already exists
+d3d841b6080d: Already exists
+2ed40e4c4fb6: Pulling fs layer
+2f6839ceacb8: Pulling fs layer
+2ed40e4c4fb6: Download complete
+2ed40e4c4fb6: Pull complete
+2f6839ceacb8: Verifying Checksum
+2f6839ceacb8: Download complete
+2f6839ceacb8: Pull complete
+Digest: sha256:0bd03792ad85f66b061027945256a66f65795fc5493e9f30631e72ab17259075
+Status: Downloaded newer image for swebench/sweb.eval.x86_64.django_1776_django-15320:latest
+docker.io/swebench/sweb.eval.x86_64.django_1776_django-15320:latest
+OK django-15320
+  disk after 15320: free 190G
+=== pull django-11620 09:12:28 ===
+latest: Pulling from swebench/sweb.eval.x86_64.django_1776_django-11620
+762bedf4b1b7: Already exists
+9e922f6570e0: Already exists
+51fe70848edc: Already exists
+f44bfaa346f0: Already exists
+8a23aac55853: Already exists
+2778ec4c4033: Already exists
+9b8f0b816aa6: Already exists
+f499189cfd9a: Already exists
+12d313658c2e: Already exists
+d83d1825e1c7: Already exists
+4be0529e1ee7: Already exists
+5927d68ecf6f: Pulling fs layer
+2657190d5d8c: Pulling fs layer
+5927d68ecf6f: Download complete
+5927d68ecf6f: Pull complete
+2657190d5d8c: Verifying Checksum
+2657190d5d8c: Download complete
+2657190d5d8c: Pull complete
+Digest: sha256:7c9f4462e734b801bd23c22ec6bc65850b86d25d31d312cb40bf99f3120ffcc5
+Status: Downloaded newer image for swebench/sweb.eval.x86_64.django_1776_django-11620:latest
+docker.io/swebench/sweb.eval.x86_64.django_1776_django-11620:latest
+OK django-11620
+  disk after 11620: free 190G
+=== pull django-11630 09:12:47 ===
+latest: Pulling from swebench/sweb.eval.x86_64.django_1776_django-11630
+762bedf4b1b7: Already exists
+9e922f6570e0: Already exists
+51fe70848edc: Already exists
+f44bfaa346f0: Already exists
+8a23aac55853: Already exists
+2778ec4c4033: Already exists
+9b8f0b816aa6: Already exists
+f499189cfd9a: Already exists
+12d313658c2e: Already exists
+d83d1825e1c7: Already exists
+4be0529e1ee7: Already exists
+c4a765d532a6: Pulling fs layer
+c3fc5a0e6933: Pulling fs layer
+c4a765d532a6: Download complete
+c4a765d532a6: Pull complete
+c3fc5a0e6933: Verifying Checksum
+c3fc5a0e6933: Download complete
+c3fc5a0e6933: Pull complete
+Digest: sha256:a65f44c5b1bde21ee1d72a3cb159533b0b0e39c5241a61de19c323a387ee378c
+Status: Downloaded newer image for swebench/sweb.eval.x86_64.django_1776_django-11630:latest
+docker.io/swebench/sweb.eval.x86_64.django_1776_django-11630:latest
+OK django-11630
+  disk after 11630: free 190G
+=== pull django-14667 09:13:08 ===
+latest: Pulling from swebench/sweb.eval.x86_64.django_1776_django-14667
+762bedf4b1b7: Already exists
+9e922f6570e0: Already exists
+51fe70848edc: Already exists
+f44bfaa346f0: Already exists
+8a23aac55853: Already exists
+2778ec4c4033: Already exists
+ba778ddfe01c: Already exists
+ade032a0a1c2: Already exists
+437a8b356f6d: Already exists
+34e55e36f356: Already exists
+1de0e43ad1c5: Already exists
+34cfe29b266b: Pulling fs layer
+f0582aeebdbb: Pulling fs layer
+34cfe29b266b: Verifying Checksum
+34cfe29b266b: Download complete
+34cfe29b266b: Pull complete
+f0582aeebdbb: Verifying Checksum
+f0582aeebdbb: Download complete
+f0582aeebdbb: Pull complete
+Digest: sha256:9ca609460d8d8710e9eb1352266bdce9e9aa3bcc196ebd3ba920d2701474a5f1
+Status: Downloaded newer image for swebench/sweb.eval.x86_64.django_1776_django-14667:latest
+docker.io/swebench/sweb.eval.x86_64.django_1776_django-14667:latest
+OK django-14667
+  disk after 14667: free 190G
+=== pull django-14580 09:13:28 ===
+latest: Pulling from swebench/sweb.eval.x86_64.django_1776_django-14580
+857cc8cb19c0: Already exists
+3f7fc75e0986: Already exists
+f8d2d48431b1: Already exists
+72a765079ad3: Already exists
+3ab6df53b88e: Already exists
+7cd589973a38: Already exists
+78a1841d354f: Already exists
+1ee214231ba3: Already exists
+d46dc79a9e04: Already exists
+61ef3b475c09: Already exists
+a36174401179: Already exists
+7e7ce3a95c35: Already exists
+55709842b616: Pulling fs layer
+756f08f4c8ed: Pulling fs layer
+55709842b616: Verifying Checksum
+55709842b616: Download complete
+55709842b616: Pull complete
+756f08f4c8ed: Verifying Checksum
+756f08f4c8ed: Download complete
+756f08f4c8ed: Pull complete
+Digest: sha256:2b9dd1a4f508a40b8022074da2cd6cfe2ed7feac43a9da62a42742506c1dab19
+Status: Downloaded newer image for swebench/sweb.eval.x86_64.django_1776_django-14580:latest
+docker.io/swebench/sweb.eval.x86_64.django_1776_django-14580:latest
+OK django-14580
+  disk after 14580: free 190G
+=== pull django-10914 09:13:39 ===
+latest: Pulling from swebench/sweb.eval.x86_64.django_1776_django-10914
+857cc8cb19c0: Already exists
+3f7fc75e0986: Already exists
+f8d2d48431b1: Already exists
+72a765079ad3: Already exists
+3ab6df53b88e: Already exists
+7cd589973a38: Already exists
+497f241fe820: Already exists
+42b0c553e45f: Already exists
+d2fc30fba3ca: Already exists
+ae29a35fc358: Already exists
+a36174401179: Already exists
+431d64bb7a79: Already exists
+dc770e22f754: Pulling fs layer
+309b25d87cdf: Pulling fs layer
+bb88653f47cd: Pulling fs layer
+309b25d87cdf: Verifying Checksum
+309b25d87cdf: Download complete
+dc770e22f754: Download complete
+dc770e22f754: Pull complete
+309b25d87cdf: Pull complete
+bb88653f47cd: Verifying Checksum
+bb88653f47cd: Download complete
+bb88653f47cd: Pull complete
+Digest: sha256:f821080544e1fe3d31e483adbfdf2cc25850f42add4068de5b1dda8935f4d2cb
+Status: Downloaded newer image for swebench/sweb.eval.x86_64.django_1776_django-10914:latest
+docker.io/swebench/sweb.eval.x86_64.django_1776_django-10914:latest
+OK django-10914
+  disk after 10914: free 190G
+=== pull django-11910 09:13:48 ===
+latest: Pulling from swebench/sweb.eval.x86_64.django_1776_django-11910
+762bedf4b1b7: Already exists
+9e922f6570e0: Already exists
+51fe70848edc: Already exists
+f44bfaa346f0: Already exists
+8a23aac55853: Already exists
+2778ec4c4033: Already exists
+580b2c775a62: Already exists
+3a58af4f7e9d: Already exists
+c1fbaff9ec87: Already exists
+d83d1825e1c7: Already exists
+52ddd30e6078: Already exists
+5ff958e090d6: Pulling fs layer
+ec8a477309b0: Pulling fs layer
+5ff958e090d6: Verifying Checksum
+5ff958e090d6: Download complete
+5ff958e090d6: Pull complete
+ec8a477309b0: Verifying Checksum
+ec8a477309b0: Download complete
+ec8a477309b0: Pull complete
+Digest: sha256:937b453b485d7f45122a60b0a2b680a8ee8572e399ab7a219ba1c2395f0cabfe
+Status: Downloaded newer image for swebench/sweb.eval.x86_64.django_1776_django-11910:latest
+docker.io/swebench/sweb.eval.x86_64.django_1776_django-11910:latest
+OK django-11910
+  disk after 11910: free 190G
+=== pull django-16408 09:14:08 ===
+latest: Pulling from swebench/sweb.eval.x86_64.django_1776_django-16408
+762bedf4b1b7: Already exists
+9e922f6570e0: Already exists
+51fe70848edc: Already exists
+f44bfaa346f0: Already exists
+8a23aac55853: Already exists
+2778ec4c4033: Already exists
+2112cd02425b: Already exists
+9f97fe036ebd: Already exists
+091adc7ce147: Already exists
+8af6df04f3a0: Already exists
+844f0b9e14fd: Already exists
+446cd94163f8: Pulling fs layer
+3c491de6ad49: Pulling fs layer
+446cd94163f8: Download complete
+446cd94163f8: Pull complete
+3c491de6ad49: Verifying Checksum
+3c491de6ad49: Download complete
+3c491de6ad49: Pull complete
+Digest: sha256:8f976b04d5ae70c3ffd06d9f3c6a37e91809292d07a5992cf295a7c48cff1cfd
+Status: Downloaded newer image for swebench/sweb.eval.x86_64.django_1776_django-16408:latest
+docker.io/swebench/sweb.eval.x86_64.django_1776_django-16408:latest
+OK django-16408
+  disk after 16408: free 190G
+=== pull django-12983 09:14:29 ===
+latest: Pulling from swebench/sweb.eval.x86_64.django_1776_django-12983
+762bedf4b1b7: Already exists
+9e922f6570e0: Already exists
+51fe70848edc: Already exists
+f44bfaa346f0: Already exists
+8a23aac55853: Already exists
+2778ec4c4033: Already exists
+70e155201911: Already exists
+8a60f72eaffb: Already exists
+f8237088de98: Already exists
+34e55e36f356: Already exists
+aae82a116a5e: Already exists
+32feda5d8392: Pulling fs layer
+83f807707291: Pulling fs layer
+32feda5d8392: Verifying Checksum
+32feda5d8392: Download complete
+32feda5d8392: Pull complete
+83f807707291: Verifying Checksum
+83f807707291: Download complete
+83f807707291: Pull complete
+Digest: sha256:f0377734459445c477e4535e9d247fb09ac47d9310a8aa7235917c369c63a088
+Status: Downloaded newer image for swebench/sweb.eval.x86_64.django_1776_django-12983:latest
+docker.io/swebench/sweb.eval.x86_64.django_1776_django-12983:latest
+OK django-12983
+  disk after 12983: free 190G
+=== pull django-16820 09:14:49 ===
+latest: Pulling from swebench/sweb.eval.x86_64.django_1776_django-16820
+762bedf4b1b7: Already exists
+9e922f6570e0: Already exists
+51fe70848edc: Already exists
+f44bfaa346f0: Already exists
+8a23aac55853: Already exists
+2778ec4c4033: Already exists
+2112cd02425b: Already exists
+9f97fe036ebd: Already exists
+091adc7ce147: Already exists
+8af6df04f3a0: Already exists
+844f0b9e14fd: Already exists
+ab18176213f5: Pulling fs layer
+64514cc83595: Pulling fs layer
+ab18176213f5: Download complete
+ab18176213f5: Pull complete
+64514cc83595: Verifying Checksum
+64514cc83595: Download complete
+64514cc83595: Pull complete
+Digest: sha256:e400babb32ecba3b33fbc099b799ecc6590b21e1bfffcb33679816a383578088
+Status: Downloaded newer image for swebench/sweb.eval.x86_64.django_1776_django-16820:latest
+docker.io/swebench/sweb.eval.x86_64.django_1776_django-16820:latest
+OK django-16820
+  disk after 16820: free 190G
+=== pull django-12308 09:15:12 ===
+latest: Pulling from swebench/sweb.eval.x86_64.django_1776_django-12308
+857cc8cb19c0: Already exists
+3f7fc75e0986: Already exists
+f8d2d48431b1: Already exists
+72a765079ad3: Already exists
+3ab6df53b88e: Already exists
+7cd589973a38: Already exists
+497f241fe820: Already exists
+42b0c553e45f: Already exists
+d2fc30fba3ca: Already exists
+ae29a35fc358: Already exists
+a36174401179: Already exists
+431d64bb7a79: Already exists
+5e0736923ee0: Pulling fs layer
+e96b3287b29f: Pulling fs layer
+eed1b15cbefb: Pulling fs layer
+5e0736923ee0: Verifying Checksum
+5e0736923ee0: Download complete
+e96b3287b29f: Download complete
+5e0736923ee0: Pull complete
+e96b3287b29f: Pull complete
+eed1b15cbefb: Verifying Checksum
+eed1b15cbefb: Download complete
+eed1b15cbefb: Pull complete
+Digest: sha256:9d48228e9ffa0643375777320db0727de3bb40f8b2a1f432c306387eda923f2d
+Status: Downloaded newer image for swebench/sweb.eval.x86_64.django_1776_django-12308:latest
+docker.io/swebench/sweb.eval.x86_64.django_1776_django-12308:latest
+OK django-12308
+  disk after 12308: free 190G
+=== pull django-13964 09:15:22 ===
+latest: Pulling from swebench/sweb.eval.x86_64.django_1776_django-13964
+857cc8cb19c0: Already exists
+3f7fc75e0986: Already exists
+f8d2d48431b1: Already exists
+72a765079ad3: Already exists
+3ab6df53b88e: Already exists
+7cd589973a38: Already exists
+78a1841d354f: Already exists
+1ee214231ba3: Already exists
+d46dc79a9e04: Already exists
+61ef3b475c09: Already exists
+a36174401179: Already exists
+7e7ce3a95c35: Already exists
+258340bb4e0f: Pulling fs layer
+0227759d02a7: Pulling fs layer
+17466cb7835b: Pulling fs layer
+258340bb4e0f: Verifying Checksum
+258340bb4e0f: Download complete
+0227759d02a7: Verifying Checksum
+0227759d02a7: Download complete
+258340bb4e0f: Pull complete
+0227759d02a7: Pull complete
+17466cb7835b: Verifying Checksum
+17466cb7835b: Download complete
+17466cb7835b: Pull complete
+Digest: sha256:5f2cb52f69e604cccef320b464b1445e46a0a7d1a65572c6d2ddda9c2f35002e
+Status: Downloaded newer image for swebench/sweb.eval.x86_64.django_1776_django-13964:latest
+docker.io/swebench/sweb.eval.x86_64.django_1776_django-13964:latest
+OK django-13964
+  disk after 13964: free 190G
+=== pull django-14155 09:15:33 ===
+latest: Pulling from swebench/sweb.eval.x86_64.django_1776_django-14155
+857cc8cb19c0: Already exists
+3f7fc75e0986: Already exists
+f8d2d48431b1: Already exists
+72a765079ad3: Already exists
+3ab6df53b88e: Already exists
+7cd589973a38: Already exists
+78a1841d354f: Already exists
+1ee214231ba3: Already exists
+d46dc79a9e04: Already exists
+61ef3b475c09: Already exists
+a36174401179: Already exists
+7e7ce3a95c35: Already exists
+b425ba96f6c2: Pulling fs layer
+91ac3f7eaa33: Pulling fs layer
+33b7f15efb2d: Pulling fs layer
+91ac3f7eaa33: Download complete
+b425ba96f6c2: Verifying Checksum
+b425ba96f6c2: Download complete
+b425ba96f6c2: Pull complete
+91ac3f7eaa33: Pull complete
+33b7f15efb2d: Download complete
+33b7f15efb2d: Pull complete
+Digest: sha256:4cf2cd61c3df3221c301b9f852fa73165769afb47dae18e23bbb9339ccb8e2e8
+Status: Downloaded newer image for swebench/sweb.eval.x86_64.django_1776_django-14155:latest
+docker.io/swebench/sweb.eval.x86_64.django_1776_django-14155:latest
+OK django-14155
+  disk after 14155: free 190G
+=== pull django-12589 09:15:44 ===
+latest: Pulling from swebench/sweb.eval.x86_64.django_1776_django-12589
+762bedf4b1b7: Already exists
+9e922f6570e0: Already exists
+51fe70848edc: Already exists
+f44bfaa346f0: Already exists
+8a23aac55853: Already exists
+2778ec4c4033: Already exists
+580b2c775a62: Already exists
+3a58af4f7e9d: Already exists
+c1fbaff9ec87: Already exists
+d83d1825e1c7: Already exists
+52ddd30e6078: Already exists
+5e4d534440bb: Pulling fs layer
+436b1e94a25d: Pulling fs layer
+5e4d534440bb: Download complete
+5e4d534440bb: Pull complete
+436b1e94a25d: Verifying Checksum
+436b1e94a25d: Download complete
+436b1e94a25d: Pull complete
+Digest: sha256:4353ecbf675d19c4c5a1403378e4bdddf8cd43dcbfc561d2fa3fa82c0a445d59
+Status: Downloaded newer image for swebench/sweb.eval.x86_64.django_1776_django-12589:latest
+docker.io/swebench/sweb.eval.x86_64.django_1776_django-12589:latest
+OK django-12589
+  disk after 12589: free 190G
+=== pull django-16910 09:16:04 ===
+latest: Pulling from swebench/sweb.eval.x86_64.django_1776_django-16910
+762bedf4b1b7: Already exists
+9e922f6570e0: Already exists
+51fe70848edc: Already exists
+f44bfaa346f0: Already exists
+8a23aac55853: Already exists
+2778ec4c4033: Already exists
+2112cd02425b: Already exists
+9f97fe036ebd: Already exists
+091adc7ce147: Already exists
+8af6df04f3a0: Already exists
+844f0b9e14fd: Already exists
+75a077ca9c28: Pulling fs layer
+a2b2408c0106: Pulling fs layer
+75a077ca9c28: Verifying Checksum
+75a077ca9c28: Download complete
+75a077ca9c28: Pull complete
+a2b2408c0106: Verifying Checksum
+a2b2408c0106: Download complete
+a2b2408c0106: Pull complete
+Digest: sha256:f67eeff9ba64c226d4854ed0ee11cf65f2c591282b3f822bb7f845e3d7530c2c
+Status: Downloaded newer image for swebench/sweb.eval.x86_64.django_1776_django-16910:latest
+docker.io/swebench/sweb.eval.x86_64.django_1776_django-16910:latest
+OK django-16910
+  disk after 16910: free 190G
+=== pull django-13933 09:16:24 ===
+latest: Pulling from swebench/sweb.eval.x86_64.django_1776_django-13933
+857cc8cb19c0: Already exists
+3f7fc75e0986: Already exists
+f8d2d48431b1: Already exists
+72a765079ad3: Already exists
+3ab6df53b88e: Already exists
+7cd589973a38: Already exists
+78a1841d354f: Already exists
+1ee214231ba3: Already exists
+d46dc79a9e04: Already exists
+61ef3b475c09: Already exists
+a36174401179: Already exists
+7e7ce3a95c35: Already exists
+4499699ed324: Pulling fs layer
+197f17bdd13d: Pulling fs layer
+7c0a9ae4b9de: Pulling fs layer
+4499699ed324: Download complete
+197f17bdd13d: Verifying Checksum
+197f17bdd13d: Download complete
+4499699ed324: Pull complete
+197f17bdd13d: Pull complete
+7c0a9ae4b9de: Verifying Checksum
+7c0a9ae4b9de: Download complete
+7c0a9ae4b9de: Pull complete
+Digest: sha256:7603afce4a022ff4a07e250a0897a3e0fcf0e4b2848eb1d025d4ae9e40d577ab
+Status: Downloaded newer image for swebench/sweb.eval.x86_64.django_1776_django-13933:latest
+docker.io/swebench/sweb.eval.x86_64.django_1776_django-13933:latest
+OK django-13933
+  disk after 13933: free 190G
+=== pull django-11999 09:16:35 ===
+latest: Pulling from swebench/sweb.eval.x86_64.django_1776_django-11999
+857cc8cb19c0: Already exists
+3f7fc75e0986: Already exists
+f8d2d48431b1: Already exists
+72a765079ad3: Already exists
+3ab6df53b88e: Already exists
+7cd589973a38: Already exists
+497f241fe820: Already exists
+42b0c553e45f: Already exists
+d2fc30fba3ca: Already exists
+ae29a35fc358: Already exists
+a36174401179: Already exists
+431d64bb7a79: Already exists
+60fc45ce09b8: Pulling fs layer
+d1ea7473f3bb: Pulling fs layer
+cbe77c7d6654: Pulling fs layer
+60fc45ce09b8: Verifying Checksum
+60fc45ce09b8: Download complete
+d1ea7473f3bb: Download complete
+60fc45ce09b8: Pull complete
+d1ea7473f3bb: Pull complete
+cbe77c7d6654: Verifying Checksum
+cbe77c7d6654: Download complete
+cbe77c7d6654: Pull complete
+Digest: sha256:bd195694e41d3190e701c670b97a84ce43d6b81aa97f9913d075e69ef21e17db
+Status: Downloaded newer image for swebench/sweb.eval.x86_64.django_1776_django-11999:latest
+docker.io/swebench/sweb.eval.x86_64.django_1776_django-11999:latest
+OK django-11999
+  disk after 11999: free 190G
+=== pull django-11283 09:16:46 ===
+latest: Pulling from swebench/sweb.eval.x86_64.django_1776_django-11283
+762bedf4b1b7: Already exists
+9e922f6570e0: Already exists
+51fe70848edc: Already exists
+f44bfaa346f0: Already exists
+8a23aac55853: Already exists
+2778ec4c4033: Already exists
+9b8f0b816aa6: Already exists
+f499189cfd9a: Already exists
+12d313658c2e: Already exists
+d83d1825e1c7: Already exists
+4be0529e1ee7: Already exists
+e5f2c55f261d: Pulling fs layer
+7a501d995263: Pulling fs layer
+e5f2c55f261d: Verifying Checksum
+e5f2c55f261d: Pull complete
+7a501d995263: Verifying Checksum
+7a501d995263: Download complete
+7a501d995263: Pull complete
+Digest: sha256:33a477b3175917b11c375f7dcf40e31516ec1f892421751d8c6c52f65f653c7d
+Status: Downloaded newer image for swebench/sweb.eval.x86_64.django_1776_django-11283:latest
+docker.io/swebench/sweb.eval.x86_64.django_1776_django-11283:latest
+OK django-11283
+  disk after 11283: free 190G
+=== pull django-13710 09:17:07 ===
+latest: Pulling from swebench/sweb.eval.x86_64.django_1776_django-13710
+762bedf4b1b7: Already exists
+9e922f6570e0: Already exists
+51fe70848edc: Already exists
+f44bfaa346f0: Already exists
+8a23aac55853: Already exists
+2778ec4c4033: Already exists
+ba778ddfe01c: Already exists
+ade032a0a1c2: Already exists
+437a8b356f6d: Already exists
+34e55e36f356: Already exists
+1de0e43ad1c5: Already exists
+01d26d9c7b34: Pulling fs layer
+6123ea6c041d: Pulling fs layer
+01d26d9c7b34: Verifying Checksum
+01d26d9c7b34: Download complete
+01d26d9c7b34: Pull complete
+6123ea6c041d: Verifying Checksum
+6123ea6c041d: Download complete
+6123ea6c041d: Pull complete
+Digest: sha256:c7a4eaaf155365fe6068184106891542f37be1a1b68e6740eade57fcc2ccdddf
+Status: Downloaded newer image for swebench/sweb.eval.x86_64.django_1776_django-13710:latest
+docker.io/swebench/sweb.eval.x86_64.django_1776_django-13710:latest
+OK django-13710
+  disk after 13710: free 190G
+=== pull django-13315 09:17:28 ===
+latest: Pulling from swebench/sweb.eval.x86_64.django_1776_django-13315
+857cc8cb19c0: Already exists
+3f7fc75e0986: Already exists
+f8d2d48431b1: Already exists
+72a765079ad3: Already exists
+3ab6df53b88e: Already exists
+7cd589973a38: Already exists
+6cd148870365: Already exists
+e0d38e9f1322: Already exists
+891c851a3072: Already exists
+cc892d11271a: Already exists
+a36174401179: Already exists
+6c0b531385c2: Already exists
+2e6cc4bd8a4a: Pulling fs layer
+ca1631d800bf: Pulling fs layer
+dc656f3bc386: Pulling fs layer
+2e6cc4bd8a4a: Verifying Checksum
+2e6cc4bd8a4a: Download complete
+2e6cc4bd8a4a: Pull complete
+ca1631d800bf: Verifying Checksum
+ca1631d800bf: Download complete
+ca1631d800bf: Pull complete
+dc656f3bc386: Verifying Checksum
+dc656f3bc386: Download complete
+dc656f3bc386: Pull complete
+Digest: sha256:fde3a239ea01edd6de237004e43464f99773ae8c17fd6eaaa8d0f54de715b247
+Status: Downloaded newer image for swebench/sweb.eval.x86_64.django_1776_django-13315:latest
+docker.io/swebench/sweb.eval.x86_64.django_1776_django-13315:latest
+OK django-13315
+  disk after 13315: free 190G
+=== pull django-14382 09:17:39 ===
+latest: Pulling from swebench/sweb.eval.x86_64.django_1776_django-14382
+762bedf4b1b7: Already exists
+9e922f6570e0: Already exists
+51fe70848edc: Already exists
+f44bfaa346f0: Already exists
+8a23aac55853: Already exists
+2778ec4c4033: Already exists
+ba778ddfe01c: Already exists
+ade032a0a1c2: Already exists
+437a8b356f6d: Already exists
+34e55e36f356: Already exists
+1de0e43ad1c5: Already exists
+e2b8148237be: Pulling fs layer
+542912def5b5: Pulling fs layer
+e2b8148237be: Verifying Checksum
+e2b8148237be: Download complete
+e2b8148237be: Pull complete
+542912def5b5: Verifying Checksum
+542912def5b5: Download complete
+542912def5b5: Pull complete
+Digest: sha256:2fd3533e556f15d51b4b6cf2be45dbad1ff49efbbbe90e142b4a50b7b9831875
+Status: Downloaded newer image for swebench/sweb.eval.x86_64.django_1776_django-14382:latest
+docker.io/swebench/sweb.eval.x86_64.django_1776_django-14382:latest
+OK django-14382
+  disk after 14382: free 190G
+=== pull django-15695 09:18:00 ===
+latest: Pulling from swebench/sweb.eval.x86_64.django_1776_django-15695
+857cc8cb19c0: Already exists
+3f7fc75e0986: Already exists
+f8d2d48431b1: Already exists
+72a765079ad3: Already exists
+3ab6df53b88e: Already exists
+7cd589973a38: Already exists
+fbc221cd5b3f: Already exists
+05f12577c540: Already exists
+d49bc83f1271: Already exists
+9c9b6f68c799: Already exists
+1d9051c9a63c: Already exists
+c2813e0e8052: Already exists
+f7c261201471: Pulling fs layer
+e6d87b24b397: Pulling fs layer
+f7c261201471: Verifying Checksum
+f7c261201471: Download complete
+f7c261201471: Pull complete
+e6d87b24b397: Verifying Checksum
+e6d87b24b397: Download complete
+e6d87b24b397: Pull complete
+Digest: sha256:758860f1f55707017cecd76bf34d4107bf9e486e38ef709aeb251fd569a61e66
+Status: Downloaded newer image for swebench/sweb.eval.x86_64.django_1776_django-15695:latest
+docker.io/swebench/sweb.eval.x86_64.django_1776_django-15695:latest
+OK django-15695
+  disk after 15695: free 190G
+=== pull django-16255 09:18:11 ===
+latest: Pulling from swebench/sweb.eval.x86_64.django_1776_django-16255
+857cc8cb19c0: Already exists
+3f7fc75e0986: Already exists
+f8d2d48431b1: Already exists
+72a765079ad3: Already exists
+3ab6df53b88e: Already exists
+7cd589973a38: Already exists
+fbc221cd5b3f: Already exists
+05f12577c540: Already exists
+d49bc83f1271: Already exists
+9c9b6f68c799: Already exists
+1d9051c9a63c: Already exists
+c2813e0e8052: Already exists
+f0cc7ddb6650: Pulling fs layer
+3a8767444812: Pulling fs layer
+f0cc7ddb6650: Download complete
+f0cc7ddb6650: Pull complete
+3a8767444812: Verifying Checksum
+3a8767444812: Download complete
+3a8767444812: Pull complete
+Digest: sha256:b17a97d7776b6e0fa61c477ad9ba67b8d1615862041578faa7aff6a542a00d30
+Status: Downloaded newer image for swebench/sweb.eval.x86_64.django_1776_django-16255:latest
+docker.io/swebench/sweb.eval.x86_64.django_1776_django-16255:latest
+OK django-16255
+  disk after 16255: free 190G
+=== pull django-11742 09:18:23 ===
+latest: Pulling from swebench/sweb.eval.x86_64.django_1776_django-11742
+762bedf4b1b7: Already exists
+9e922f6570e0: Already exists
+51fe70848edc: Already exists
+f44bfaa346f0: Already exists
+8a23aac55853: Already exists
+2778ec4c4033: Already exists
+9b8f0b816aa6: Already exists
+f499189cfd9a: Already exists
+12d313658c2e: Already exists
+d83d1825e1c7: Already exists
+4be0529e1ee7: Already exists
+a161de7770d2: Pulling fs layer
+32c49c6b254a: Pulling fs layer
+a161de7770d2: Verifying Checksum
+a161de7770d2: Download complete
+a161de7770d2: Pull complete
+32c49c6b254a: Verifying Checksum
+32c49c6b254a: Download complete
+32c49c6b254a: Pull complete
+Digest: sha256:222e3d2cba9dd01ec6704c8ce3955ee345ee27de5406b7812eef81b1ee299b5b
+Status: Downloaded newer image for swebench/sweb.eval.x86_64.django_1776_django-11742:latest
+docker.io/swebench/sweb.eval.x86_64.django_1776_django-11742:latest
+OK django-11742
+  disk after 11742: free 190G
+=== pull django-14238 09:18:42 ===
+latest: Pulling from swebench/sweb.eval.x86_64.django_1776_django-14238
+857cc8cb19c0: Already exists
+3f7fc75e0986: Already exists
+f8d2d48431b1: Already exists
+72a765079ad3: Already exists
+3ab6df53b88e: Already exists
+7cd589973a38: Already exists
+78a1841d354f: Already exists
+1ee214231ba3: Already exists
+d46dc79a9e04: Already exists
+61ef3b475c09: Already exists
+a36174401179: Already exists
+7e7ce3a95c35: Already exists
+1ccc7c32a42e: Pulling fs layer
+8e18abbef615: Pulling fs layer
+af2ee05306cb: Pulling fs layer
+8e18abbef615: Download complete
+1ccc7c32a42e: Verifying Checksum
+1ccc7c32a42e: Download complete
+1ccc7c32a42e: Pull complete
+8e18abbef615: Pull complete
+af2ee05306cb: Verifying Checksum
+af2ee05306cb: Download complete
+af2ee05306cb: Pull complete
+Digest: sha256:25cd926597c2f0dbd8d9fbf416552c0c513ee1cd1a328b52db0df45cf47519c3
+Status: Downloaded newer image for swebench/sweb.eval.x86_64.django_1776_django-14238:latest
+docker.io/swebench/sweb.eval.x86_64.django_1776_django-14238:latest
+OK django-14238
+  disk after 14238: free 190G
+=== pull django-12915 09:18:53 ===
+latest: Pulling from swebench/sweb.eval.x86_64.django_1776_django-12915
+762bedf4b1b7: Already exists
+9e922f6570e0: Already exists
+51fe70848edc: Already exists
+f44bfaa346f0: Already exists
+8a23aac55853: Already exists
+2778ec4c4033: Already exists
+70e155201911: Already exists
+8a60f72eaffb: Already exists
+f8237088de98: Already exists
+34e55e36f356: Already exists
+aae82a116a5e: Already exists
+6f06155d769c: Pulling fs layer
+e7633245fa7a: Pulling fs layer
+6f06155d769c: Verifying Checksum
+6f06155d769c: Download complete
+6f06155d769c: Pull complete
+e7633245fa7a: Verifying Checksum
+e7633245fa7a: Download complete
+e7633245fa7a: Pull complete
+Digest: sha256:356a4e73d1c84b360fcacbdd7ac968d57c9dddd3e4d1e00e021cb2df46f4e2b7
+Status: Downloaded newer image for swebench/sweb.eval.x86_64.django_1776_django-12915:latest
+docker.io/swebench/sweb.eval.x86_64.django_1776_django-12915:latest
+OK django-12915
+  disk after 12915: free 190G
+=== ALL 40 PULLS DONE 09:19:13 ===

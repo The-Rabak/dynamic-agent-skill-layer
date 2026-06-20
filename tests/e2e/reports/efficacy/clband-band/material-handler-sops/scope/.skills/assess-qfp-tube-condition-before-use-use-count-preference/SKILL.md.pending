@@ -1,0 +1,23 @@
+---
+name: 'Assess QFP tube condition before use: use count (preference)'
+description: 'Standing user preference: Assess QFP tube condition before use: use count ≤4 is clean and usable; use count = 5 requires cleaning before next use; cracked or otherwise damaged tubes must be quarantined and not used.'
+tags:
+- preference
+- convention
+origin: session_extraction
+source_session_id: clband-teach-material-handler-sops
+source_provider: claude-code
+created_at: 2026-06-12T21:34:12.098144376+00:00
+warning_at: 2026-07-12T21:34:12.098144376+00:00
+expires_at: 2026-09-10T21:34:12.098144376+00:00
+generality: uncertain
+generality_rationale: Detected as a standing user directive; generality inferred from scope signals.
+---
+
+# Assess QFP tube condition before use: use count (preference)
+
+Standing user preference: Assess QFP tube condition before use: use count ≤4 is clean and usable; use count = 5 requires cleaning before next use; cracked or otherwise damaged tubes must be quarantined and not used.
+
+## Conventions
+- Assess QFP tube condition before use: use count ≤4 is clean and usable; use count = 5 requires cleaning before next use; cracked or otherwise damaged tubes must be quarantined and not used.
+

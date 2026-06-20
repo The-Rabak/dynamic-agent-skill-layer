@@ -1,0 +1,7 @@
+{
+  "off_outcome": "loss",
+  "verifier_reason": "| 1 | at e-stage-03: locate and use the grounding verification station. perform esd wrist strap check. do not touch abc123-2 or any esds material until strap is verified compliant. | material handler | ~11:50 |\n| 6 | load segregated containers (esd gloves, wrist strap verified): **esd-bga-11 \u2192 700 good units** (artifact 7 corrected count). **esd-bga-17 \u2192 500 rework units** (artifact 7 corrected count). seal and label each container with lot id, bin category, unit count, date, and handler id. do not co-mingle. total: 1,200 units accounted for (0 scrap per both artifact 2 and artifact 7). | material handler | ~12:37\u201312:50 |\n  esd wrist strap verification:            2025-07-22 ~11:50\n  - esds: esd wrist strap check mandatory at e-stage-03 grounding station before any touch.\nLOSS: wrist strap mentioned but missing the <1 megaohm resistance specification (invented SOP value)",
+  "solve_exit": 0,
+  "elapsed_s": 234.9,
+  "discriminating": true
+}

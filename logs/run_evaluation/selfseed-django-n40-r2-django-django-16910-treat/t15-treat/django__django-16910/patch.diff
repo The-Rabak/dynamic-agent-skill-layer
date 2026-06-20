@@ -1,0 +1,20 @@
+diff --git a/django/db/models/sql/query.py b/django/db/models/sql/query.py
+index 781dfd5499..43dbe400af 100644
+--- a/django/db/models/sql/query.py
++++ b/django/db/models/sql/query.py
+@@ -779,7 +779,14 @@ class Query(BaseExpression):
+         # Only include fields mentioned in the mask.
+         for field_name, field_mask in mask.items():
+             field = opts.get_field(field_name)
+-            field_select_mask = select_mask.setdefault(field, {})
++            if hasattr(field, "field"):
++                # Reverse relation: use the actual FK field as the dict key so
++                # that get_related_selections() (which keys by the FK field) can
++                # find the mask. field.remote_field is the FK field itself (via
++                # the ForeignObjectRel.remote_field property).
++                field_select_mask = select_mask.setdefault(field.field, {})
++            else:
++                field_select_mask = select_mask.setdefault(field, {})
+             if field_mask:
+                 if not field.is_relation:
+                     raise FieldError(next(iter(field_mask)))

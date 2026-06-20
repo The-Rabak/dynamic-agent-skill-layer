@@ -1,0 +1,56 @@
+---
+name: dartman-game-setup-and-win-conditions
+description: 'Verbatim Dartman game system: piece notation, starting positions, win conditions, and 8x8 board rendering format required to correctly set up and track a game.'
+tags:
+- dartman
+- game-rules
+- taught-system
+- board-notation
+type: prerequisite
+origin: session_extraction
+source_session_id: clband-teach-dartman-game
+source_provider: claude-code
+created_at: 2026-06-12T22:33:38.136437464+00:00
+warning_at: 2026-07-12T22:33:38.136437464+00:00
+expires_at: 2026-09-10T22:33:38.136437464+00:00
+generality: project
+generality_rationale: All identifiers (P1, X1, X2, P2, Y1, Y2, specific coordinates) are invented names specific to the Dartman game system and have no meaning outside it.
+use_when:
+- playing or solving a game of Dartman
+- setting up the initial Dartman board position
+- rendering a Dartman board state as a markdown table
+- checking whether a player has reached the Dartman win condition
+avoid_when:
+- applying to standard chess — these are Dartman-specific rules, not chess rules
+artifacts:
+- dartman-rules.md
+- solution.md
+invariants:
+- The 1x2 Deflector (X2/Y2) always occupies exactly two vertically adjacent squares; it can never be rotated to horizontal.
+- Win conditions require ALL three pieces of a player to be simultaneously in their target squares.
+requires:
+- An 8x8 grid with algebraic notation (columns a–h, rows 1–8)
+produces:
+- A correctly initialized Dartman board markdown table matching the taught starting layout
+evidence:
+- 'The game starts with the pieces in this layout: P1 (a,8). X1 (a,7). X2 (b,8) and (b,7). P2 (h,1). Y1 (h,2). Y2 (g,1) and (g,2).'
+- 'For Player 1: P1 (g,2). X1 (h,2). X2 (g,1) and (g,2). For Player 2: P2 (b,7). Y1 (b,8). Y2 (a,8) and (a,7).'
+- 'the starting board should be sent like this: | P1 | X2 | . | ... | Y2 | P2 |'
+---
+
+# dartman-game-setup-and-win-conditions
+
+Verbatim Dartman game system: piece notation, starting positions, win conditions, and 8x8 board rendering format required to correctly set up and track a game.
+
+## Procedures
+- 1. Use these piece notations exactly — Player 1: P1 (Dartman), X1 (1x1 Deflector), X2 (1x2 Deflector, two coords); Player 2: P2 (Dartman), Y1 (1x1 Deflector), Y2 (1x2 Deflector, two coords).
+- 2. Starting layout: P1(a,8), X1(a,7), X2(b,8)+(b,7); P2(h,1), Y1(h,2), Y2(g,1)+(g,2).
+- 3. Win condition for Player 1: P1(g,2), X1(h,2), X2(g,1)+(g,2). Win condition for Player 2: P2(b,7), Y1(b,8), Y2(a,8)+(a,7).
+- 4. Render the board as an 8x8 markdown table. Columns are A–H left to right; rows are 8–1 top to bottom. Empty squares are '.'; occupied squares show the piece shorthand (e.g. P1, X2, Y1). The 1x2 Deflector (X2 or Y2) occupies two cells in the same column (vertical orientation only).
+- 5. Players alternate turns; each turn one piece moves once. Player 1 moves first unless otherwise specified.
+
+## Conventions
+- Piece shorthands (P1, X1, X2, P2, Y1, Y2) must be used verbatim — do not substitute generic names.
+- The 1x2 Deflector always occupies two squares and must be listed with both coordinates.
+- Columns are lowercase letters a–h; rows are numbers 8 (top) through 1 (bottom) — same as algebraic chess notation.
+

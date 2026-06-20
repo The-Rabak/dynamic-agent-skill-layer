@@ -1,0 +1,62 @@
+---
+name: high-value-lot-escort-authoritative-valuation-source
+description: For high-value escort threshold ($500K per SEC-HV-01), use the current LMI artifact value — not the Finance team's older estimate. If LMI value exceeds $500,000, continuous escort is mandatory and cannot be waived.
+tags:
+- material-handler
+- high-value
+- escort
+- SEC-HV-01
+- semiconductor-testing
+type: rule
+origin: session_extraction
+source_session_id: clband-teach-material-handler-sops
+source_provider: claude-code
+created_at: 2026-06-12T21:34:12.092274623+00:00
+warning_at: 2026-07-12T21:34:12.092274623+00:00
+expires_at: 2026-09-10T21:34:12.092274623+00:00
+generality: project
+generality_rationale: References specific policy code SEC-HV-01, dollar threshold $500,000, and the LMI artifact structure of this semiconductor facility SOP system.
+use_when:
+- Finance quotes a lot value below $500K but the LMI shows a value above $500K
+- Deciding whether continuous visual escort (SEC-HV-01) is required for a lot
+- Lot value is near the $500,000 threshold and two sources disagree
+avoid_when:
+- Do NOT use Finance estimates as the operative value when a current LMI artifact is available
+- Do NOT waive escort because an older estimate fell below threshold
+artifacts:
+- Lot Move Instruction (LMI)
+- SEC-HV-01 policy
+- Finance valuation notes
+invariants:
+- Threshold is $500,000 per SEC-HV-01; any lot with LMI value strictly above this requires escort
+- Escort must be continuous — no unattended periods even for brief stops
+requires:
+- Current LMI artifact with lot value field
+- SEC-HV-01 policy accessible
+- Authorized escort available (Security Officer or trained handler buddy)
+produces:
+- Confirmed escort requirement decision
+- Escort arranged before transport begins
+evidence:
+- 'Artifact 1 LMI: ''Estimated lot value: $520,000'''
+- 'Artifact 7 Finance note: ''Finance estimate (last week): $480,000 … Pending PO revision may finalize by end of week'''
+- 'SEC-HV-01: ''Threshold: Lots valued > $500,000 — Requirement: Continuous visual escort during transport and staging'''
+- 'Solution.md: ''$520,000 (LMI, authoritative) > $500,000 threshold — continuous escort required per SEC-HV-01. Finance $480K is last week, superseded by LMI.'''
+---
+
+# high-value-lot-escort-authoritative-valuation-source
+
+For high-value escort threshold ($500K per SEC-HV-01), use the current LMI artifact value — not the Finance team's older estimate. If LMI value exceeds $500,000, continuous escort is mandatory and cannot be waived.
+
+## Procedures
+- 1. Locate the lot value in the Lot Move Instruction (LMI) artifact — this is the authoritative current value.
+- 2. Compare LMI value against the $500,000 threshold from policy SEC-HV-01.
+- 3. If LMI value > $500,000: activate continuous visual escort; the lot must never be left unattended at any point including staging areas and brief stops.
+- 4. If Finance or any other source quotes a lower value, check whether it is more recent than the LMI. If it is older or explicitly marked 'pending revision', discard it in favor of the LMI value.
+- 5. Arrange an authorized escort (Security Officer or trained handler buddy system) before initiating transport.
+- 6. Maintain continuous line-of-sight with the lot for the entire transport and staging duration.
+
+## Conventions
+- LMI artifact value is authoritative for escort threshold decisions; Finance estimates are advisory only unless they post-date the LMI.
+- A 'pending PO revision' note on a Finance estimate does not lower the current operative value for safety purposes — use the higher, current LMI figure.
+

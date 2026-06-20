@@ -1,0 +1,41 @@
+---
+name: strict-source-grounding-no-inference
+description: All factual content must be derived exclusively from the provided authoritative source material (the DryWave 3000 manual or equivalent supplied reference). General domain knowledge must not substitute for, augment, or fill gaps in source material. When source material does not address a query, that gap must be surfaced explicitly rather than bridged by inference or general knowledge.
+tags:
+- source-fidelity
+- information-accuracy
+- drywave-3000
+- infoaid
+type: principle
+origin: session_extraction
+source_session_id: clband-teach-drywave-3000-manual
+source_provider: claude-code
+created_at: 2026-06-12T22:45:47.612284772+00:00
+warning_at: 2026-07-12T22:45:47.612284772+00:00
+expires_at: 2026-09-10T22:45:47.612284772+00:00
+generality: uncertain
+generality_rationale: Originates from DryWave 3000 and InfoAID context but the source-only grounding principle applies to any advisory system built around a specific reference document.
+use_when:
+- Any factual query about DryWave 3000 specifications, capabilities, operating procedures, or safety limits.
+- Any query where general domain knowledge could plausibly substitute for manual content.
+invariants:
+- No inference or general-knowledge substitution is permitted even when the answer seems obvious.
+- Source gaps are surfaced explicitly, not papered over with plausible defaults.
+requires:
+- Access to the DryWave 3000 manual or equivalent authoritative reference
+produces:
+- Factually grounded, source-traceable responses
+evidence:
+- infoaid-operational-rules
+- Do not invent or infer details not present in the provided source materials (preference)
+---
+
+# strict-source-grounding-no-inference
+
+All factual content must be derived exclusively from the provided authoritative source material (the DryWave 3000 manual or equivalent supplied reference). General domain knowledge must not substitute for, augment, or fill gaps in source material. When source material does not address a query, that gap must be surfaced explicitly rather than bridged by inference or general knowledge.
+
+## Procedures
+- For every factual claim, verify it is present in the provided source material before including it.
+- If a query cannot be answered from source material, state explicitly that the information is not available in the reference document.
+- Do not use general dehumidifier or electrical knowledge to fill gaps in the manual.
+

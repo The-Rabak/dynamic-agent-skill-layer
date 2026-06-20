@@ -1,0 +1,174 @@
+{
+  "run_id": "smoke1",
+  "design": "self-seed-same-set",
+  "server_url": "http://127.0.0.1:3002",
+  "instances": [
+    "django__django-15789"
+  ],
+  "n": 1,
+  "model": "sonnet",
+  "max_turns": 40,
+  "scope": "/tmp/t15-swebench/project/swebench-django-smoke",
+  "seeding": {
+    "ingested": 1,
+    "gated_skills": [
+      {
+        "name": "i-want-to-customize-the-json-encoding-of-preference",
+        "source_session_id": "smoke1-off-django__django-15789"
+      }
+    ],
+    "skill_source": {
+      "i-want-to-customize-the-json-encoding-of-preference": "django__django-15789"
+    },
+    "drain_passes": 1
+  },
+  "round1_off": [
+    {
+      "instance_id": "django__django-15789",
+      "resolved": true,
+      "efficiency": {
+        "num_turns": 20,
+        "input_tokens": 19,
+        "output_tokens": 2878,
+        "cache_read_input_tokens": 505887,
+        "cache_creation_input_tokens": 16327,
+        "total_cost_usd": 0.2937671,
+        "duration_ms": 81591,
+        "is_error": false,
+        "subtype": "success"
+      },
+      "transcript": "/home/rabak/.claude/projects/-tmp-t15-swebench-solve-django--django-15789--off/08671df9-872d-458a-931d-d29e953dc06b.jsonl",
+      "empty_patch": false
+    }
+  ],
+  "round2_treat": [
+    {
+      "instance_id": "django__django-15789",
+      "resolved": true,
+      "efficiency": {
+        "num_turns": 18,
+        "input_tokens": 20,
+        "output_tokens": 3438,
+        "cache_read_input_tokens": 527963,
+        "cache_creation_input_tokens": 16323,
+        "total_cost_usd": 0.30909190000000003,
+        "duration_ms": 82877,
+        "is_error": false,
+        "subtype": "success"
+      },
+      "empty_patch": false,
+      "seed_hits": [],
+      "own_skill_hits": [],
+      "cross_skill_hits": [],
+      "status": "ok"
+    }
+  ],
+  "per_instance_resolved": [
+    {
+      "instance_id": "django__django-15789",
+      "off": 1,
+      "treat": 1
+    }
+  ],
+  "scores": {
+    "X_off_resolved_rate": 1.0,
+    "Y_treat_resolved_rate": 1.0,
+    "delta_Y_minus_X": 0.0
+  },
+  "mcnemar_treat_vs_off": {
+    "treat_resolved_off_not": 0,
+    "off_resolved_treat_not": 0,
+    "discordant_pairs": 0,
+    "p_value": 1.0
+  },
+  "efficiency_aggregate": {
+    "resolved_only": true,
+    "metrics": {
+      "num_turns": {
+        "n_pairs": 1,
+        "dropped": 0,
+        "off_mean": 20.0,
+        "treat_mean": 18.0,
+        "off_median": 20.0,
+        "treat_median": 18.0,
+        "mean_delta_treat_minus_off": -2.0,
+        "median_delta_treat_minus_off": -2.0,
+        "treat_cheaper_count": 1,
+        "off_cheaper_count": 0,
+        "sign_test_p": 1.0,
+        "bootstrap_ci_mean_delta": {
+          "ci_lo": -2.0,
+          "ci_hi": -2.0,
+          "excludes_zero": true,
+          "iterations": 10000,
+          "seed": 20260619,
+          "alpha": 0.05
+        }
+      },
+      "output_tokens": {
+        "n_pairs": 1,
+        "dropped": 0,
+        "off_mean": 2878.0,
+        "treat_mean": 3438.0,
+        "off_median": 2878.0,
+        "treat_median": 3438.0,
+        "mean_delta_treat_minus_off": 560.0,
+        "median_delta_treat_minus_off": 560.0,
+        "treat_cheaper_count": 0,
+        "off_cheaper_count": 1,
+        "sign_test_p": 1.0,
+        "bootstrap_ci_mean_delta": {
+          "ci_lo": 560.0,
+          "ci_hi": 560.0,
+          "excludes_zero": true,
+          "iterations": 10000,
+          "seed": 20260619,
+          "alpha": 0.05
+        }
+      },
+      "total_cost_usd": {
+        "n_pairs": 1,
+        "dropped": 0,
+        "off_mean": 0.2937671,
+        "treat_mean": 0.30909190000000003,
+        "off_median": 0.2937671,
+        "treat_median": 0.30909190000000003,
+        "mean_delta_treat_minus_off": 0.015324800000000027,
+        "median_delta_treat_minus_off": 0.015324800000000027,
+        "treat_cheaper_count": 0,
+        "off_cheaper_count": 1,
+        "sign_test_p": 1.0,
+        "bootstrap_ci_mean_delta": {
+          "ci_lo": 0.015324800000000027,
+          "ci_hi": 0.015324800000000027,
+          "excludes_zero": true,
+          "iterations": 10000,
+          "seed": 20260619,
+          "alpha": 0.05
+        }
+      },
+      "duration_ms": {
+        "n_pairs": 1,
+        "dropped": 0,
+        "off_mean": 81591.0,
+        "treat_mean": 82877.0,
+        "off_median": 81591.0,
+        "treat_median": 82877.0,
+        "mean_delta_treat_minus_off": 1286.0,
+        "median_delta_treat_minus_off": 1286.0,
+        "treat_cheaper_count": 0,
+        "off_cheaper_count": 1,
+        "sign_test_p": 1.0,
+        "bootstrap_ci_mean_delta": {
+          "ci_lo": 1286.0,
+          "ci_hi": 1286.0,
+          "excludes_zero": true,
+          "iterations": 10000,
+          "seed": 20260619,
+          "alpha": 0.05
+        }
+      }
+    }
+  },
+  "treat_seed_injected_count": 0
+}

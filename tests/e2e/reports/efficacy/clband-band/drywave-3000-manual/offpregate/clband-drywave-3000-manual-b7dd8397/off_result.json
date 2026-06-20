@@ -1,0 +1,7 @@
+{
+  "off_outcome": "loss",
+  "verifier_reason": "LOSS: missing invented 40%-floor rule: the manual explicitly forbids extended operation below 40% in domestic living areas",
+  "solve_exit": 0,
+  "elapsed_s": 54.5,
+  "discriminating": true
+}

@@ -1,0 +1,91 @@
+diff --git a/django/forms/models.py b/django/forms/models.py
+index 422bc5d178..90453e03f0 100644
+--- a/django/forms/models.py
++++ b/django/forms/models.py
+@@ -1131,7 +1131,11 @@ class InlineForeignKeyField(Field):
+         else:
+             orig = self.parent_instance.pk
+         if str(value) != str(orig):
+-            raise ValidationError(self.error_messages['invalid_choice'], code='invalid_choice')
++            raise ValidationError(
++                self.error_messages['invalid_choice'],
++                code='invalid_choice',
++                params={'value': value},
++            )
+         return self.parent_instance
+ 
+     def has_changed(self, initial, data):
+@@ -1188,7 +1192,7 @@ class ModelChoiceField(ChoiceField):
+     # This class is a subclass of ChoiceField for purity, but it doesn't
+     # actually use any of ChoiceField's implementation.
+     default_error_messages = {
+-        'invalid_choice': _('Select a valid choice. That choice is not one of'
++        'invalid_choice': _('Select a valid choice. %(value)s is not one of'
+                             ' the available choices.'),
+     }
+     iterator = ModelChoiceIterator
+@@ -1284,7 +1288,7 @@ class ModelChoiceField(ChoiceField):
+                 value = getattr(value, key)
+             value = self.queryset.get(**{key: value})
+         except (ValueError, TypeError, self.queryset.model.DoesNotExist):
+-            raise ValidationError(self.error_messages['invalid_choice'], code='invalid_choice')
++            raise ValidationError(self.error_messages['invalid_choice'], code='invalid_choice', params={'value': value})
+         return value
+ 
+     def validate(self, value):
+diff --git a/tests/model_forms/test_modelchoicefield.py b/tests/model_forms/test_modelchoicefield.py
+index 8f41ce9c40..d0e8b8e5db 100644
+--- a/tests/model_forms/test_modelchoicefield.py
++++ b/tests/model_forms/test_modelchoicefield.py
+@@ -51,17 +51,16 @@ class ModelChoiceFieldTests(TestCase):
+         # instantiated. This proves clean() checks the database during clean()
+         # rather than caching it at instantiation time.
+         Category.objects.get(url='4th').delete()
+-        msg = "['Select a valid choice. That choice is not one of the available choices.']"
+-        with self.assertRaisesMessage(ValidationError, msg):
++        with self.assertRaisesMessage(ValidationError, str(c4.id)):
+             f.clean(c4.id)
+ 
+     def test_clean_model_instance(self):
+         f = forms.ModelChoiceField(Category.objects.all())
+         self.assertEqual(f.clean(self.c1), self.c1)
+         # An instance of incorrect model.
+-        msg = "['Select a valid choice. That choice is not one of the available choices.']"
+-        with self.assertRaisesMessage(ValidationError, msg):
+-            f.clean(Book.objects.create())
++        book = Book.objects.create()
++        with self.assertRaisesMessage(ValidationError, str(book)):
++            f.clean(book)
+ 
+     def test_clean_to_field_name(self):
+         f = forms.ModelChoiceField(Category.objects.all(), to_field_name='slug')
+@@ -212,11 +211,12 @@ class ModelChoiceFieldTests(TestCase):
+                 model = Book
+                 fields = ['author']
+ 
+-        book = Book.objects.create(author=Writer.objects.create(name='Test writer'))
++        writer = Writer.objects.create(name='Test writer')
++        book = Book.objects.create(author=writer)
+         form = ModelChoiceForm({}, instance=book)
+-        self.assertEqual(
+-            form.errors['author'],
+-            ['Select a valid choice. That choice is not one of the available choices.']
++        self.assertIn(
++            str(writer.pk),
++            form.errors['author'][0],
+         )
+ 
+     def test_disabled_modelchoicefield_has_changed(self):
+diff --git a/tests/model_forms/tests.py b/tests/model_forms/tests.py
+index 9931fa50e3..d535a2ec8b 100644
+--- a/tests/model_forms/tests.py
++++ b/tests/model_forms/tests.py
+@@ -1675,7 +1675,7 @@ class ModelFormBasicTests(TestCase):
+         self.assertIs(form.is_valid(), False)
+         self.assertEqual(
+             form.errors,
+-            {'writer': ['Select a valid choice. That choice is not one of the available choices.']},
++            {'writer': ['Select a valid choice. %s is not one of the available choices.' % w.pk]},
+         )
+ 
+     def test_validate_foreign_key_to_model_with_overridden_manager(self):

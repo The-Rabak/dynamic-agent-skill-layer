@@ -1,0 +1,32 @@
+=== clband extract: dartman-game -> /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/dartman-game/scope ===
+[clband] purged queue; rows now: 0
+[clband] teach-delivery ON: doc injected as user turn (+41820 bytes)
+[clband] ingest transcript.jsonl (527KB+doc) -> {'content_hash': 'de5ee5d45aeef1afa891b2dfb5f1a66afbfa48986dd6299feaa758c23eddf1b4', 'id': '019ebdf5-3a7b-7723-b024-3343dc3265f2', 'status': 'enqueued'}
+[clband] sweep 1: 1 pending -> worker
+[clband] running maintenance-worker (claude-code); scope=/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/dartman-game/scope; log=/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/logs/worker-dartman-game-013025-s1.log
+[clband] worker exited rc=0
+[clband] queue drained (sweep 2)
+
+=== dartman-game: 20 .pending draft(s) in 193s rc=0 -> /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/extract_dartman-game.json ===
+   The user is always Player 2 when game (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/dartman-game/scope/.skills/the-user-is-always-player-2-when-game-preference/SKILL.md.pending
+   8x8-board-game-grid-visualization-standard  [best_practice]  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/dartman-game/scope/.skills/8x8-board-game-grid-visualization-standard/SKILL.md.pending
+   Dartman pieces can shoot each other and must (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/dartman-game/scope/.skills/dartman-pieces-can-shoot-each-other-and-must-preference/SKILL.md.pending
+   game-rule-counterintuitive-edge-cases-must-be-applied-exactly  [principle]  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/dartman-game/scope/.skills/game-rule-counterintuitive-edge-cases-must-be-applied-exactly/SKILL.md.pending
+   The 1×2 Deflector piece cannot be rotated and (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/dartman-game/scope/.skills/the-1-2-deflector-piece-cannot-be-rotated-and-preference/SKILL.md.pending
+   Certain basic endgame positions are always dead (drawn) (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/dartman-game/scope/.skills/certain-basic-endgame-positions-are-always-dead-drawn-preference/SKILL.md.pending
+   When displaying chess games given in algebraic notation (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/dartman-game/scope/.skills/when-displaying-chess-games-given-in-algebraic-notation-preference/SKILL.md.pending
+   The touch-move rule applies: a piece that has (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/dartman-game/scope/.skills/the-touch-move-rule-applies-a-piece-that-has-preference/SKILL.md.pending
+   The first use of a modern-style time limit (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/dartman-game/scope/.skills/the-first-use-of-a-modern-style-time-limit-preference/SKILL.md.pending
+   Mechanical clocks do not support time increments; digital (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/dartman-game/scope/.skills/mechanical-clocks-do-not-support-time-increments-digital-preference/SKILL.md.pending
+   A piece pinned against its own king (i.e (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/dartman-game/scope/.skills/a-piece-pinned-against-its-own-king-i-e-preference/SKILL.md.pending
+   The king is never captured; unlike other pieces (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/dartman-game/scope/.skills/the-king-is-never-captured-unlike-other-pieces-preference/SKILL.md.pending
+   A king in check cannot escape by moving (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/dartman-game/scope/.skills/a-king-in-check-cannot-escape-by-moving-preference/SKILL.md.pending
+   dartman-movement-and-line-of-fire-rules  [rule]  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/dartman-game/scope/.skills/dartman-movement-and-line-of-fire-rules/SKILL.md.pending
+   A chess clock consists of two adjacent clocks (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/dartman-game/scope/.skills/a-chess-clock-consists-of-two-adjacent-clocks-preference/SKILL.md.pending
+   dartman-game-setup-and-win-conditions  [prerequisite]  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/dartman-game/scope/.skills/dartman-game-setup-and-win-conditions/SKILL.md.pending
+   Most tournaments use time controls with either an (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/dartman-game/scope/.skills/most-tournaments-use-time-controls-with-either-an-preference/SKILL.md.pending
+   Official chess rules do not include a procedure (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/dartman-game/scope/.skills/official-chess-rules-do-not-include-a-procedure-preference/SKILL.md.pending
+   A player cannot use an opponent's deflector piece (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/dartman-game/scope/.skills/a-player-cannot-use-an-opponent-s-deflector-piece-preference/SKILL.md.pending
+   Players may not consult notes, computers, outside information (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/dartman-game/scope/.skills/players-may-not-consult-notes-computers-outside-information-preference/SKILL.md.pending
+
+--- STDERR ---

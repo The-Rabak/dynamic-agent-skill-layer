@@ -1,0 +1,46 @@
+---
+name: uncertainty-must-surface-not-pass-through
+description: Any form of uncertainty encountered at a planning pipeline stage — incomplete data, contradictory entries, unverified estimates, or ambiguity — must be surfaced as an explicit halt or named alert and never absorbed, glossed over, or forwarded downstream. Downstream consumers must receive only complete, verified, non-contradictory inputs.
+tags:
+- data-integrity
+- pipeline
+- halt-on-uncertainty
+- planning
+type: principle
+origin: session_extraction
+source_session_id: clband-teach-quartermaster-hold-inventory
+source_provider: claude-code
+created_at: 2026-06-12T21:59:54.414117475+00:00
+warning_at: 2026-07-12T21:59:54.414117475+00:00
+expires_at: 2026-09-10T21:59:54.414117475+00:00
+generality: general
+generality_rationale: Applies to any multi-stage planning or operational pipeline, not only climbing-wall inventory contexts.
+use_when:
+- A planning stage receives input that contains estimates, preliminary figures, or unresolved contradictions.
+- Downstream stages have hard dependencies on the accuracy of upstream data.
+- A report or schedule is about to be generated from data that has not been fully confirmed.
+avoid_when:
+- The unknown factor is provably irrelevant to the current stage's output.
+- The pipeline operates in an explicitly exploratory/draft mode where uncertainty is declared and bounded.
+invariants:
+- No ambiguity, estimate, or contradiction may cross a pipeline stage boundary.
+- A halt must be explicit and named — silent no-ops or partial outputs are not acceptable.
+produces:
+- Explicit halt signal or named alert with description of the gap or contradiction
+evidence:
+- quartermaster-plan-inconsistency-alert
+- quartermaster-no-override-by-operational-pressure
+- Do not schedule until complete, confirmed data is available (preference)
+- Do not speculate, incorporate estimates, or send ambiguity downstream (preference)
+---
+
+# uncertainty-must-surface-not-pass-through
+
+Any form of uncertainty encountered at a planning pipeline stage — incomplete data, contradictory entries, unverified estimates, or ambiguity — must be surfaced as an explicit halt or named alert and never absorbed, glossed over, or forwarded downstream. Downstream consumers must receive only complete, verified, non-contradictory inputs.
+
+## Procedures
+- At each pipeline stage, validate inputs for completeness, consistency, and absence of estimates before processing.
+- If validation fails, emit a named alert (e.g. PLAN_INCONSISTENCY_ALERT) and halt — do not produce partial output.
+- Never substitute estimates, defaults, or preliminary figures for confirmed values; block the stage instead.
+- Document the specific gap or contradiction so the upstream source can correct it before re-entry.
+

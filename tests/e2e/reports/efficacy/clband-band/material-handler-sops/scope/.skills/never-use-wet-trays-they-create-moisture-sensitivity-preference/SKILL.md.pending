@@ -1,0 +1,23 @@
+---
+name: Never use wet trays; they create moisture sensitivity (preference)
+description: 'Standing user preference: Never use wet trays; they create moisture sensitivity issues.'
+tags:
+- preference
+- convention
+origin: session_extraction
+source_session_id: clband-teach-material-handler-sops
+source_provider: claude-code
+created_at: 2026-06-12T21:34:12.097406838+00:00
+warning_at: 2026-07-12T21:34:12.097406838+00:00
+expires_at: 2026-09-10T21:34:12.097406838+00:00
+generality: uncertain
+generality_rationale: Detected as a standing user directive; generality inferred from scope signals.
+---
+
+# Never use wet trays; they create moisture sensitivity (preference)
+
+Standing user preference: Never use wet trays; they create moisture sensitivity issues.
+
+## Conventions
+- Never use wet trays; they create moisture sensitivity issues.
+

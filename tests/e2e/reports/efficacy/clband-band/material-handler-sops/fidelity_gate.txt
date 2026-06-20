@@ -1,0 +1,15 @@
+=== fidelity gate: material-handler-sops (d29478c9) — 25 skill file(s) under /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/material-handler-sops/scope ===
+--- document tier (reported, NOT gating) ---
+  absent   'Material Handler Agent'
+  absent   'Inventory and Logistics Coordinator'
+--- operative tier (sentinels_operative, GATING) ---
+  MISSING  '<1 megaohm'
+  MISSING  '50 pounds'
+  PRESENT  'BEFORE physically moving'  (1 file(s))
+  MISSING  '10-minute UV sanitization cycle'
+  PRESENT  'bake-out oven'  (1 file(s))
+  PRESENT  '$500,000'  (1 file(s))
+  PRESENT  'one lot at a time'  (1 file(s))
+FIDELITY FAIL: 3/7 OPERATIVE sentinels missing -> INSTRUMENT-FAILURE(extraction) for material-handler-sops
+
+--- STDERR ---

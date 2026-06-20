@@ -1,0 +1,23 @@
+---
+name: 'Verify container availability before planning any move: BGA (preference)'
+description: 'Standing user preference: Verify container availability before planning any move: BGA trays (50 total, 3 needed per lot, 8 currently available), wafer carriers (30 total, 1–2 per lot, 2 currently available), QFP tubes (200 total, 5–10 per lot, 20 currently available).'
+tags:
+- preference
+- convention
+origin: session_extraction
+source_session_id: clband-teach-material-handler-sops
+source_provider: claude-code
+created_at: 2026-06-12T21:34:12.097143988+00:00
+warning_at: 2026-07-12T21:34:12.097143988+00:00
+expires_at: 2026-09-10T21:34:12.097143988+00:00
+generality: uncertain
+generality_rationale: Detected as a standing user directive; generality inferred from scope signals.
+---
+
+# Verify container availability before planning any move: BGA (preference)
+
+Standing user preference: Verify container availability before planning any move: BGA trays (50 total, 3 needed per lot, 8 currently available), wafer carriers (30 total, 1–2 per lot, 2 currently available), QFP tubes (200 total, 5–10 per lot, 20 currently available).
+
+## Conventions
+- Verify container availability before planning any move: BGA trays (50 total, 3 needed per lot, 8 currently available), wafer carriers (30 total, 1–2 per lot, 2 currently available), QFP tubes (200 total, 5–10 per lot, 20 currently available).
+

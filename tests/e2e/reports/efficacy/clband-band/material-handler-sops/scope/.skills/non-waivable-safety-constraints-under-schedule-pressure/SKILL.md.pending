@@ -1,0 +1,51 @@
+---
+name: non-waivable-safety-constraints-under-schedule-pressure
+description: When a manager or operator pressures the Material Handler to skip or abbreviate safety steps (ESD verification, IMS pre-move update, UV transfer cycle, MSL bake-out, bin segregation) to meet a schedule, all such constraints are non-waivable — 'use judgment' does not override them.
+tags:
+- material-handler
+- safety
+- compliance
+- schedule-pressure
+- semiconductor-testing
+type: principle
+origin: session_extraction
+source_session_id: clband-teach-material-handler-sops
+source_provider: claude-code
+created_at: 2026-06-12T21:34:12.095207702+00:00
+warning_at: 2026-07-12T21:34:12.095207702+00:00
+expires_at: 2026-09-10T21:34:12.095207702+00:00
+generality: uncertain
+generality_rationale: The specific rules named are from this SOP system, but the meta-principle ('use judgment' does not waive non-waivable safety rules) is broadly applicable to any compliance-heavy multi-agent system.
+use_when:
+- Manufacturing Manager says 'use judgment, don't let the schedule slip' regarding safety steps
+- Operator offers to skip steps or take shortcuts to make a staging deadline
+- Multiple agents create time pressure that would require cutting safety procedures
+avoid_when:
+- Do not treat schedule urgency as a valid exception for any rule explicitly marked non-waivable in SOPs
+artifacts:
+- SOP document
+- Lot Move Instruction
+invariants:
+- Non-waivable SOP constraints remain in force regardless of instructions from any tier (Orchestrator, Specialized, or Execution agents)
+- Safety and compliance constraints take precedence over throughput in all cases
+requires:
+- Knowledge of which constraints are explicitly non-waivable in the SOP document
+produces:
+- SOP-compliant execution plan with revised ETA communicated to Manufacturing Manager
+evidence:
+- 'Manufacturing Manager msg 10: ''If the strap check or other steps take too long, use judgment — don''t let the schedule slip.'''
+- 'Operator T-12 msg 3: ''If we hustle, we can skip some steps and still make 11:45.'''
+- 'Solution.md: ''Rejected suggestions: Co-transport with LOT-BQ90 — violates Single Lot Transport Rule; Skip ESD/ionizer/IMS steps for schedule — non-waivable safety requirements; Re-taped bag is fine — Cold Chain Rule 3 is explicit'''
+- 'SOP Key System Principles: ''Quality is never compromised for throughput, as multiple checkpoints and escalation rules enforce this priority.'''
+---
+
+# non-waivable-safety-constraints-under-schedule-pressure
+
+When a manager or operator pressures the Material Handler to skip or abbreviate safety steps (ESD verification, IMS pre-move update, UV transfer cycle, MSL bake-out, bin segregation) to meet a schedule, all such constraints are non-waivable — 'use judgment' does not override them.
+
+## Conventions
+- The phrase 'use judgment' from a manager does not grant authority to bypass non-waivable SOPs.
+- ESD wrist strap verification, IMS pre-move update, UV transfer chamber 10-min cycle, MSL bake-out, bin segregation, and single-lot transport are all non-waivable regardless of urgency.
+- The correct response to 'can we skip X to make the deadline' is to notify the manager that X cannot be skipped, provide the revised ETA, and proceed with the SOP-compliant path.
+- Missing a deadline is an acceptable outcome; mixing bin categories, skipping bake-out, or bypassing ESD checks are not.
+

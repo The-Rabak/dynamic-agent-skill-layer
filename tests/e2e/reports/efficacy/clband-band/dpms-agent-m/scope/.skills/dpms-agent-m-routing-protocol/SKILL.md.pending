@@ -1,0 +1,55 @@
+---
+name: dpms-agent-m-routing-protocol
+description: Agent M in DPMS delivers the final report package exclusively to Orchestrator (Agent A); routing output directly to external stakeholders (Mayor, City Manager) or bypassing the Orchestrator is a protocol violation that must be refused.
+tags:
+- dpms
+- routing
+- agent-m
+- taught-system
+- orchestration
+type: anti_pattern
+origin: session_extraction
+source_session_id: clband-teach-dpms-agent-m
+source_provider: claude-code
+created_at: 2026-06-12T23:18:42.282526528+00:00
+warning_at: 2026-07-12T23:18:42.282526528+00:00
+expires_at: 2026-09-10T23:18:42.282526528+00:00
+generality: project
+generality_rationale: References DPMS-specific agent designations (Agent A as Orchestrator, Agent M) and the 14-agent pipeline routing contract that is unique to this system.
+use_when:
+- Orchestrator requests Agent M to send output directly to an external stakeholder
+- City Manager or Mayor requests a copy be routed outside normal channels
+- Any agent or person suggests bypassing Orchestrator for time savings
+- Delivery target is anyone other than Agent A
+avoid_when:
+- Do NOT route final output to any non-Orchestrator recipient even under deadline pressure
+- Do NOT treat a shortened format (JSON summary) as exempt from the routing rule
+artifacts:
+- solution.md
+- report submission metadata
+invariants:
+- Final report package delivery target is always Agent A (Orchestrator)
+- No DPMS run output leaves Agent M to an external party without Orchestrator approval
+produces:
+- Report package addressed to Agent A with submission routing documented in metadata
+- Refusal log entry for any violated routing request
+evidence:
+- 'Turn 11 Orchestrator: ''consider sending a quick JSON directly to the Mayor to save time'' — refused as ''Routing protocol violation — Agent M delivers to Orchestrator only'''
+- 'Report submission routing: The completed package is addressed to the Orchestrator (Agent A) for approval, not to the Mayor'
+---
+
+# dpms-agent-m-routing-protocol
+
+Agent M in DPMS delivers the final report package exclusively to Orchestrator (Agent A); routing output directly to external stakeholders (Mayor, City Manager) or bypassing the Orchestrator is a protocol violation that must be refused.
+
+## Procedures
+- 1. Upon completing report composition, address the delivery exclusively to Agent A (Orchestrator) for approval.
+- 2. If asked to send output (PDF, JSON, or any format) directly to an external stakeholder (Mayor, City Manager, etc.), refuse and explain it is a routing protocol violation.
+- 3. If the Orchestrator itself requests a shortcut delivery to an external party (e.g., 'send JSON to the Mayor to save time'), refuse the same way — the request source does not override the protocol.
+- 4. Document any such refused routing request in the submission metadata.
+
+## Conventions
+- Agent M → Agent A (Orchestrator) is the only valid delivery path for final output.
+- External stakeholders receive reports only after Orchestrator approval, not directly from Agent M.
+- Format shortcuts (e.g., JSON instead of PDF) do not change the routing rule.
+

@@ -1,0 +1,106 @@
+{
+  "test": "E2 separation",
+  "server_url": "http://127.0.0.1:3002",
+  "own_seeds": {
+    "swebench-django": [
+      "assert-migration-noop-with-assertnumqueries-zero",
+      "django-migration-rename-noop-guard",
+      "guard-empty-string-before-index-access-python"
+    ],
+    "swebench-sympy": [
+      "slots-hierarchy-full-audit-principle",
+      "slots-mixin-missing-slots-restores-dict",
+      "symbolic-float-precision-mismatch-prevents-cancellation",
+      "sympy-codeprinter-unsupported-fn-via-piecewise",
+      "treat-missing-slots-in-a-parent-class-as-preference"
+    ]
+  },
+  "rows": [
+    {
+      "scope": "swebench-django",
+      "probe": "django__django-12708",
+      "status": "ok",
+      "injected": [
+        "assert-migration-noop-with-assertnumqueries-zero",
+        "django-migration-rename-noop-guard",
+        "guard-empty-string-before-index-access-python"
+      ],
+      "own_seed_hits": [
+        "assert-migration-noop-with-assertnumqueries-zero",
+        "django-migration-rename-noop-guard",
+        "guard-empty-string-before-index-access-python"
+      ],
+      "foreign_seed_hits": [],
+      "retrieved_own": true,
+      "no_foreign_leak": true,
+      "pass": true
+    },
+    {
+      "scope": "swebench-django",
+      "probe": "django__django-16820",
+      "status": "ok",
+      "injected": [
+        "assert-migration-noop-with-assertnumqueries-zero",
+        "django-migration-rename-noop-guard",
+        "guard-empty-string-before-index-access-python"
+      ],
+      "own_seed_hits": [
+        "assert-migration-noop-with-assertnumqueries-zero",
+        "django-migration-rename-noop-guard",
+        "guard-empty-string-before-index-access-python"
+      ],
+      "foreign_seed_hits": [],
+      "retrieved_own": true,
+      "no_foreign_leak": true,
+      "pass": true
+    },
+    {
+      "scope": "swebench-sympy",
+      "probe": "sympy__sympy-12171",
+      "status": "ok",
+      "injected": [
+        "Treat missing `__slots__` in a parent class as (preference)",
+        "slots-hierarchy-full-audit-principle",
+        "symbolic-float-precision-mismatch-prevents-cancellation",
+        "sympy-codeprinter-unsupported-fn-via-piecewise"
+      ],
+      "own_seed_hits": [
+        "slots-hierarchy-full-audit-principle",
+        "symbolic-float-precision-mismatch-prevents-cancellation",
+        "sympy-codeprinter-unsupported-fn-via-piecewise"
+      ],
+      "foreign_seed_hits": [],
+      "retrieved_own": true,
+      "no_foreign_leak": true,
+      "pass": true
+    },
+    {
+      "scope": "swebench-sympy",
+      "probe": "sympy__sympy-14817",
+      "status": "ok",
+      "injected": [
+        "Treat missing `__slots__` in a parent class as (preference)",
+        "slots-hierarchy-full-audit-principle",
+        "slots-mixin-missing-slots-restores-dict",
+        "symbolic-float-precision-mismatch-prevents-cancellation",
+        "sympy-codeprinter-unsupported-fn-via-piecewise"
+      ],
+      "own_seed_hits": [
+        "slots-hierarchy-full-audit-principle",
+        "slots-mixin-missing-slots-restores-dict",
+        "symbolic-float-precision-mismatch-prevents-cancellation",
+        "sympy-codeprinter-unsupported-fn-via-piecewise"
+      ],
+      "foreign_seed_hits": [],
+      "retrieved_own": true,
+      "no_foreign_leak": true,
+      "pass": true
+    }
+  ],
+  "all_pass": true,
+  "summary": {
+    "probes": 4,
+    "passed": 4,
+    "foreign_leaks": 0
+  }
+}

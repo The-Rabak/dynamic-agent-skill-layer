@@ -1,0 +1,27 @@
+{
+  "gate_mode": "auto-accept-all (clband-* scopes only)",
+  "scope": "/skills/project/clband-dartman-game",
+  "placed": 20,
+  "accepted_paths": [
+    "/skills/project/clband-dartman-game/.skills/official-chess-rules-do-not-include-a-procedure-preference/SKILL.md",
+    "/skills/project/clband-dartman-game/.skills/certain-basic-endgame-positions-are-always-dead-drawn-preference/SKILL.md",
+    "/skills/project/clband-dartman-game/.skills/the-touch-move-rule-applies-a-piece-that-has-preference/SKILL.md",
+    "/skills/project/clband-dartman-game/.skills/mechanical-clocks-do-not-support-time-increments-digital-preference/SKILL.md",
+    "/skills/project/clband-dartman-game/.skills/a-piece-pinned-against-its-own-king-i-e-preference/SKILL.md",
+    "/skills/project/clband-dartman-game/.skills/dartman-pieces-can-shoot-each-other-and-must-preference/SKILL.md",
+    "/skills/project/clband-dartman-game/.skills/game-rule-counterintuitive-edge-cases-must-be-applied-exactly/SKILL.md",
+    "/skills/project/clband-dartman-game/.skills/dartman-game-setup-and-win-conditions/SKILL.md",
+    "/skills/project/clband-dartman-game/.skills/the-first-use-of-a-modern-style-time-limit-preference/SKILL.md",
+    "/skills/project/clband-dartman-game/.skills/dartman-movement-and-line-of-fire-rules/SKILL.md",
+    "/skills/project/clband-dartman-game/.skills/players-may-not-consult-notes-computers-outside-information-preference/SKILL.md",
+    "/skills/project/clband-dartman-game/.skills/a-player-cannot-use-an-opponent-s-deflector-piece-preference/SKILL.md",
+    "/skills/project/clband-dartman-game/.skills/8x8-board-game-grid-visualization-standard/SKILL.md",
+    "/skills/project/clband-dartman-game/.skills/when-displaying-chess-games-given-in-algebraic-notation-preference/SKILL.md",
+    "/skills/project/clband-dartman-game/.skills/a-king-in-check-cannot-escape-by-moving-preference/SKILL.md",
+    "/skills/project/clband-dartman-game/.skills/the-1-2-deflector-piece-cannot-be-rotated-and-preference/SKILL.md",
+    "/skills/project/clband-dartman-game/.skills/the-user-is-always-player-2-when-game-preference/SKILL.md",
+    "/skills/project/clband-dartman-game/.skills/a-chess-clock-consists-of-two-adjacent-clocks-preference/SKILL.md",
+    "/skills/project/clband-dartman-game/.skills/most-tournaments-use-time-controls-with-either-an-preference/SKILL.md",
+    "/skills/project/clband-dartman-game/.skills/the-king-is-never-captured-unlike-other-pieces-preference/SKILL.md"
+  ]
+}

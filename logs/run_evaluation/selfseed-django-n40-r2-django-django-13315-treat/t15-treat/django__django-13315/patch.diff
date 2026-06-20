@@ -1,0 +1,70 @@
+diff --git a/django/forms/models.py b/django/forms/models.py
+index 5d115458a1..f993bb9c98 100644
+--- a/django/forms/models.py
++++ b/django/forms/models.py
+@@ -100,7 +100,7 @@ def apply_limit_choices_to_to_formfield(formfield):
+     if hasattr(formfield, 'queryset') and hasattr(formfield, 'get_limit_choices_to'):
+         limit_choices_to = formfield.get_limit_choices_to()
+         if limit_choices_to is not None:
+-            formfield.queryset = formfield.queryset.complex_filter(limit_choices_to)
++            formfield.queryset = formfield.queryset.complex_filter(limit_choices_to).distinct()
+ 
+ 
+ def fields_for_model(model, fields=None, exclude=None, widgets=None,
+diff --git a/tests/model_forms/models.py b/tests/model_forms/models.py
+index 1a2102f898..18c54b771e 100644
+--- a/tests/model_forms/models.py
++++ b/tests/model_forms/models.py
+@@ -422,6 +422,16 @@ class Student(models.Model):
+     study = models.CharField(max_length=30)
+ 
+ 
++
++
++# Model for testing limit_choices_to with a Q involving a JOIN (#13315).
++class StumpJokeWithJoin(models.Model):
++    most_recently_fooled = models.ForeignKey(
++        Character,
++        models.CASCADE,
++        limit_choices_to=models.Q(student__study="engineering"),
++        related_name="+",
++    )
+ # Model for #639
+ class Photo(models.Model):
+     title = models.CharField(max_length=30)
+diff --git a/tests/model_forms/tests.py b/tests/model_forms/tests.py
+index 9e900e35f4..67e61c6f87 100644
+--- a/tests/model_forms/tests.py
++++ b/tests/model_forms/tests.py
+@@ -26,7 +26,7 @@ from .models import (
+     NullableUniqueCharFieldModel, Person, Photo, Post, Price, Product,
+     Publication, PublicationDefaults, StrictAssignmentAll,
+     StrictAssignmentFieldSpecific, Student, StumpJoke, TextFile, Triple,
+-    Writer, WriterProfile, test_images,
++    StumpJokeWithJoin, Writer, WriterProfile, test_images,
+ )
+ 
+ if test_images:
+@@ -2829,6 +2829,22 @@ class LimitChoicesToTests(TestCase):
+             StumpJokeForm()
+             self.assertEqual(today_callable_dict.call_count, 3)
+ 
++    def test_limit_choices_to_with_join_does_not_duplicate(self):
++        """limit_choices_to with a Q involving a JOIN does not produce duplicates (#13315)."""
++        character = Character.objects.create(
++            username=gandalf,
++            last_action=datetime.datetime.today(),
++        )
++        # Two Student rows for the same Character; without distinct() this would
++        # cause the character to appear twice in the formfield queryset.
++        Student.objects.create(character=character, study=engineering)
++        Student.objects.create(character=character, study=engineering)
++        field = StumpJokeWithJoin._meta.get_field(most_recently_fooled)
++        formfield = field.formfield()
++        from django.forms.models import apply_limit_choices_to_to_formfield
++        apply_limit_choices_to_to_formfield(formfield)
++        self.assertSequenceEqual(formfield.queryset, [character])
++
+ 
+ class FormFieldCallbackTests(SimpleTestCase):
+ 

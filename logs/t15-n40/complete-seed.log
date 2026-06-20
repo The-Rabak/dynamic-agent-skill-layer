@@ -1,0 +1,70 @@
+=== complete-seed for selfseed-django-n40 (scope /tmp/t15-swebench/project/swebench-django-n40) ===
+[complete-seed] queue pending before = 10
+[drain] queue pending at start = 10
+[drain] pass 1: rc=0 pending 10→0 e3_degrade_seen=False
+[complete-seed] drained in 1 pass(es); queue now empty
+[complete-seed] gated 56 skill(s)
+        + Actually use ChoiceField's implementation rather than bypassing or (preference)  (from django__django-13933)
+        + apply-update-wrapper-to-functools-partial  (from django__django-14787)
+        + Audit and remove constraint dependencies in migration files before generating a structural field-type change migration  (from django__django-15738)
+        + avoid-deepcopy-on-non-pickleable-user-data  (from django__django-14016)
+        + avoid-sed-for-python-regex-edits  (from django__django-12983)
+        + bulk-update-unique-constraint-pre-dedup  (from django__django-11283)
+        + catch-urlsplit-valueerror-in-validators  (from django__django-15202)
+        + code-generator-special-case-must-include-imports  (from django__django-14580)
+        + django-admin-readonly-field-display-via-prepare-value  (from django__django-12308)
+        + django-asgi-mixin-override-get-response-async  (from django__django-12915)
+        + django-autodetector-fk-to-field-pk-rename-fix  (from django__django-11910)
+        + django-choices-flat-vs-grouped-iteration  (from django__django-11742)
+        + django-e028-false-positive-multi-db-router-fix  (from django__django-11630)
+        + django-field-system-check-addition  (from django__django-11742)
+        + django-filter-autoescape-all-args-must-be-conditional  (from django__django-16873)
+        + django-fk-empty-string-non-auto-charfield-pk  (from django__django-13964)
+        + django-only-defer-chaining-early-return-guard  (from django__django-14667)
+        + django-orm-join-filter-distinct  (from django__django-13315)
+        + django-orm-only-defer-asymmetry-diagnostic  (from django__django-16910)
+        + django-orm-only-select-mask-reverse-relation-key-mismatch  (from django__django-16910)
+        + django-path-converter-http404-vs-valueerror-semantics  (from django__django-11620)
+        + django-rename-index-idempotent-forward-guard  (from django__django-15695)
+        + Django should only create tables on the first (preference)  (from django__django-15252)
+        + django-sqlite-index-expression-table-qualifier-crash  (from django__django-14997)
+        + django-subquery-corrupts-sql-without-subquery-flag  (from django__django-15320)
+        + django-template-autoescape-never-trust-implicit-safety  (from django__django-16873)
+        + django-validationerror-include-invalid-value  (from django__django-13933)
+        + Ensure ASGIStaticFilesHandler works without raising a traceback (preference)  (from django__django-12915)
+        + Ensure the directory name is a valid identifier (preference)  (from django__django-14382)
+        + exhaustive-structural-dispatch-in-recursive-processors  (from django__django-12700)
+        + explicit-value-is-source-of-truth-for-derived-defaults  (from django__django-13710)
+        + Flag or investigate unexpected behavior in autoescape or (preference)  (from django__django-16873)
+        + guard-setattr-with-class-dict-before-overwriting-user-methods  (from django__django-11999)
+        + In cleanse_setting(), handle all iterable types (not just (preference)  (from django__django-12700)
+        + include-email-in-django-password-reset-token-hash  (from django__django-13551)
+        + Partial functions must expose their pre-provided arguments in (preference)  (from django__django-14155)
+        + pop-conflicting-kwarg-before-dict-unpack  (from django__django-16041)
+        + Prefer using enums when applicable (preference)  (from django__django-15996)
+        + Production migration correctness lives in migration files, not database state  (from django__django-15738)
+        + re-match-subscript-vs-group-none-exception-type  (from django__django-15498)
+        + recursive-sanitizer-must-handle-all-container-types  (from django__django-12700)
+        + sanitize-and-validate-filesystem-inputs-before-use  (from django__django-14382)
+        + save-explicit-set-flag-before-init-default-assignment  (from django__django-13710)
+        + serialize-combined-enum-flags-with-decompose  (from django__django-15996)
+        + strip-trailing-sep-before-basename  (from django__django-14382)
+        + subclasscheck-use-issubclass-not-in  (from django__django-14238)
+        + tempfile-rename-preserves-restrictive-permissions  (from django__django-10914)
+        + The database is in production, so previous initial (preference)  (from django__django-15738)
+        + Treat the inability to eliminate index_together deprecation warnings (preference)  (from django__django-16820)
+        + triage-preexisting-failures-before-updating-tests  (from django__django-14534)
+        + unwrap-functools-partial-for-repr-and-introspection  (from django__django-14155)
+        + use-attrs-get-for-optional-html-id  (from django__django-14534)
+        + use-framework-abstractions-as-designed-not-routed-around  (from django__django-13933)
+        + Use the Admin Inline `verbose_name` as the default (preference)  (from django__django-13710)
+        + Use widget['attrs']['id'] as the id when rendering the (preference)  (from django__django-14534)
+        + When changing the `project_data_set` field on the `Authors` (preference)  (from django__django-15738)
+WARNING: http://127.0.0.1:3002 not healthy within 60s
+[reconcile] waiting for graph-builder-t15 (≤180s, expected≈56)...
+   skills=0 embeddings=0
+   skills=56 embeddings=0
+[reconcile] restarting mcp-server-t15 to rebuild snapshot...
+[complete-seed] PG skills: 0 → 56
+[complete-seed] checkpoint seeding marked done (56 skills). Re-run the main loop command to proceed to Round 2.
+=== COMPLETE-SEED EXITED rc=0 16:01:51 ===

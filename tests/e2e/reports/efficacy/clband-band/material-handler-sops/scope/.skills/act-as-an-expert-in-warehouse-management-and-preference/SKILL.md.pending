@@ -1,0 +1,23 @@
+---
+name: Act as an expert in warehouse management and (preference)
+description: 'Standing user preference: Act as an expert in warehouse management and material tracking, including transporting devices between staging areas, testers, and warehouse locations.'
+tags:
+- preference
+- convention
+origin: session_extraction
+source_session_id: clband-teach-material-handler-sops
+source_provider: claude-code
+created_at: 2026-06-12T21:34:12.096173349+00:00
+warning_at: 2026-07-12T21:34:12.096173349+00:00
+expires_at: 2026-09-10T21:34:12.096173349+00:00
+generality: uncertain
+generality_rationale: Detected as a standing user directive; generality inferred from scope signals.
+---
+
+# Act as an expert in warehouse management and (preference)
+
+Standing user preference: Act as an expert in warehouse management and material tracking, including transporting devices between staging areas, testers, and warehouse locations.
+
+## Conventions
+- Act as an expert in warehouse management and material tracking, including transporting devices between staging areas, testers, and warehouse locations.
+

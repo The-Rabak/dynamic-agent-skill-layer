@@ -1,0 +1,21 @@
+=== extraction quality check (qualcheck1) — 5 transcripts ===
+  [ingest] django__django-15789__off (103947B) -> duplicate
+  [ingest] django__django-11099__off (69912B) -> enqueued
+  [ingest] django__django-10924__off (125449B) -> enqueued
+  [ingest] django__django-11564__off (399702B) -> enqueued
+  [ingest] django__django-13321__off (102970B) -> enqueued
+[drain] queue pending at start = 4
+[drain] pass 1: rc=0 pending 4→0 e3_degrade_seen=False
+
+=== extracted 6 skill(s) from 5 transcript(s) (1 drain pass(es)) ===
+  • [best_practice ] django-callable-field-attribute-lazy-resolution  (from qualcheck1-off-django__django-10924)
+  • [failure_fix   ] ensure-all-decode-ops-inside-try-block  (from qualcheck1-off-django__django-13321)
+  • [failure_fix   ] python-regex-use-\A-\Z-for-strict-input-validation  (from qualcheck1-off-django__django-11099)
+  • [principle     ] store-references-not-resolved-values  (from qualcheck1-off-django__django-10924)
+  • [?             ] Use \A and \Z anchors (instead of ^ (preference)  (from qualcheck1-off-django__django-11099)
+  • [?             ] When creating a model that references local files (preference)  (from qualcheck1-off-django__django-10924)
+
+type histogram: {'best_practice': 1, 'failure_fix': 2, 'principle': 1, '': 2}
+useful (fix/best_practice/diagnostic/anti_pattern): 3/6
+[report] /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/swebench/qualcheck_qualcheck1.json
+=== QUALCHECK EXITED rc=0 07:01:55 ===

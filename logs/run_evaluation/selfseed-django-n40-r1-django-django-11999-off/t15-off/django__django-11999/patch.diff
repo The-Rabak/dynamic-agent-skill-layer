@@ -1,0 +1,61 @@
+diff --git a/django/db/models/fields/__init__.py b/django/db/models/fields/__init__.py
+index ee45bb941e..7879115ee4 100644
+--- a/django/db/models/fields/__init__.py
++++ b/django/db/models/fields/__init__.py
+@@ -763,8 +763,9 @@ class Field(RegisterLookupMixin):
+             if not getattr(cls, self.attname, None):
+                 setattr(cls, self.attname, self.descriptor_class(self))
+         if self.choices is not None:
+-            setattr(cls, 'get_%s_display' % self.name,
+-                    partialmethod(cls._get_FIELD_display, field=self))
++            if 'get_%s_display' % self.name not in cls.__dict__:
++                setattr(cls, 'get_%s_display' % self.name,
++                        partialmethod(cls._get_FIELD_display, field=self))
+ 
+     def get_filter_kwargs_for_object(self, obj):
+         """
+diff --git a/tests/model_fields/models.py b/tests/model_fields/models.py
+index 98b32d0c1e..c839b83aac 100644
+--- a/tests/model_fields/models.py
++++ b/tests/model_fields/models.py
+@@ -405,3 +405,10 @@ class UUIDChild(PrimaryKeyUUIDModel):
+ 
+ class UUIDGrandchild(UUIDChild):
+     pass
++
++
++class WhizNullCustomDisplayFor(models.Model):
++    c = models.IntegerField(choices=Whiz.CHOICES, null=True)
++
++    def get_c_display(self):
++        return "overridden"
+diff --git a/tests/model_fields/tests.py b/tests/model_fields/tests.py
+index 0d6e930b06..cf537e0f20 100644
+--- a/tests/model_fields/tests.py
++++ b/tests/model_fields/tests.py
+@@ -8,7 +8,7 @@ from django.utils.functional import lazy
+ 
+ from .models import (
+     Bar, Choiceful, Foo, RenamedField, VerboseNameField, Whiz, WhizDelayed,
+-    WhizIter, WhizIterEmpty,
++    WhizIter, WhizIterEmpty, WhizNullCustomDisplayFor,
+ )
+ 
+ 
+@@ -187,6 +187,11 @@ class GetFieldDisplayTests(SimpleTestCase):
+         self.assertEqual(WhizIterEmpty(c='').c, '')        # Empty value
+ 
+ 
++    def test_overriding_FIELD_display(self):
++        obj = WhizNullCustomDisplayFor(c=1)
++        self.assertEqual(obj.get_c_display(), 'overridden')
++
++
+ class GetChoicesTests(SimpleTestCase):
+ 
+     def test_empty_choices(self):
+@@ -300,3 +305,4 @@ class GetChoicesLimitChoicesToTests(TestCase):
+             field.get_choices(include_blank=False, limit_choices_to={}),
+             [self.bar1, self.bar2],
+         )
++

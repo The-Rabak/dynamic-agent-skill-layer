@@ -1,0 +1,54 @@
+---
+name: closed-method-set-with-session-result-reuse
+description: 'The set of permitted validation and analytical methods is closed: use only the explicitly enumerated methods (e.g., WHOIS, DNS, EXIF, timestamps). Do not propose, add, or substitute alternatives even when they appear equivalent. Additionally, before re-running a validation step, check whether a prior validated result for the same artifact exists in the session; if so, reference that result rather than repeating the analysis.'
+tags:
+- validation-methods
+- result-reuse
+- analytical-scope
+- efficiency
+- method-prescription
+type: best_practice
+origin: session_extraction
+source_session_id: clband-teach-source-integrity-agent
+source_provider: claude-code
+created_at: 2026-06-12T21:50:59.148330068+00:00
+warning_at: 2026-07-12T21:50:59.148330068+00:00
+expires_at: 2026-09-10T21:50:59.148330068+00:00
+generality: general
+generality_rationale: Unifies the validation-method restriction (skill 8) and the SSL digest reuse rule (skill 16) into a broader principle about closed method sets and session-scoped result caching, applicable to any multi-step analytical pipeline.
+use_when:
+- Multi-step validation pipelines that may revisit the same host, domain, or artifact more than once.
+- Any agent that encounters a host or artifact previously analyzed within the same session.
+- A validation step is requested that falls outside the explicitly enumerated method set.
+avoid_when:
+- The artifact has changed since the prior validation (e.g., domain re-registered, certificate reissued).
+- The prior result was itself flagged with a consistency or integrity issue.
+- No prior result exists for the artifact — in that case, run the prescribed method fresh.
+invariants:
+- 'The method set is closed: only prescribed methods are executed.'
+- Prior validated results are canonical for the artifact within the session until explicitly invalidated.
+- Reuse is documented, not silent.
+requires:
+- An explicitly enumerated list of permitted validation methods provided in the task or schema definition.
+produces:
+- Efficient, non-redundant validation output with auditable reuse citations.
+evidence:
+- Use only the specified validation methods (WHOIS, DNS (preference)
+- When SSL chain issues arise on similar hosts (preference)
+- sia-domain-trust-score-formula
+---
+
+# closed-method-set-with-session-result-reuse
+
+The set of permitted validation and analytical methods is closed: use only the explicitly enumerated methods (e.g., WHOIS, DNS, EXIF, timestamps). Do not propose, add, or substitute alternatives even when they appear equivalent. Additionally, before re-running a validation step, check whether a prior validated result for the same artifact exists in the session; if so, reference that result rather than repeating the analysis.
+
+## Procedures
+- Before executing a validation step, check session history for a prior validated result on the same artifact (e.g., same SSL host, same domain).
+- If a prior result exists and has not been flagged with an integrity or consistency issue, reference its validated digest/data rather than re-running the analysis.
+- Use only the prescribed validation methods — never propose or execute an alternative method not in the enumerated set.
+- When the prescribed method set is insufficient to answer a question, surface that gap explicitly rather than substituting an unlisted method.
+
+## Conventions
+- Reference previously validated SSL chain digests by their internal digest identifier before initiating fresh chain analysis.
+- Document the session-prior result citation inline in the output when reusing a cached result.
+

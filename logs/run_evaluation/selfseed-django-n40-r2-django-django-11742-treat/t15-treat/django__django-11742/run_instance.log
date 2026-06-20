@@ -1,0 +1,125 @@
+2026-06-20 21:48:12,400 - INFO - Creating container for django__django-11742...
+2026-06-20 21:48:12,548 - INFO - Container for django__django-11742 created: f3721187c43ef7d78433dc78f5112bc92bba125a2ce598b9cb05f292c19bfbf8
+2026-06-20 21:48:12,950 - INFO - Container for django__django-11742 started: f3721187c43ef7d78433dc78f5112bc92bba125a2ce598b9cb05f292c19bfbf8
+2026-06-20 21:48:12,951 - INFO - Intermediate patch for django__django-11742 written to logs/run_evaluation/selfseed-django-n40-r2-django-django-11742-treat/t15-treat/django__django-11742/patch.diff, now applying to container...
+2026-06-20 21:48:13,061 - INFO - >>>>> Applied Patch:
+Checking patch django/db/models/fields/__init__.py...
+Applied patch django/db/models/fields/__init__.py cleanly.
+
+2026-06-20 21:48:14,424 - INFO - Git diff before:
+diff --git a/django/db/models/fields/__init__.py b/django/db/models/fields/__init__.py
+index 9ce46e3f73..5cb1ff957a 100644
+--- a/django/db/models/fields/__init__.py
++++ b/django/db/models/fields/__init__.py
+@@ -202,6 +202,7 @@ class Field(RegisterLookupMixin):
+         return [
+             *self._check_field_name(),
+             *self._check_choices(),
++            *self._check_max_length_with_choices(),
+             *self._check_db_index(),
+             *self._check_null_allowed_for_primary_keys(),
+             *self._check_backend_specific_checks(**kwargs),
+@@ -291,6 +292,40 @@ class Field(RegisterLookupMixin):
+             )
+         ]
+ 
++    def _check_max_length_with_choices(self):
++        if not self.choices or not isinstance(self.max_length, int) or self.max_length <= 0:
++            return []
++        choice_max_length = 0
++        for choice in self.choices:
++            if isinstance(choice, (list, tuple)) and len(choice) == 2:
++                group_name, group_choices = choice
++                if isinstance(group_choices, (list, tuple)):
++                    # Named group: group_choices is a list of (value, display) pairs.
++                    try:
++                        for value, human_name in group_choices:
++                            if isinstance(value, str):
++                                choice_max_length = max(choice_max_length, len(value))
++                    except (TypeError, ValueError):
++                        # Invalid group choices format; _check_choices() handles this.
++                        pass
++                else:
++                    # Flat choice: group_name is the value.
++                    if isinstance(group_name, str):
++                        choice_max_length = max(choice_max_length, len(group_name))
++        if self.max_length < choice_max_length:
++            return [
++                checks.Error(
++                    "'max_length' is less than the length of the longest value in 'choices'.",
++                    hint=(
++                        "Ensure 'max_length' is greater than or equal to %d (the length "
++                        "of the longest value in 'choices')." % choice_max_length
++                    ),
++                    obj=self,
++                    id='fields.E009',
++                )
++            ]
++        return []
++
+     def _check_db_index(self):
+         if self.db_index not in (None, True, False):
+             return [
+2026-06-20 21:48:14,424 - INFO - Eval script for django__django-11742 written to logs/run_evaluation/selfseed-django-n40-r2-django-django-11742-treat/t15-treat/django__django-11742/eval.sh; copying to container...
+2026-06-20 21:48:22,379 - INFO - Test runtime: 7.91 seconds
+2026-06-20 21:48:22,379 - INFO - Test output for django__django-11742 written to logs/run_evaluation/selfseed-django-n40-r2-django-django-11742-treat/t15-treat/django__django-11742/test_output.txt
+2026-06-20 21:48:22,438 - INFO - Git diff after:
+diff --git a/django/db/models/fields/__init__.py b/django/db/models/fields/__init__.py
+index 9ce46e3f73..5cb1ff957a 100644
+--- a/django/db/models/fields/__init__.py
++++ b/django/db/models/fields/__init__.py
+@@ -202,6 +202,7 @@ class Field(RegisterLookupMixin):
+         return [
+             *self._check_field_name(),
+             *self._check_choices(),
++            *self._check_max_length_with_choices(),
+             *self._check_db_index(),
+             *self._check_null_allowed_for_primary_keys(),
+             *self._check_backend_specific_checks(**kwargs),
+@@ -291,6 +292,40 @@ class Field(RegisterLookupMixin):
+             )
+         ]
+ 
++    def _check_max_length_with_choices(self):
++        if not self.choices or not isinstance(self.max_length, int) or self.max_length <= 0:
++            return []
++        choice_max_length = 0
++        for choice in self.choices:
++            if isinstance(choice, (list, tuple)) and len(choice) == 2:
++                group_name, group_choices = choice
++                if isinstance(group_choices, (list, tuple)):
++                    # Named group: group_choices is a list of (value, display) pairs.
++                    try:
++                        for value, human_name in group_choices:
++                            if isinstance(value, str):
++                                choice_max_length = max(choice_max_length, len(value))
++                    except (TypeError, ValueError):
++                        # Invalid group choices format; _check_choices() handles this.
++                        pass
++                else:
++                    # Flat choice: group_name is the value.
++                    if isinstance(group_name, str):
++                        choice_max_length = max(choice_max_length, len(group_name))
++        if self.max_length < choice_max_length:
++            return [
++                checks.Error(
++                    "'max_length' is less than the length of the longest value in 'choices'.",
++                    hint=(
++                        "Ensure 'max_length' is greater than or equal to %d (the length "
++                        "of the longest value in 'choices')." % choice_max_length
++                    ),
++                    obj=self,
++                    id='fields.E009',
++                )
++            ]
++        return []
++
+     def _check_db_index(self):
+         if self.db_index not in (None, True, False):
+             return [
+2026-06-20 21:48:22,438 - INFO - Grading answer for django__django-11742...
+2026-06-20 21:48:22,440 - INFO - report: {'django__django-11742': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['test_choices_in_max_length (invalid_models_tests.test_ordinary_fields.CharFieldTests)', 'test_choices_named_group (invalid_models_tests.test_ordinary_fields.CharFieldTests)']}, 'PASS_TO_PASS': {'success': ['test_non_nullable_blank (invalid_models_tests.test_ordinary_fields.GenericIPAddressFieldTests)', 'test_forbidden_files_and_folders (invalid_models_tests.test_ordinary_fields.FilePathFieldTests)', 'test_max_length_warning (invalid_models_tests.test_ordinary_fields.IntegerFieldTests)', 'test_primary_key (invalid_models_tests.test_ordinary_fields.FileFieldTests)', 'test_upload_to_callable_not_checked (invalid_models_tests.test_ordinary_fields.FileFieldTests)', 'test_upload_to_starts_with_slash (invalid_models_tests.test_ordinary_fields.FileFieldTests)', 'test_valid_case (invalid_models_tests.test_ordinary_fields.FileFieldTests)', 'test_valid_default_case (invalid_models_tests.test_ordinary_fields.FileFieldTests)', 'test_str_default_value (invalid_models_tests.test_ordinary_fields.BinaryFieldTests)', 'test_valid_default_value (invalid_models_tests.test_ordinary_fields.BinaryFieldTests)', 'test_max_length_warning (invalid_models_tests.test_ordinary_fields.AutoFieldTests)', 'test_primary_key (invalid_models_tests.test_ordinary_fields.AutoFieldTests)', 'test_valid_case (invalid_models_tests.test_ordinary_fields.AutoFieldTests)', 'test_fix_default_value (invalid_models_tests.test_ordinary_fields.DateTimeFieldTests)', 'test_fix_default_value_tz (invalid_models_tests.test_ordinary_fields.DateTimeFieldTests)', 'test_auto_now_and_auto_now_add_raise_error (invalid_models_tests.test_ordinary_fields.DateFieldTests)', 'test_fix_default_value (invalid_models_tests.test_ordinary_fields.DateFieldTests)', 'test_fix_default_value_tz (invalid_models_tests.test_ordinary_fields.DateFieldTests)', 'test_fix_default_value (invalid_models_tests.test_ordinary_fields.TimeFieldTests)', 'test_fix_default_value_tz (invalid_models_tests.test_ordinary_fields.TimeFieldTests)', 'test_bad_values_of_max_digits_and_decimal_places (invalid_models_tests.test_ordinary_fields.DecimalFieldTests)', 'test_decimal_places_greater_than_max_digits (invalid_models_tests.test_ordinary_fields.DecimalFieldTests)', 'test_negative_max_digits_and_decimal_places (invalid_models_tests.test_ordinary_fields.DecimalFieldTests)', 'test_required_attributes (invalid_models_tests.test_ordinary_fields.DecimalFieldTests)', 'test_valid_field (invalid_models_tests.test_ordinary_fields.DecimalFieldTests)', 'test_bad_db_index_value (invalid_models_tests.test_ordinary_fields.CharFieldTests)', 'test_bad_max_length_value (invalid_models_tests.test_ordinary_fields.CharFieldTests)', 'test_bad_validators (invalid_models_tests.test_ordinary_fields.CharFieldTests)', 'test_choices_containing_lazy (invalid_models_tests.test_ordinary_fields.CharFieldTests)', 'test_choices_containing_non_pairs (invalid_models_tests.test_ordinary_fields.CharFieldTests)', 'test_choices_named_group_bad_structure (invalid_models_tests.test_ordinary_fields.CharFieldTests)', 'test_choices_named_group_lazy (invalid_models_tests.test_ordinary_fields.CharFieldTests)', 'test_choices_named_group_non_pairs (invalid_models_tests.test_ordinary_fields.CharFieldTests)', 'test_iterable_of_iterable_choices (invalid_models_tests.test_ordinary_fields.CharFieldTests)', 'test_lazy_choices (invalid_models_tests.test_ordinary_fields.CharFieldTests)', 'test_missing_max_length (invalid_models_tests.test_ordinary_fields.CharFieldTests)', 'test_negative_max_length (invalid_models_tests.test_ordinary_fields.CharFieldTests)', 'test_non_iterable_choices (invalid_models_tests.test_ordinary_fields.CharFieldTests)', "Two letters isn't a valid choice pair.", 'test_str_max_length_type (invalid_models_tests.test_ordinary_fields.CharFieldTests)', 'test_str_max_length_value (invalid_models_tests.test_ordinary_fields.CharFieldTests)', 'test_valid_field (invalid_models_tests.test_ordinary_fields.CharFieldTests)', 'test_pillow_installed (invalid_models_tests.test_ordinary_fields.ImageFieldTests)'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for django__django-11742: resolved: False
+2026-06-20 21:48:22,440 - INFO - Attempting to stop container sweb.eval.django__django-11742.selfseed-django-n40-r2-django-django-11742-treat...
+2026-06-20 21:48:37,972 - INFO - Attempting to remove container sweb.eval.django__django-11742.selfseed-django-n40-r2-django-django-11742-treat...
+2026-06-20 21:48:38,024 - INFO - Container sweb.eval.django__django-11742.selfseed-django-n40-r2-django-django-11742-treat removed.

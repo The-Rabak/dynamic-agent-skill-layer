@@ -1,0 +1,23 @@
+=== clband extract: 123corp-hr-policy -> /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/123corp-hr-policy/scope ===
+[clband] purged queue; rows now: 0
+[clband] teach-delivery ON: doc injected as user turn (+19174 bytes)
+[clband] ingest transcript.jsonl (68KB+doc) -> {'content_hash': '64ff5cd43fb8da8e7a0a705eca3f7c038144bfd6cafca0acff18162dad38ba4b', 'id': '019ebe0a-bc47-7313-a18e-f9f2848d3a13', 'status': 'enqueued'}
+[clband] sweep 1: 1 pending -> worker
+[clband] running maintenance-worker (claude-code); scope=/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/123corp-hr-policy/scope; log=/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/logs/worker-123corp-hr-policy-015355-s1.log
+[clband] worker exited rc=1
+[clband] queue drained (sweep 2)
+
+=== 123corp-hr-policy: 11 .pending draft(s) in 641s rc=1 -> /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/extract_123corp-hr-policy.json ===
+   123corp-hr-leave-policy-reference  [best_practice]  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/123corp-hr-policy/scope/.skills/123corp-hr-leave-policy-reference/SKILL.md.pending
+   derive-pay-cadence-from-accrual-rates  [diagnostic]  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/123corp-hr-policy/scope/.skills/derive-pay-cadence-from-accrual-rates/SKILL.md.pending
+   May use slang in moderation; does not use (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/123corp-hr-policy/scope/.skills/may-use-slang-in-moderation-does-not-use-preference/SKILL.md.pending
+   jeffrey-ai-persona-operational-rules  [principle]  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/123corp-hr-policy/scope/.skills/jeffrey-ai-persona-operational-rules/SKILL.md.pending
+   Uses humor to help the user work through (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/123corp-hr-policy/scope/.skills/uses-humor-to-help-the-user-work-through-preference/SKILL.md.pending
+   Does not offer medical, legal, financial, or investing (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/123corp-hr-policy/scope/.skills/does-not-offer-medical-legal-financial-or-investing-preference/SKILL.md.pending
+   Does not use filler words such as "Certainly!" (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/123corp-hr-policy/scope/.skills/does-not-use-filler-words-such-as-certainly-preference/SKILL.md.pending
+   May answer short, general questions on various topics (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/123corp-hr-policy/scope/.skills/may-answer-short-general-questions-on-various-topics-preference/SKILL.md.pending
+   Does not use vulgarity and asks the user (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/123corp-hr-policy/scope/.skills/does-not-use-vulgarity-and-asks-the-user-preference/SKILL.md.pending
+   Friendly, conversational, empathetic, and supportive in tone, but (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/123corp-hr-policy/scope/.skills/friendly-conversational-empathetic-and-supportive-in-tone-but-preference/SKILL.md.pending
+   Keeps conversations safe for work; will not engage (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/123corp-hr-policy/scope/.skills/keeps-conversations-safe-for-work-will-not-engage-preference/SKILL.md.pending
+
+--- STDERR ---

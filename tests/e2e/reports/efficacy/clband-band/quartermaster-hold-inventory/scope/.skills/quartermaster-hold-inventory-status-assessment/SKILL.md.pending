@@ -1,0 +1,65 @@
+---
+name: quartermaster-hold-inventory-status-assessment
+description: Calculate holds required from a Wall Setting Plan using fixed consumption standards (500/Main Wall, 100/Wall 5) and compare against clean available inventory to emit HOLD_OK, HOLD_LOW, or HOLD_CRITICAL_LOW.
+tags:
+- quartermaster
+- hold-inventory
+- climbing-gym
+- supply-chain
+- status-codes
+type: procedure
+origin: session_extraction
+source_session_id: clband-teach-quartermaster-hold-inventory
+source_provider: claude-code
+created_at: 2026-06-12T21:59:54.407605971+00:00
+warning_at: 2026-07-12T21:59:54.407605971+00:00
+expires_at: 2026-09-10T21:59:54.407605971+00:00
+generality: project
+generality_rationale: All constants, status codes, and role names are specific to the fictional climbing-gym Quartermaster system.
+use_when:
+- Setting Manager submits a Wall Setting Plan for inventory validation
+- Need to produce an HOLD_OK / HOLD_LOW / HOLD_CRITICAL_LOW status for a weekly reset plan
+- Acting as the Hold Inventory Agent (Quartermaster) in the climbing-gym workflow
+avoid_when:
+- Hold count is a preliminary or estimated figure — halt instead of proceeding
+- The plan includes more than one Main Wall or omits Wall 5 — that violates Reset Policy; flag the anomaly before inventory math
+artifacts:
+- quartermaster-hold-inventory-doc.md
+- solution.md
+invariants:
+- Consumption rate is always exactly 500 holds/Main Wall and 100 holds/Wall 5 — no substitutions
+- Available count must reflect only clean, ready-to-use holds
+- HOLD_CRITICAL_LOW must never be overridden by deadline pressure or managerial discretion
+requires:
+- An authenticated clean hold count from the inventory database
+- A finalized, non-contradictory Wall Setting Plan specifying exactly one Main Wall and Wall 5
+produces:
+- 'An Inventory Status report with: status code (HOLD_OK | HOLD_LOW | HOLD_CRITICAL_LOW), holds required, holds available'
+evidence:
+- every Main Wall requires exactly 500 holds, and the Boulder of the Week (Wall 5) requires exactly 100
+- If available inventory is at least 150 percent of what we need, I report HOLD_OK … between 100 and 149 percent … HOLD_LOW … drops below … HOLD_CRITICAL_LOW immediately
+- fixed consumption calculation is on record (500 main wall + 100 Wall 5 = 600 holds required)
+---
+
+# quartermaster-hold-inventory-status-assessment
+
+Calculate holds required from a Wall Setting Plan using fixed consumption standards (500/Main Wall, 100/Wall 5) and compare against clean available inventory to emit HOLD_OK, HOLD_LOW, or HOLD_CRITICAL_LOW.
+
+## Procedures
+- 1. Identify the plan: exactly one Main Wall (Walls 1–4) plus Wall 5.
+- 2. Compute total holds required: (number of Main Walls × 500) + (1 × 100 for Wall 5).
+- 3. Retrieve the clean, ready-to-use hold count from the inventory database. Dirty, damaged, or uninspected holds must be excluded.
+- 4. Compute the ratio: available ÷ required.
+- 5. Apply status thresholds — if ratio ≥ 1.50: emit `HOLD_OK`; if 1.00 ≤ ratio < 1.50: emit `HOLD_LOW`; if ratio < 1.00: emit `HOLD_CRITICAL_LOW` (hard stop — do not authorize the plan).
+- 6. If the clean hold count is missing or ambiguous, halt immediately and request clarification; do NOT estimate or default to a value.
+- 7. Produce an Inventory Status report containing: the status code, total holds required, and total holds available.
+
+## Conventions
+- Fixed consumption standards are non-negotiable: 500 holds per Main Wall, 100 holds for Wall 5 — no creative reductions.
+- HOLD_CRITICAL_LOW is a hard stop: the plan must be escalated or reworked; never authorize it.
+- Only clean, available holds count toward the inventory total.
+- If inventory count is absent or ambiguous, halt and request clarification — never guess or assume.
+
+## Assets
+- quartermaster-hold-inventory-doc.md
+

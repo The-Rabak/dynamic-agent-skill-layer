@@ -1,0 +1,23 @@
+---
+name: Official chess rules do not include a procedure (preference)
+description: 'Standing user preference: Official chess rules do not include a procedure for determining which player plays White.'
+tags:
+- preference
+- convention
+origin: session_extraction
+source_session_id: clband-teach-dartman-game
+source_provider: claude-code
+created_at: 2026-06-12T22:33:38.139183816+00:00
+warning_at: 2026-07-12T22:33:38.139183816+00:00
+expires_at: 2026-09-10T22:33:38.139183816+00:00
+generality: general
+generality_rationale: Detected as a standing user directive; generality inferred from scope signals.
+---
+
+# Official chess rules do not include a procedure (preference)
+
+Standing user preference: Official chess rules do not include a procedure for determining which player plays White.
+
+## Conventions
+- Official chess rules do not include a procedure for determining which player plays White.
+

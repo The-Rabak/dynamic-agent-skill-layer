@@ -1,0 +1,43 @@
+{
+  "scope": "/tmp/t15-swebench/project/swebench-django-qualcheck",
+  "ingested": 5,
+  "skills": [
+    {
+      "name": "django-callable-field-attribute-lazy-resolution",
+      "type": "best_practice",
+      "source": "qualcheck1-off-django__django-10924"
+    },
+    {
+      "name": "ensure-all-decode-ops-inside-try-block",
+      "type": "failure_fix",
+      "source": "qualcheck1-off-django__django-13321"
+    },
+    {
+      "name": "python-regex-use-\\A-\\Z-for-strict-input-validation",
+      "type": "failure_fix",
+      "source": "qualcheck1-off-django__django-11099"
+    },
+    {
+      "name": "store-references-not-resolved-values",
+      "type": "principle",
+      "source": "qualcheck1-off-django__django-10924"
+    },
+    {
+      "name": "Use \\A and \\Z anchors (instead of ^ (preference)",
+      "type": "",
+      "source": "qualcheck1-off-django__django-11099"
+    },
+    {
+      "name": "When creating a model that references local files (preference)",
+      "type": "",
+      "source": "qualcheck1-off-django__django-10924"
+    }
+  ],
+  "type_histogram": {
+    "best_practice": 1,
+    "failure_fix": 2,
+    "principle": 1,
+    "": 2
+  },
+  "useful": 3
+}

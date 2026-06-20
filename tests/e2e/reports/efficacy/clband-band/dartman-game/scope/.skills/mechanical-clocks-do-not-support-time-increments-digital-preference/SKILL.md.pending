@@ -1,0 +1,23 @@
+---
+name: Mechanical clocks do not support time increments; digital (preference)
+description: 'Standing user preference: Mechanical clocks do not support time increments; digital clocks with increment are recommended and have made increment-based time controls the modern standard.'
+tags:
+- preference
+- convention
+origin: session_extraction
+source_session_id: clband-teach-dartman-game
+source_provider: claude-code
+created_at: 2026-06-12T22:33:38.140453742+00:00
+warning_at: 2026-07-12T22:33:38.140453742+00:00
+expires_at: 2026-09-10T22:33:38.140453742+00:00
+generality: uncertain
+generality_rationale: Detected as a standing user directive; generality inferred from scope signals.
+---
+
+# Mechanical clocks do not support time increments; digital (preference)
+
+Standing user preference: Mechanical clocks do not support time increments; digital clocks with increment are recommended and have made increment-based time controls the modern standard.
+
+## Conventions
+- Mechanical clocks do not support time increments; digital clocks with increment are recommended and have made increment-based time controls the modern standard.
+

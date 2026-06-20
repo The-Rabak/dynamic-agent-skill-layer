@@ -1,0 +1,23 @@
+---
+name: A player cannot use an opponent's deflector piece (preference)
+description: 'Standing user preference: A player cannot use an opponent''s deflector piece as a stopping point.'
+tags:
+- preference
+- convention
+origin: session_extraction
+source_session_id: clband-teach-dartman-game
+source_provider: claude-code
+created_at: 2026-06-12T22:33:38.138661992+00:00
+warning_at: 2026-07-12T22:33:38.138661992+00:00
+expires_at: 2026-09-10T22:33:38.138661992+00:00
+generality: uncertain
+generality_rationale: Detected as a standing user directive; generality inferred from scope signals.
+---
+
+# A player cannot use an opponent's deflector piece (preference)
+
+Standing user preference: A player cannot use an opponent's deflector piece as a stopping point.
+
+## Conventions
+- A player cannot use an opponent's deflector piece as a stopping point.
+

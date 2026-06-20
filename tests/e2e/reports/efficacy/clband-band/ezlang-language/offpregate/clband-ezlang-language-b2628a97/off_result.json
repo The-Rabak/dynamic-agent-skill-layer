@@ -1,0 +1,7 @@
+{
+  "off_outcome": "win",
+  "verifier_reason": "WIN: all 6 EZLang invented-rule checks pass (split/toNumber named, writeFile with, func/var syntax, no break)",
+  "solve_exit": 0,
+  "elapsed_s": 45.5,
+  "discriminating": false
+}

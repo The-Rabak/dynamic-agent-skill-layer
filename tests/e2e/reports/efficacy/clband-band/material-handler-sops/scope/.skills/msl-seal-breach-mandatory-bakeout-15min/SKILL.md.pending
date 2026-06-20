@@ -1,0 +1,60 @@
+---
+name: msl-seal-breach-mandatory-bakeout-15min
+description: 'Cold Chain Rule 3: if an MSL dry-bag seal is broken for ANY reason (including re-taping), the lot must be returned to the bake-out oven area within 15 minutes, regardless of scheduled destination or schedule pressure.'
+tags:
+- material-handler
+- moisture-sensitive
+- MSL
+- cold-chain
+- semiconductor-testing
+type: rule
+origin: session_extraction
+source_session_id: clband-teach-material-handler-sops
+source_provider: claude-code
+created_at: 2026-06-12T21:34:12.091442248+00:00
+warning_at: 2026-07-12T21:34:12.091442248+00:00
+expires_at: 2026-09-10T21:34:12.091442248+00:00
+generality: project
+generality_rationale: Rule is specific to the semiconductor facility Material Handler SOP system, referencing its exact rule number, 15-minute constant, and bake-out oven as a named facility location.
+use_when:
+- An operator reports opening or re-taping a dry bag seal on an MSL-rated lot
+- A dry bag seal is found broken during inspection of a moisture-sensitive (MSL) lot
+- Lot is marked 'MSL3' or any MSL rating and bag integrity is in question
+avoid_when:
+- Bag seal is fully intact and unbroken — no bake-out needed in that case
+- Do NOT accept operator assurance that re-taping is sufficient to continue
+artifacts:
+- Lot Move Instruction (LMI)
+- MSL rating field
+tools:
+- IMS inventory system
+invariants:
+- Bake-out initiation must occur within 15 minutes of seal breach discovery, no exceptions
+- IMS pre-move update (Rule 10) must still precede physical movement even to bake-out oven
+requires:
+- Knowledge of lot's MSL rating (from LMI artifact)
+- Bake-out oven area accessible in facility
+produces:
+- Lot routed to bake-out oven area with IMS updated
+- Manufacturing Manager notified of schedule impact
+evidence:
+- 'Operator T-12 msg 9: ''I popped one of the dry bag seals earlier this morning to sample a tube, but I re-taped it. The parts inside should be fine, we can keep moving.'''
+- 'SOP Rule 3: ''If a bag seal is broken for any reason, you must return the lot to the bake-out oven area within 15 minutes, regardless of scheduled destination.'''
+- 'Solution.md: ''Operator T-12 re-taped bag (msg 9): Reject this. Rule 3 (Cold Chain) is non-waivable. Affected units must go to bake-out oven within 15 min of seal breach.'''
+---
+
+# msl-seal-breach-mandatory-bakeout-15min
+
+Cold Chain Rule 3: if an MSL dry-bag seal is broken for ANY reason (including re-taping), the lot must be returned to the bake-out oven area within 15 minutes, regardless of scheduled destination or schedule pressure.
+
+## Procedures
+- 1. If a dry-bag seal is reported broken or found broken, do NOT continue moving the lot toward its planned destination.
+- 2. Immediately route the affected lot to the bake-out oven area — this must be initiated within 15 minutes of the seal breach being discovered.
+- 3. Reject any operator or manager suggestion that 're-taping' or 'the parts are fine' makes continued movement acceptable — Rule 3 is non-waivable.
+- 4. Notify Manufacturing Manager that the lot cannot reach its original destination on the original schedule; provide the estimated bake-out duration (typically ~24 hours).
+- 5. Update IMS (per Rule 10: before physical move) to bake-out oven as new destination before moving the lot.
+
+## Conventions
+- Re-taping a broken bag seal does NOT restore MSL integrity — it must be treated as a full seal breach.
+- Schedule pressure from manager or operator cannot override Rule 3.
+

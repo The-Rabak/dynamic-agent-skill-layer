@@ -1,0 +1,15 @@
+=== fidelity gate: dartman-game (2abca082) — 20 skill file(s) under /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/dartman-game/scope ===
+--- document tier (reported, NOT gating) ---
+  present  'Dartman'
+  present  'Deflector'
+--- operative tier (sentinels_operative, GATING) ---
+  PRESENT  'P2'  (2 file(s))
+  PRESENT  'Y1'  (2 file(s))
+  PRESENT  'Y2'  (2 file(s))
+  PRESENT  'stopping point'  (3 file(s))
+  PRESENT  'P2 (b,7)'  (1 file(s))
+  PRESENT  'Y2 (a,8) and (a,7)'  (1 file(s))
+  PRESENT  'line of fire'  (1 file(s))
+FIDELITY PASS: all 7 operative sentinels present across the dartman-game scope
+
+--- STDERR ---

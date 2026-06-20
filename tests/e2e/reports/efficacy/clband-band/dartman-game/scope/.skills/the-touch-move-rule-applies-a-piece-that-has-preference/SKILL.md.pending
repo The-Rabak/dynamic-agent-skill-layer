@@ -1,0 +1,23 @@
+---
+name: 'The touch-move rule applies: a piece that has (preference)'
+description: 'Standing user preference: The touch-move rule applies: a piece that has been touched must be moved if a legal move exists with that piece.'
+tags:
+- preference
+- convention
+origin: session_extraction
+source_session_id: clband-teach-dartman-game
+source_provider: claude-code
+created_at: 2026-06-12T22:33:38.140718971+00:00
+warning_at: 2026-07-12T22:33:38.140718971+00:00
+expires_at: 2026-09-10T22:33:38.140718971+00:00
+generality: uncertain
+generality_rationale: Detected as a standing user directive; generality inferred from scope signals.
+---
+
+# The touch-move rule applies: a piece that has (preference)
+
+Standing user preference: The touch-move rule applies: a piece that has been touched must be moved if a legal move exists with that piece.
+
+## Conventions
+- The touch-move rule applies: a piece that has been touched must be moved if a legal move exists with that piece.
+

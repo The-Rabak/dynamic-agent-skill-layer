@@ -1,0 +1,22 @@
+diff --git a/django/db/models/sql/compiler.py b/django/db/models/sql/compiler.py
+index 7c433b3f06..8b430de687 100644
+--- a/django/db/models/sql/compiler.py
++++ b/django/db/models/sql/compiler.py
+@@ -10,6 +10,7 @@ from django.db.models.constants import LOOKUP_SEP
+ from django.db.models.expressions import F, OrderBy, RawSQL, Ref, Value
+ from django.db.models.functions import Cast, Random
+ from django.db.models.lookups import Lookup
++from django.db.models.fields.reverse_related import ForeignObjectRel
+ from django.db.models.query_utils import select_related_descend
+ from django.db.models.sql.constants import (
+     CURSOR,
+@@ -1271,7 +1272,8 @@ class SQLCompiler:
+ 
+             def local_setter(final_field, obj, from_obj):
+                 # Set a reverse fk object when relation is non-empty.
+-                if from_obj:
++                if from_obj and not isinstance(final_field, ForeignObjectRel):
++                    final_field.remote_field.set_cached_value(from_obj, obj)
+                     final_field.remote_field.set_cached_value(from_obj, obj)
+ 
+             def remote_setter(name, obj, from_obj):

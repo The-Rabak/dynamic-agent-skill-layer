@@ -1,0 +1,14 @@
+=== fidelity gate: 123corp-hr-policy (651405bd) — 11 skill file(s) under /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/123corp-hr-policy/scope ===
+--- document tier (reported, NOT gating) ---
+  present  '123 Corp'
+  present  'Jeffrey'
+  present  '1.54'
+--- operative tier (sentinels_operative, GATING) ---
+  PRESENT  'two (2) hours'  (1 file(s))
+  MISSING  'diagnosis'
+  MISSING  'prognosis'
+  MISSING  'medical certification'
+  PRESENT  '7.02'  (1 file(s))
+FIDELITY FAIL: 3/5 OPERATIVE sentinels missing -> INSTRUMENT-FAILURE(extraction) for 123corp-hr-policy
+
+--- STDERR ---

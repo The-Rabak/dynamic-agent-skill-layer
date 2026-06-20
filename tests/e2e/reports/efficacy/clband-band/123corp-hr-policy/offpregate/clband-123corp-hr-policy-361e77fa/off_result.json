@@ -1,0 +1,7 @@
+{
+  "off_outcome": "loss",
+  "verifier_reason": "LOSS: missing the section 7.02 diagnosis requirement for medical-attention sick leave (invented rule)",
+  "solve_exit": 0,
+  "elapsed_s": 33.4,
+  "discriminating": true
+}

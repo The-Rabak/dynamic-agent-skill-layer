@@ -742,6 +742,7 @@ def compile_context_http(
     session_id: str,
     repo_path: str,
     timeout_s: int = 60,
+    trigger: str | None = None,
 ) -> dict[str, Any]:
     """Call the live mcp-server compile_context tool over HTTP (real measurement).
 
@@ -755,16 +756,23 @@ def compile_context_http(
         session_id:  session id for the call.
         repo_path:   repo_path scope argument.
         timeout_s:   stuck-detector timeout (NOT a work cap).
+        trigger:     optional lifecycle trigger. "session_start" routes retrieval
+                     to RetrievalIntent::Priming (lower floor + query-side
+                     multi-view) — the production SessionStart priming path. None
+                     leaves it as Task intent (mid-session focused-prompt floor).
     """
     import urllib.request
 
+    arguments: dict[str, Any] = {"prompt": prompt, "session_id": session_id, "repo_path": repo_path}
+    if trigger:
+        arguments["trigger"] = trigger
     body = json.dumps({
         "jsonrpc": "2.0",
         "id": 1,
         "method": "tools/call",
         "params": {
             "name": "compile_context",
-            "arguments": {"prompt": prompt, "session_id": session_id, "repo_path": repo_path},
+            "arguments": arguments,
         },
     }).encode()
     req = urllib.request.Request(
@@ -1259,6 +1267,524 @@ def _temp_workspace_dir():
         yield Path(tmpdir)
 
 
+# ══ T15 compounding difference-of-differences aggregator (Phase 2) ═════════════
+#
+# WHY this extends (not replaces) the T14 harness
+# -----------------------------------------------
+# T14 measured a paired sign test of ON-vs-OFF on an invented-rule battery. T15
+# measures *compounding* on real SWE-bench solves via a difference-of-differences
+# over 3 layer states, paired by held-out TEST instance:
+#   OFF   — no layer
+#   CTRL  — layer ON, corpus seeded from a DIFFERENT repo (foreign-seed control)
+#   TREAT — layer ON, corpus seeded from the SAME repo's own seed instances
+# Headline estimator  DiD = TREAT_resolved_rate − CTRL_resolved_rate
+#   = (TREAT − OFF) − (CTRL − OFF)  ← the OFF base-rate cancels, subtracting out
+#     both "context-injection helps generically" and "it's just variance".
+# resolved = the SWE-bench oracle bit (instance's FAIL_TO_PASS pass AND
+# PASS_TO_PASS stay green) — a deterministic pytest verdict, no LLM judge.
+#
+# Reuses retrieval_metrics.sign_test (exact binomial over discordant pairs ==
+# exact McNemar) and percentile_nearest_rank (bootstrap CI percentiles).
+
+T15_DID_OUTCOMES = ("PASS", "FAIL", "UNDERPOWERED", "INSTRUMENT-FAILURE")
+
+# Pre-registered bootstrap defaults (recorded; overridable by the runner/pre-reg).
+T15_BOOTSTRAP_ITERATIONS = 10000
+T15_BOOTSTRAP_SEED = 20260619
+
+
+def _arm_resolved_rate(bits: list[int]) -> float:
+    """Resolved-rate of one arm = mean of its per-instance resolved bits."""
+    return sum(bits) / len(bits) if bits else 0.0
+
+
+def _arm_bits(per_instance: list[dict[str, Any]], arm: str) -> list[int]:
+    """Extract the 0/1 resolved bits for one arm, failing loud on a missing arm.
+
+    A missing resolved bit is a HARD error — never silently coerce to 0 (that
+    would score an un-run arm as 'not resolved' and fake a measurement).
+    """
+    bits: list[int] = []
+    for rec in per_instance:
+        if arm not in rec:
+            raise ValueError(
+                f"instance {rec.get('instance_id', '?')!r} missing arm '{arm}' "
+                f"resolved bit — refusing to fabricate it"
+            )
+        bits.append(1 if rec[arm] else 0)
+    return bits
+
+
+def compute_did(per_instance: list[dict[str, Any]]) -> dict[str, Any]:
+    """Per-arm resolved-rates + the DiD point estimate (paired by TEST instance).
+
+    Args:
+        per_instance: list of per-instance records, each with truthy/0|1 keys
+            'off', 'ctrl', 'treat' (the resolved bit for that arm on that TEST
+            instance) and an 'instance_id'.
+
+    Returns a dict with the three raw resolved-rates, both within-arm deltas, and
+    the headline DiD = treat_rate − ctrl_rate.
+    """
+    if not per_instance:
+        raise ValueError("compute_did requires >= 1 TEST instance")
+    off = _arm_bits(per_instance, "off")
+    ctrl = _arm_bits(per_instance, "ctrl")
+    treat = _arm_bits(per_instance, "treat")
+    off_rate = _arm_resolved_rate(off)
+    ctrl_rate = _arm_resolved_rate(ctrl)
+    treat_rate = _arm_resolved_rate(treat)
+    return {
+        "n": len(per_instance),
+        "off_resolved_rate": off_rate,
+        "ctrl_resolved_rate": ctrl_rate,
+        "treat_resolved_rate": treat_rate,
+        "treat_minus_off": treat_rate - off_rate,
+        "ctrl_minus_off": ctrl_rate - off_rate,
+        "did": treat_rate - ctrl_rate,
+    }
+
+
+def bootstrap_ci_did(
+    per_instance: list[dict[str, Any]],
+    iterations: int = T15_BOOTSTRAP_ITERATIONS,
+    seed: int = T15_BOOTSTRAP_SEED,
+    alpha: float = 0.05,
+) -> dict[str, Any]:
+    """Paired-by-instance percentile bootstrap CI on the DiD.
+
+    Resamples the TEST instances (rows) WITH replacement — keeping each row's
+    (treat, ctrl) bits paired — and recomputes the DiD each iteration. Fully
+    deterministic given (iterations, seed) so the pre-registration can pin it.
+
+    Returns ci_lo / ci_hi at the (alpha/2, 1-alpha/2) percentiles plus
+    `excludes_zero` (the operational PASS gate: the CI does not straddle 0).
+    """
+    import random
+
+    n = len(per_instance)
+    if n == 0:
+        raise ValueError("bootstrap_ci_did requires >= 1 TEST instance")
+    treat = _arm_bits(per_instance, "treat")
+    ctrl = _arm_bits(per_instance, "ctrl")
+    rng = random.Random(seed)
+    dids: list[float] = []
+    for _ in range(iterations):
+        # One resample: n row-indices with replacement; treat/ctrl stay paired.
+        idx = [rng.randrange(n) for _ in range(n)]
+        t_rate = sum(treat[i] for i in idx) / n
+        c_rate = sum(ctrl[i] for i in idx) / n
+        dids.append(t_rate - c_rate)
+    dids.sort()
+    lo = _metrics.percentile_nearest_rank(dids, 100.0 * (alpha / 2.0))
+    hi = _metrics.percentile_nearest_rank(dids, 100.0 * (1.0 - alpha / 2.0))
+    return {
+        "ci_lo": lo,
+        "ci_hi": hi,
+        "iterations": iterations,
+        "seed": seed,
+        "alpha": alpha,
+        "excludes_zero": (lo > 0.0) or (hi < 0.0),
+    }
+
+
+def mcnemar_treat_vs_off(per_instance: list[dict[str, Any]]) -> dict[str, Any]:
+    """Exact McNemar on the paired TREAT-vs-OFF resolved bits (secondary test).
+
+    b = #(TREAT resolved & OFF not);  c = #(OFF resolved & TREAT not).
+    The exact McNemar p-value over the discordant pairs IS the two-sided exact
+    binomial sign test — reuse retrieval_metrics.sign_test (T20 mandate; no scipy).
+    """
+    treat = _arm_bits(per_instance, "treat")
+    off = _arm_bits(per_instance, "off")
+    b = sum(1 for t, o in zip(treat, off) if t == 1 and o == 0)
+    c = sum(1 for t, o in zip(treat, off) if o == 1 and t == 0)
+    return {
+        "treat_resolved_off_not": b,
+        "off_resolved_treat_not": c,
+        "discordant_pairs": b + c,
+        "p_value": _metrics.sign_test(b, c),
+    }
+
+
+def classify_did_verdict(
+    did_stats: dict[str, Any],
+    ci: dict[str, Any],
+    treat_seed_injected_count: int,
+    instrument_failure_instances: list[str] | None = None,
+    mde: float = 0.0,
+) -> dict[str, Any]:
+    """Classify the DiD run into the LOCKED three-outcome rule (todo 283 §6).
+
+    Order (INSTRUMENT-FAILURE blocks all):
+      INSTRUMENT-FAILURE — explicit per-instance attribution-confirmed regressions,
+        OR the whole TREAT arm injected a seed skill on ZERO instances (the
+        injection path is dead → we'd be measuring OFF-vs-OFF; the verdict is void
+        until fixed — the lesson of measuring through a broken priming path).
+      FAIL          — TREAT ≤ CTRL (DiD point estimate ≤ 0).
+      PASS          — DiD > 0 AND the bootstrap CI excludes zero.
+      UNDERPOWERED  — DiD > 0 but the CI spans zero at N (a null result is
+                      UNDERPOWERED, NOT "no effect").
+
+    `mde` (pre-registered minimum detectable effect) is recorded for the report;
+    the operational PASS gate is CI-excludes-zero per the locked rule.
+    """
+    n = did_stats["n"]
+    instrument_failure_instances = instrument_failure_instances or []
+    dead_injection_path = (n > 0 and treat_seed_injected_count == 0)
+
+    if instrument_failure_instances or dead_injection_path:
+        detail_bits = []
+        if dead_injection_path:
+            detail_bits.append(
+                "TREAT injected a seed skill on 0/%d instances — the injection path "
+                "is dead; the DiD would be OFF-vs-OFF and is VOID until fixed" % n
+            )
+        if instrument_failure_instances:
+            detail_bits.append(
+                "attribution-confirmed regressions on: "
+                + ", ".join(instrument_failure_instances)
+            )
+        return {
+            "verdict": "INSTRUMENT-FAILURE",
+            "did": did_stats["did"],
+            "ci_lo": ci["ci_lo"],
+            "ci_hi": ci["ci_hi"],
+            "mde": mde,
+            "treat_seed_injected_count": treat_seed_injected_count,
+            "instrument_failure_instances": instrument_failure_instances,
+            "detail": "INSTRUMENT-FAILURE: " + "; ".join(detail_bits),
+        }
+
+    did = did_stats["did"]
+    if did <= 0.0:
+        verdict = "FAIL"
+    elif ci["excludes_zero"] and ci["ci_lo"] > 0.0:
+        verdict = "PASS"
+    else:
+        verdict = "UNDERPOWERED"
+
+    detail = (
+        f"{verdict}: DiD = TREAT({did_stats['treat_resolved_rate']:.3f}) − "
+        f"CTRL({did_stats['ctrl_resolved_rate']:.3f}) = {did:+.3f}; "
+        f"95% bootstrap CI [{ci['ci_lo']:+.3f}, {ci['ci_hi']:+.3f}] "
+        f"(OFF base-rate {did_stats['off_resolved_rate']:.3f}); MDE {mde:+.3f}"
+    )
+    if verdict == "UNDERPOWERED":
+        detail += (
+            " — positive point estimate but the CI spans zero at N. "
+            "This is UNDERPOWERED, not 'no effect'."
+        )
+    return {
+        "verdict": verdict,
+        "did": did,
+        "ci_lo": ci["ci_lo"],
+        "ci_hi": ci["ci_hi"],
+        "mde": mde,
+        "treat_seed_injected_count": treat_seed_injected_count,
+        "instrument_failure_instances": [],
+        "detail": detail,
+    }
+
+
+def aggregate_did_run(
+    per_instance: list[dict[str, Any]],
+    treat_seed_injected_count: int,
+    instrument_failure_instances: list[str] | None = None,
+    iterations: int = T15_BOOTSTRAP_ITERATIONS,
+    seed: int = T15_BOOTSTRAP_SEED,
+    mde: float = 0.0,
+) -> dict[str, Any]:
+    """One-call DiD aggregation: rates → CI → McNemar → verdict (the runner's F)."""
+    did_stats = compute_did(per_instance)
+    ci = bootstrap_ci_did(per_instance, iterations=iterations, seed=seed)
+    mcnemar = mcnemar_treat_vs_off(per_instance)
+    verdict = classify_did_verdict(
+        did_stats, ci, treat_seed_injected_count,
+        instrument_failure_instances=instrument_failure_instances, mde=mde,
+    )
+    return {
+        "did_stats": did_stats,
+        "bootstrap_ci": ci,
+        "mcnemar_treat_vs_off": mcnemar,
+        "verdict_summary": verdict,
+    }
+
+
+# ── T15 efficiency analysis — turns/tokens-to-resolve (elevated secondary) ─────
+# The de-risk probe (2026-06-20) showed the resolved-rate metric is largely blind
+# to compounding with a strong base model (TREAT==OFF on 5/5; 3/5 byte-identical
+# patches). The compounding benefit most likely lives in EXPLORATION COST: on an
+# instance BOTH arms solve, does the seeded TREAT arm reach the fix with fewer
+# turns / output tokens / dollars? Negative (TREAT − OFF) delta = TREAT cheaper.
+
+EFFICIENCY_METRICS = ("num_turns", "output_tokens", "total_cost_usd", "duration_ms")
+
+
+def _mean(xs: list[float]) -> float | None:
+    return sum(xs) / len(xs) if xs else None
+
+
+def _median(xs: list[float]) -> float | None:
+    if not xs:
+        return None
+    s = sorted(xs)
+    n = len(s)
+    m = n // 2
+    return float(s[m]) if n % 2 else (s[m - 1] + s[m]) / 2.0
+
+
+def bootstrap_ci_mean(
+    values: list[float],
+    iterations: int = T15_BOOTSTRAP_ITERATIONS,
+    seed: int = T15_BOOTSTRAP_SEED,
+    alpha: float = 0.05,
+) -> dict[str, Any]:
+    """Percentile bootstrap CI on the MEAN of a paired-delta vector (deterministic).
+
+    Resamples the deltas WITH replacement and recomputes the mean each iteration.
+    `excludes_zero` is the operational gate: the CI does not straddle 0.
+    """
+    import random
+
+    n = len(values)
+    if n == 0:
+        return {"ci_lo": None, "ci_hi": None, "excludes_zero": False,
+                "iterations": iterations, "seed": seed, "alpha": alpha}
+    rng = random.Random(seed)
+    means: list[float] = []
+    for _ in range(iterations):
+        idx = [rng.randrange(n) for _ in range(n)]
+        means.append(sum(values[i] for i in idx) / n)
+    means.sort()
+    lo = _metrics.percentile_nearest_rank(means, 100.0 * (alpha / 2.0))
+    hi = _metrics.percentile_nearest_rank(means, 100.0 * (1.0 - alpha / 2.0))
+    return {"ci_lo": lo, "ci_hi": hi, "excludes_zero": (lo > 0.0) or (hi < 0.0),
+            "iterations": iterations, "seed": seed, "alpha": alpha}
+
+
+def _paired_efficiency_values(
+    efficiency_rows: list[dict[str, Any]], metric: str, resolved_only: bool,
+) -> tuple[list[float], list[float], list[float], int]:
+    """Paired (off_value, treat_value) lists for one metric + the (treat−off) deltas.
+
+    A pair is INCLUDED only when both arms have a non-None metric value (and, if
+    resolved_only, both arms resolved). A None metric (timeout / unparseable solve
+    summary) DROPS the pair — never coerced to 0 (that would fake an efficiency).
+    Returns (off_vals, treat_vals, deltas, dropped).
+    """
+    off_vals: list[float] = []
+    treat_vals: list[float] = []
+    deltas: list[float] = []
+    dropped = 0
+    for r in efficiency_rows:
+        off = r.get("off") or {}
+        treat = r.get("treat") or {}
+        if resolved_only and not (off.get("resolved") and treat.get("resolved")):
+            dropped += 1
+            continue
+        ov = off.get(metric)
+        tv = treat.get(metric)
+        if ov is None or tv is None:
+            dropped += 1
+            continue
+        off_vals.append(ov)
+        treat_vals.append(tv)
+        deltas.append(tv - ov)
+    return off_vals, treat_vals, deltas, dropped
+
+
+def aggregate_efficiency(
+    efficiency_rows: list[dict[str, Any]],
+    metrics: tuple[str, ...] = EFFICIENCY_METRICS,
+    resolved_only: bool = True,
+    iterations: int = T15_BOOTSTRAP_ITERATIONS,
+    seed: int = T15_BOOTSTRAP_SEED,
+) -> dict[str, Any]:
+    """Per-arm means + paired TREAT-vs-OFF efficiency deltas (turns/tokens-to-resolve).
+
+    Args:
+        efficiency_rows: per-instance records `{instance_id, off:{metric...,resolved},
+            treat:{metric...,resolved}, ...}`. Missing/None metric values are dropped
+            from that metric's paired set (no fabrication).
+        resolved_only: restrict to instances BOTH arms resolved (turns-to-RESOLVE is
+            only meaningful where both solved). The headline efficiency view.
+
+    For each metric: paired n, per-arm mean/median, mean/median (treat−off) delta,
+    a paired sign test (TREAT-cheaper count vs OFF-cheaper), and a bootstrap CI on
+    the mean delta. Negative delta + CI<0 ⇒ TREAT compounds by cutting exploration.
+    """
+    out: dict[str, Any] = {"resolved_only": resolved_only, "metrics": {}}
+    for m in metrics:
+        off_vals, treat_vals, deltas, dropped = _paired_efficiency_values(
+            efficiency_rows, m, resolved_only)
+        treat_cheaper = sum(1 for d in deltas if d < 0)  # fewer turns/tokens = cheaper
+        off_cheaper = sum(1 for d in deltas if d > 0)
+        out["metrics"][m] = {
+            "n_pairs": len(deltas),
+            "dropped": dropped,
+            "off_mean": _mean(off_vals),
+            "treat_mean": _mean(treat_vals),
+            "off_median": _median(off_vals),
+            "treat_median": _median(treat_vals),
+            "mean_delta_treat_minus_off": _mean(deltas),
+            "median_delta_treat_minus_off": _median(deltas),
+            "treat_cheaper_count": treat_cheaper,
+            "off_cheaper_count": off_cheaper,
+            "sign_test_p": _metrics.sign_test(treat_cheaper, off_cheaper),
+            "bootstrap_ci_mean_delta": bootstrap_ci_mean(deltas, iterations, seed),
+        }
+    return out
+
+
+def _did_self_test() -> int:
+    """Self-test the T15 DiD aggregator on synthetic resolved vectors → known DiD/CI."""
+    print("\n=== T15 DiD aggregator self-test ===")
+    failures = 0
+
+    def _assert(cond: bool, label: str, detail: str = "") -> bool:
+        status = "PASS" if cond else "FAIL"
+        suffix = f"  [{detail}]" if detail else ""
+        print(f"  {status}  {label}{suffix}")
+        return cond
+
+    def _rows(off, ctrl, treat):
+        return [
+            {"instance_id": f"i{i}", "off": o, "ctrl": c, "treat": t}
+            for i, (o, c, t) in enumerate(zip(off, ctrl, treat))
+        ]
+
+    # -- compute_did arithmetic --
+    rows = _rows([0, 0, 1, 0], [0, 0, 0, 0], [1, 1, 1, 0])
+    d = compute_did(rows)
+    ok = _assert(abs(d["treat_resolved_rate"] - 0.75) < 1e-9, "treat rate 3/4", f"{d['treat_resolved_rate']}")
+    failures += 0 if ok else 1
+    ok = _assert(abs(d["ctrl_resolved_rate"] - 0.0) < 1e-9, "ctrl rate 0/4")
+    failures += 0 if ok else 1
+    ok = _assert(abs(d["did"] - 0.75) < 1e-9, "DiD = 0.75 − 0.0", f"{d['did']}")
+    failures += 0 if ok else 1
+
+    # -- missing arm fails loud (no fabrication) --
+    try:
+        compute_did([{"instance_id": "x", "off": 1, "ctrl": 0}])  # no 'treat'
+        ok = _assert(False, "missing arm raises")
+    except ValueError:
+        ok = _assert(True, "missing arm raises (no fabricated bit)")
+    failures += 0 if ok else 1
+
+    # -- strong positive: TREAT all resolved, CTRL none → PASS, CI excludes 0 --
+    n = 20
+    rows = _rows([0] * n, [0] * n, [1] * n)
+    agg = aggregate_did_run(rows, treat_seed_injected_count=n)
+    ok = _assert(agg["verdict_summary"]["verdict"] == "PASS",
+                 "all-treat / no-ctrl → PASS", agg["verdict_summary"]["verdict"])
+    failures += 0 if ok else 1
+    ok = _assert(agg["bootstrap_ci"]["ci_lo"] > 0.0, "CI excludes zero (lo>0)",
+                 f"lo={agg['bootstrap_ci']['ci_lo']}")
+    failures += 0 if ok else 1
+
+    # -- bootstrap determinism: same seed → identical CI --
+    a = bootstrap_ci_did(rows, iterations=2000, seed=7)
+    b = bootstrap_ci_did(rows, iterations=2000, seed=7)
+    ok = _assert(a["ci_lo"] == b["ci_lo"] and a["ci_hi"] == b["ci_hi"],
+                 "bootstrap deterministic for fixed seed")
+    failures += 0 if ok else 1
+
+    # -- null effect: TREAT == CTRL → DiD 0 → FAIL (point estimate ≤ 0) --
+    rows = _rows([0] * 10, [1, 0, 1, 0, 1, 0, 1, 0, 1, 0], [1, 0, 1, 0, 1, 0, 1, 0, 1, 0])
+    agg = aggregate_did_run(rows, treat_seed_injected_count=5)
+    ok = _assert(agg["verdict_summary"]["verdict"] == "FAIL",
+                 "TREAT==CTRL (DiD 0) → FAIL", agg["verdict_summary"]["verdict"])
+    failures += 0 if ok else 1
+
+    # -- negative effect: TREAT < CTRL → FAIL --
+    rows = _rows([0, 0, 0, 0], [1, 1, 1, 0], [0, 1, 0, 0])
+    agg = aggregate_did_run(rows, treat_seed_injected_count=4)
+    ok = _assert(agg["verdict_summary"]["verdict"] == "FAIL",
+                 "TREAT<CTRL → FAIL", f"did={agg['did_stats']['did']}")
+    failures += 0 if ok else 1
+
+    # -- small positive, wide CI → UNDERPOWERED (positive point, CI spans 0) --
+    rows = _rows([0, 0], [0, 0], [1, 0])  # did=0.5 but n=2 → CI straddles 0
+    agg = aggregate_did_run(rows, treat_seed_injected_count=1)
+    ok = _assert(agg["verdict_summary"]["verdict"] == "UNDERPOWERED",
+                 "small positive / wide CI → UNDERPOWERED", agg["verdict_summary"]["verdict"])
+    failures += 0 if ok else 1
+
+    # -- dead injection path: TREAT injected seeds on 0 instances → INSTRUMENT-FAILURE --
+    rows = _rows([0] * 5, [0] * 5, [1] * 5)
+    agg = aggregate_did_run(rows, treat_seed_injected_count=0)
+    ok = _assert(agg["verdict_summary"]["verdict"] == "INSTRUMENT-FAILURE",
+                 "0 seed injections → INSTRUMENT-FAILURE (dead path)",
+                 agg["verdict_summary"]["verdict"])
+    failures += 0 if ok else 1
+
+    # -- explicit per-instance instrument failure blocks even a positive DiD --
+    rows = _rows([0] * 5, [0] * 5, [1] * 5)
+    agg = aggregate_did_run(rows, treat_seed_injected_count=5,
+                            instrument_failure_instances=["i2"])
+    ok = _assert(agg["verdict_summary"]["verdict"] == "INSTRUMENT-FAILURE",
+                 "explicit instrument-failure flag blocks PASS",
+                 agg["verdict_summary"]["verdict"])
+    failures += 0 if ok else 1
+
+    # -- McNemar discordant counting + exact p --
+    rows = _rows([1, 1, 0, 0, 0], [0] * 5, [1, 0, 1, 1, 1])
+    mc = mcnemar_treat_vs_off(rows)
+    # treat&!off: i2,i3,i4 = 3 ; off&!treat: i1 = 1
+    ok = _assert(mc["treat_resolved_off_not"] == 3 and mc["off_resolved_treat_not"] == 1,
+                 "McNemar discordant counts b=3 c=1",
+                 f"b={mc['treat_resolved_off_not']} c={mc['off_resolved_treat_not']}")
+    failures += 0 if ok else 1
+
+    # -- efficiency: TREAT cheaper on every resolved-by-both pair → negative delta --
+    eff_rows = [
+        {"instance_id": "i1", "off": {"num_turns": 20, "output_tokens": 4000, "resolved": True},
+         "treat": {"num_turns": 12, "output_tokens": 2500, "resolved": True}},
+        {"instance_id": "i2", "off": {"num_turns": 18, "output_tokens": 3600, "resolved": True},
+         "treat": {"num_turns": 10, "output_tokens": 2200, "resolved": True}},
+        {"instance_id": "i3", "off": {"num_turns": 25, "output_tokens": 5000, "resolved": True},
+         "treat": {"num_turns": 15, "output_tokens": 3000, "resolved": True}},
+    ]
+    effa = aggregate_efficiency(eff_rows, metrics=("num_turns", "output_tokens"))
+    t = effa["metrics"]["num_turns"]
+    ok = _assert(t["n_pairs"] == 3 and t["treat_cheaper_count"] == 3
+                 and t["mean_delta_treat_minus_off"] < 0,
+                 "efficiency: TREAT cheaper on 3/3 → negative mean delta",
+                 f"n={t['n_pairs']} cheaper={t['treat_cheaper_count']} "
+                 f"delta={t['mean_delta_treat_minus_off']}")
+    failures += 0 if ok else 1
+    ok = _assert(t["bootstrap_ci_mean_delta"]["ci_hi"] < 0
+                 and t["bootstrap_ci_mean_delta"]["excludes_zero"],
+                 "efficiency: bootstrap CI on mean turn-delta excludes zero (<0)",
+                 f"ci=[{t['bootstrap_ci_mean_delta']['ci_lo']}, "
+                 f"{t['bootstrap_ci_mean_delta']['ci_hi']}]")
+    failures += 0 if ok else 1
+
+    # -- efficiency: None metric (timeout) DROPS the pair, never faked to 0 --
+    eff_drop = [
+        {"instance_id": "i1", "off": {"num_turns": 20, "resolved": True},
+         "treat": {"num_turns": None, "resolved": True}},          # treat solve had no summary
+        {"instance_id": "i2", "off": {"num_turns": 14, "resolved": True},
+         "treat": {"num_turns": 9, "resolved": True}},
+        {"instance_id": "i3", "off": {"num_turns": 12, "resolved": True},
+         "treat": {"num_turns": 8, "resolved": False}},            # not resolved-by-both
+    ]
+    effd = aggregate_efficiency(eff_drop, metrics=("num_turns",))
+    td = effd["metrics"]["num_turns"]
+    ok = _assert(td["n_pairs"] == 1 and td["dropped"] == 2,
+                 "efficiency: None metric + not-resolved-both dropped (no fabrication)",
+                 f"n_pairs={td['n_pairs']} dropped={td['dropped']}")
+    failures += 0 if ok else 1
+
+    print(f"\n{'=' * 40}")
+    if failures == 0:
+        print("ALL T15 DiD TESTS PASSED")
+    else:
+        print(f"{failures} T15 DiD TEST(S) FAILED", file=sys.stderr)
+    return failures
+
+
 def _self_test() -> int:
     """Run the module's own self-tests.  Returns 0 if all pass, 1 if any fail."""
     print("=== efficacy_ab self-test ===")
@@ -1378,9 +1904,15 @@ def _self_test() -> int:
                  "pre_registered_criterion in json_data")
     failures += 0 if ok else 1
 
+    # T15 extension: the compounding DiD aggregator self-test runs in the same
+    # --self-test pass so both the T14 sign-test math and the T15 DiD math are
+    # checked without spending solves.
+    did_failures = _did_self_test()
+    failures += did_failures
+
     print(f"\n{'=' * 40}")
     if failures == 0:
-        print("ALL TESTS PASSED")
+        print("ALL TESTS PASSED (T14 sign-test + T15 DiD)")
     else:
         print(f"{failures} TEST(S) FAILED", file=sys.stderr)
     return 0 if failures == 0 else 1

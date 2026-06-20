@@ -1,0 +1,66 @@
+2026-06-20 19:35:12,377 - INFO - Creating container for django__django-14016...
+2026-06-20 19:35:12,604 - INFO - Container for django__django-14016 created: 17f1d93f8e878891fe44a272e22ef2f5a044fac20b2312224eac75ab016c3c79
+2026-06-20 19:35:13,022 - INFO - Container for django__django-14016 started: 17f1d93f8e878891fe44a272e22ef2f5a044fac20b2312224eac75ab016c3c79
+2026-06-20 19:35:13,023 - INFO - Intermediate patch for django__django-14016 written to logs/run_evaluation/selfseed-django-n40-r2-django-django-14016-treat/t15-treat/django__django-14016/patch.diff, now applying to container...
+2026-06-20 19:35:13,162 - INFO - >>>>> Applied Patch:
+Checking patch django/utils/tree.py...
+Checking patch tests/queries/test_q.py...
+Applied patch django/utils/tree.py cleanly.
+Applied patch tests/queries/test_q.py cleanly.
+
+2026-06-20 19:35:15,222 - INFO - Git diff before:
+diff --git a/django/utils/tree.py b/django/utils/tree.py
+index 302cd37d5f..37682121a5 100644
+--- a/django/utils/tree.py
++++ b/django/utils/tree.py
+@@ -50,7 +50,7 @@ class Node:
+     def __deepcopy__(self, memodict):
+         obj = Node(connector=self.connector, negated=self.negated)
+         obj.__class__ = self.__class__
+-        obj.children = copy.deepcopy(self.children, memodict)
++        obj.children = [copy.deepcopy(c, memodict) if isinstance(c, Node) else c for c in self.children]
+         return obj
+ 
+     def __len__(self):
+diff --git a/tests/queries/test_q.py b/tests/queries/test_q.py
+index 9adff07ef2..08c536c4b8 100644
+--- a/tests/queries/test_q.py
++++ b/tests/queries/test_q.py
+@@ -103,3 +103,13 @@ class QTests(SimpleTestCase):
+         q = q1 & q2
+         path, args, kwargs = q.deconstruct()
+         self.assertEqual(Q(*args, **kwargs), q)
++
++    def test_combine_or_with_nonpicklable_values(self):
++        q = Q(x__in={}.keys())
++        self.assertEqual(Q() | q, q)
++        self.assertEqual(q | Q(), q)
++
++    def test_combine_and_with_nonpicklable_values(self):
++        q = Q(x__in={}.keys())
++        self.assertEqual(Q() & q, q)
++        self.assertEqual(q & Q(), q)
+2026-06-20 19:35:15,222 - INFO - Eval script for django__django-14016 written to logs/run_evaluation/selfseed-django-n40-r2-django-django-14016-treat/t15-treat/django__django-14016/eval.sh; copying to container...
+2026-06-20 19:35:24,530 - INFO - Test runtime: 9.26 seconds
+2026-06-20 19:35:24,530 - INFO - Test output for django__django-14016 written to logs/run_evaluation/selfseed-django-n40-r2-django-django-14016-treat/t15-treat/django__django-14016/test_output.txt
+2026-06-20 19:35:24,588 - INFO - Git diff after:
+diff --git a/django/utils/tree.py b/django/utils/tree.py
+index 302cd37d5f..37682121a5 100644
+--- a/django/utils/tree.py
++++ b/django/utils/tree.py
+@@ -50,7 +50,7 @@ class Node:
+     def __deepcopy__(self, memodict):
+         obj = Node(connector=self.connector, negated=self.negated)
+         obj.__class__ = self.__class__
+-        obj.children = copy.deepcopy(self.children, memodict)
++        obj.children = [copy.deepcopy(c, memodict) if isinstance(c, Node) else c for c in self.children]
+         return obj
+ 
+     def __len__(self):
+2026-06-20 19:35:24,588 - INFO - Git diff changed after running eval script
+2026-06-20 19:35:24,588 - INFO - Grading answer for django__django-14016...
+2026-06-20 19:35:24,588 - INFO - report: {'django__django-14016': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['test_combine_and_empty (queries.test_q.QTests)', 'test_combine_or_empty (queries.test_q.QTests)'], 'failure': []}, 'PASS_TO_PASS': {'success': ['test_combine_and_both_empty (queries.test_q.QTests)', 'test_combine_not_q_object (queries.test_q.QTests)', 'test_combine_or_both_empty (queries.test_q.QTests)', 'test_deconstruct (queries.test_q.QTests)', 'test_deconstruct_and (queries.test_q.QTests)', 'test_deconstruct_multiple_kwargs (queries.test_q.QTests)', 'test_deconstruct_negated (queries.test_q.QTests)', 'test_deconstruct_nested (queries.test_q.QTests)', 'test_deconstruct_or (queries.test_q.QTests)', 'test_reconstruct (queries.test_q.QTests)', 'test_reconstruct_and (queries.test_q.QTests)', 'test_reconstruct_negated (queries.test_q.QTests)', 'test_reconstruct_or (queries.test_q.QTests)'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for django__django-14016: resolved: True
+2026-06-20 19:35:24,589 - INFO - Attempting to stop container sweb.eval.django__django-14016.selfseed-django-n40-r2-django-django-14016-treat...
+2026-06-20 19:35:40,191 - INFO - Attempting to remove container sweb.eval.django__django-14016.selfseed-django-n40-r2-django-django-14016-treat...
+2026-06-20 19:35:40,252 - INFO - Container sweb.eval.django__django-14016.selfseed-django-n40-r2-django-django-14016-treat removed.

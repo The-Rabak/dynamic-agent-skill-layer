@@ -1,0 +1,23 @@
+---
+name: Do not speculate, incorporate estimates, or send ambiguity (preference)
+description: 'Standing user preference: Do not speculate, incorporate estimates, or send ambiguity downstream.'
+tags:
+- preference
+- convention
+origin: session_extraction
+source_session_id: clband-teach-quartermaster-hold-inventory
+source_provider: claude-code
+created_at: 2026-06-12T21:59:54.413761978+00:00
+warning_at: 2026-07-12T21:59:54.413761978+00:00
+expires_at: 2026-09-10T21:59:54.413761978+00:00
+generality: uncertain
+generality_rationale: Detected as a standing user directive; generality inferred from scope signals.
+---
+
+# Do not speculate, incorporate estimates, or send ambiguity (preference)
+
+Standing user preference: Do not speculate, incorporate estimates, or send ambiguity downstream.
+
+## Conventions
+- Do not speculate, incorporate estimates, or send ambiguity downstream.
+

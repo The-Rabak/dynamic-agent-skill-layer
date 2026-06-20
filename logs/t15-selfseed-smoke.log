@@ -1,0 +1,34 @@
+=== T15 self-seeding same-set loop (smoke1) ===
+instances (N=1): ['django__django-15789']
+fresh scope: /tmp/t15-swebench/project/swebench-django-smoke  model=sonnet  max_turns=40
+
+── ROUND 1 (OFF — layer empty) ──
+   [verify] swebench oracle: django__django-15789 run_id=smoke1-r1-django-django-15789-off
+  [R1 OFF] django__django-15789 resolved=True turns=20 out_tok=2878 cost=$0.2937671 transcript=yes
+
+── SEED (extract Round-1 sessions → fresh scope) ──
+  [seed] ingested django__django-15789 → enqueued
+[drain] queue pending at start = 1
+[drain] pass 1: rc=0 pending 1→0 e3_degrade_seen=False
+  [seed] drained in 1 pass(es); gated 1 skill(s):
+        + i-want-to-customize-the-json-encoding-of-preference  (from django__django-15789)
+[reconcile] waiting for graph-builder-t15 (≤120s, expected≈9)...
+   skills=8 embeddings=83
+   skills=9 embeddings=88
+[reconcile] restarting mcp-server-t15 to rebuild snapshot...
+[reconcile] http://127.0.0.1:3002 healthy
+
+── ROUND 2 (TREAT — self-seeded layer) ──
+   [verify] swebench oracle: django__django-15789 run_id=smoke1-r2-django-django-15789-treat
+  [R2 TREAT] django__django-15789 resolved=True turns=18 out_tok=3438 cost=$0.30909190000000003 seed_hits=[] (own=[] cross=[])
+
+[report] /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/swebench/selfseed_smoke1.json
+SCORES: X(OFF round1)=1.000  Y(TREAT round2)=1.000  Δ(Y−X)=+0.000
+McNemar TREAT-vs-OFF: gained(off-fail→treat-pass)=0 lost=0 p=1.000
+TREAT injected a seed on 0/1 instances
+EFFICIENCY (TREAT−OFF, resolved-by-both; negative ⇒ cheaper on the re-run):
+  num_turns: n=1 mean_delta=-2.0 (TREAT-cheaper 1/1, sign p=1.000, CI=[-2.0, -2.0])
+  output_tokens: n=1 mean_delta=560.0 (TREAT-cheaper 0/1, sign p=1.000, CI=[560.0, 560.0])
+  total_cost_usd: n=1 mean_delta=0.015324800000000027 (TREAT-cheaper 0/1, sign p=1.000, CI=[0.015324800000000027, 0.015324800000000027])
+  duration_ms: n=1 mean_delta=1286.0 (TREAT-cheaper 0/1, sign p=1.000, CI=[1286.0, 1286.0])
+=== SMOKE EXITED rc=0 06:51:33 ===

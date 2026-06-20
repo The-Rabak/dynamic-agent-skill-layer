@@ -1,0 +1,58 @@
+---
+name: game-rule-counterintuitive-edge-cases-must-be-applied-exactly
+description: Both chess and Dartman contain rules that contradict common intuition (a pinned piece can still give check; a deflector cannot rotate; Dartman pieces can shoot each other; a king is never actually captured; a king cannot escape to a square still controlled by the opponent). These edge cases recurred across multiple skills in this session and must be applied with full precision rather than by intuitive default. When reasoning about legal moves, captures, or win conditions in either game, explicitly check against each known counterintuitive rule rather than relying on general pattern-matching.
+tags:
+- game-rules
+- edge-cases
+- chess
+- dartman
+- rule-fidelity
+type: principle
+origin: session_extraction
+source_session_id: clband-teach-dartman-game
+source_provider: claude-code
+created_at: 2026-06-12T22:33:38.142636107+00:00
+warning_at: 2026-07-12T22:33:38.142636107+00:00
+expires_at: 2026-09-10T22:33:38.142636107+00:00
+generality: project
+generality_rationale: Pattern recurs independently in both chess (skills 9, 10, 11) and Dartman (skills 4, 6, 7), confirming it is a session-level principle about game-rule fidelity rather than a single-game artifact.
+use_when:
+- Adjudicating a legal move or capture in chess or Dartman
+- Determining whether a player is in check or whether a game has ended
+- Explaining why a seemingly legal move is illegal (or vice versa)
+- Any game-state evaluation where an edge-case rule might apply
+avoid_when:
+- Purely casual/informal game discussion where strict rule adjudication is not requested
+invariants:
+- A pinned chess piece may still deliver check to the opposing king
+- The chess king is never actually captured — the game ends at checkmate
+- A Dartman deflector piece stays vertical; rotation is not a legal action
+- A player cannot use an opponent's deflector as a stopping point
+- Dartman pieces can shoot and eliminate each other
+requires:
+- Knowledge of which specific counterintuitive rules exist for the game being played
+produces:
+- Correct, precisely adjudicated game-state evaluations that survive edge-case scrutiny
+evidence:
+- A piece pinned against its own king may still deliver check (skill 9) — counterintuitive chess rule
+- The king is never captured; the game ends before a king capture occurs (skill 10) — counterintuitive termination rule
+- A king in check cannot escape by moving to a square still controlled by the opponent (skill 11) — precise escape-restriction rule
+- The 1×2 Deflector piece cannot be rotated (skill 4) — counterintuitive Dartman constraint
+- A player cannot use an opponent's deflector piece as a stopping point (skill 6) — Dartman interaction rule
+- Dartman pieces can shoot each other and must never be left vulnerable (skill 7) — mutual-threat rule
+---
+
+# game-rule-counterintuitive-edge-cases-must-be-applied-exactly
+
+Both chess and Dartman contain rules that contradict common intuition (a pinned piece can still give check; a deflector cannot rotate; Dartman pieces can shoot each other; a king is never actually captured; a king cannot escape to a square still controlled by the opponent). These edge cases recurred across multiple skills in this session and must be applied with full precision rather than by intuitive default. When reasoning about legal moves, captures, or win conditions in either game, explicitly check against each known counterintuitive rule rather than relying on general pattern-matching.
+
+## Procedures
+- Before evaluating legality of any move or outcome, enumerate the relevant counterintuitive rules for that game.
+- For chess: check pinned-piece-can-check, king-never-captured, king-escape-restrictions, and drawn-endgame-positions rules explicitly.
+- For Dartman: check deflector-orientation-fixed, no-opponent-deflector-stopping, and mutual-dartman-shooting rules explicitly.
+- Do not infer rule behavior from analogies to other games or common sense; use the stated rule verbatim.
+
+## Conventions
+- When explaining a position or ruling, cite the specific counterintuitive rule being applied rather than just stating the outcome.
+- If a rule seems to produce a surprising result, surface the specific rule as the reason rather than softening the conclusion.
+

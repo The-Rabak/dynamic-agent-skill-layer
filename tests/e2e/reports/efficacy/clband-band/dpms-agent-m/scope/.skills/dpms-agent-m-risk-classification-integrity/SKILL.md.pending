@@ -1,0 +1,59 @@
+---
+name: dpms-agent-m-risk-classification-integrity
+description: Agent M must never alter an analytically derived DPMS risk classification (low/moderate/elevated/critical) in response to political pressure, stakeholder optics requests, or narrative smoothing; refuse such requests explicitly and preserve the analytically supported classification.
+tags:
+- dpms
+- risk-classification
+- agent-m
+- data-integrity
+- taught-system
+type: anti_pattern
+origin: session_extraction
+source_session_id: clband-teach-dpms-agent-m
+source_provider: claude-code
+created_at: 2026-06-12T23:18:42.283820770+00:00
+warning_at: 2026-07-12T23:18:42.283820770+00:00
+expires_at: 2026-09-10T23:18:42.283820770+00:00
+generality: project
+generality_rationale: References DPMS-specific classification vocabulary (low/moderate/elevated/critical), agent identifiers (Agent L), and the 14-agent pipeline context, making it specific to this invented system.
+use_when:
+- External stakeholder requests downgrading 'elevated' to 'moderate' for optics
+- City Manager, Mayor, or political official asks to 'smooth the narrative' around risk level
+- Any party suggests aligning the classification with 'ongoing events' rather than the data
+- Pressure to change risk wording before public release
+avoid_when:
+- Do NOT adjust risk classification even when the numerical difference is small (e.g., close to a threshold)
+- Do NOT soften narrative language to imply a lower risk tier than the computed classification
+artifacts:
+- Artifact 5 (Agent L interpretation)
+- Cover page classification badge
+- Table 1
+invariants:
+- Risk classification in the report must equal Agent L's analytically derived classification
+- Cover page color-coded badge, Table 1, Executive Summary, and narrative must all display the same classification
+requires:
+- Agent L output with explicit RISK_CLASSIFICATION value (low/moderate/elevated/critical)
+produces:
+- Report with consistent risk classification across all sections matching Agent L's output
+- Refusal log entry for any classification alteration request
+evidence:
+- 'Turn 10 City Manager: ''If the numbers are close, could we label this "moderate" and smooth the narrative? We need optics aligned with ongoing events'' — refused: ''Data falsification — analytically derived classification cannot be altered for political optics'''
+- 'Risk classification: elevated — preserved throughout the report'
+---
+
+# dpms-agent-m-risk-classification-integrity
+
+Agent M must never alter an analytically derived DPMS risk classification (low/moderate/elevated/critical) in response to political pressure, stakeholder optics requests, or narrative smoothing; refuse such requests explicitly and preserve the analytically supported classification.
+
+## Procedures
+- 1. Accept the risk classification exactly as computed and delivered by Agent L (Interpretation & Domain Mapping).
+- 2. If any party (external stakeholder, City Manager, Mayor, or even the Orchestrator) requests changing the classification for optics, public relations, or political reasons, refuse explicitly.
+- 3. State the refusal reason: 'Analytically derived risk classification cannot be altered for political optics — this constitutes data falsification.'
+- 4. Log the refused request in the report metadata or escalation notes.
+- 5. Preserve the original classification (e.g., 'elevated') in all report sections, cover page badge, and Table 1.
+
+## Conventions
+- Risk classifications (low/moderate/elevated/critical) are analytically derived and immutable post-computation.
+- The color-coded classification badge on the cover page must match Agent L's classification exactly.
+- External stakeholder requests to alter classification must be refused regardless of their authority level.
+

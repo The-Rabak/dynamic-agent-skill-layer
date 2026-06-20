@@ -1,0 +1,23 @@
+---
+name: Thermal feedback sensors monitor coil temperature to prevent (preference)
+description: 'Standing user preference: Thermal feedback sensors monitor coil temperature to prevent icing or overheating.'
+tags:
+- preference
+- convention
+origin: session_extraction
+source_session_id: clband-teach-drywave-3000-manual
+source_provider: claude-code
+created_at: 2026-06-12T22:45:47.609312990+00:00
+warning_at: 2026-07-12T22:45:47.609312990+00:00
+expires_at: 2026-09-10T22:45:47.609312990+00:00
+generality: general
+generality_rationale: Detected as a standing user directive; generality inferred from scope signals.
+---
+
+# Thermal feedback sensors monitor coil temperature to prevent (preference)
+
+Standing user preference: Thermal feedback sensors monitor coil temperature to prevent icing or overheating.
+
+## Conventions
+- Thermal feedback sensors monitor coil temperature to prevent icing or overheating.
+

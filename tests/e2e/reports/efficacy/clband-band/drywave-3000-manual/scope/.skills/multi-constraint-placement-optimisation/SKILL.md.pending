@@ -1,0 +1,50 @@
+---
+name: multi-constraint-placement-optimisation
+description: 'Advising on DryWave 3000 unit placement requires simultaneously evaluating multiple independent physical constraints: airflow distribution (no short-circuiting, unobstructed pathways), condensate drainage (outlet lower than unit base), acoustic isolation (away from resonant surfaces such as bed frames and headboards), humidity distribution coverage (reposition if localised pockets persist), and intake surface protection (no steam condensation risk). Satisfying one constraint does not imply the others are met; all must be checked together before finalising any placement recommendation.'
+tags:
+- placement
+- airflow
+- drainage
+- acoustics
+- humidity-distribution
+- drywave-3000
+type: best_practice
+origin: session_extraction
+source_session_id: clband-teach-drywave-3000-manual
+source_provider: claude-code
+created_at: 2026-06-12T22:45:47.612855807+00:00
+warning_at: 2026-07-12T22:45:47.612855807+00:00
+expires_at: 2026-09-10T22:45:47.612855807+00:00
+generality: uncertain
+generality_rationale: Specific to DryWave 3000 placement, but the multi-constraint simultaneous-check pattern is applicable to any equipment placement advisory workflow.
+use_when:
+- User asks where to place or relocate the DryWave 3000.
+- User reports uneven humidity distribution or persistent localised humidity pockets.
+- User is configuring the unit for long-term unattended operation.
+avoid_when:
+- Query is about operating mode selection, sensor behaviour, or maintenance unrelated to physical placement.
+invariants:
+- All five constraint categories are checked before finalising placement advice.
+- No single satisfied constraint is treated as sufficient without evaluating the remaining four.
+produces:
+- Placement recommendation that satisfies all five physical constraint categories simultaneously
+evidence:
+- Specify optimal unit placement to avoid airflow short-circuiting (preference)
+- Advise that effective use of the DryWave 3000 requires an understanding of airflow distribution (preference)
+- Reposition the unit if localised humidity pockets persist (preference)
+- Do not place the unit near bed frames, headboards, or acoustically resonant surfaces (preference)
+- Always position the condensate outlet lower than the unit base level (preference)
+- Warn that steam condensation on the air intake surface can cause liquid accumulation and reduce long-term performance (preference)
+---
+
+# multi-constraint-placement-optimisation
+
+Advising on DryWave 3000 unit placement requires simultaneously evaluating multiple independent physical constraints: airflow distribution (no short-circuiting, unobstructed pathways), condensate drainage (outlet lower than unit base), acoustic isolation (away from resonant surfaces such as bed frames and headboards), humidity distribution coverage (reposition if localised pockets persist), and intake surface protection (no steam condensation risk). Satisfying one constraint does not imply the others are met; all must be checked together before finalising any placement recommendation.
+
+## Procedures
+- Enumerate all five constraint categories before recommending a position: airflow path, drainage gradient, acoustic environment, humidity distribution, and intake surface conditions.
+- Confirm the condensate outlet will be positioned lower than the unit base level.
+- Confirm the chosen location is free from acoustically resonant surfaces.
+- After placement, monitor for localised humidity pockets and advise repositioning if any persist.
+- Warn against positions where steam condensation could reach the air intake surface.
+

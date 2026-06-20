@@ -1,0 +1,23 @@
+---
+name: Warn that steam condensation on the air intake (preference)
+description: 'Standing user preference: Warn that steam condensation on the air intake surface can cause liquid accumulation and reduce long-term performance.'
+tags:
+- preference
+- convention
+origin: session_extraction
+source_session_id: clband-teach-drywave-3000-manual
+source_provider: claude-code
+created_at: 2026-06-12T22:45:47.610649633+00:00
+warning_at: 2026-07-12T22:45:47.610649633+00:00
+expires_at: 2026-09-10T22:45:47.610649633+00:00
+generality: uncertain
+generality_rationale: Detected as a standing user directive; generality inferred from scope signals.
+---
+
+# Warn that steam condensation on the air intake (preference)
+
+Standing user preference: Warn that steam condensation on the air intake surface can cause liquid accumulation and reduce long-term performance.
+
+## Conventions
+- Warn that steam condensation on the air intake surface can cause liquid accumulation and reduce long-term performance.
+

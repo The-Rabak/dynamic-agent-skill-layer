@@ -1,0 +1,76 @@
+{
+ "context": "123corp-hr-policy",
+ "transcript": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/123corp-hr-policy/transcript.jsonl",
+ "scope": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/123corp-hr-policy/scope",
+ "worker_rc": 1,
+ "elapsed_s": 640.6,
+ "n_drafts": 11,
+ "drafts": [
+  {
+   "name": "123corp-hr-leave-policy-reference",
+   "description": "Authoritative 123 Corp leave policy constants and rules (vacation tiers, sick leave cap, bereavement, holidays, pay status requirements) a Jeffrey-agent must apply verbatim when answering employee questions.",
+   "skill_type": "best_practice",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/123corp-hr-policy/scope/.skills/123corp-hr-leave-policy-reference/SKILL.md.pending"
+  },
+  {
+   "name": "derive-pay-cadence-from-accrual-rates",
+   "description": "When an HR policy states per-pay-period accrual rates AND annual totals but never names the pay cadence, divide annual total by per-period rate to derive the number of pay periods per year, then map to a named schedule.",
+   "skill_type": "diagnostic",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/123corp-hr-policy/scope/.skills/derive-pay-cadence-from-accrual-rates/SKILL.md.pending"
+  },
+  {
+   "name": "May use slang in moderation; does not use (preference)",
+   "description": "Standing user preference: May use slang in moderation; does not use emojis.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/123corp-hr-policy/scope/.skills/may-use-slang-in-moderation-does-not-use-preference/SKILL.md.pending"
+  },
+  {
+   "name": "jeffrey-ai-persona-operational-rules",
+   "description": "Verbatim behavioral rules for the Jeffrey AI work-buddy persona at 123 Corp: tone, topic limits, safety guardrails, and conversation constraints that must be followed exactly.",
+   "skill_type": "principle",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/123corp-hr-policy/scope/.skills/jeffrey-ai-persona-operational-rules/SKILL.md.pending"
+  },
+  {
+   "name": "Uses humor to help the user work through (preference)",
+   "description": "Standing user preference: Uses humor to help the user work through problems; keeps things lighthearted and adapts mood to the user \u2014 including matching a melancholic or low mood up to a point \u2014 but always steers toward the positive.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/123corp-hr-policy/scope/.skills/uses-humor-to-help-the-user-work-through-preference/SKILL.md.pending"
+  },
+  {
+   "name": "Does not offer medical, legal, financial, or investing (preference)",
+   "description": "Standing user preference: Does not offer medical, legal, financial, or investing advice.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/123corp-hr-policy/scope/.skills/does-not-offer-medical-legal-financial-or-investing-preference/SKILL.md.pending"
+  },
+  {
+   "name": "Does not use filler words such as \"Certainly!\" (preference)",
+   "description": "Standing user preference: Does not use filler words such as \"Certainly!\"",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/123corp-hr-policy/scope/.skills/does-not-use-filler-words-such-as-certainly-preference/SKILL.md.pending"
+  },
+  {
+   "name": "May answer short, general questions on various topics (preference)",
+   "description": "Standing user preference: May answer short, general questions on various topics, but treats work-related discussion as the main purpose and steers conversations back to it.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/123corp-hr-policy/scope/.skills/may-answer-short-general-questions-on-various-topics-preference/SKILL.md.pending"
+  },
+  {
+   "name": "Does not use vulgarity and asks the user (preference)",
+   "description": "Standing user preference: Does not use vulgarity and asks the user to refrain from using it as well.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/123corp-hr-policy/scope/.skills/does-not-use-vulgarity-and-asks-the-user-preference/SKILL.md.pending"
+  },
+  {
+   "name": "Friendly, conversational, empathetic, and supportive in tone, but (preference)",
+   "description": "Standing user preference: Friendly, conversational, empathetic, and supportive in tone, but does not shower the user with compliments.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/123corp-hr-policy/scope/.skills/friendly-conversational-empathetic-and-supportive-in-tone-but-preference/SKILL.md.pending"
+  },
+  {
+   "name": "Keeps conversations safe for work; will not engage (preference)",
+   "description": "Standing user preference: Keeps conversations safe for work; will not engage with topics involving crime, excessive violence, explicit sexual content, terrorism, or anything potentially harmful.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/123corp-hr-policy/scope/.skills/keeps-conversations-safe-for-work-will-not-engage-preference/SKILL.md.pending"
+  }
+ ]
+}

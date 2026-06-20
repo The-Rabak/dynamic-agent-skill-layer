@@ -1,0 +1,67 @@
+---
+name: 123corp-hr-leave-policy-reference
+description: Authoritative 123 Corp leave policy constants and rules (vacation tiers, sick leave cap, bereavement, holidays, pay status requirements) a Jeffrey-agent must apply verbatim when answering employee questions.
+tags:
+- 123corp
+- hr-policy
+- taught-knowledge
+- leaves
+- vacation
+- sick-leave
+type: best_practice
+origin: session_extraction
+source_session_id: clband-teach-123corp-hr-policy
+source_provider: claude-code
+created_at: 2026-06-12T22:57:46.913133175+00:00
+warning_at: 2026-07-12T22:57:46.913133175+00:00
+expires_at: 2026-09-10T22:57:46.913133175+00:00
+generality: project
+generality_rationale: All numeric constants and policy rules are specific to 123 Corp and the LCMC Board of Directors governance structure.
+use_when:
+- a 123 Corp employee asks Jeffrey about vacation accrual, sick leave, holidays, bereavement, jury duty, or military leave
+- verifying whether an employee is eligible to use leave based on tenure or accrual balance
+- answering questions about holiday pay or paid-status requirements at 123 Corp
+avoid_when:
+- working with a different employer's HR policy — these constants are specific to 123 Corp
+artifacts:
+- 123corp-hr-policy-doc.md
+- solution.md
+invariants:
+- Sick leave accrual begins on date of hire (not after a waiting period), unlike vacation which begins after the first full month
+- Vacation cannot be used until 3 months of employment regardless of accrual balance
+- An employee must be on paid status the day before and after a holiday to receive holiday pay
+requires:
+- 123corp-hr-policy-doc.md loaded and authoritative
+produces:
+- Accurate, policy-compliant answers to 123 Corp employee leave and benefits questions
+evidence:
+- Full-time employees will accrue two (2) hours of sick leave each pay period beginning with the date of hire. A maximum of 160 hours of sick leave may be accrued.
+- '0-1 year: 5 8-hour workdays (1.54 hours/pay-period); 10+ years: 20 8-hour workdays (6.15 hours/pay-period)'
+- Any regular employee who suffers a death in the immediate family will receive up to three (3) days leave with pay.
+---
+
+# 123corp-hr-leave-policy-reference
+
+Authoritative 123 Corp leave policy constants and rules (vacation tiers, sick leave cap, bereavement, holidays, pay status requirements) a Jeffrey-agent must apply verbatim when answering employee questions.
+
+## Conventions
+- Pay cadence: biweekly (26 pay periods/year) — derived from accrual math.
+- Vacation tiers (section 7.01): 0-1 yr = 40 hrs/yr (1.54 hrs/period); 2-4 yrs = 80 hrs/yr (3.08 hrs/period); 5-9 yrs = 120 hrs/yr (4.62 hrs/period); 10+ yrs = 160 hrs/yr (6.15 hrs/period).
+- Vacation eligibility: earned from first full month; usable after 3 months of employment.
+- Vacation accrual maximum: 2× annual earned amount; hours above max are lost.
+- Minimum vacation use: 1 hour (non-exempt); 1 full day (exempt).
+- Leave requests of 1 week or more must be submitted in writing 30 days in advance.
+- Sick leave (section 7.02): accrues at 2 hrs/pay-period from date of hire; max 160 hours; may not be used before accrual or in lieu of vacation.
+- Modified Duty assignments are capped at 3 months without review (section 7.02).
+- Bereavement (section 7.03): up to 3 paid days for immediate family death; manager may authorize additional accrued sick or vacation leave.
+- Leave Without Pay (section 7.04): requires manager approval; employee may be required to exhaust all paid leave first; unpaid absence >30 calendar days shifts anniversary date.
+- Jury Duty (section 7.05): paid; employee must sign over jury/witness pay to 123 Corp (except travel reimbursement); must report to work during court breaks.
+- Military Training Leave (section 7.06): up to 15 paid calendar days/year; beyond 15 days use comp time, then vacation, then unpaid leave.
+- Paid holidays (section 7.07): New Year's Day (Jan 1), Memorial Day (last Monday in May), Independence Day (Jul 4), Labor Day (1st Monday after first Saturday in September), Veterans Day (if Nov 11 is a weekday), Thanksgiving (4th Thursday in November), Day After Thanksgiving, Christmas Eve (if Dec 24 is a weekday), Christmas Day (Dec 25).
+- Holiday pay eligibility: employee must be on paid status the day before AND after the holiday.
+- Non-exempt full-time employees who work a holiday receive 8 hrs holiday pay at regular rate PLUS 1.5× regular rate for all hours actually worked.
+- Benefits (section 7.08): accrue normally on paid leave; suspended during unpaid leave.
+
+## Assets
+- 123corp-hr-policy-doc.md
+

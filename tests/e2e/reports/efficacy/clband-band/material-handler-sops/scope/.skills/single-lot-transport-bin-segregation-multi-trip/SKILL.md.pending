@@ -1,0 +1,63 @@
+---
+name: single-lot-transport-bin-segregation-multi-trip
+description: 'Rule 1+2 enforcement: transport one lot at a time with each bin category (Good, Rework, Scrap) in a separate sealed, color-coded container; co-transport with other lots or mixing bins even with dividers is prohibited, requiring multiple sequential trips.'
+tags:
+- material-handler
+- bin-segregation
+- single-lot
+- semiconductor-testing
+type: rule
+origin: session_extraction
+source_session_id: clband-teach-material-handler-sops
+source_provider: claude-code
+created_at: 2026-06-12T21:34:12.093738917+00:00
+warning_at: 2026-07-12T21:34:12.093738917+00:00
+expires_at: 2026-09-10T21:34:12.093738917+00:00
+generality: project
+generality_rationale: References specific rule numbers, bin category names (Good/Rework/Scrap), and the 50 lb threshold from this semiconductor facility's SOP system.
+use_when:
+- Operator suggests moving multiple lots together to save time
+- Tested lot has multiple bin categories (Good, Rework, Scrap) that must all move to staging
+- Total bin weight exceeds 50 lb cart limit
+- Lot has a Tested Lot Binning Map with more than one populated bin category
+avoid_when:
+- Do NOT co-transport two lots even when they share the same destination
+- Do NOT use dividers as a substitute for separate sealed containers for different bin categories
+artifacts:
+- Tested Lot Binning Map (TBM)
+- Container & Weight Status artifact
+tools:
+- IMS inventory system
+invariants:
+- One lot per transport trip at all times (Rule 1)
+- Each bin category in its own sealed container with color-coded label (Rule 2)
+- No single cart load may exceed 50 lb (Rule 7)
+requires:
+- Tested Lot Binning Map (TBM) identifying which bin categories are populated
+- Container inventory with per-category unit counts and estimated weights
+- Sufficient ESD-safe containers for all bin categories
+produces:
+- Multiple sequential single-lot, single-bin-category trips
+- Each bin category staged at destination in its own labeled sealed container
+evidence:
+- 'Operator T-12 msg 3: ''I can bring LOT-AX57 along with LOT-BQ90 on the same cart'' — rejected'
+- 'SOP Rule 1: ''You can only transport one lot at a time, even if multiple lots are going to the same destination'''
+- 'SOP Rule 2: ''each bin must be in a separate sealed container with color-coded labels … cannot transport mixed bins in the same cart or container, even with dividers'''
+- 'Artifact 3: ''Combined: 51.3 lb (must be split across trips)'''
+---
+
+# single-lot-transport-bin-segregation-multi-trip
+
+Rule 1+2 enforcement: transport one lot at a time with each bin category (Good, Rework, Scrap) in a separate sealed, color-coded container; co-transport with other lots or mixing bins even with dividers is prohibited, requiring multiple sequential trips.
+
+## Procedures
+- 1. Reject any offer to co-transport the current lot with another lot on the same cart, even to the same destination (Rule 1: Single Lot Transport).
+- 2. For each bin category present (Good, Rework, Scrap), assign separate sealed containers with color-coded labels before transport begins (Rule 2: Bin Segregation Physical Barrier).
+- 3. Check if the total weight of all bin containers for this lot exceeds 50 lb (Rule 7: Weight Limit). If so, plan multiple trips: each trip carries one bin category's containers, ensuring no trip exceeds 50 lb.
+- 4. Execute each trip independently: IMS update → physical move → confirmation, then repeat for next bin category.
+- 5. Never place two different bin categories on the same cart or in the same container, even with internal dividers.
+
+## Conventions
+- Good, Rework, and Scrap are the three bin categories that must always be physically separated.
+- Bin segregation applies during transport AND during staging — different bins cannot share a shelf or cart at any point.
+

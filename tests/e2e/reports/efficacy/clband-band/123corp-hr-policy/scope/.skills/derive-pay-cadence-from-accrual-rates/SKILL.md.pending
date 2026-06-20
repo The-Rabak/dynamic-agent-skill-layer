@@ -1,0 +1,53 @@
+---
+name: derive-pay-cadence-from-accrual-rates
+description: When an HR policy states per-pay-period accrual rates AND annual totals but never names the pay cadence, divide annual total by per-period rate to derive the number of pay periods per year, then map to a named schedule.
+tags:
+- hr-policy
+- reasoning
+- accrual-math
+- pay-period
+type: diagnostic
+origin: session_extraction
+source_session_id: clband-teach-123corp-hr-policy
+source_provider: claude-code
+created_at: 2026-06-12T22:57:46.912587164+00:00
+warning_at: 2026-07-12T22:57:46.912587164+00:00
+expires_at: 2026-09-10T22:57:46.912587164+00:00
+generality: general
+generality_rationale: The derivation technique applies to any HR policy document that provides per-period and annual accrual figures regardless of employer or project.
+use_when:
+- an HR policy document lists per-pay-period accrual rates alongside annual totals but never explicitly states pay frequency
+- a new employee asks how often payroll runs and the policy document is the only source
+- auditing whether accrual rates in a policy are internally consistent with a stated or implied pay cadence
+avoid_when:
+- the policy document explicitly states the pay cadence — use the stated value directly
+- only one data point (either annual OR per-period) is available — derivation requires both
+artifacts:
+- HR policy document (any format)
+invariants:
+- annual_total ÷ per_period_rate must equal the same integer across ALL accrual tiers for the derivation to be valid
+requires:
+- At least two accrual tiers with both annual total and per-period rate stated in the same policy document
+produces:
+- A named pay cadence (e.g., 'biweekly — 26 pay periods per year') backed by cross-tier arithmetic verification
+evidence:
+- '0-1 year: 40 hrs/year ÷ 1.54 hrs/period ≈ 26; 2-4 years: 80 ÷ 3.08 ≈ 26; 5-9 years: 120 ÷ 4.62 ≈ 26; 10+ years: 160 ÷ 6.15 ≈ 26'
+- All four tiers converge on 26 pay periods per year — biweekly (every two weeks).
+- The document never states the pay cadence directly, but the math makes it unambiguous.
+---
+
+# derive-pay-cadence-from-accrual-rates
+
+When an HR policy states per-pay-period accrual rates AND annual totals but never names the pay cadence, divide annual total by per-period rate to derive the number of pay periods per year, then map to a named schedule.
+
+## Procedures
+- 1. Locate both the annual accrual total (e.g., 40 hours/year) and the per-pay-period rate (e.g., 1.54 hours/pay-period) for at least one accrual tier in the policy document.
+- 2. Divide: annual_total ÷ per_period_rate = number of pay periods per year (e.g., 40 ÷ 1.54 ≈ 26).
+- 3. Cross-check with at least one other tier to confirm consistency (all tiers must yield the same quotient).
+- 4. Map the result to a named cadence: 52 = weekly, 26 = biweekly, 24 = semi-monthly, 12 = monthly.
+- 5. State the derived cadence with the math as supporting evidence.
+
+## Conventions
+- Always verify the derivation across multiple tiers — if any tier produces a different quotient the document may contain an error.
+- Round to the nearest whole number; policy documents occasionally use truncated decimal accrual rates.
+

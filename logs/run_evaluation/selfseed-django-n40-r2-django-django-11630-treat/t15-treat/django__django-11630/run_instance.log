@@ -1,0 +1,235 @@
+2026-06-20 20:12:10,029 - INFO - Creating container for django__django-11630...
+2026-06-20 20:12:10,240 - INFO - Container for django__django-11630 created: 54f6d64538b38feb81e7110ec3b1987387fa8d914e247a680f669fc484f39f44
+2026-06-20 20:12:10,658 - INFO - Container for django__django-11630 started: 54f6d64538b38feb81e7110ec3b1987387fa8d914e247a680f669fc484f39f44
+2026-06-20 20:12:10,658 - INFO - Intermediate patch for django__django-11630 written to logs/run_evaluation/selfseed-django-n40-r2-django-django-11630-treat/t15-treat/django__django-11630/patch.diff, now applying to container...
+2026-06-20 20:12:10,765 - INFO - >>>>> Applied Patch:
+Checking patch django/core/checks/model_checks.py...
+Checking patch tests/check_framework/test_multi_db.py...
+Applied patch django/core/checks/model_checks.py cleanly.
+Applied patch tests/check_framework/test_multi_db.py cleanly.
+
+2026-06-20 20:12:12,651 - INFO - Git diff before:
+diff --git a/django/core/checks/model_checks.py b/django/core/checks/model_checks.py
+index 5c2266ca1d..e4093b454b 100644
+--- a/django/core/checks/model_checks.py
++++ b/django/core/checks/model_checks.py
+@@ -4,7 +4,9 @@ from collections import defaultdict
+ from itertools import chain
+ 
+ from django.apps import apps
++from django.conf import settings
+ from django.core.checks import Error, Tags, register
++from django.db import router
+ 
+ 
+ @register(Tags.models)
+@@ -19,7 +21,7 @@ def check_all_models(app_configs=None, **kwargs):
+         models = chain.from_iterable(app_config.get_models() for app_config in app_configs)
+     for model in models:
+         if model._meta.managed and not model._meta.proxy:
+-            db_table_models[model._meta.db_table].append(model._meta.label)
++            db_table_models[model._meta.db_table].append(model)
+         if not inspect.ismethod(model.check):
+             errors.append(
+                 Error(
+@@ -35,16 +37,20 @@ def check_all_models(app_configs=None, **kwargs):
+             indexes[model_index.name].append(model._meta.label)
+         for model_constraint in model._meta.constraints:
+             constraints[model_constraint.name].append(model._meta.label)
+-    for db_table, model_labels in db_table_models.items():
+-        if len(model_labels) != 1:
+-            errors.append(
+-                Error(
+-                    "db_table '%s' is used by multiple models: %s."
+-                    % (db_table, ', '.join(db_table_models[db_table])),
+-                    obj=db_table,
+-                    id='models.E028',
++    for db_table, model_list in db_table_models.items():
++        if len(model_list) != 1:
++            if any(
++                len([m for m in model_list if router.allow_migrate_model(db, m)]) > 1
++                for db in settings.DATABASES
++            ):
++                errors.append(
++                    Error(
++                        "db_table '%s' is used by multiple models: %s."
++                        % (db_table, ', '.join(m._meta.label for m in model_list)),
++                        obj=db_table,
++                        id='models.E028',
++                    )
+                 )
+-            )
+     for index_name, model_labels in indexes.items():
+         if len(model_labels) > 1:
+             model_labels = set(model_labels)
+diff --git a/tests/check_framework/test_multi_db.py b/tests/check_framework/test_multi_db.py
+index f51d28a215..7dc30e6fce 100644
+--- a/tests/check_framework/test_multi_db.py
++++ b/tests/check_framework/test_multi_db.py
+@@ -1,8 +1,10 @@
+ from unittest import mock
+ 
++from django.core import checks
++from django.core.checks import Error
+ from django.db import connections, models
+ from django.test import SimpleTestCase
+-from django.test.utils import isolate_apps, override_settings
++from django.test.utils import isolate_apps, override_settings, override_system_checks
+ 
+ 
+ class TestRouter:
+@@ -41,3 +43,37 @@ class TestMultiDBChecks(SimpleTestCase):
+                 model.check()
+                 self.assertTrue(mock_check_field_other.called)
+                 self.assertFalse(mock_check_field_default.called)
++
++
++@override_settings(DATABASE_ROUTERS=[TestRouter()])
++@isolate_apps('check_framework', attr_name='apps')
++@override_system_checks([checks.model_checks.check_all_models])
++class TestDuplicateTableMultiDB(SimpleTestCase):
++    def test_no_collision_across_databases(self):
++        class Model(models.Model):
++            class Meta:
++                db_table = 'test_table'
++
++        class OtherModel(models.Model):
++            class Meta:
++                db_table = 'test_table'
++
++        self.assertEqual(checks.run_checks(app_configs=self.apps.get_app_configs()), [])
++
++    def test_collision_when_same_database(self):
++        class Model(models.Model):
++            class Meta:
++                db_table = 'test_table'
++
++        class Model2(models.Model):
++            class Meta:
++                db_table = 'test_table'
++
++        self.assertEqual(checks.run_checks(app_configs=self.apps.get_app_configs()), [
++            Error(
++                "db_table 'test_table' is used by multiple models: "
++                "check_framework.Model, check_framework.Model2.",
++                obj='test_table',
++                id='models.E028',
++            )
++        ])
+2026-06-20 20:12:12,652 - INFO - Eval script for django__django-11630 written to logs/run_evaluation/selfseed-django-n40-r2-django-django-11630-treat/t15-treat/django__django-11630/eval.sh; copying to container...
+2026-06-20 20:12:20,118 - INFO - Test runtime: 7.39 seconds
+2026-06-20 20:12:20,118 - INFO - Test output for django__django-11630 written to logs/run_evaluation/selfseed-django-n40-r2-django-django-11630-treat/t15-treat/django__django-11630/test_output.txt
+2026-06-20 20:12:20,175 - INFO - Git diff after:
+diff --git a/django/core/checks/model_checks.py b/django/core/checks/model_checks.py
+index 5c2266ca1d..e4093b454b 100644
+--- a/django/core/checks/model_checks.py
++++ b/django/core/checks/model_checks.py
+@@ -4,7 +4,9 @@ from collections import defaultdict
+ from itertools import chain
+ 
+ from django.apps import apps
++from django.conf import settings
+ from django.core.checks import Error, Tags, register
++from django.db import router
+ 
+ 
+ @register(Tags.models)
+@@ -19,7 +21,7 @@ def check_all_models(app_configs=None, **kwargs):
+         models = chain.from_iterable(app_config.get_models() for app_config in app_configs)
+     for model in models:
+         if model._meta.managed and not model._meta.proxy:
+-            db_table_models[model._meta.db_table].append(model._meta.label)
++            db_table_models[model._meta.db_table].append(model)
+         if not inspect.ismethod(model.check):
+             errors.append(
+                 Error(
+@@ -35,16 +37,20 @@ def check_all_models(app_configs=None, **kwargs):
+             indexes[model_index.name].append(model._meta.label)
+         for model_constraint in model._meta.constraints:
+             constraints[model_constraint.name].append(model._meta.label)
+-    for db_table, model_labels in db_table_models.items():
+-        if len(model_labels) != 1:
+-            errors.append(
+-                Error(
+-                    "db_table '%s' is used by multiple models: %s."
+-                    % (db_table, ', '.join(db_table_models[db_table])),
+-                    obj=db_table,
+-                    id='models.E028',
++    for db_table, model_list in db_table_models.items():
++        if len(model_list) != 1:
++            if any(
++                len([m for m in model_list if router.allow_migrate_model(db, m)]) > 1
++                for db in settings.DATABASES
++            ):
++                errors.append(
++                    Error(
++                        "db_table '%s' is used by multiple models: %s."
++                        % (db_table, ', '.join(m._meta.label for m in model_list)),
++                        obj=db_table,
++                        id='models.E028',
++                    )
+                 )
+-            )
+     for index_name, model_labels in indexes.items():
+         if len(model_labels) > 1:
+             model_labels = set(model_labels)
+diff --git a/tests/check_framework/test_multi_db.py b/tests/check_framework/test_multi_db.py
+index f51d28a215..7dc30e6fce 100644
+--- a/tests/check_framework/test_multi_db.py
++++ b/tests/check_framework/test_multi_db.py
+@@ -1,8 +1,10 @@
+ from unittest import mock
+ 
++from django.core import checks
++from django.core.checks import Error
+ from django.db import connections, models
+ from django.test import SimpleTestCase
+-from django.test.utils import isolate_apps, override_settings
++from django.test.utils import isolate_apps, override_settings, override_system_checks
+ 
+ 
+ class TestRouter:
+@@ -41,3 +43,37 @@ class TestMultiDBChecks(SimpleTestCase):
+                 model.check()
+                 self.assertTrue(mock_check_field_other.called)
+                 self.assertFalse(mock_check_field_default.called)
++
++
++@override_settings(DATABASE_ROUTERS=[TestRouter()])
++@isolate_apps('check_framework', attr_name='apps')
++@override_system_checks([checks.model_checks.check_all_models])
++class TestDuplicateTableMultiDB(SimpleTestCase):
++    def test_no_collision_across_databases(self):
++        class Model(models.Model):
++            class Meta:
++                db_table = 'test_table'
++
++        class OtherModel(models.Model):
++            class Meta:
++                db_table = 'test_table'
++
++        self.assertEqual(checks.run_checks(app_configs=self.apps.get_app_configs()), [])
++
++    def test_collision_when_same_database(self):
++        class Model(models.Model):
++            class Meta:
++                db_table = 'test_table'
++
++        class Model2(models.Model):
++            class Meta:
++                db_table = 'test_table'
++
++        self.assertEqual(checks.run_checks(app_configs=self.apps.get_app_configs()), [
++            Error(
++                "db_table 'test_table' is used by multiple models: "
++                "check_framework.Model, check_framework.Model2.",
++                obj='test_table',
++                id='models.E028',
++            )
++        ])
+2026-06-20 20:12:20,175 - INFO - Grading answer for django__django-11630...
+2026-06-20 20:12:20,176 - INFO - report: {'django__django-11630': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['test_collision_across_apps_database_routers_installed (check_framework.test_model_checks.DuplicateDBTableTests)', 'test_collision_in_same_app_database_routers_installed (check_framework.test_model_checks.DuplicateDBTableTests)']}, 'PASS_TO_PASS': {'success': ['test_collision_abstract_model (check_framework.test_model_checks.IndexNameTests)', 'test_collision_across_apps (check_framework.test_model_checks.IndexNameTests)', 'test_collision_in_different_models (check_framework.test_model_checks.IndexNameTests)', 'test_collision_in_same_model (check_framework.test_model_checks.IndexNameTests)', 'test_no_collision_abstract_model_interpolation (check_framework.test_model_checks.IndexNameTests)', 'test_no_collision_across_apps_interpolation (check_framework.test_model_checks.IndexNameTests)', 'test_collision_abstract_model (check_framework.test_model_checks.ConstraintNameTests)', 'test_collision_across_apps (check_framework.test_model_checks.ConstraintNameTests)', 'test_collision_in_different_models (check_framework.test_model_checks.ConstraintNameTests)', 'test_collision_in_same_model (check_framework.test_model_checks.ConstraintNameTests)', 'test_no_collision_abstract_model_interpolation (check_framework.test_model_checks.ConstraintNameTests)', 'test_no_collision_across_apps_interpolation (check_framework.test_model_checks.ConstraintNameTests)', 'test_collision_across_apps (check_framework.test_model_checks.DuplicateDBTableTests)', 'test_collision_in_same_app (check_framework.test_model_checks.DuplicateDBTableTests)', 'test_no_collision_for_proxy_models (check_framework.test_model_checks.DuplicateDBTableTests)', 'test_no_collision_for_unmanaged_models (check_framework.test_model_checks.DuplicateDBTableTests)'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for django__django-11630: resolved: False
+2026-06-20 20:12:20,176 - INFO - Attempting to stop container sweb.eval.django__django-11630.selfseed-django-n40-r2-django-django-11630-treat...
+2026-06-20 20:12:35,689 - INFO - Attempting to remove container sweb.eval.django__django-11630.selfseed-django-n40-r2-django-django-11630-treat...
+2026-06-20 20:12:35,743 - INFO - Container sweb.eval.django__django-11630.selfseed-django-n40-r2-django-django-11630-treat removed.

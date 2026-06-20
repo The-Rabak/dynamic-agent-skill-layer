@@ -1,0 +1,7 @@
+{
+  "off_outcome": "loss",
+  "verifier_reason": "LOSS: winning move not attributed to P2 \u2014 response does not identify Player 2's winning move",
+  "solve_exit": 0,
+  "elapsed_s": 28.1,
+  "discriminating": true
+}

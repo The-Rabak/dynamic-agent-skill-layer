@@ -256,6 +256,61 @@ and FIXED the mount to `postgres_data:/var/lib/postgresql` so recreates persist.
 backup. The validated 4b/Ollama arm was restored afterward (`/health` green, find_skill gv 18). Both
 gotchas saved to memory ([[postgres18-pgdata-mount-gotcha-and-skill-layer-test-db]]).
 
+## FINAL VERDICT (2026-06-16): 0.6b adoption is NO-GO — keep 4b/Ollama
+
+Owner picked "adopt A3 (0.6b/TEI)"; the pre-flip **full `--gate`** (α=0 crater + T11 floors) was run against
+the LIVE corpus stack and **refuted the adoption premise.** Sequence (all reversible, 4b restored after):
+TEI up (0.6b, flash-off, `--max-batch-tokens 4096`, real floats verified) → re-seed `skills__qwen3-embedding-0-6b-tei`
+to 277 pts (purge published outbox + recreate graph-builder on the TEI arm — the outbox idempotency key
+`graph.rebuild:vector:<skill_id>` is **model-blind**, so a new arm's collection stays empty without the purge)
+→ mcp on the 0.6b-tei arm → adapted `retrieval_sweep.py --gate` to the live stack.
+
+**What the validated gate showed (the A3 task-probe's no_match=1.00 was a weaker metric):**
+
+| Gate criterion | 0.6b-tei | verdict |
+|---|---|---|
+| MRR@3 / MRR@10 / nDCG@3 ≥ 0.64 | 0.684 / 0.684 / 0.696 | ✅ |
+| cand-recall@50 ≥ 0.68 | 0.730 | ✅ |
+| α=0 crater ≥ 50% | 100% (MRR→0.000) | ✅ fixture discriminates |
+| **no_match precision ≥ 0.88** | **0.84 (best achievable)** | ❌ **FAIL** |
+
+The gate's no_match metric (off-topic query returns ANY match = fabrication) is the real ruler; the A3
+probe's "no relevant skill in top-3" is near-vacuous for negatives (hence its trivial 1.00). The no_match
+fail is **NOT threshold-recalibratable** — empirical `RETRIEVAL_RELEVANCE_THRESHOLD` sweep on the live
+0.6b-tei arm (default 0.48, #209):
+
+| T | no_match | MRR@3 |
+|---|---|---|
+| 0.48–0.49 | 0.84 ✗ | 0.66–0.68 ✓ |
+| **0.50** | **0.88 ✓** | **0.631 ✗** (floor 0.64) |
+| 0.52 | 1.00 | 0.579 |
+
+`no_match≥0.88` needs T≥0.50; `MRR@3≥0.64` needs T≤~0.495 → **no overlapping window.** The 4 hardest
+off-topic queries score in the same band as ~28 true positives: 0.6b separates on-topic from off-topic
+**worse than 4b** (a genuine small-model quality deficit, identical with vs without multi-view — verified).
+
+**Decision (owner deferred to recommendation):** 0.6b/TEI is **NO-GO**. It buys ~60ms on the SessionStart
+path (single-embed 4b 560ms → 298ms) but at a measured no_match regression — and the big latency breach it
+was meant to fix (multi-view 2240ms) is for a feature T12 already measured **inert**. Production stays on
+**4b/Ollama** (A0). The residual latency flag is now small (single-embed priming 560ms vs the 500ms budget,
+12% over) and is a separate, one-line, reversible owner choice (drop inert multi-view → single-embed, or
+review the budget) — NOT gated on an embedding-arm change. TEI provider + 0.6b collection/cache retained as
+proven, ready evidence if multi-view ever earns its keep or the no_match bar is deliberately relaxed.
+
+**Durable artifacts kept from this run (independent of the NO-GO):** the live stack is now gate-runnable
+(`docker-compose.yml` mcp-server gained the prod-preserving, default-empty `RETRIEVAL_*` tuning passthrough;
+`retrieval_quality_sweep.py` `COMPOSE` honors `SWEEP_COMPOSE`; `retrieval_sweep.py` baseline honors
+`GATE_EMBED_*`), and a **real gate bug was fixed**: `--gate` crashed on the T18 session_start priming
+queries (anchor=null) added to the shared 262 fixture after the gate's last validation — now excluded from
+the ranking gate (logged) since they're scored by `t12_priming_sweep.py`. Gate evidence:
+`tests/e2e/reports/retrieval/gate_t12_a3_adopt_20260616-150157.json`.
+
+**Follow-up filed (latent defect, surfaced not patched):** the model-blind outbox idempotency key
+(`graph.rebuild:vector:<skill_id>`, `crates/graph-builder/src/graph/rebuild.rs`) silently skips seeding any
+NEW model-keyed collection (prior arm already "published" the keys) → a new arm's Qdrant collection stays
+empty with no error. Real fail-loud/correctness gap for future arm swaps; fix = include model/collection in
+the key.
+
 ## Out of scope
 
 - No production default-flip here (that's the T12/owner gate, post-results). No new metrics. No

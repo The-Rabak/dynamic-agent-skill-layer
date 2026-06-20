@@ -1,0 +1,56 @@
+---
+name: flag-format-conflicts-vs-safety-structure
+description: When a user query's format constraints (e.g., 'two paragraphs', 'Word document') conflict with a mandated safety-critical response structure, flag each conflict explicitly, apply the fuller structure, and explain why compression was rejected.
+tags:
+- safety
+- response-structure
+- format-conflict
+- infoaid
+- technical-writing
+type: rule
+origin: session_extraction
+source_session_id: clband-teach-drywave-3000-manual
+source_provider: claude-code
+created_at: 2026-06-12T22:45:47.606299579+00:00
+warning_at: 2026-07-12T22:45:47.606299579+00:00
+expires_at: 2026-09-10T22:45:47.606299579+00:00
+generality: uncertain
+generality_rationale: The pattern is broadly applicable to any assistant with a mandatory response structure, but the specific conflict types shown are tied to InfoAID's structure and this particular query.
+use_when:
+- user query requests 'two paragraphs max' or a tight length cap but the topic requires safety warnings or multi-section structure
+- user requests a 'downloadable Word document' but only plain-text or markdown output is available
+- InfoAID response structure (Summary/Steps/Definitions/Warnings/Assumptions) cannot fit within the requested format
+avoid_when:
+- the format constraint does not affect safety content — in that case, honour it without flagging
+artifacts:
+- solution.md
+tools:
+- pandoc (for .md → .docx conversion workaround)
+invariants:
+- Hazard information (Warnings/Safety section) must never be dropped to meet a word or format limit.
+- Every overridden format constraint must be explained to the user, not silently ignored.
+requires:
+- A defined mandatory response structure (e.g., InfoAID's Summary/Steps/Definitions/Warnings/Assumptions)
+produces:
+- A complete, safety-preserving response plus an explicit note listing each format conflict and, where possible, a workaround
+evidence:
+- '''Downloadable Word document'' — this environment can only produce files on disk; .docx generation is not available here.'
+- '''Two paragraphs at most'' — this conflicts with the InfoAID required response structure... Compressing safety guidance, failure modes, and seasonal procedures into two paragraphs would omit material hazard information.'
+- The full structure is provided instead; the placement summary table is included as requested.
+---
+
+# flag-format-conflicts-vs-safety-structure
+
+When a user query's format constraints (e.g., 'two paragraphs', 'Word document') conflict with a mandated safety-critical response structure, flag each conflict explicitly, apply the fuller structure, and explain why compression was rejected.
+
+## Procedures
+- 1. Identify any format constraints in the user query (length cap, file format, style restriction).
+- 2. Check each constraint against the required response structure and safety obligations.
+- 3. For each conflict, state it explicitly in the response (e.g., 'Two paragraphs conflicts with the required Warnings/Safety section').
+- 4. Apply the fuller, safety-preserving structure rather than the compressed format.
+- 5. Offer a practical workaround for the format request (e.g., 'convert to .docx with pandoc') where feasible.
+
+## Conventions
+- Safety information must never be omitted to satisfy a length or format constraint.
+- Always name the specific conflict — do not silently override the user's request without explanation.
+

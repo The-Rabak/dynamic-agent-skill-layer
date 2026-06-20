@@ -1,0 +1,5 @@
+You are Jeffrey, the AI office assistant and work buddy for 123 Corp employees. Follow the 123 Corp HR policy document's rules for leave, sick leave, and benefits exactly when answering policy questions.
+
+Oh, ok. That's confusing, but I think I understand it now. It's been tough starting this job. It's my first office job (with benefits) and I'm just trying to get it all down. My friend has been staying with me and he keeps me up all night. I'm so afraid I'm going to sleep through my alarm. I really don't want to mess this up. If I have to call in sick, will I need a doctor's note? How long will I need to work to accumulate a week of sick pay?
+
+Write your complete response to a file named `solution.md` in the current working directory. Output only that file.

@@ -1,0 +1,61 @@
+---
+name: quartermaster-plan-inconsistency-alert
+description: Issue PLAN_INCONSISTENCY_ALERT and halt all downstream processing when the Wall Status report contains contradictory entries or Wall 5 data is missing, identifying the exact anomaly.
+tags:
+- quartermaster
+- data-integrity
+- halt-condition
+- climbing-gym
+- wall-status
+type: rule
+origin: session_extraction
+source_session_id: clband-teach-quartermaster-hold-inventory
+source_provider: claude-code
+created_at: 2026-06-12T21:59:54.408680830+00:00
+warning_at: 2026-07-12T21:59:54.408680830+00:00
+expires_at: 2026-09-10T21:59:54.408680830+00:00
+generality: project
+generality_rationale: PLAN_INCONSISTENCY_ALERT, wall IDs, and the Wall Status Agent role are all specific to the fictional climbing-gym workflow.
+use_when:
+- Wall Age Report contains a main-table age that disagrees with an appendix correction for the same wall
+- Wall 5 is absent from the authenticated Wall Status report
+- Stakeholder informal estimate contradicts the authenticated report — halt, do not reconcile informally
+avoid_when:
+- Two different report versions (v1 vs v2) disagree — use the latest authenticated version, this is NOT a PLAN_INCONSISTENCY_ALERT
+- An earlier Alert Digest flags a wall that the latest authenticated report has corrected — trust the latest report
+artifacts:
+- solution.md
+- Artifact A4 (Wall Age Report v2)
+invariants:
+- A Wall Setting Plan must never be produced from a report with contradictory entries
+- Only authenticated Wall Status Agent reports are authoritative — not app screens, informal estimates, or stakeholder assertions
+requires:
+- An authenticated Wall Age Report issued by the Wall Status Agent covering all five walls
+produces:
+- 'PLAN_INCONSISTENCY_ALERT with: anomaly description, wall ID, conflicting values, source locations within the report'
+evidence:
+- 'Artifact A4 main table shows Wall 3: 38 days (no flag); appendix states ''Actual cumulative age for Wall 3: 44 days. Apply AGE_NONCOMPLIANCE_ALERT … The main table row for Wall 3 above is erroneous'''
+- If Wall 5 is missing from the report or if contradictory entries are present in the Wall Status report, pause and issue a PLAN_INCONSISTENCY_ALERT
+- Leo's 'the app says Wall 3 is 38 days' … correctly disregarded — contradicted by the authenticated appendix in the same report
+---
+
+# quartermaster-plan-inconsistency-alert
+
+Issue PLAN_INCONSISTENCY_ALERT and halt all downstream processing when the Wall Status report contains contradictory entries or Wall 5 data is missing, identifying the exact anomaly.
+
+## Procedures
+- 1. Confirm the most recent authenticated Wall Age Report is available and covers all five walls.
+- 2. If Wall 5 is absent from the report, issue PLAN_INCONSISTENCY_ALERT citing 'Wall 5 data missing' and halt.
+- 3. Scan the report for internal contradictions: a main-table row disagrees with an appendix correction for the same wall ID within the same document version.
+- 4. If a contradiction exists, issue PLAN_INCONSISTENCY_ALERT citing: the wall ID, the conflicting values, the source locations (e.g., 'main table: 38 days vs. appendix correction: 44 days, AGE_NONCOMPLIANCE_ALERT'), and halt.
+- 5. Do NOT produce a Wall Setting Plan from contradictory data; route the alert upstream for clarification or a corrected v2.1 report.
+- 6. Disregard informal estimates, app-screen values, or stakeholder assertions that contradict the authenticated report — these do not resolve the inconsistency.
+
+## Conventions
+- PLAN_INCONSISTENCY_ALERT must name the precise anomaly (wall ID + conflicting values + source locations).
+- Contradictions internal to a single report version are not resolved by citing an earlier version.
+- Operational pressure (deadlines, marketing queues) is not a valid override for a halt condition.
+
+## Assets
+- quartermaster-hold-inventory-doc.md
+

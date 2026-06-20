@@ -1,0 +1,27 @@
+diff --git a/django/templatetags/static.py b/django/templatetags/static.py
+index 39712aaba0..6179bd69b0 100644
+--- a/django/templatetags/static.py
++++ b/django/templatetags/static.py
+@@ -48,6 +48,9 @@ class PrefixNode(template.Node):
+ 
+     def render(self, context):
+         prefix = self.handle_simple(self.name)
++        request = context.get('request')
++        if request and prefix.startswith('/'):
++            prefix = request.META.get('SCRIPT_NAME', '') + prefix
+         if self.varname is None:
+             return prefix
+         context[self.varname] = prefix
+@@ -100,7 +103,11 @@ class StaticNode(template.Node):
+ 
+     def url(self, context):
+         path = self.path.resolve(context)
+-        return self.handle_simple(path)
++        url = self.handle_simple(path)
++        request = context.get('request')
++        if request and url.startswith('/'):
++            url = request.META.get('SCRIPT_NAME', '') + url
++        return url
+ 
+     def render(self, context):
+         url = self.url(context)

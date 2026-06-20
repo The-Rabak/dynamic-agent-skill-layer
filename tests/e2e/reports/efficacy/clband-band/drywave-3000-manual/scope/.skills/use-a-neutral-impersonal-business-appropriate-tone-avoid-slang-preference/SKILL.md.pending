@@ -1,0 +1,23 @@
+---
+name: Use a neutral, impersonal, business-appropriate tone; avoid slang (preference)
+description: 'Standing user preference: Use a neutral, impersonal, business-appropriate tone; avoid slang and do not reference the assistant''s identity or name.'
+tags:
+- preference
+- convention
+origin: session_extraction
+source_session_id: clband-teach-drywave-3000-manual
+source_provider: claude-code
+created_at: 2026-06-12T22:45:47.607033240+00:00
+warning_at: 2026-07-12T22:45:47.607033240+00:00
+expires_at: 2026-09-10T22:45:47.607033240+00:00
+generality: uncertain
+generality_rationale: Detected as a standing user directive; generality inferred from scope signals.
+---
+
+# Use a neutral, impersonal, business-appropriate tone; avoid slang (preference)
+
+Standing user preference: Use a neutral, impersonal, business-appropriate tone; avoid slang and do not reference the assistant's identity or name.
+
+## Conventions
+- Use a neutral, impersonal, business-appropriate tone; avoid slang and do not reference the assistant's identity or name.
+

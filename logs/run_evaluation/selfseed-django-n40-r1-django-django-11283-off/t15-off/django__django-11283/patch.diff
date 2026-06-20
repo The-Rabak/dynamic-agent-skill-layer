@@ -1,0 +1,121 @@
+diff --git a/django/contrib/auth/migrations/0011_update_proxy_permissions.py b/django/contrib/auth/migrations/0011_update_proxy_permissions.py
+index 0e66649695..04cfa4d1cf 100644
+--- a/django/contrib/auth/migrations/0011_update_proxy_permissions.py
++++ b/django/contrib/auth/migrations/0011_update_proxy_permissions.py
+@@ -24,6 +24,26 @@ def update_proxy_model_permissions(apps, schema_editor, reverse=False):
+         proxy_content_type = ContentType.objects.get_for_model(Model, for_concrete_model=False)
+         old_content_type = proxy_content_type if reverse else concrete_content_type
+         new_content_type = concrete_content_type if reverse else proxy_content_type
++        if old_content_type == new_content_type:
++            # Nothing to update.
++            continue
++        # Permissions already existing with new_content_type would violate the unique
++        # constraint if we tried to update old_content_type permissions to new_content_type.
++        # This can happen when a model was recreated as a proxy model and already has
++        # permissions pointing to its own content type from before the conversion.
++        codenames_already_correct = set(
++            Permission.objects.filter(
++                permissions_query,
++                content_type=new_content_type,
++            ).values_list('codename', flat=True)
++        )
++        # Delete old permissions whose codename already exists with the new content type.
++        Permission.objects.filter(
++            permissions_query,
++            content_type=old_content_type,
++            codename__in=codenames_already_correct,
++        ).delete()
++        # Update the remaining permissions to use the new content type.
+         Permission.objects.filter(
+             permissions_query,
+             content_type=old_content_type,
+diff --git a/tests/auth_tests/test_migrations.py b/tests/auth_tests/test_migrations.py
+index 5ff2f6b4b3..068f868c7b 100644
+--- a/tests/auth_tests/test_migrations.py
++++ b/tests/auth_tests/test_migrations.py
+@@ -152,3 +152,85 @@ class ProxyModelWithSameAppLabelTests(TestCase):
+         user = User._default_manager.get(pk=user.pk)
+         for permission in [self.default_permission, self.custom_permission]:
+             self.assertTrue(user.has_perm('auth_tests.' + permission.codename))
++
++
++class ProxyModelWithDifferentAppLabelAndAlreadyExistingPermissionsTests(TestCase):
++    """
++    Test that the migration handles models recreated as proxies that already have
++    permissions pointing to the proxy content type (e.g. because they were
++    previously concrete models). This should not raise IntegrityError.
++    """
++    available_apps = [
++        'auth_tests',
++        'django.contrib.auth',
++        'django.contrib.contenttypes',
++    ]
++
++    def setUp(self):
++        Permission.objects.all().delete()
++        self.concrete_content_type = ContentType.objects.get_for_model(UserProxy)
++        self.proxy_content_type = ContentType.objects.get_for_model(UserProxy, for_concrete_model=False)
++        # Pre-2.2 style: permission pointing to the concrete model's content type.
++        self.pre_migration_permission = Permission.objects.create(
++            content_type=self.concrete_content_type,
++            codename='add_userproxy',
++            name='Can add userproxy',
++        )
++        # Already-correct: permission pointing to the proxy model's own content type
++        # (as would exist if the model was previously a concrete model with its own
++        # content type entry, i.e. before it was converted to a proxy model).
++        self.already_correct_permission = Permission.objects.create(
++            content_type=self.proxy_content_type,
++            codename='add_userproxy',
++            name='Can add userproxy',
++        )
++
++    def test_duplicate_permissions_are_not_created(self):
++        # The migration must not raise IntegrityError.
++        update_proxy_permissions.update_proxy_model_permissions(apps, None)
++        proxy_model_permissions = Permission.objects.filter(
++            codename='add_userproxy',
++            content_type=self.proxy_content_type,
++        )
++        self.assertEqual(proxy_model_permissions.count(), 1)
++
++
++class ProxyModelWithSameAppLabelAndAlreadyExistingPermissionsTests(TestCase):
++    """
++    Test that the migration handles proxy models (same app label as concrete) that
++    already have permissions pointing to the proxy content type. This should not
++    raise IntegrityError.
++    """
++    available_apps = [
++        'auth_tests',
++        'django.contrib.auth',
++        'django.contrib.contenttypes',
++    ]
++
++    def setUp(self):
++        Permission.objects.all().delete()
++        self.concrete_content_type = ContentType.objects.get_for_model(Proxy)
++        self.proxy_content_type = ContentType.objects.get_for_model(Proxy, for_concrete_model=False)
++        # Pre-2.2 style: permission pointing to the concrete parent's content type.
++        self.pre_migration_permission = Permission.objects.create(
++            content_type=self.concrete_content_type,
++            codename='add_proxy',
++            name='Can add proxy',
++        )
++        # Already-correct: permission pointing to the proxy model's own content type.
++        # Only created when the content types differ (i.e. different app labels).
++        if self.concrete_content_type != self.proxy_content_type:
++            self.already_correct_permission = Permission.objects.create(
++                content_type=self.proxy_content_type,
++                codename='add_proxy',
++                name='Can add proxy',
++            )
++
++    def test_duplicate_permissions_are_not_created(self):
++        # The migration must not raise IntegrityError.
++        update_proxy_permissions.update_proxy_model_permissions(apps, None)
++        proxy_model_permissions = Permission.objects.filter(
++            codename='add_proxy',
++            content_type=self.proxy_content_type,
++        )
++        self.assertEqual(proxy_model_permissions.count(), 1)

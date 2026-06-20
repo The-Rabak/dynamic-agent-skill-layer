@@ -1,0 +1,83 @@
+=== T15 self-seeding same-set loop (selfseed-django-n10) ===
+instances (N=10): ['django__django-14999', 'django__django-16046', 'django__django-13447', 'django__django-15789', 'django__django-11099', 'django__django-10924', 'django__django-11564', 'django__django-13321', 'django__django-11133', 'django__django-13660']
+fresh scope: /tmp/t15-swebench/project/swebench-django-selfseed  model=sonnet  max_turns=40
+
+── ROUND 1 (OFF — layer empty) ──
+  [R1 OFF] django__django-14999 resolved=False turns=41 out_tok=54137 cost=$1.9126649000000002 transcript=yes
+   [verify] swebench oracle: django__django-16046 run_id=selfseed-django-n10-r1-django-django-16046-off
+  [R1 OFF] django__django-16046 resolved=True turns=11 out_tok=1439 cost=$0.2008131 transcript=yes
+   [verify] swebench oracle: django__django-13447 run_id=selfseed-django-n10-r1-django-django-13447-off
+  [R1 OFF] django__django-13447 resolved=True turns=22 out_tok=3677 cost=$0.3620925 transcript=yes
+   [verify] swebench oracle: django__django-15789 run_id=selfseed-django-n10-r1-django-django-15789-off
+  [R1 OFF] django__django-15789 resolved=True turns=14 out_tok=1877 cost=$0.1610027 transcript=yes
+   [verify] swebench oracle: django__django-11099 run_id=selfseed-django-n10-r1-django-django-11099-off
+  [R1 OFF] django__django-11099 resolved=True turns=16 out_tok=2809 cost=$0.28197069999999996 transcript=yes
+   [verify] swebench oracle: django__django-10924 run_id=selfseed-django-n10-r1-django-django-10924-off
+  [R1 OFF] django__django-10924 resolved=True turns=26 out_tok=5372 cost=$0.4439784 transcript=yes
+   [verify] swebench oracle: django__django-11564 run_id=selfseed-django-n10-r1-django-django-11564-off
+  [R1 OFF] django__django-11564 resolved=False turns=45 out_tok=18697 cost=$1.0914101999999999 transcript=yes
+   [verify] swebench oracle: django__django-13321 run_id=selfseed-django-n10-r1-django-django-13321-off
+  [R1 OFF] django__django-13321 resolved=False turns=17 out_tok=4881 cost=$0.3560157 transcript=yes
+   [verify] swebench oracle: django__django-11133 run_id=selfseed-django-n10-r1-django-django-11133-off
+  [R1 OFF] django__django-11133 resolved=True turns=21 out_tok=3459 cost=$0.3595983 transcript=yes
+   [verify] swebench oracle: django__django-13660 run_id=selfseed-django-n10-r1-django-django-13660-off
+  [R1 OFF] django__django-13660 resolved=False turns=17 out_tok=2286 cost=$0.2899316 transcript=yes
+
+── SEED (extract Round-1 sessions → fresh scope) ──
+  [seed] ingested django__django-14999 → enqueued
+  [seed] ingested django__django-16046 → enqueued
+  [seed] ingested django__django-13447 → enqueued
+  [seed] ingested django__django-15789 → enqueued
+  [seed] ingested django__django-11099 → enqueued
+  [seed] ingested django__django-10924 → enqueued
+  [seed] ingested django__django-11564 → enqueued
+  [seed] ingested django__django-13321 → enqueued
+  [seed] ingested django__django-11133 → enqueued
+  [seed] ingested django__django-13660 → enqueued
+[drain] queue pending at start = 10
+[drain] pass 1: rc=0 pending 10→0 e3_degrade_seen=False
+  [seed] drained in 1 pass(es); gated 15 skill(s):
+        + ASCIIUsernameValidator and UnicodeUsernameValidator use regex for validation (preference)  (from django__django-11099)
+        + django-field-callable-argument-pattern  (from django__django-10924)
+        + django-model-design-first-class-dynamic-values  (from django__django-10924)
+        + django-renamemodel-dbtable-noop-guard  (from django__django-14999)
+        + django-script-name-prefix-relative-urls  (from django__django-11564)
+        + ensure-all-decode-ops-inside-try-except  (from django__django-13321)
+        + exec-with-globals-dict-for-function-visibility  (from django__django-13660)
+        + guard-string-index-before-access  (from django__django-16046)
+        + handle-memoryview-before-str-fallback-in-type-dispatch  (from django__django-11133)
+        + I want to customize the JSON encoding of (preference)  (from django__django-15789)
+        + python-regex-use-anchors-az-for-strict-validation  (from django__django-11099)
+        + python-regex-validators-use-string-anchors-not-line-anchors  (from django__django-11099)
+        + Use \A and \Z anchors instead of ^ (preference)  (from django__django-11099)
+        + Use Python 3 for code examples (preference)  (from django__django-13660)
+        + When creating a model that references local file (preference)  (from django__django-10924)
+[reconcile] waiting for graph-builder-t15 (≤120s, expected≈23)...
+   skills=8 embeddings=142
+   skills=23 embeddings=142
+[reconcile] restarting mcp-server-t15 to rebuild snapshot...
+[reconcile] http://127.0.0.1:3002 healthy
+
+── ROUND 2 (TREAT — self-seeded layer) ──
+   [verify] swebench oracle: django__django-14999 run_id=selfseed-django-n10-r2-django-django-14999-treat
+  [R2 TREAT] django__django-14999 resolved=True turns=29 out_tok=5242 cost=$0.5123996 seed_hits=['django-renamemodel-dbtable-noop-guard'] (own=['django-renamemodel-dbtable-noop-guard'] cross=[])
+  [R2 TREAT] django__django-16046 resolved=False turns=1 out_tok=0 cost=$0 seed_hits=['guard-string-index-before-access', 'django-field-callable-argument-pattern', 'python-regex-use-anchors-az-for-strict-validation', 'Use Python 3 for code examples (preference)', 'python-regex-validators-use-string-anchors-not-line-anchors'] (own=['guard-string-index-before-access'] cross=['django-field-callable-argument-pattern', 'python-regex-use-anchors-az-for-strict-validation', 'Use Python 3 for code examples (preference)', 'python-regex-validators-use-string-anchors-not-line-anchors'])
+  [R2 TREAT] django__django-13447 resolved=False turns=1 out_tok=0 cost=$0 seed_hits=['django-model-design-first-class-dynamic-values', 'django-renamemodel-dbtable-noop-guard', 'django-field-callable-argument-pattern', 'django-script-name-prefix-relative-urls', 'When creating a model that references local file (preference)'] (own=[] cross=['django-model-design-first-class-dynamic-values', 'django-renamemodel-dbtable-noop-guard', 'django-field-callable-argument-pattern', 'django-script-name-prefix-relative-urls', 'When creating a model that references local file (preference)'])
+  [R2 TREAT] django__django-15789 resolved=False turns=1 out_tok=0 cost=$0 seed_hits=['django-script-name-prefix-relative-urls', 'I want to customize the JSON encoding of (preference)', 'django-field-callable-argument-pattern', 'django-model-design-first-class-dynamic-values', 'handle-memoryview-before-str-fallback-in-type-dispatch'] (own=['I want to customize the JSON encoding of (preference)'] cross=['django-script-name-prefix-relative-urls', 'django-field-callable-argument-pattern', 'django-model-design-first-class-dynamic-values', 'handle-memoryview-before-str-fallback-in-type-dispatch'])
+  [R2 TREAT] django__django-11099 resolved=False turns=1 out_tok=0 cost=$0 seed_hits=['python-regex-use-anchors-az-for-strict-validation', 'python-regex-validators-use-string-anchors-not-line-anchors', 'ASCIIUsernameValidator and UnicodeUsernameValidator use regex for validation (preference)', 'Use \\A and \\Z anchors instead of ^ (preference)', 'django-script-name-prefix-relative-urls'] (own=['python-regex-use-anchors-az-for-strict-validation', 'python-regex-validators-use-string-anchors-not-line-anchors', 'ASCIIUsernameValidator and UnicodeUsernameValidator use regex for validation (preference)', 'Use \\A and \\Z anchors instead of ^ (preference)'] cross=['django-script-name-prefix-relative-urls'])
+  [R2 TREAT] django__django-10924 resolved=False turns=1 out_tok=0 cost=$0 seed_hits=['django-field-callable-argument-pattern', 'django-model-design-first-class-dynamic-values', 'When creating a model that references local file (preference)', 'django-script-name-prefix-relative-urls', 'django-renamemodel-dbtable-noop-guard'] (own=['django-field-callable-argument-pattern', 'django-model-design-first-class-dynamic-values', 'When creating a model that references local file (preference)'] cross=['django-script-name-prefix-relative-urls', 'django-renamemodel-dbtable-noop-guard'])
+  [R2 TREAT] django__django-11564 resolved=False turns=1 out_tok=0 cost=$0 seed_hits=['django-script-name-prefix-relative-urls', 'django-field-callable-argument-pattern', 'django-model-design-first-class-dynamic-values'] (own=['django-script-name-prefix-relative-urls'] cross=['django-field-callable-argument-pattern', 'django-model-design-first-class-dynamic-values'])
+  [R2 TREAT] django__django-13321 resolved=False turns=1 out_tok=0 cost=$0 seed_hits=['ensure-all-decode-ops-inside-try-except', 'django-script-name-prefix-relative-urls', 'Use Python 3 for code examples (preference)', 'django-field-callable-argument-pattern', 'handle-memoryview-before-str-fallback-in-type-dispatch'] (own=['ensure-all-decode-ops-inside-try-except'] cross=['django-script-name-prefix-relative-urls', 'Use Python 3 for code examples (preference)', 'django-field-callable-argument-pattern', 'handle-memoryview-before-str-fallback-in-type-dispatch'])
+  [R2 TREAT] django__django-11133 resolved=False turns=1 out_tok=0 cost=$0 seed_hits=['handle-memoryview-before-str-fallback-in-type-dispatch', 'django-renamemodel-dbtable-noop-guard', 'django-field-callable-argument-pattern', 'django-model-design-first-class-dynamic-values', 'django-script-name-prefix-relative-urls'] (own=['handle-memoryview-before-str-fallback-in-type-dispatch'] cross=['django-renamemodel-dbtable-noop-guard', 'django-field-callable-argument-pattern', 'django-model-design-first-class-dynamic-values', 'django-script-name-prefix-relative-urls'])
+  [R2 TREAT] django__django-13660 resolved=False turns=1 out_tok=0 cost=$0 seed_hits=['exec-with-globals-dict-for-function-visibility', 'guard-string-index-before-access', 'Use Python 3 for code examples (preference)', 'django-model-design-first-class-dynamic-values', 'django-script-name-prefix-relative-urls'] (own=['exec-with-globals-dict-for-function-visibility', 'Use Python 3 for code examples (preference)'] cross=['guard-string-index-before-access', 'django-model-design-first-class-dynamic-values', 'django-script-name-prefix-relative-urls'])
+
+[report] /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/swebench/selfseed_selfseed-django-n10.json
+SCORES: X(OFF round1)=0.600  Y(TREAT round2)=0.100  Δ(Y−X)=-0.500
+McNemar TREAT-vs-OFF: gained(off-fail→treat-pass)=1 lost=6 p=0.125
+TREAT injected a seed on 10/10 instances
+EFFICIENCY (TREAT−OFF, resolved-by-both; negative ⇒ cheaper on the re-run):
+  num_turns: n=0 mean_delta=None (TREAT-cheaper 0/0, sign p=1.000, CI=[None, None])
+  output_tokens: n=0 mean_delta=None (TREAT-cheaper 0/0, sign p=1.000, CI=[None, None])
+  total_cost_usd: n=0 mean_delta=None (TREAT-cheaper 0/0, sign p=1.000, CI=[None, None])
+  duration_ms: n=0 mean_delta=None (TREAT-cheaper 0/0, sign p=1.000, CI=[None, None])
+=== SELFSEED-N10 EXITED rc=0 07:58:24 ===

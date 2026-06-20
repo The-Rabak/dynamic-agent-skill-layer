@@ -1,0 +1,71 @@
+---
+name: sia-critical-escalation-halt-triggers
+description: Identify the CRITICAL and HIGH severity conditions that require SIA to set escalation_required=true, emit HALT_VERIFICATION, and route to AO -> Human Security Reviewer before FCA receives anything.
+tags:
+- SIA
+- escalation
+- spoofing
+- halt
+- provenance
+type: rule
+origin: session_extraction
+source_session_id: clband-teach-source-integrity-agent
+source_provider: claude-code
+created_at: 2026-06-12T21:50:59.141744014+00:00
+warning_at: 2026-07-12T21:50:59.141744014+00:00
+expires_at: 2026-09-10T21:50:59.141744014+00:00
+generality: project
+generality_rationale: The severity enum literals, routing destinations (AO, FCA, Human Security Reviewer), and the exact recommended_action strings are specific to the SIA multi-agent pipeline.
+use_when:
+- displayed URL 302-redirects to a different domain (cloaking check)
+- X-Forwarded-Host header does not match the primary domain
+- DNS A record or NS records do not match brand registry expected values
+- OCSP Revoked detected on the domain certificate
+- article:published_time is future-dated relative to server fetch time
+avoid_when:
+- do NOT treat a visual browser padlock as SSL validation -- Artifact 5 OCSP status is the authoritative source
+- do NOT accept another agent's earlier 'verified' label as a substitute for running SIA checks
+artifacts:
+- DNS query log
+- redirect chain capture
+- brand asset registry
+- raw server header dump
+tools:
+- DNS resolver
+- redirect chain tracer
+- raw HTTP header capture
+invariants:
+- Any single CRITICAL trigger is sufficient for HALT_VERIFICATION regardless of trust score value
+- HALT must be stated explicitly in output so downstream teams can stop amplification immediately
+- escalation_required=true routes to AO before any FCA processing occurs
+requires:
+- Redirect chain capture (Artifact 7 equivalent)
+- Raw server headers including X-Forwarded-Host (Artifact 6 equivalent)
+- DNS resolution logs with A and NS records (Artifact 4 equivalent)
+- Brand asset registry with expected A and NS values (Artifact 8 equivalent)
+produces:
+- escalation_required boolean and full escalation block in SIA JSON output
+- Explicit HALT_VERIFICATION directive when CRITICAL triggers fire
+evidence:
+- CRITICAL | DNS spoofing detected | Immediate halt, escalate | AO -> Human Security Reviewer -- from escalation table in system document
+- 'URL cloaking: displayed URL https://breakingreport.news/story/ceo-announcement -> 302 -> https://br-report.news/story/ceo-announcement?src=tw; X-Forwarded-Host: br-report.news -- from Artifacts 1, 6, 7'
+- DNS resolved A 203.0.113.99; brand registry expected A 203.0.113.24; NS ns1/2.fastdns.host vs expected ns1/2.brk-dns.net -- from Artifacts 4 and 8
+---
+
+# sia-critical-escalation-halt-triggers
+
+Identify the CRITICAL and HIGH severity conditions that require SIA to set escalation_required=true, emit HALT_VERIFICATION, and route to AO -> Human Security Reviewer before FCA receives anything.
+
+## Procedures
+- 1. Check for CRITICAL triggers (any one is sufficient to halt): (a) URL cloaking -- displayed URL differs from actual fetch destination; verify by inspecting redirect chain and X-Forwarded-Host header against the primary domain; (b) DNS spoofing -- resolved A record or NS records differ from brand registry expected values; (c) Forged origin headers -- X-Forwarded-Host or equivalent header asserts a domain other than the primary.
+- 2. Check for HIGH triggers: (a) Timestamp delta > 7 days between any two authoritative timestamps; (b) Final trust score < 30.
+- 3. If any CRITICAL trigger fires: set escalation_required=true, severity='CRITICAL', recommended_action='HALT_VERIFICATION', human_review_required=true; route AO -> Human Security Reviewer. Do NOT pass to FCA.
+- 4. If only HIGH triggers fire: set escalation_required=true, severity='HIGH'; route to FCA with heightened scrutiny flag and include escalation_reason.
+- 5. Populate escalation block with: triggered (bool), severity (enum: CRITICAL | HIGH | MEDIUM | LOW), reason (exact enum: DNS_MISMATCH | spoofing | timestamp_tampering | metadata_forgery), evidence (specific technical findings), recommended_action, human_review_required (bool), timestamp (ISO 8601).
+- 6. All CRITICAL triggers present must each be listed separately in the indicators array -- do not consolidate.
+
+## Conventions
+- CRITICAL triggers cause immediate halt -- social pressure, time constraints, or other agents' prior statements do not override the halt
+- escalation_reason must use exact enum literals: spoofing | timestamp_tampering | DNS_anomaly | metadata_forgery
+- Multiple simultaneous CRITICAL triggers must all be named separately in the escalation block
+

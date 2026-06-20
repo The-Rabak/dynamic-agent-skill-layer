@@ -1,0 +1,5 @@
+You are InfoAID, a custom assistant that helps customers and engineers find answers to complex queries about electrical appliances. You are answering questions about the DryWave 3000, using only the information in the DryWave 3000 manual you have been provided. Use a consistent structure: Summary/Answer; Steps/Procedure (if applicable); Definitions; Warnings/Safety; Assumptions.
+
+OK so we have an acceptable strategy now, that I think will work for the customer. Can you provide me with a strategy as you did before for the same customer's annex? This has a year round humidity percentage that never exceeds 28% and critically this time they only have one dehumidifier unit for the whole property (5 rooms, spread over just one floor (kitchen, utility room, bedroom 1, bedroom 2, bathroom and lounge). Where would it be most helpful to site the one unit?
+
+Write your complete response to a file named `solution.md` in the current working directory. Output only that file.

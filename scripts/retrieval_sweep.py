@@ -81,7 +81,17 @@ REPORT_DIR_DEFAULT = Path("tests/e2e/reports/retrieval")
 # actually populates skills__qwen3-embedding-4b__hybrid.  set_env() clears all arm
 # env between arms, so the model must live in each arm's override dict (a shell-level
 # export would be wiped by set_env).
-_QWEN = {"OLLAMA_EMBED_MODEL": "qwen3-embedding:4b"}
+# Per-arm embedding baseline.  Defaults preserve the validated 4b/Ollama ruler.
+# Override via env to gate a different ADOPTED arm (e.g. the T12 0.6b/TEI adoption)
+# without forking the measurement logic — set GATE_EMBED_MODEL (+ GATE_EMBED_PROVIDER,
+# GATE_TEI_URL).  set_env() clears arm env between arms, so the model/provider MUST
+# live in each arm's override dict (a shell-level export would be wiped) — hence we
+# bake the baseline into _QWEN here and spread it into every arm.
+_QWEN = {"OLLAMA_EMBED_MODEL": os.environ.get("GATE_EMBED_MODEL", "qwen3-embedding:4b")}
+if os.environ.get("GATE_EMBED_PROVIDER"):
+    _QWEN["EMBEDDING_PROVIDER"] = os.environ["GATE_EMBED_PROVIDER"]
+if os.environ.get("GATE_TEI_URL"):
+    _QWEN["TEI_URL"] = os.environ["GATE_TEI_URL"]
 CONFIGS: list[tuple[str, dict]] = [
     ("snapshot_dense",  {**_QWEN}),
     ("snapshot_hybrid", {**_QWEN, "RETRIEVAL_BACKEND": "snapshot_hybrid"}),
@@ -453,8 +463,31 @@ def _run_gate(args: argparse.Namespace) -> None:
     if args.split != "all":
         all_queries = [q for q in all_queries if q.get("split") == args.split]
 
-    positives = [q for q in all_queries if q.get("kind") != "negative"]
+    # The T11 RANKING gate scores find_skill ranking via MRR/nDCG, which REQUIRE a
+    # single anchor per query.  The shared fixture also carries T18 session_start
+    # PRIMING queries (kind == "session_start", anchor == null) that are scored by
+    # set-coverage in the SEPARATE t12_priming_sweep.py instrument — they have no
+    # anchor and must be excluded here (else rel_set picks up a None and ranking is
+    # meaningless for them).  Filter on the structural guarantee the metric code
+    # needs (a non-null anchor) and log the count so the exclusion is never silent.
+    # Backward-compatible: the T11-validation fixture had no priming queries, so
+    # this is a no-op there and reproduces the validated 137-query ranking set.
+    positives = [
+        q for q in all_queries
+        if q.get("kind") != "negative" and q.get("anchor") is not None
+    ]
     negatives = [q for q in all_queries if q.get("kind") == "negative"]
+    _priming_excluded = sum(
+        1 for q in all_queries
+        if q.get("kind") != "negative" and q.get("anchor") is None
+    )
+    if _priming_excluded:
+        print(
+            f"  note: excluded {_priming_excluded} non-ranking priming queries "
+            f"(kind=session_start, anchor=null) — scored separately by "
+            f"t12_priming_sweep.py, not the ranking gate.",
+            flush=True,
+        )
 
     if not positives:
         print(

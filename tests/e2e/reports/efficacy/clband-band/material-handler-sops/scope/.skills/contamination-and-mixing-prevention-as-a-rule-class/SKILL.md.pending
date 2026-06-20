@@ -1,0 +1,62 @@
+---
+name: contamination-and-mixing-prevention-as-a-rule-class
+description: 'A coherent class of rules across the session all enforce a single meta-principle: once a quality class, purity state, or environmental category is established for a lot or container, it must be protected from contamination or mixing with incompatible classes. This class includes bin-category segregation, moisture contamination prevention, MSL integrity enforcement, ESD class matching, and cleanroom-boundary crossing protocols. Rules in this class share a common enforcement posture: physical separation, mandatory remediation before re-use, and hard stops rather than warnings.'
+tags:
+- contamination-prevention
+- segregation
+- quality-class
+- MSL
+- ESD
+- cleanroom
+- bin-segregation
+type: principle
+origin: session_extraction
+source_session_id: clband-teach-material-handler-sops
+source_provider: claude-code
+created_at: 2026-06-12T21:34:12.101876587+00:00
+warning_at: 2026-07-12T21:34:12.101876587+00:00
+expires_at: 2026-09-10T21:34:12.101876587+00:00
+generality: general
+generality_rationale: Six independent rules across MSL, bin segregation, moisture, ESD, and cleanroom domains all instantiate the same underlying contamination/mixing-prevention principle, making the class itself the actionable generalization.
+use_when:
+- Planning any lot move that crosses a quality boundary (bin categories, cleanroom class, MSL environment)
+- Selecting containers for lots with moisture, ESD, or purity sensitivity
+- Routing through corridors with cleanroom-class transitions
+- Packaging mixed-outcome lots (Good + Rework + Scrap from the same run)
+avoid_when:
+- Do not treat contamination rules as independent one-off rules — recognize them as a class and apply the same enforcement posture to any new instance that fits the pattern
+- Do not accept 'mostly intact' or 'probably fine' assessments for containers or seals in this class
+invariants:
+- No lot may be placed in a container, route, or environment that degrades its established quality class
+- Remediation is mandatory after any boundary crossing — it cannot be deferred
+requires:
+- ESD classification for each device type
+- MSL rating and dry-bag status for moisture-sensitive lots
+- Cleanroom class map of all routes
+- Bin outcome classification before packaging
+produces:
+- Maintained lot integrity and quality class throughout transit
+- Clean audit trail showing no class-boundary violations
+evidence:
+- msl-seal-breach-mandatory-bakeout-15min (skill 1)
+- single-lot-transport-bin-segregation-multi-trip (skill 4)
+- Never mix different bin categories (preference 7)
+- Never use wet trays; they create moisture sensitivity issues (preference 13)
+- When crossing between cleanroom classes, always use the transfer chamber UV cycle (preference 20)
+- Non-ESD-sensitive devices must not be placed in ESD-safe containers (preference 11)
+---
+
+# contamination-and-mixing-prevention-as-a-rule-class
+
+A coherent class of rules across the session all enforce a single meta-principle: once a quality class, purity state, or environmental category is established for a lot or container, it must be protected from contamination or mixing with incompatible classes. This class includes bin-category segregation, moisture contamination prevention, MSL integrity enforcement, ESD class matching, and cleanroom-boundary crossing protocols. Rules in this class share a common enforcement posture: physical separation, mandatory remediation before re-use, and hard stops rather than warnings.
+
+## Procedures
+- Identify the quality class, purity state, and environmental sensitivity of each lot before any handling step.
+- Select containers, routes, and handling procedures that maintain the established class — never downgrade by mixing or exposing to incompatible conditions.
+- When a class boundary is crossed (cleanroom class, MSL seal, bin category), apply the mandatory remediation protocol before continuing (UV cycle, bakeout, separate sealed container).
+- Treat any suspected cross-contamination as a confirmed violation requiring quarantine and Quality notification until cleared.
+
+## Conventions
+- Each rule in this class has its own mandatory remediation path — 'undo' is not generic but prescribed per contamination type.
+- The cost of preventing contamination (alternate routes, bakeout time, extra containers, multi-trip transport) is always lower than the cost of a contamination event.
+

@@ -1,0 +1,56 @@
+---
+name: ordered-disqualification-for-use-no-use-decisions
+description: When deciding whether a container or lot is safe to use, evaluate disqualifiers in strict priority order from most severe to least severe, stopping and acting at the first disqualifier found. Do not proceed to lower-priority checks once a disqualifier is found. This prevents wasted effort on already-disqualified items and ensures the most serious issues (e.g., physical damage) are caught and acted on before subtler ones (e.g., use count).
+tags:
+- container-qualification
+- disqualification
+- decision-gates
+- ESDS
+- QFP
+type: best_practice
+origin: session_extraction
+source_session_id: clband-teach-material-handler-sops
+source_provider: claude-code
+created_at: 2026-06-12T21:34:12.100579307+00:00
+warning_at: 2026-07-12T21:34:12.100579307+00:00
+expires_at: 2026-09-10T21:34:12.100579307+00:00
+generality: general
+generality_rationale: The ordered-disqualification pattern appears independently across ESDS container qualification and QFP tube assessment, making it a reusable decision-making heuristic for any container type.
+use_when:
+- Selecting QFP tubes, BGA trays, wafer carriers, or any reusable container for a lot
+- Evaluating ESDS containers before use with ESD-sensitive lots
+- Any binary use/don't-use decision on physical handling materials
+avoid_when:
+- Do not evaluate all disqualifiers in parallel and try to 'balance' them — severity order is absolute
+- Do not skip the damage check because the container came from a 'clean' shelf
+invariants:
+- Physical damage always outranks all other disqualifiers
+- A container that passes all checks must still meet lot-specific requirements (e.g., ESD classification matching)
+requires:
+- Current container inventory list with flags
+- Knowledge of use-count thresholds per container type
+- Physical inspection capability
+produces:
+- A binary qualified/disqualified decision with a documented reason
+- Quarantine action for damaged containers reported to Quality
+evidence:
+- esds-container-qualification-three-disqualifiers (skill 3)
+- 'Assess QFP tube condition before use: use count ≤4 clean, =5 clean before use, cracked → quarantine (preference 16)'
+- Quarantine damaged containers immediately and report them to Quality (preference 14)
+- Do not use containers flagged in the container inventory list (preference 15)
+---
+
+# ordered-disqualification-for-use-no-use-decisions
+
+When deciding whether a container or lot is safe to use, evaluate disqualifiers in strict priority order from most severe to least severe, stopping and acting at the first disqualifier found. Do not proceed to lower-priority checks once a disqualifier is found. This prevents wasted effort on already-disqualified items and ensures the most serious issues (e.g., physical damage) are caught and acted on before subtler ones (e.g., use count).
+
+## Procedures
+- Evaluate disqualifiers in descending severity: physical damage (quarantine immediately) → flagged in inventory list (do not use) → condition-based threshold (e.g., use count, moisture exposure) → pass.
+- At the first disqualifier, stop evaluation, apply the required action (quarantine, reject, clean), and do not advance to lower-priority checks.
+- Document the disqualifier found and the action taken before selecting an alternative container.
+
+## Conventions
+- Damaged containers go directly to quarantine regardless of any other attribute.
+- A flagged container is disqualified even if it appears undamaged.
+- Condition-based thresholds (use count, bakeout state) are only evaluated if damage and flags are both clear.
+

@@ -1,0 +1,45 @@
+2026-06-20 10:18:23,391 - INFO - Creating container for django__django-16046...
+2026-06-20 10:18:23,505 - INFO - Container for django__django-16046 created: 641c045536a03a9fe3626a7e3b0258eeecaa7c11f5bd67e049a3a9f244946a76
+2026-06-20 10:18:23,908 - INFO - Container for django__django-16046 started: 641c045536a03a9fe3626a7e3b0258eeecaa7c11f5bd67e049a3a9f244946a76
+2026-06-20 10:18:23,908 - INFO - Intermediate patch for django__django-16046 written to logs/run_evaluation/selfseed-django-n10-r1-django-django-16046-off/t15-off/django__django-16046/patch.diff, now applying to container...
+2026-06-20 10:18:24,039 - INFO - >>>>> Applied Patch:
+Checking patch django/utils/numberformat.py...
+Applied patch django/utils/numberformat.py cleanly.
+
+2026-06-20 10:18:26,017 - INFO - Git diff before:
+diff --git a/django/utils/numberformat.py b/django/utils/numberformat.py
+index 488d6a77cd..e952af3fdc 100644
+--- a/django/utils/numberformat.py
++++ b/django/utils/numberformat.py
+@@ -68,7 +68,7 @@ def format(
+             str_number = "{:f}".format(number)
+     else:
+         str_number = str(number)
+-    if str_number[0] == "-":
++    if str_number and str_number[0] == "-":
+         sign = "-"
+         str_number = str_number[1:]
+     # decimal part
+2026-06-20 10:18:26,017 - INFO - Eval script for django__django-16046 written to logs/run_evaluation/selfseed-django-n10-r1-django-django-16046-off/t15-off/django__django-16046/eval.sh; copying to container...
+2026-06-20 10:18:34,109 - INFO - Test runtime: 8.04 seconds
+2026-06-20 10:18:34,110 - INFO - Test output for django__django-16046 written to logs/run_evaluation/selfseed-django-n10-r1-django-django-16046-off/t15-off/django__django-16046/test_output.txt
+2026-06-20 10:18:34,173 - INFO - Git diff after:
+diff --git a/django/utils/numberformat.py b/django/utils/numberformat.py
+index 488d6a77cd..e952af3fdc 100644
+--- a/django/utils/numberformat.py
++++ b/django/utils/numberformat.py
+@@ -68,7 +68,7 @@ def format(
+             str_number = "{:f}".format(number)
+     else:
+         str_number = str(number)
+-    if str_number[0] == "-":
++    if str_number and str_number[0] == "-":
+         sign = "-"
+         str_number = str_number[1:]
+     # decimal part
+2026-06-20 10:18:34,173 - INFO - Grading answer for django__django-16046...
+2026-06-20 10:18:34,174 - INFO - report: {'django__django-16046': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['test_empty (utils_tests.test_numberformat.TestNumberFormat)'], 'failure': []}, 'PASS_TO_PASS': {'success': ['test_decimal_numbers (utils_tests.test_numberformat.TestNumberFormat)', 'test_decimal_subclass (utils_tests.test_numberformat.TestNumberFormat)', 'test_float_numbers (utils_tests.test_numberformat.TestNumberFormat)', 'test_format_number (utils_tests.test_numberformat.TestNumberFormat)', 'test_format_string (utils_tests.test_numberformat.TestNumberFormat)', 'test_large_number (utils_tests.test_numberformat.TestNumberFormat)'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for django__django-16046: resolved: True
+2026-06-20 10:18:34,174 - INFO - Attempting to stop container sweb.eval.django__django-16046.selfseed-django-n10-r1-django-django-16046-off...
+2026-06-20 10:18:49,704 - INFO - Attempting to remove container sweb.eval.django__django-16046.selfseed-django-n10-r1-django-django-16046-off...
+2026-06-20 10:18:49,747 - INFO - Container sweb.eval.django__django-16046.selfseed-django-n10-r1-django-django-16046-off removed.

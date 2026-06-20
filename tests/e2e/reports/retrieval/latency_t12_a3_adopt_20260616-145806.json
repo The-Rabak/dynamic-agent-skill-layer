@@ -1,0 +1,1254 @@
+{
+ "run_id": "t12_a3_adopt_20260616-145806",
+ "arm": "dense_views_on",
+ "fixture": "tests/fixtures/retrieval_quality_262_corpus_labeled.json",
+ "split": "all",
+ "candidate_limit": 50,
+ "measured": true,
+ "n_queries": 137,
+ "find_skill_limit": 10,
+ "latency_ms": {
+  "mean": 81.864,
+  "p50": 77.013,
+  "p95": 110.036,
+  "p99": 141.177,
+  "min": 64.169,
+  "max": 232.768
+ },
+ "note": "Measured wall-clock ms around the live find_skill HTTP round-trip at find_skill_limit depth, one sample per positive query. Source artifact for the p95 cited in T11-VALIDATION-REPORT.md \u00a73 (T11 reported p95=369ms).",
+ "per_query": [
+  {
+   "id": "t11-transcript-prohibit-concurrent-cargo-ops-across-age",
+   "kind": "transcript",
+   "anchor": "prohibit-concurrent-cargo-ops-across-agents",
+   "latency_ms": 232.768,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-disjoint-prohibit-concurrent-cargo-ops-across-age",
+   "kind": "disjoint",
+   "anchor": "prohibit-concurrent-cargo-ops-across-agents",
+   "latency_ms": 72.712,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-transcript-file-overlap-batch-serialization-for-age",
+   "kind": "transcript",
+   "anchor": "file-overlap-batch-serialization-for-agent-swarms",
+   "latency_ms": 79.332,
+   "rr_at3": 0.0,
+   "ndcg_at3": 0.0,
+   "candidate_recall": 0.0
+  },
+  {
+   "id": "t11-disjoint-file-overlap-batch-serialization-for-age",
+   "kind": "disjoint",
+   "anchor": "file-overlap-batch-serialization-for-agent-swarms",
+   "latency_ms": 75.642,
+   "rr_at3": 0.0,
+   "ndcg_at3": 0.0,
+   "candidate_recall": 0.0
+  },
+  {
+   "id": "t11-transcript-qdrant-rest-grpc-port-mismatch",
+   "kind": "transcript",
+   "anchor": "qdrant-rest-grpc-port-mismatch",
+   "latency_ms": 73.873,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-disjoint-qdrant-rest-grpc-port-mismatch",
+   "kind": "disjoint",
+   "anchor": "qdrant-rest-grpc-port-mismatch",
+   "latency_ms": 69.799,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-transcript-boot-time-arc-snapshot-never-refreshed",
+   "kind": "transcript",
+   "anchor": "boot-time-arc-snapshot-never-refreshed",
+   "latency_ms": 71.214,
+   "rr_at3": 0.0,
+   "ndcg_at3": 0.0,
+   "candidate_recall": 0.0
+  },
+  {
+   "id": "t11-disjoint-boot-time-arc-snapshot-never-refreshed",
+   "kind": "disjoint",
+   "anchor": "boot-time-arc-snapshot-never-refreshed",
+   "latency_ms": 74.54,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-transcript-inspect-current-state-before-mutating",
+   "kind": "transcript",
+   "anchor": "inspect-current-state-before-mutating",
+   "latency_ms": 108.72,
+   "rr_at3": 0.0,
+   "ndcg_at3": 0.0,
+   "candidate_recall": 0.0
+  },
+  {
+   "id": "t11-disjoint-inspect-current-state-before-mutating",
+   "kind": "disjoint",
+   "anchor": "inspect-current-state-before-mutating",
+   "latency_ms": 76.939,
+   "rr_at3": 0.0,
+   "ndcg_at3": 0.0,
+   "candidate_recall": 0.0
+  },
+  {
+   "id": "t11-transcript-multi-layer-atomic-propagation",
+   "kind": "transcript",
+   "anchor": "multi-layer-atomic-propagation",
+   "latency_ms": 64.628,
+   "rr_at3": 0.0,
+   "ndcg_at3": 0.0,
+   "candidate_recall": 0.0
+  },
+  {
+   "id": "t11-disjoint-multi-layer-atomic-propagation",
+   "kind": "disjoint",
+   "anchor": "multi-layer-atomic-propagation",
+   "latency_ms": 75.315,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-transcript-handle-agent-scope-fence-violation",
+   "kind": "transcript",
+   "anchor": "handle-agent-scope-fence-violation",
+   "latency_ms": 91.059,
+   "rr_at3": 0.0,
+   "ndcg_at3": 0.0,
+   "candidate_recall": 0.0
+  },
+  {
+   "id": "t11-disjoint-handle-agent-scope-fence-violation",
+   "kind": "disjoint",
+   "anchor": "handle-agent-scope-fence-violation",
+   "latency_ms": 81.044,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-transcript-git-stash-verify-preexisting-test-failur",
+   "kind": "transcript",
+   "anchor": "git-stash-verify-preexisting-test-failure",
+   "latency_ms": 88.006,
+   "rr_at3": 0.0,
+   "ndcg_at3": 0.0,
+   "candidate_recall": 0.0
+  },
+  {
+   "id": "t11-disjoint-git-stash-verify-preexisting-test-failur",
+   "kind": "disjoint",
+   "anchor": "git-stash-verify-preexisting-test-failure",
+   "latency_ms": 74.507,
+   "rr_at3": 0.0,
+   "ndcg_at3": 0.0,
+   "candidate_recall": 0.0
+  },
+  {
+   "id": "t11-transcript-docs-are-spec-build-up-not-edit-down",
+   "kind": "transcript",
+   "anchor": "docs-are-spec-build-up-not-edit-down",
+   "latency_ms": 98.247,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-disjoint-docs-are-spec-build-up-not-edit-down",
+   "kind": "disjoint",
+   "anchor": "docs-are-spec-build-up-not-edit-down",
+   "latency_ms": 86.974,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-transcript-reject-version-advance-as-proxy-for-retr",
+   "kind": "transcript",
+   "anchor": "reject-version-advance-as-proxy-for-retrieval-assertion",
+   "latency_ms": 76.484,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-disjoint-reject-version-advance-as-proxy-for-retr",
+   "kind": "disjoint",
+   "anchor": "reject-version-advance-as-proxy-for-retrieval-assertion",
+   "latency_ms": 79.472,
+   "rr_at3": 0.0,
+   "ndcg_at3": 0.0,
+   "candidate_recall": 0.0
+  },
+  {
+   "id": "t11-transcript-gate-parallel-agents-on-file-overlap",
+   "kind": "transcript",
+   "anchor": "gate-parallel-agents-on-file-overlap",
+   "latency_ms": 81.133,
+   "rr_at3": 0.0,
+   "ndcg_at3": 0.0,
+   "candidate_recall": 0.0
+  },
+  {
+   "id": "t11-disjoint-gate-parallel-agents-on-file-overlap",
+   "kind": "disjoint",
+   "anchor": "gate-parallel-agents-on-file-overlap",
+   "latency_ms": 89.001,
+   "rr_at3": 0.3333333333333333,
+   "ndcg_at3": 0.5,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-transcript-validate-smoke-test-is-not-vacuous",
+   "kind": "transcript",
+   "anchor": "validate-smoke-test-is-not-vacuous",
+   "latency_ms": 108.233,
+   "rr_at3": 0.0,
+   "ndcg_at3": 0.0,
+   "candidate_recall": 0.0
+  },
+  {
+   "id": "t11-disjoint-validate-smoke-test-is-not-vacuous",
+   "kind": "disjoint",
+   "anchor": "validate-smoke-test-is-not-vacuous",
+   "latency_ms": 65.275,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-transcript-isolate-timing-test-to-diagnose-load-fla",
+   "kind": "transcript",
+   "anchor": "isolate-timing-test-to-diagnose-load-flake",
+   "latency_ms": 79.784,
+   "rr_at3": 0.0,
+   "ndcg_at3": 0.0,
+   "candidate_recall": 0.0
+  },
+  {
+   "id": "t11-disjoint-isolate-timing-test-to-diagnose-load-fla",
+   "kind": "disjoint",
+   "anchor": "isolate-timing-test-to-diagnose-load-flake",
+   "latency_ms": 75.062,
+   "rr_at3": 0.3333333333333333,
+   "ndcg_at3": 0.5,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-transcript-shell-out-to-authenticated-cli-provider",
+   "kind": "transcript",
+   "anchor": "shell-out-to-authenticated-cli-provider",
+   "latency_ms": 72.366,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-disjoint-shell-out-to-authenticated-cli-provider",
+   "kind": "disjoint",
+   "anchor": "shell-out-to-authenticated-cli-provider",
+   "latency_ms": 73.805,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-transcript-ollama-embedding-2048-token-batch-limit",
+   "kind": "transcript",
+   "anchor": "ollama-embedding-2048-token-batch-limit",
+   "latency_ms": 80.942,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-disjoint-ollama-embedding-2048-token-batch-limit",
+   "kind": "disjoint",
+   "anchor": "ollama-embedding-2048-token-batch-limit",
+   "latency_ms": 71.699,
+   "rr_at3": 0.0,
+   "ndcg_at3": 0.0,
+   "candidate_recall": 0.0
+  },
+  {
+   "id": "t11-transcript-embedding-write-read-path-divergence",
+   "kind": "transcript",
+   "anchor": "embedding-write-read-path-divergence",
+   "latency_ms": 64.198,
+   "rr_at3": 0.0,
+   "ndcg_at3": 0.0,
+   "candidate_recall": 0.0
+  },
+  {
+   "id": "t11-disjoint-embedding-write-read-path-divergence",
+   "kind": "disjoint",
+   "anchor": "embedding-write-read-path-divergence",
+   "latency_ms": 71.461,
+   "rr_at3": 0.0,
+   "ndcg_at3": 0.0,
+   "candidate_recall": 0.0
+  },
+  {
+   "id": "t11-transcript-verify-todo-diagnosis-matches-current-co",
+   "kind": "transcript",
+   "anchor": "verify-todo-diagnosis-matches-current-codebase",
+   "latency_ms": 73.878,
+   "rr_at3": 0.0,
+   "ndcg_at3": 0.0,
+   "candidate_recall": 0.0
+  },
+  {
+   "id": "t11-disjoint-verify-todo-diagnosis-matches-current-co",
+   "kind": "disjoint",
+   "anchor": "verify-todo-diagnosis-matches-current-codebase",
+   "latency_ms": 80.535,
+   "rr_at3": 0.5,
+   "ndcg_at3": 0.6309297535714575,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-transcript-isolate-cross-crate-parallel-test-flakes",
+   "kind": "transcript",
+   "anchor": "isolate-cross-crate-parallel-test-flakes",
+   "latency_ms": 66.734,
+   "rr_at3": 0.0,
+   "ndcg_at3": 0.0,
+   "candidate_recall": 0.0
+  },
+  {
+   "id": "t11-disjoint-isolate-cross-crate-parallel-test-flakes",
+   "kind": "disjoint",
+   "anchor": "isolate-cross-crate-parallel-test-flakes",
+   "latency_ms": 73.477,
+   "rr_at3": 0.0,
+   "ndcg_at3": 0.0,
+   "candidate_recall": 0.0
+  },
+  {
+   "id": "t11-transcript-rust-eliminate-expect-with-sum-types",
+   "kind": "transcript",
+   "anchor": "rust-eliminate-expect-with-sum-types",
+   "latency_ms": 74.19,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-disjoint-rust-eliminate-expect-with-sum-types",
+   "kind": "disjoint",
+   "anchor": "rust-eliminate-expect-with-sum-types",
+   "latency_ms": 106.868,
+   "rr_at3": 0.0,
+   "ndcg_at3": 0.0,
+   "candidate_recall": 0.0
+  },
+  {
+   "id": "t11-transcript-validate-enforcement-guard-bites-in-all",
+   "kind": "transcript",
+   "anchor": "validate-enforcement-guard-bites-in-all-zones",
+   "latency_ms": 78.024,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-disjoint-validate-enforcement-guard-bites-in-all",
+   "kind": "disjoint",
+   "anchor": "validate-enforcement-guard-bites-in-all-zones",
+   "latency_ms": 104.872,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-transcript-rust-cargo-bin-target-missing-docker-bui",
+   "kind": "transcript",
+   "anchor": "rust-cargo-bin-target-missing-docker-build-failure",
+   "latency_ms": 73.617,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-disjoint-rust-cargo-bin-target-missing-docker-bui",
+   "kind": "disjoint",
+   "anchor": "rust-cargo-bin-target-missing-docker-build-failure",
+   "latency_ms": 82.603,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-transcript-build-tool-silent-coverage-gap",
+   "kind": "transcript",
+   "anchor": "build-tool-silent-coverage-gap",
+   "latency_ms": 75.978,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-disjoint-build-tool-silent-coverage-gap",
+   "kind": "disjoint",
+   "anchor": "build-tool-silent-coverage-gap",
+   "latency_ms": 71.771,
+   "rr_at3": 0.0,
+   "ndcg_at3": 0.0,
+   "candidate_recall": 0.0
+  },
+  {
+   "id": "t11-transcript-rich-fixture-required-for-llm-extraction",
+   "kind": "transcript",
+   "anchor": "rich-fixture-required-for-llm-extraction-tests",
+   "latency_ms": 82.158,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-disjoint-rich-fixture-required-for-llm-extraction",
+   "kind": "disjoint",
+   "anchor": "rich-fixture-required-for-llm-extraction-tests",
+   "latency_ms": 104.734,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-transcript-tokio-current-thread-starves-spawned-ser",
+   "kind": "transcript",
+   "anchor": "tokio-current-thread-starves-spawned-server",
+   "latency_ms": 73.516,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-disjoint-tokio-current-thread-starves-spawned-ser",
+   "kind": "disjoint",
+   "anchor": "tokio-current-thread-starves-spawned-server",
+   "latency_ms": 75.589,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-transcript-deterministic-embedding-drift-from-input",
+   "kind": "transcript",
+   "anchor": "deterministic-embedding-drift-from-input-policy-change",
+   "latency_ms": 78.25,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-disjoint-deterministic-embedding-drift-from-input",
+   "kind": "disjoint",
+   "anchor": "deterministic-embedding-drift-from-input-policy-change",
+   "latency_ms": 82.115,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-transcript-contamination-vs-precision-triangulation",
+   "kind": "transcript",
+   "anchor": "contamination-vs-precision-triangulation-for-no-match-failures",
+   "latency_ms": 95.783,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-disjoint-contamination-vs-precision-triangulation",
+   "kind": "disjoint",
+   "anchor": "contamination-vs-precision-triangulation-for-no-match-failures",
+   "latency_ms": 79.014,
+   "rr_at3": 0.0,
+   "ndcg_at3": 0.0,
+   "candidate_recall": 0.0
+  },
+  {
+   "id": "t11-transcript-use-jsonb-for-write-only-audit-fields",
+   "kind": "transcript",
+   "anchor": "use-jsonb-for-write-only-audit-fields",
+   "latency_ms": 84.423,
+   "rr_at3": 0.0,
+   "ndcg_at3": 0.0,
+   "candidate_recall": 0.0
+  },
+  {
+   "id": "t11-disjoint-use-jsonb-for-write-only-audit-fields",
+   "kind": "disjoint",
+   "anchor": "use-jsonb-for-write-only-audit-fields",
+   "latency_ms": 81.575,
+   "rr_at3": 0.5,
+   "ndcg_at3": 0.6309297535714575,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-transcript-anthropic-api-forced-tool-use-for-struct",
+   "kind": "transcript",
+   "anchor": "anthropic-api-forced-tool-use-for-structured-json",
+   "latency_ms": 76.566,
+   "rr_at3": 0.3333333333333333,
+   "ndcg_at3": 0.5,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-disjoint-anthropic-api-forced-tool-use-for-struct",
+   "kind": "disjoint",
+   "anchor": "anthropic-api-forced-tool-use-for-structured-json",
+   "latency_ms": 76.008,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-transcript-path-starts-with-requires-symmetric-cano",
+   "kind": "transcript",
+   "anchor": "path-starts-with-requires-symmetric-canonicalization",
+   "latency_ms": 75.276,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-disjoint-path-starts-with-requires-symmetric-cano",
+   "kind": "disjoint",
+   "anchor": "path-starts-with-requires-symmetric-canonicalization",
+   "latency_ms": 76.462,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-transcript-container-hook-absolute-path-resolution",
+   "kind": "transcript",
+   "anchor": "container-hook-absolute-path-resolution-options",
+   "latency_ms": 89.846,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-disjoint-container-hook-absolute-path-resolution",
+   "kind": "disjoint",
+   "anchor": "container-hook-absolute-path-resolution-options",
+   "latency_ms": 85.824,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-transcript-tokio-spawn-no-joinhandle-teardown-db-ra",
+   "kind": "transcript",
+   "anchor": "tokio-spawn-no-joinhandle-teardown-db-race",
+   "latency_ms": 66.257,
+   "rr_at3": 0.0,
+   "ndcg_at3": 0.0,
+   "candidate_recall": 0.0
+  },
+  {
+   "id": "t11-disjoint-tokio-spawn-no-joinhandle-teardown-db-ra",
+   "kind": "disjoint",
+   "anchor": "tokio-spawn-no-joinhandle-teardown-db-race",
+   "latency_ms": 77.013,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-transcript-pipe-filter-masks-command-exit-code",
+   "kind": "transcript",
+   "anchor": "pipe-filter-masks-command-exit-code",
+   "latency_ms": 90.899,
+   "rr_at3": 0.0,
+   "ndcg_at3": 0.0,
+   "candidate_recall": 0.0
+  },
+  {
+   "id": "t11-disjoint-pipe-filter-masks-command-exit-code",
+   "kind": "disjoint",
+   "anchor": "pipe-filter-masks-command-exit-code",
+   "latency_ms": 73.742,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-transcript-ablation-confounded-by-relevance-floor",
+   "kind": "transcript",
+   "anchor": "ablation-confounded-by-relevance-floor",
+   "latency_ms": 98.26,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-disjoint-ablation-confounded-by-relevance-floor",
+   "kind": "disjoint",
+   "anchor": "ablation-confounded-by-relevance-floor",
+   "latency_ms": 115.687,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-transcript-near-zero-cosine-score-suspects",
+   "kind": "transcript",
+   "anchor": "near-zero-cosine-score-suspects",
+   "latency_ms": 81.785,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-disjoint-near-zero-cosine-score-suspects",
+   "kind": "disjoint",
+   "anchor": "near-zero-cosine-score-suspects",
+   "latency_ms": 72.662,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-transcript-bool-returning-assertion-helper-must-be",
+   "kind": "transcript",
+   "anchor": "bool-returning-assertion-helper-must-be-asserted",
+   "latency_ms": 66.355,
+   "rr_at3": 0.0,
+   "ndcg_at3": 0.0,
+   "candidate_recall": 0.0
+  },
+  {
+   "id": "t11-disjoint-bool-returning-assertion-helper-must-be",
+   "kind": "disjoint",
+   "anchor": "bool-returning-assertion-helper-must-be-asserted",
+   "latency_ms": 64.169,
+   "rr_at3": 0.5,
+   "ndcg_at3": 0.6309297535714575,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-transcript-docker-compose-concurrent-bringup-lock",
+   "kind": "transcript",
+   "anchor": "docker-compose-concurrent-bringup-lock",
+   "latency_ms": 76.591,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-disjoint-docker-compose-concurrent-bringup-lock",
+   "kind": "disjoint",
+   "anchor": "docker-compose-concurrent-bringup-lock",
+   "latency_ms": 67.272,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-lexical-two-phase-artifact-wiring-must-be-verifi",
+   "kind": "lexical",
+   "anchor": "two-phase-artifact-wiring-must-be-verified-end-to-end",
+   "latency_ms": 78.289,
+   "rr_at3": 0.5,
+   "ndcg_at3": 0.6309297535714575,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-lexical-rust-cargo-bin-target-missing-docker-bui",
+   "kind": "lexical",
+   "anchor": "rust-cargo-bin-target-missing-docker-build-failure",
+   "latency_ms": 66.392,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-lexical-serialize-shared-file-todos-across-agent",
+   "kind": "lexical",
+   "anchor": "serialize-shared-file-todos-across-agent-batches",
+   "latency_ms": 78.838,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-lexical-ablation-confounded-by-relevance-floor",
+   "kind": "lexical",
+   "anchor": "ablation-confounded-by-relevance-floor",
+   "latency_ms": 64.466,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-lexical-deterministic-embedding-drift-from-input",
+   "kind": "lexical",
+   "anchor": "deterministic-embedding-drift-from-input-policy-change",
+   "latency_ms": 83.618,
+   "rr_at3": 0.0,
+   "ndcg_at3": 0.0,
+   "candidate_recall": 0.0
+  },
+  {
+   "id": "t11-lexical-cargo-clippy-all-targets-dead-code-from",
+   "kind": "lexical",
+   "anchor": "cargo-clippy-all-targets-dead-code-from-test-binary",
+   "latency_ms": 78.749,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-lexical-bool-returning-assertion-helper-must-be",
+   "kind": "lexical",
+   "anchor": "bool-returning-assertion-helper-must-be-asserted",
+   "latency_ms": 74.077,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-lexical-path-starts-with-requires-symmetric-cano",
+   "kind": "lexical",
+   "anchor": "path-starts-with-requires-symmetric-canonicalization",
+   "latency_ms": 80.789,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-lexical-tokio-spawn-no-joinhandle-teardown-db-ra",
+   "kind": "lexical",
+   "anchor": "tokio-spawn-no-joinhandle-teardown-db-race",
+   "latency_ms": 72.011,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-lexical-isolate-timing-test-to-diagnose-load-fla",
+   "kind": "lexical",
+   "anchor": "isolate-timing-test-to-diagnose-load-flake",
+   "latency_ms": 72.54,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-lexical-gate-parallel-agents-on-file-overlap",
+   "kind": "lexical",
+   "anchor": "gate-parallel-agents-on-file-overlap",
+   "latency_ms": 84.31,
+   "rr_at3": 0.3333333333333333,
+   "ndcg_at3": 0.5,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-lexical-inspect-current-state-before-mutating",
+   "kind": "lexical",
+   "anchor": "inspect-current-state-before-mutating",
+   "latency_ms": 116.528,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-lexical-sparse-vector-test-must-assert-weight-va",
+   "kind": "lexical",
+   "anchor": "sparse-vector-test-must-assert-weight-values-not-just-index-count",
+   "latency_ms": 114.774,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-lexical-pre-commit-gitignore-silent-exclusion-ch",
+   "kind": "lexical",
+   "anchor": "pre-commit-gitignore-silent-exclusion-check",
+   "latency_ms": 75.452,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-lexical-ollama-embedding-2048-token-batch-limit",
+   "kind": "lexical",
+   "anchor": "ollama-embedding-2048-token-batch-limit",
+   "latency_ms": 73.535,
+   "rr_at3": 0.0,
+   "ndcg_at3": 0.0,
+   "candidate_recall": 0.0
+  },
+  {
+   "id": "t11-lexical-handle-agent-scope-fence-violation",
+   "kind": "lexical",
+   "anchor": "handle-agent-scope-fence-violation",
+   "latency_ms": 83.173,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-lexical-rust-eliminate-expect-with-sum-types",
+   "kind": "lexical",
+   "anchor": "rust-eliminate-expect-with-sum-types",
+   "latency_ms": 74.224,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-lexical-prohibit-concurrent-cargo-ops-across-age",
+   "kind": "lexical",
+   "anchor": "prohibit-concurrent-cargo-ops-across-agents",
+   "latency_ms": 80.688,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-lexical-stale-test-asserts-failure-after-fix",
+   "kind": "lexical",
+   "anchor": "stale-test-asserts-failure-after-fix",
+   "latency_ms": 74.512,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-lexical-use-jsonb-for-write-only-audit-fields",
+   "kind": "lexical",
+   "anchor": "use-jsonb-for-write-only-audit-fields",
+   "latency_ms": 80.617,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-lexical-qdrant-rest-grpc-port-mismatch",
+   "kind": "lexical",
+   "anchor": "qdrant-rest-grpc-port-mismatch",
+   "latency_ms": 75.488,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-lexical-rich-fixture-required-for-llm-extraction",
+   "kind": "lexical",
+   "anchor": "rich-fixture-required-for-llm-extraction-tests",
+   "latency_ms": 124.885,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-lexical-verify-todo-diagnosis-matches-current-co",
+   "kind": "lexical",
+   "anchor": "verify-todo-diagnosis-matches-current-codebase",
+   "latency_ms": 110.036,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-lexical-docs-are-spec-build-up-not-edit-down",
+   "kind": "lexical",
+   "anchor": "docs-are-spec-build-up-not-edit-down",
+   "latency_ms": 78.008,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-lexical-probe-external-system-parameters-at-runt",
+   "kind": "lexical",
+   "anchor": "probe-external-system-parameters-at-runtime-not-hardcode",
+   "latency_ms": 75.838,
+   "rr_at3": 0.0,
+   "ndcg_at3": 0.0,
+   "candidate_recall": 0.0
+  },
+  {
+   "id": "t11-lexical-build-tool-silent-coverage-gap",
+   "kind": "lexical",
+   "anchor": "build-tool-silent-coverage-gap",
+   "latency_ms": 77.006,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-lexical-run-cargo-fmt-after-multi-agent-rust-edi",
+   "kind": "lexical",
+   "anchor": "run-cargo-fmt-after-multi-agent-rust-edits",
+   "latency_ms": 82.646,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-lexical-near-zero-cosine-score-suspects",
+   "kind": "lexical",
+   "anchor": "near-zero-cosine-score-suspects",
+   "latency_ms": 76.521,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-lexical-contamination-vs-precision-triangulation",
+   "kind": "lexical",
+   "anchor": "contamination-vs-precision-triangulation-for-no-match-failures",
+   "latency_ms": 76.787,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-lexical-stash-test-to-attribute-clippy-gate-fail",
+   "kind": "lexical",
+   "anchor": "stash-test-to-attribute-clippy-gate-failures",
+   "latency_ms": 141.177,
+   "rr_at3": 0.0,
+   "ndcg_at3": 0.0,
+   "candidate_recall": 0.0
+  },
+  {
+   "id": "t11-multiview-two-phase-artifact-wiring-must-be-verifi",
+   "kind": "multiview",
+   "anchor": "two-phase-artifact-wiring-must-be-verified-end-to-end",
+   "latency_ms": 101.05,
+   "rr_at3": 0.5,
+   "ndcg_at3": 0.6309297535714575,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-multiview-rust-cargo-bin-target-missing-docker-bui",
+   "kind": "multiview",
+   "anchor": "rust-cargo-bin-target-missing-docker-build-failure",
+   "latency_ms": 79.127,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-multiview-serialize-shared-file-todos-across-agent",
+   "kind": "multiview",
+   "anchor": "serialize-shared-file-todos-across-agent-batches",
+   "latency_ms": 81.593,
+   "rr_at3": 0.0,
+   "ndcg_at3": 0.0,
+   "candidate_recall": 0.0
+  },
+  {
+   "id": "t11-multiview-ablation-confounded-by-relevance-floor",
+   "kind": "multiview",
+   "anchor": "ablation-confounded-by-relevance-floor",
+   "latency_ms": 70.934,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-multiview-deterministic-embedding-drift-from-input",
+   "kind": "multiview",
+   "anchor": "deterministic-embedding-drift-from-input-policy-change",
+   "latency_ms": 105.816,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-multiview-cargo-clippy-all-targets-dead-code-from",
+   "kind": "multiview",
+   "anchor": "cargo-clippy-all-targets-dead-code-from-test-binary",
+   "latency_ms": 68.935,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-multiview-bool-returning-assertion-helper-must-be",
+   "kind": "multiview",
+   "anchor": "bool-returning-assertion-helper-must-be-asserted",
+   "latency_ms": 64.886,
+   "rr_at3": 0.0,
+   "ndcg_at3": 0.0,
+   "candidate_recall": 0.0
+  },
+  {
+   "id": "t11-multiview-path-starts-with-requires-symmetric-cano",
+   "kind": "multiview",
+   "anchor": "path-starts-with-requires-symmetric-canonicalization",
+   "latency_ms": 69.411,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-multiview-tokio-spawn-no-joinhandle-teardown-db-ra",
+   "kind": "multiview",
+   "anchor": "tokio-spawn-no-joinhandle-teardown-db-race",
+   "latency_ms": 72.298,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-multiview-isolate-timing-test-to-diagnose-load-fla",
+   "kind": "multiview",
+   "anchor": "isolate-timing-test-to-diagnose-load-flake",
+   "latency_ms": 85.162,
+   "rr_at3": 0.0,
+   "ndcg_at3": 0.0,
+   "candidate_recall": 0.0
+  },
+  {
+   "id": "t11-multiview-gate-parallel-agents-on-file-overlap",
+   "kind": "multiview",
+   "anchor": "gate-parallel-agents-on-file-overlap",
+   "latency_ms": 73.812,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-multiview-inspect-current-state-before-mutating",
+   "kind": "multiview",
+   "anchor": "inspect-current-state-before-mutating",
+   "latency_ms": 79.818,
+   "rr_at3": 0.0,
+   "ndcg_at3": 0.0,
+   "candidate_recall": 0.0
+  },
+  {
+   "id": "t11-multiview-sparse-vector-test-must-assert-weight-va",
+   "kind": "multiview",
+   "anchor": "sparse-vector-test-must-assert-weight-values-not-just-index-count",
+   "latency_ms": 74.407,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-multiview-pre-commit-gitignore-silent-exclusion-ch",
+   "kind": "multiview",
+   "anchor": "pre-commit-gitignore-silent-exclusion-check",
+   "latency_ms": 72.547,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-multiview-ollama-embedding-2048-token-batch-limit",
+   "kind": "multiview",
+   "anchor": "ollama-embedding-2048-token-batch-limit",
+   "latency_ms": 66.574,
+   "rr_at3": 0.3333333333333333,
+   "ndcg_at3": 0.5,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-multiview-handle-agent-scope-fence-violation",
+   "kind": "multiview",
+   "anchor": "handle-agent-scope-fence-violation",
+   "latency_ms": 71.182,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-multiview-rust-eliminate-expect-with-sum-types",
+   "kind": "multiview",
+   "anchor": "rust-eliminate-expect-with-sum-types",
+   "latency_ms": 68.191,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-multiview-prohibit-concurrent-cargo-ops-across-age",
+   "kind": "multiview",
+   "anchor": "prohibit-concurrent-cargo-ops-across-agents",
+   "latency_ms": 79.77,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-multiview-stale-test-asserts-failure-after-fix",
+   "kind": "multiview",
+   "anchor": "stale-test-asserts-failure-after-fix",
+   "latency_ms": 74.089,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-multiview-use-jsonb-for-write-only-audit-fields",
+   "kind": "multiview",
+   "anchor": "use-jsonb-for-write-only-audit-fields",
+   "latency_ms": 82.24,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-usewhen-two-phase-artifact-wiring-must-be-verifi",
+   "kind": "use_when",
+   "anchor": "two-phase-artifact-wiring-must-be-verified-end-to-end",
+   "latency_ms": 90.23,
+   "rr_at3": 0.5,
+   "ndcg_at3": 0.6309297535714575,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-usewhen-rust-cargo-bin-target-missing-docker-bui",
+   "kind": "use_when",
+   "anchor": "rust-cargo-bin-target-missing-docker-build-failure",
+   "latency_ms": 79.413,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-usewhen-serialize-shared-file-todos-across-agent",
+   "kind": "use_when",
+   "anchor": "serialize-shared-file-todos-across-agent-batches",
+   "latency_ms": 81.239,
+   "rr_at3": 0.0,
+   "ndcg_at3": 0.0,
+   "candidate_recall": 0.0
+  },
+  {
+   "id": "t11-usewhen-ablation-confounded-by-relevance-floor",
+   "kind": "use_when",
+   "anchor": "ablation-confounded-by-relevance-floor",
+   "latency_ms": 76.936,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-usewhen-deterministic-embedding-drift-from-input",
+   "kind": "use_when",
+   "anchor": "deterministic-embedding-drift-from-input-policy-change",
+   "latency_ms": 80.909,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-usewhen-cargo-clippy-all-targets-dead-code-from",
+   "kind": "use_when",
+   "anchor": "cargo-clippy-all-targets-dead-code-from-test-binary",
+   "latency_ms": 76.739,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-usewhen-bool-returning-assertion-helper-must-be",
+   "kind": "use_when",
+   "anchor": "bool-returning-assertion-helper-must-be-asserted",
+   "latency_ms": 67.482,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-usewhen-path-starts-with-requires-symmetric-cano",
+   "kind": "use_when",
+   "anchor": "path-starts-with-requires-symmetric-canonicalization",
+   "latency_ms": 80.59,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-usewhen-tokio-spawn-no-joinhandle-teardown-db-ra",
+   "kind": "use_when",
+   "anchor": "tokio-spawn-no-joinhandle-teardown-db-race",
+   "latency_ms": 94.831,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-usewhen-isolate-timing-test-to-diagnose-load-fla",
+   "kind": "use_when",
+   "anchor": "isolate-timing-test-to-diagnose-load-flake",
+   "latency_ms": 74.484,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-usewhen-gate-parallel-agents-on-file-overlap",
+   "kind": "use_when",
+   "anchor": "gate-parallel-agents-on-file-overlap",
+   "latency_ms": 86.352,
+   "rr_at3": 0.0,
+   "ndcg_at3": 0.0,
+   "candidate_recall": 0.0
+  },
+  {
+   "id": "t11-usewhen-inspect-current-state-before-mutating",
+   "kind": "use_when",
+   "anchor": "inspect-current-state-before-mutating",
+   "latency_ms": 80.579,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-usewhen-sparse-vector-test-must-assert-weight-va",
+   "kind": "use_when",
+   "anchor": "sparse-vector-test-must-assert-weight-values-not-just-index-count",
+   "latency_ms": 80.779,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-usewhen-pre-commit-gitignore-silent-exclusion-ch",
+   "kind": "use_when",
+   "anchor": "pre-commit-gitignore-silent-exclusion-check",
+   "latency_ms": 95.452,
+   "rr_at3": 1.0,
+   "ndcg_at3": 1.0,
+   "candidate_recall": 1.0
+  },
+  {
+   "id": "t11-usewhen-ollama-embedding-2048-token-batch-limit",
+   "kind": "use_when",
+   "anchor": "ollama-embedding-2048-token-batch-limit",
+   "latency_ms": 86.946,
+   "rr_at3": 0.0,
+   "ndcg_at3": 0.0,
+   "candidate_recall": 0.0
+  }
+ ]
+}

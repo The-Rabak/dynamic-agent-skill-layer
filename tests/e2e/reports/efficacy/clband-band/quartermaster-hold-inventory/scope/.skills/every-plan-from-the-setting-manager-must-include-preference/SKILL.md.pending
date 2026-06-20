@@ -1,0 +1,23 @@
+---
+name: Every plan from the Setting Manager must include (preference)
+description: 'Standing user preference: Every plan from the Setting Manager must include Wall 5 plus one Main Wall.'
+tags:
+- preference
+- convention
+origin: session_extraction
+source_session_id: clband-teach-quartermaster-hold-inventory
+source_provider: claude-code
+created_at: 2026-06-12T21:59:54.412152529+00:00
+warning_at: 2026-07-12T21:59:54.412152529+00:00
+expires_at: 2026-09-10T21:59:54.412152529+00:00
+generality: uncertain
+generality_rationale: Detected as a standing user directive; generality inferred from scope signals.
+---
+
+# Every plan from the Setting Manager must include (preference)
+
+Standing user preference: Every plan from the Setting Manager must include Wall 5 plus one Main Wall.
+
+## Conventions
+- Every plan from the Setting Manager must include Wall 5 plus one Main Wall.
+

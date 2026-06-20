@@ -1,0 +1,130 @@
+{
+ "context": "dartman-game",
+ "transcript": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/dartman-game/transcript.jsonl",
+ "scope": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/dartman-game/scope",
+ "worker_rc": 0,
+ "elapsed_s": 192.6,
+ "n_drafts": 20,
+ "drafts": [
+  {
+   "name": "The user is always Player 2 when game (preference)",
+   "description": "Standing user preference: The user is always Player 2 when game scenarios are explained.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/dartman-game/scope/.skills/the-user-is-always-player-2-when-game-preference/SKILL.md.pending"
+  },
+  {
+   "name": "8x8-board-game-grid-visualization-standard",
+   "description": "Any 8\u00d78 board game (whether chess or Dartman) should be rendered as an 8\u00d78 markdown grid where each cell contains a period (.) for an empty square or the appropriate piece symbol for an occupied square. This convention recurs across both game systems in this session and is the expected default display format.",
+   "skill_type": "best_practice",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/dartman-game/scope/.skills/8x8-board-game-grid-visualization-standard/SKILL.md.pending"
+  },
+  {
+   "name": "Dartman pieces can shoot each other and must (preference)",
+   "description": "Standing user preference: Dartman pieces can shoot each other and must never be left in a position where they are vulnerable.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/dartman-game/scope/.skills/dartman-pieces-can-shoot-each-other-and-must-preference/SKILL.md.pending"
+  },
+  {
+   "name": "game-rule-counterintuitive-edge-cases-must-be-applied-exactly",
+   "description": "Both chess and Dartman contain rules that contradict common intuition (a pinned piece can still give check; a deflector cannot rotate; Dartman pieces can shoot each other; a king is never actually captured; a king cannot escape to a square still controlled by the opponent). These edge cases recurred across multiple skills in this session and must be applied with full precision rather than by intuitive default. When reasoning about legal moves, captures, or win conditions in either game, explicitly check against each known counterintuitive rule rather than relying on general pattern-matching.",
+   "skill_type": "principle",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/dartman-game/scope/.skills/game-rule-counterintuitive-edge-cases-must-be-applied-exactly/SKILL.md.pending"
+  },
+  {
+   "name": "The 1\u00d72 Deflector piece cannot be rotated and (preference)",
+   "description": "Standing user preference: The 1\u00d72 Deflector piece cannot be rotated and must always remain in its vertical orientation.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/dartman-game/scope/.skills/the-1-2-deflector-piece-cannot-be-rotated-and-preference/SKILL.md.pending"
+  },
+  {
+   "name": "Certain basic endgame positions are always dead (drawn) (preference)",
+   "description": "Standing user preference: Certain basic endgame positions are always dead (drawn) positions.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/dartman-game/scope/.skills/certain-basic-endgame-positions-are-always-dead-drawn-preference/SKILL.md.pending"
+  },
+  {
+   "name": "When displaying chess games given in algebraic notation (preference)",
+   "description": "Standing user preference: When displaying chess games given in algebraic notation, export each move as an 8\u00d78 markdown grid where each cell contains a period (.) unless a piece occupies it.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/dartman-game/scope/.skills/when-displaying-chess-games-given-in-algebraic-notation-preference/SKILL.md.pending"
+  },
+  {
+   "name": "The touch-move rule applies: a piece that has (preference)",
+   "description": "Standing user preference: The touch-move rule applies: a piece that has been touched must be moved if a legal move exists with that piece.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/dartman-game/scope/.skills/the-touch-move-rule-applies-a-piece-that-has-preference/SKILL.md.pending"
+  },
+  {
+   "name": "The first use of a modern-style time limit (preference)",
+   "description": "Standing user preference: The first use of a modern-style time limit in chess was in an 1861 match between Adolph Anderssen and Ign\u00e1c Kolisch.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/dartman-game/scope/.skills/the-first-use-of-a-modern-style-time-limit-preference/SKILL.md.pending"
+  },
+  {
+   "name": "Mechanical clocks do not support time increments; digital (preference)",
+   "description": "Standing user preference: Mechanical clocks do not support time increments; digital clocks with increment are recommended and have made increment-based time controls the modern standard.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/dartman-game/scope/.skills/mechanical-clocks-do-not-support-time-increments-digital-preference/SKILL.md.pending"
+  },
+  {
+   "name": "A piece pinned against its own king (i.e (preference)",
+   "description": "Standing user preference: A piece pinned against its own king (i.e., moving it would expose the king to check) may still deliver check to the opposing king.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/dartman-game/scope/.skills/a-piece-pinned-against-its-own-king-i-e-preference/SKILL.md.pending"
+  },
+  {
+   "name": "The king is never captured; unlike other pieces (preference)",
+   "description": "Standing user preference: The king is never captured; unlike other pieces, the game ends before a king capture occurs.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/dartman-game/scope/.skills/the-king-is-never-captured-unlike-other-pieces-preference/SKILL.md.pending"
+  },
+  {
+   "name": "A king in check cannot escape by moving (preference)",
+   "description": "Standing user preference: A king in check cannot escape by moving to a square still controlled by the opponent, nor by capturing a piece that is protected by another opponent piece.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/dartman-game/scope/.skills/a-king-in-check-cannot-escape-by-moving-preference/SKILL.md.pending"
+  },
+  {
+   "name": "dartman-movement-and-line-of-fire-rules",
+   "description": "Dartman movement mechanics: Deflectors move like chess Rooks; the Dartman piece has unstoppable momentum and must travel until hitting the board edge or its own Deflector; crossing the opponent Dartman's line of fire is an instant loss.",
+   "skill_type": "rule",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/dartman-game/scope/.skills/dartman-movement-and-line-of-fire-rules/SKILL.md.pending"
+  },
+  {
+   "name": "A chess clock consists of two adjacent clocks (preference)",
+   "description": "Standing user preference: A chess clock consists of two adjacent clocks with alternating buttons, ensuring only one player's clock runs at a time.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/dartman-game/scope/.skills/a-chess-clock-consists-of-two-adjacent-clocks-preference/SKILL.md.pending"
+  },
+  {
+   "name": "dartman-game-setup-and-win-conditions",
+   "description": "Verbatim Dartman game system: piece notation, starting positions, win conditions, and 8x8 board rendering format required to correctly set up and track a game.",
+   "skill_type": "prerequisite",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/dartman-game/scope/.skills/dartman-game-setup-and-win-conditions/SKILL.md.pending"
+  },
+  {
+   "name": "Most tournaments use time controls with either an (preference)",
+   "description": "Standing user preference: Most tournaments use time controls with either an increment (time added before or after each move) or a delay (a countdown before the clock restarts).",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/dartman-game/scope/.skills/most-tournaments-use-time-controls-with-either-an-preference/SKILL.md.pending"
+  },
+  {
+   "name": "Official chess rules do not include a procedure (preference)",
+   "description": "Standing user preference: Official chess rules do not include a procedure for determining which player plays White.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/dartman-game/scope/.skills/official-chess-rules-do-not-include-a-procedure-preference/SKILL.md.pending"
+  },
+  {
+   "name": "A player cannot use an opponent's deflector piece (preference)",
+   "description": "Standing user preference: A player cannot use an opponent's deflector piece as a stopping point.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/dartman-game/scope/.skills/a-player-cannot-use-an-opponent-s-deflector-piece-preference/SKILL.md.pending"
+  },
+  {
+   "name": "Players may not consult notes, computers, outside information (preference)",
+   "description": "Standing user preference: Players may not consult notes, computers, outside information sources, or other people during a game; mobile phone usage is banned due to concerns about engine assistance and outside communication.",
+   "skill_type": "",
+   "path": "/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/dartman-game/scope/.skills/players-may-not-consult-notes-computers-outside-information-preference/SKILL.md.pending"
+  }
+ ]
+}

@@ -1,0 +1,19 @@
+=== clband extract: dpms-agent-m -> /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/dpms-agent-m/scope ===
+[clband] purged queue; rows now: 0
+[clband] teach-delivery ON: doc injected as user turn (+6508 bytes)
+[clband] ingest transcript.jsonl (167KB+doc) -> {'content_hash': '82602a1492659ab49e122cdb1d5b79c643947f15555d053df9d6ca71c83ae1df', 'id': '019ebe1d-92cf-7af1-b5a9-b969e641342c', 'status': 'enqueued'}
+[clband] sweep 1: 1 pending -> worker
+[clband] running maintenance-worker (claude-code); scope=/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/dpms-agent-m/scope; log=/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/logs/worker-dpms-agent-m-021429-s1.log
+[clband] worker exited rc=1
+[clband] queue drained (sweep 2)
+
+=== dpms-agent-m: 7 .pending draft(s) in 660s rc=1 -> /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/extract_dpms-agent-m.json ===
+   Produce complete, validated, professionally formatted reports that meet (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/dpms-agent-m/scope/.skills/produce-complete-validated-professionally-formatted-reports-that-meet-preference/SKILL.md.pending
+   dpms-agent-m-schema-compliance-fallback  [rule]  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/dpms-agent-m/scope/.skills/dpms-agent-m-schema-compliance-fallback/SKILL.md.pending
+   dpms-agent-m-conflict-flagging-procedure  [procedure]  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/dpms-agent-m/scope/.skills/dpms-agent-m-conflict-flagging-procedure/SKILL.md.pending
+   dpms-agent-m-risk-classification-integrity  [anti_pattern]  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/dpms-agent-m/scope/.skills/dpms-agent-m-risk-classification-integrity/SKILL.md.pending
+   dpms-agent-m-posterior-authority-rule  [rule]  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/dpms-agent-m/scope/.skills/dpms-agent-m-posterior-authority-rule/SKILL.md.pending
+   dpms-agent-m-routing-protocol  [anti_pattern]  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/dpms-agent-m/scope/.skills/dpms-agent-m-routing-protocol/SKILL.md.pending
+   dpms-agent-m-input-verification-gate  [procedure]  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/dpms-agent-m/scope/.skills/dpms-agent-m-input-verification-gate/SKILL.md.pending
+
+--- STDERR ---

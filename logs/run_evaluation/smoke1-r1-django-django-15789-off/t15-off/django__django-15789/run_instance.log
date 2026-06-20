@@ -1,0 +1,98 @@
+2026-06-20 09:47:58,217 - INFO - Creating container for django__django-15789...
+2026-06-20 09:47:58,338 - INFO - Container for django__django-15789 created: ea35715b3634d3d0b2f0faeb1a07139d30d86ed478c5081d79f9930bba71df81
+2026-06-20 09:47:58,794 - INFO - Container for django__django-15789 started: ea35715b3634d3d0b2f0faeb1a07139d30d86ed478c5081d79f9930bba71df81
+2026-06-20 09:47:58,795 - INFO - Intermediate patch for django__django-15789 written to logs/run_evaluation/smoke1-r1-django-django-15789-off/t15-off/django__django-15789/patch.diff, now applying to container...
+2026-06-20 09:47:58,895 - INFO - >>>>> Applied Patch:
+Checking patch django/utils/html.py...
+Checking patch tests/utils_tests/test_html.py...
+Applied patch django/utils/html.py cleanly.
+Applied patch tests/utils_tests/test_html.py cleanly.
+
+2026-06-20 09:47:59,768 - INFO - Git diff before:
+diff --git a/django/utils/html.py b/django/utils/html.py
+index d0bc97be80..03de604495 100644
+--- a/django/utils/html.py
++++ b/django/utils/html.py
+@@ -59,7 +59,7 @@ _json_script_escapes = {
+ }
+ 
+ 
+-def json_script(value, element_id=None):
++def json_script(value, element_id=None, encoder=None):
+     """
+     Escape all the HTML/XML special characters with their unicode escapes, so
+     value is safe to be output anywhere except for inside a tag attribute. Wrap
+@@ -67,7 +67,8 @@ def json_script(value, element_id=None):
+     """
+     from django.core.serializers.json import DjangoJSONEncoder
+ 
+-    json_str = json.dumps(value, cls=DjangoJSONEncoder).translate(_json_script_escapes)
++    _encoder = encoder or DjangoJSONEncoder
++    json_str = json.dumps(value, cls=_encoder).translate(_json_script_escapes)
+     if element_id:
+         template = '<script id="{}" type="application/json">{}</script>'
+         args = (element_id, mark_safe(json_str))
+diff --git a/tests/utils_tests/test_html.py b/tests/utils_tests/test_html.py
+index 22a43fd4cd..c0f2a5fad6 100644
+--- a/tests/utils_tests/test_html.py
++++ b/tests/utils_tests/test_html.py
+@@ -1,3 +1,4 @@
++import json
+ import os
+ from datetime import datetime
+ 
+@@ -217,6 +218,20 @@ class TestUtilsHtml(SimpleTestCase):
+             '<script type="application/json">{"key": "value"}</script>',
+         )
+ 
++    def test_json_script_custom_encoder(self):
++        class CustomEncoder(json.JSONEncoder):
++            def default(self, o):
++                return {'custom': True}
++
++        class UnserializableType:
++            pass
++
++        self.assertHTMLEqual(
++            json_script(UnserializableType(), 'test_id', encoder=CustomEncoder),
++            '<script id="test_id" type="application/json">{"custom": true}</script>',
++        )
++
++
+     def test_smart_urlquote(self):
+         items = (
+             ("http://öäü.com/", "http://xn--4ca9at.com/"),
+2026-06-20 09:47:59,768 - INFO - Eval script for django__django-15789 written to logs/run_evaluation/smoke1-r1-django-django-15789-off/t15-off/django__django-15789/eval.sh; copying to container...
+2026-06-20 09:48:08,668 - INFO - Test runtime: 8.84 seconds
+2026-06-20 09:48:08,669 - INFO - Test output for django__django-15789 written to logs/run_evaluation/smoke1-r1-django-django-15789-off/t15-off/django__django-15789/test_output.txt
+2026-06-20 09:48:08,723 - INFO - Git diff after:
+diff --git a/django/utils/html.py b/django/utils/html.py
+index d0bc97be80..03de604495 100644
+--- a/django/utils/html.py
++++ b/django/utils/html.py
+@@ -59,7 +59,7 @@ _json_script_escapes = {
+ }
+ 
+ 
+-def json_script(value, element_id=None):
++def json_script(value, element_id=None, encoder=None):
+     """
+     Escape all the HTML/XML special characters with their unicode escapes, so
+     value is safe to be output anywhere except for inside a tag attribute. Wrap
+@@ -67,7 +67,8 @@ def json_script(value, element_id=None):
+     """
+     from django.core.serializers.json import DjangoJSONEncoder
+ 
+-    json_str = json.dumps(value, cls=DjangoJSONEncoder).translate(_json_script_escapes)
++    _encoder = encoder or DjangoJSONEncoder
++    json_str = json.dumps(value, cls=_encoder).translate(_json_script_escapes)
+     if element_id:
+         template = '<script id="{}" type="application/json">{}</script>'
+         args = (element_id, mark_safe(json_str))
+2026-06-20 09:48:08,723 - INFO - Git diff changed after running eval script
+2026-06-20 09:48:08,723 - INFO - Grading answer for django__django-15789...
+2026-06-20 09:48:08,724 - INFO - report: {'django__django-15789': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['test_json_script_custom_encoder (utils_tests.test_html.TestUtilsHtml)'], 'failure': []}, 'PASS_TO_PASS': {'success': ['test_conditional_escape (utils_tests.test_html.TestUtilsHtml)', 'test_escape (utils_tests.test_html.TestUtilsHtml)', 'test_escapejs (utils_tests.test_html.TestUtilsHtml)', 'test_format_html (utils_tests.test_html.TestUtilsHtml)', 'test_html_safe (utils_tests.test_html.TestUtilsHtml)', 'test_html_safe_defines_html_error (utils_tests.test_html.TestUtilsHtml)', 'test_html_safe_doesnt_define_str (utils_tests.test_html.TestUtilsHtml)', 'test_html_safe_subclass (utils_tests.test_html.TestUtilsHtml)', 'test_json_script (utils_tests.test_html.TestUtilsHtml)', 'test_json_script_without_id (utils_tests.test_html.TestUtilsHtml)', 'test_linebreaks (utils_tests.test_html.TestUtilsHtml)', 'test_smart_urlquote (utils_tests.test_html.TestUtilsHtml)', 'test_strip_spaces_between_tags (utils_tests.test_html.TestUtilsHtml)', 'test_strip_tags (utils_tests.test_html.TestUtilsHtml)', 'test_strip_tags_files (utils_tests.test_html.TestUtilsHtml)', 'test_urlize (utils_tests.test_html.TestUtilsHtml)', 'test_urlize_unchanged_inputs (utils_tests.test_html.TestUtilsHtml)'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for django__django-15789: resolved: True
+2026-06-20 09:48:08,724 - INFO - Attempting to stop container sweb.eval.django__django-15789.smoke1-r1-django-django-15789-off...
+2026-06-20 09:48:24,263 - INFO - Attempting to remove container sweb.eval.django__django-15789.smoke1-r1-django-django-15789-off...
+2026-06-20 09:48:24,312 - INFO - Container sweb.eval.django__django-15789.smoke1-r1-django-django-15789-off removed.

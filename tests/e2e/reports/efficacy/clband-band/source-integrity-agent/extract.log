@@ -1,0 +1,32 @@
+=== clband extract: source-integrity-agent -> /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/source-integrity-agent/scope ===
+[clband] purged queue; rows now: 0
+[clband] teach-delivery ON: doc injected as user turn (+11080 bytes)
+[clband] ingest transcript.jsonl (135KB+doc) -> {'content_hash': '84f4ff3a14b6cfcfa02983a75785dae048a314c1f6e7a5a72719cbfe75446832', 'id': '019ebdca-e49a-73b1-a470-d08e72c421d6', 'status': 'enqueued'}
+[clband] sweep 1: 1 pending -> worker
+[clband] running maintenance-worker (claude-code); scope=/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/source-integrity-agent/scope; log=/home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/logs/worker-source-integrity-agent-004411-s1.log
+[clband] worker exited rc=0
+[clband] queue drained (sweep 2)
+
+=== source-integrity-agent: 20 .pending draft(s) in 408s rc=0 -> /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/extract_source-integrity-agent.json ===
+   When SSL chain issues arise on similar hosts (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/source-integrity-agent/scope/.skills/when-ssl-chain-issues-arise-on-similar-hosts-preference/SKILL.md.pending
+   Never revise or change findings unless new data (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/source-integrity-agent/scope/.skills/never-revise-or-change-findings-unless-new-data-preference/SKILL.md.pending
+   Use only the specified validation methods (WHOIS, DNS (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/source-integrity-agent/scope/.skills/use-only-the-specified-validation-methods-whois-dns-preference/SKILL.md.pending
+   evidence-primacy-no-inference  [principle]  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/source-integrity-agent/scope/.skills/evidence-primacy-no-inference/SKILL.md.pending
+   strict-schema-output-fidelity  [best_practice]  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/source-integrity-agent/scope/.skills/strict-schema-output-fidelity/SKILL.md.pending
+   If an EXIF date field is missing, mark (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/source-integrity-agent/scope/.skills/if-an-exif-date-field-is-missing-mark-preference/SKILL.md.pending
+   closed-method-set-with-session-result-reuse  [best_practice]  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/source-integrity-agent/scope/.skills/closed-method-set-with-session-result-reuse/SKILL.md.pending
+   When metadata contains conflicting timestamps, list all values (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/source-integrity-agent/scope/.skills/when-metadata-contains-conflicting-timestamps-list-all-values-preference/SKILL.md.pending
+   Format all timestamps using ISO 8601 (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/source-integrity-agent/scope/.skills/format-all-timestamps-using-iso-8601-preference/SKILL.md.pending
+   Preserve original metadata formatting exactly; never rewrite or (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/source-integrity-agent/scope/.skills/preserve-original-metadata-formatting-exactly-never-rewrite-or-preference/SKILL.md.pending
+   sia-metadata-conflict-and-missing-field-rules  [rule]  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/source-integrity-agent/scope/.skills/sia-metadata-conflict-and-missing-field-rules/SKILL.md.pending
+   sia-social-pressure-immunity  [anti_pattern]  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/source-integrity-agent/scope/.skills/sia-social-pressure-immunity/SKILL.md.pending
+   pressure-immunity-skepticism-first  [principle]  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/source-integrity-agent/scope/.skills/pressure-immunity-skepticism-first/SKILL.md.pending
+   Adhere strictly to the specified JSON output schema: (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/source-integrity-agent/scope/.skills/adhere-strictly-to-the-specified-json-output-schema-preference/SKILL.md.pending
+   Use precise, specific language in findings; avoid vague (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/source-integrity-agent/scope/.skills/use-precise-specific-language-in-findings-avoid-vague-preference/SKILL.md.pending
+   Output results as structured JSON only; never use (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/source-integrity-agent/scope/.skills/output-results-as-structured-json-only-never-use-preference/SKILL.md.pending
+   Approach every analysis with skepticism and meticulous attention (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/source-integrity-agent/scope/.skills/approach-every-analysis-with-skepticism-and-meticulous-attention-preference/SKILL.md.pending
+   sia-critical-escalation-halt-triggers  [rule]  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/source-integrity-agent/scope/.skills/sia-critical-escalation-halt-triggers/SKILL.md.pending
+   sia-domain-trust-score-formula  [procedure]  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/source-integrity-agent/scope/.skills/sia-domain-trust-score-formula/SKILL.md.pending
+   Keep analyses concise; avoid unnecessary deep dives (preference)  []  /home/rabak/projects/dynamic-agent-skill-layer/tests/e2e/reports/efficacy/clband-band/source-integrity-agent/scope/.skills/keep-analyses-concise-avoid-unnecessary-deep-dives-preference/SKILL.md.pending
+
+--- STDERR ---
